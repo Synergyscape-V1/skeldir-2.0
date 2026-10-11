@@ -6759,3 +6759,61 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: enforce
+- id: b26-p2-xxi-composition
+  path: scripts/ci/validate_b26_p2_xxi_composition.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Sovereign release continuity: no obsolete executable
+    can mint against a schema it was not built for (release-bound v2 ABI,
+    v1 retired); every authoritative event-family classification rests on
+    positive body-native evidence (topic never sufficient); persisted
+    demotion policy survives supported rollback without silent promotion;
+    history is seq-anchored, beat-observed, and Trust-degrading; mandatory
+    proof executes the real Trust adapter and real P3 logic; topology
+    adjudicators track the ABI in both migration directions.'
+  command: python scripts/ci/validate_b26_p2_xxi_composition.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xxi_composition.py --help
+  expected_failure_meaning: Version-incompatible minting, unsigned-topic
+    family authority, rollback resurrection, unobserved history rewrite,
+    or a reimplementation-oracle proof plane while every component proof
+    stays green.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xxi_composition.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xxi-coverage-registry
+  path: scripts/ci/b26_p2_xxi_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: XXI registry extends XVIII coverage for the
+    release-bound v2 minting ABI and the owner-context history
+    continuity surface (read-only, fail-closed EXECUTE surfaces).
+  command: python -c "from scripts.ci.b26_p2_xxi_coverage import XXI_COVERED_SURFACES; print(len(XXI_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xxi_coverage import XXI_COVERED_SURFACES"
+  expected_failure_meaning: XXI EXECUTE surfaces stay untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the XXI coverage gate.
+  subsumed_by: ''
+  registry_action: utility

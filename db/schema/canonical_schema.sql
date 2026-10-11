@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lPDcrb09x9YeGKCEKJooozp9ZTwu4V59rgvylqg5zNsTDakZ3c8bT00XiybwNMH
+\restrict Z5GpcuBWx7RdTIEPedswJfbH7McG0INpmrdLjYjCJpUDAEE7JwgcPwuqENclKdM
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -2482,10 +2482,10 @@ CREATE FUNCTION public.b26_p2_ascii_strip(p_value text) RETURNS text
 
 
 --
--- Name: b26_p2_attest_provenance_evidence(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamp with time zone, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind text, p_ref text) RETURNS text
+CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_kind text, p_ref text, p_financial_status text, p_cancelled_at timestamp with time zone, p_refunds_present boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
@@ -2495,6 +2495,13 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             _state text;
             _prov_status text;
             _demotion text;
+            _t_kind text;
+            _t_value text;
+            _t_amount integer;
+            _t_ccy text;
+            _t_scale integer;
+            _t_ts timestamptz;
+            _t_ts_canon text;
             _row_provider text;
             _family text;
             _family_source text;
@@ -2536,7 +2543,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             END IF;
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
-                 WHERE f.id = 1 AND f.floor_revision >= '202609300002';
+                 WHERE f.id = 1 AND f.floor_revision >= '202609300004';
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
                         USING ERRCODE = '42501';
@@ -2547,8 +2554,15 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
             END;
             SELECT i.tenant_id, i.idempotency_key,
                    i.verified_commerce_ingress_state, i.b26_p2_provenance_status,
-                   i.b26_p2_demotion_reason, i.provider
-              INTO _tenant, _idem, _state, _prov_status, _demotion, _row_provider
+                   i.b26_p2_demotion_reason, i.provider,
+                   i.normalized_commerce_reference_kind,
+                   i.normalized_commerce_reference_value,
+                   i.verified_amount_minor,
+                   i.verified_amount_currency,
+                   i.verified_amount_scale,
+                   i.event_timestamp
+              INTO _tenant, _idem, _state, _prov_status, _demotion, _row_provider,
+                   _t_kind, _t_value, _t_amount, _t_ccy, _t_scale, _t_ts
               FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
@@ -2585,12 +2599,41 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
                 RAISE EXCEPTION 'b26_p2_evidence_no_auth_consequence'
                     USING ERRCODE = '42501';
             END IF;
+            -- XXI: the re-attestation preimage is the atomic mint
+            -- preimage bit-for-bit (commerce suffix included); a shorter
+            -- recomputation could never match an atomically-minted
+            -- witness and would deaden genuine re-ingestion. Rows
+            -- bound by the legacy recorder path (which supplies no
+            -- commerce context) carry the short preimage instead: both
+            -- are accepted here because each stored witness dictates
+            -- which one must match -- a short witness never matches a
+            -- long-stored row and vice versa. Accepting the
+            -- recorder-bound form does NOT promote it: the XIV
+            -- promotion trigger still refuses the authenticated stamp
+            -- without auth-root evidence (provenance_promotion_refused),
+            -- which only the atomic creates.
+            _t_ts_canon := to_char(_t_ts AT TIME ZONE 'UTC',
+                                   'YYYY-MM-DD HH24:MI:SS.US');
             _expected := encode(digest(
                 _tenant::text || '|' || p_ingress::text || '|'
                 || _c_provider || '|' || _c_event || '|'
                 || lower(_c_body) || '|' || lower(_c_sig) || '|'
-                || _c_method || '|' || COALESCE(_c_version, 'v1'),
+                || _c_method || '|' || COALESCE(_c_version, 'v1') || '|'
+                || COALESCE(_t_kind, '') || '|'
+                || COALESCE(_t_value, '') || '|'
+                || COALESCE(_t_amount::text, '') || '|'
+                || COALESCE(_t_ccy, '') || '|'
+                || COALESCE(_t_scale::text, '') || '|'
+                || COALESCE(_t_ts_canon, ''),
                 'sha256'), 'hex');
+            IF _witness IS DISTINCT FROM _expected THEN
+                _expected := encode(digest(
+                    _tenant::text || '|' || p_ingress::text || '|'
+                    || _c_provider || '|' || _c_event || '|'
+                    || lower(_c_body) || '|' || lower(_c_sig) || '|'
+                    || _c_method || '|' || COALESCE(_c_version, 'v1'),
+                    'sha256'), 'hex');
+            END IF;
             IF _witness IS DISTINCT FROM _expected THEN
                 RAISE EXCEPTION 'b26_p2_evidence_witness_not_bound'
                     USING ERRCODE = '42501';
@@ -2667,6 +2710,13 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
+            -- XXI (H-XXI-03): contradiction-only lifecycle
+            -- re-check at re-attestation (the original mint
+            -- already established positive creation).
+            PERFORM public.b26_p2_enforce_lifecycle_admission(
+                _row_provider, _family, p_financial_status,
+                p_cancelled_at, p_refunds_present,
+                p_created_at, p_updated_at, false);
             BEGIN
                 _prev_guc := current_setting('app.current_tenant_id', true);
             EXCEPTION WHEN OTHERS THEN
@@ -2705,10 +2755,10 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence(p_ingress uuid, p_kind 
 
 
 --
--- Name: b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: b26_p2_authenticate_ingress_atomic_v2(uuid, text, text, text, text, text, text, text, timestamp with time zone, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text, p_sig_envelope_sha256 text, p_method text, p_version text DEFAULT 'v1'::text) RETURNS text
+CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text, p_sig_envelope_sha256 text, p_method text, p_version text, p_financial_status text, p_cancelled_at timestamp with time zone, p_refunds_present boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
@@ -2759,11 +2809,11 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                 RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
-            -- XIX floor: a downgraded schema (floor row/table absent or
+            -- XXI floor: a downgraded schema (floor row/table absent or
             -- behind) cannot mint authority.
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
-                 WHERE f.id = 1 AND f.floor_revision >= '202609300002';
+                 WHERE f.id = 1 AND f.floor_revision >= '202609300004';
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'b26_p2_downgrade_serving_refused'
                         USING ERRCODE = '42501';
@@ -2894,6 +2944,11 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic(p_ingress uuid, p_prov
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
+            -- XXI (H-XXI-03): lifecycle admission at the seam.
+            PERFORM public.b26_p2_enforce_lifecycle_admission(
+                _fam_provider, _family, p_financial_status,
+                p_cancelled_at, p_refunds_present,
+                p_created_at, p_updated_at, true);
             -- Serialize authentications of identical bytes.
             PERFORM pg_advisory_xact_lock(
                 hashtext('b26_p2_sovereign_bytes:' || _tenant::text),
@@ -3416,14 +3471,16 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
                     -- PG_CONTEXT contains the atomic's exact frame. A
                     -- substring test would also match wrappers,
                     -- comments, or same-name overloads; the anchored
-                    -- expression below admits only the exact 7-argument
-                    -- sovereign signature. Any other SECURITY DEFINER
+                    -- expression below admits only the exact 12-argument
+                    -- v2 sovereign signature. The retired v1 signature
+                    -- no longer exists at this head, so no stale binary
+                    -- can present it. Any other SECURITY DEFINER
                     -- routine (an administrator-authored deputy, a future
                     -- helper, a confused deputy) carries its own frame
                     -- instead and is refused here with
                     -- b26_p2_auth_root_evidence_transition_refused.
                     GET DIAGNOSTICS _ctx = PG_CONTEXT;
-                    IF _ctx IS NULL OR _ctx !~ 'PL/pgSQL function b26_p2_authenticate_ingress_atomic\(uuid,text,text,text,text,text,text\)' THEN
+                    IF _ctx IS NULL OR _ctx !~ 'PL/pgSQL function b26_p2_authenticate_ingress_atomic_v2\(uuid,text,text,text,text,text,text,text,timestamp with time zone,boolean,timestamp with time zone,timestamp with time zone\)' THEN
                         RAISE EXCEPTION 'b26_p2_auth_root_evidence_transition_refused'
                             USING ERRCODE = '42501';
                     END IF;
@@ -4163,6 +4220,75 @@ CREATE FUNCTION public.b26_p2_enforce_ledger_immutability() RETURNS trigger
 
 
 --
+-- Name: b26_p2_enforce_lifecycle_admission(text, text, text, timestamp with time zone, boolean, timestamp with time zone, timestamp with time zone, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_family text, p_financial_status text, p_cancelled_at timestamp with time zone, p_refunds_present boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone, p_require_creation_proof boolean) RETURNS void
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+BEGIN
+    -- XXI (H-XXI-03): lifecycle admission is enforced at the minting
+    -- seam, not just in Python derivation. Terminal lifecycle markers
+    -- are never creation-family evidence, for any provider: a
+    -- cancelled or refunded body cannot found current authority even
+    -- when every other check passes (defense in depth behind the
+    -- derivation layer, which refuses these shapes first).
+    IF p_cancelled_at IS NOT NULL THEN
+        RAISE EXCEPTION 'b26_p2_lifecycle_cancelled_not_creation'
+            USING ERRCODE = '42501';
+    END IF;
+    IF COALESCE(p_refunds_present, false) THEN
+        RAISE EXCEPTION 'b26_p2_lifecycle_refunded_not_creation'
+            USING ERRCODE = '42501';
+    END IF;
+    -- Positive Shopify creation law: the transported topic asserts
+    -- creation, but only a body that positively reads as a creation
+    -- earns it. At mint time (p_require_creation_proof) the moments
+    -- and status must be fully present; at re-attestation only
+    -- positive contradictions refuse (the original mint already
+    -- established the creation; unknown fields cannot).
+    IF lower(public.b26_p2_ascii_strip(COALESCE(p_provider, ''))) = 'shopify'
+       AND lower(public.b26_p2_ascii_strip(COALESCE(p_family, '')))
+           = 'orders.create' THEN
+        IF p_require_creation_proof THEN
+            IF p_financial_status IS NULL
+               OR lower(public.b26_p2_ascii_strip(p_financial_status))
+                  NOT IN ('pending', 'authorized', 'paid',
+                          'partially_paid') THEN
+                RAISE EXCEPTION 'b26_p2_lifecycle_status_not_creation'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF p_created_at IS NULL OR p_updated_at IS NULL THEN
+                RAISE EXCEPTION 'b26_p2_lifecycle_moment_missing'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF abs(extract(epoch FROM (p_updated_at - p_created_at))) > 300 THEN
+                RAISE EXCEPTION 'b26_p2_lifecycle_not_creation_moment'
+                    USING ERRCODE = '42501';
+            END IF;
+        ELSE
+            IF p_financial_status IS NOT NULL
+               AND lower(public.b26_p2_ascii_strip(p_financial_status))
+                   NOT IN ('pending', 'authorized', 'paid',
+                           'partially_paid', 'voided', 'refunded',
+                           'partially_refunded') THEN
+                RAISE EXCEPTION 'b26_p2_lifecycle_status_not_creation'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF p_created_at IS NOT NULL AND p_updated_at IS NOT NULL
+               AND abs(extract(epoch FROM (p_updated_at - p_created_at)))
+                   > 300 THEN
+                RAISE EXCEPTION 'b26_p2_lifecycle_not_creation_moment'
+                    USING ERRCODE = '42501';
+            END IF;
+        END IF;
+    END IF;
+    RETURN;
+END $$;
+
+
+--
 -- Name: b26_p2_enforce_outbox_issuance(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4836,7 +4962,7 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             -- (downgrade ends current readability fail-closed).
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
-                 WHERE f.id = 1 AND f.floor_revision = '202609300003';
+                 WHERE f.id = 1 AND f.floor_revision = '202609300004';
                 IF NOT FOUND THEN
                     RETURN FALSE;
                 END IF;
@@ -5136,6 +5262,54 @@ CREATE FUNCTION public.b26_p2_normalize_provider(p_raw text) RETURNS text
 
 
 --
+-- Name: b26_p2_observe_history_integrity(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_observe_history_integrity() RETURNS TABLE(observation_id bigint, observed_at timestamp with time zone, ledger_count bigint, ledger_tip text, violations text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _viol text := '';
+            _v text;
+            _n bigint;
+            _tip text;
+            _id bigint;
+            _ts timestamptz;
+        BEGIN
+            FOR _v IN SELECT violation
+                        FROM public.b26_p2_verify_history_protection()
+            LOOP
+                _viol := _viol || _v || ';';
+            END LOOP;
+            FOR _v IN SELECT violation
+                        FROM public.b26_p2_verify_history_continuity()
+            LOOP
+                _viol := _viol || _v || ';';
+            END LOOP;
+            SELECT count(*),
+                   (SELECT l.entry_hash
+                      FROM public.b26_p2_verdict_supersession_ledger AS l
+                     ORDER BY l.seq DESC LIMIT 1)
+              INTO _n, _tip
+              FROM public.b26_p2_verdict_supersession_ledger;
+            INSERT INTO public.b26_p2_history_integrity_observations
+                (ledger_count, ledger_tip, observer_violations)
+            VALUES (_n, _tip, _viol)
+            RETURNING id,
+                      public.b26_p2_history_integrity_observations.observed_at
+               INTO _id, _ts;
+            observation_id := _id;
+            observed_at := _ts;
+            ledger_count := _n;
+            ledger_tip := _tip;
+            violations := _viol;
+            RETURN NEXT;
+            RETURN;
+        END $$;
+
+
+--
 -- Name: b26_p2_operational_disposition(text, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5317,6 +5491,26 @@ CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change() RET
                 'app.current_tenant_id', COALESCE(_prev_guc, ''), true
             );
             RETURN NEW;
+        END $$;
+
+
+--
+-- Name: b26_p2_read_history_continuity(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_read_history_continuity() RETURNS TABLE(n bigint, tip text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            SELECT count(*),
+                   (SELECT l.entry_hash
+                      FROM public.b26_p2_verdict_supersession_ledger AS l
+                     ORDER BY l.seq DESC LIMIT 1)
+              INTO n, tip
+              FROM public.b26_p2_verdict_supersession_ledger;
+            RETURN NEXT;
+            RETURN;
         END $$;
 
 
@@ -6343,6 +6537,34 @@ CREATE FUNCTION public.b26_p2_table_owner(p_table regclass) RETURNS name
 
 
 --
+-- Name: b26_p2_verify_history_continuity(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violation text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
+                HAVING count(*) > 0
+                   AND max(l.seq) - min(l.seq) + 1 <> count(*)
+            ) THEN
+                violation := 'supersession_sequence_gap';
+                RETURN NEXT;
+            END IF;
+            IF EXISTS (
+                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
+                 WHERE l.entry_hash IS NULL
+            ) THEN
+                violation := 'supersession_chain_unchained_row';
+                RETURN NEXT;
+            END IF;
+            RETURN;
+        END $$;
+
+
+--
 -- Name: b26_p2_verify_history_protection(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6645,7 +6867,12 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             END IF;
             GRANT USAGE ON SCHEMA public TO app_ingress;
             GRANT SELECT, INSERT ON TABLE public.webhook_ingress_identities TO app_ingress;
-            REVOKE UPDATE ON TABLE public.webhook_ingress_identities FROM app_ingress;
+            -- XXI: no table-level UPDATE (XXI-1 least privilege).
+            -- Operational columns are re-granted from the live
+            -- catalog with the authority columns excluded, exactly
+            -- reproducing the migration posture idempotently: a
+            -- table-level UPDATE here would re-open the authority
+            -- columns the XX composition gate censuses.
             FOR _col IN
                 SELECT column_name
                   FROM information_schema.columns
@@ -6658,8 +6885,7 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             LOOP
                 EXECUTE format(
                     'GRANT UPDATE (%I) ON TABLE'
-                    ' public.webhook_ingress_identities'
-                    ' TO app_ingress',
+                    ' public.webhook_ingress_identities TO app_ingress',
                     _col);
             END LOOP;
             GRANT SELECT ON TABLE public.tenants TO app_ingress;
@@ -6670,17 +6896,16 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) TO app_ingress;
-            GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
-            GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
-            GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
-            -- Dispatch (as app_user) reads the witness for the terminal
-            -- law; SELECT confers zero authorship.
-            GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
-            REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
-            REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
+            GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) TO app_ingress;
+            -- XXI: the XX-era body revoked the consequence recorder
+            -- from app_ingress here; XIII (root-of-trust closure)
+            -- deliberately re-granted it (record path needs ingress
+            -- authorship, canonical_authority ┬ºconsequence), so the
+            -- revoke is dropped: re-asserting it would clobber live
+            -- posture and break every ingress record path.
+            REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) FROM app_user;
-            REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM app_user;
             RETURN 'xii_topology_provisioned';
         END $$;
 
@@ -6710,7 +6935,7 @@ CREATE FUNCTION public.b26_p2_xii_topology_check() RETURNS text
             END IF;
             IF has_function_privilege(
                 'app_user',
-                'public.b26_p2_attest_provenance_evidence(uuid, text, text)',
+                'public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz)',
                 'EXECUTE'
             ) THEN
                 RAISE EXCEPTION 'b26_p2_xii_ingress_topology_dead'
@@ -6878,7 +7103,7 @@ CREATE FUNCTION public.b26_p2_xiii_topology_check() RETURNS text
             END IF;
             IF NOT has_function_privilege(
                 'app_ingress',
-                'public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text)',
+                'public.b26_p2_authenticate_ingress_atomic_v2(uuid, text, text, text, text, text, text, text, timestamptz, boolean, timestamptz, timestamptz)',
                 'EXECUTE'
             ) THEN
                 RAISE EXCEPTION 'b26_p2_xiii_ingress_topology_dead'
@@ -6894,7 +7119,7 @@ CREATE FUNCTION public.b26_p2_xiii_topology_check() RETURNS text
             END IF;
             IF has_function_privilege(
                 'app_user',
-                'public.b26_p2_attest_provenance_evidence(uuid, text, text)',
+                'public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz)',
                 'EXECUTE'
             ) THEN
                 RAISE EXCEPTION 'b26_p2_xiii_ingress_topology_dead'
@@ -6986,7 +7211,7 @@ CREATE FUNCTION public.b26_p2_xiv_topology_check() RETURNS text
             END IF;
             IF NOT has_function_privilege(
                 'app_ingress',
-                'public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text)',
+                'public.b26_p2_authenticate_ingress_atomic_v2(uuid, text, text, text, text, text, text, text, timestamptz, boolean, timestamptz, timestamptz)',
                 'EXECUTE'
             ) THEN
                 RAISE EXCEPTION 'b26_p2_xiv_ingress_topology_dead'
@@ -7002,7 +7227,7 @@ CREATE FUNCTION public.b26_p2_xiv_topology_check() RETURNS text
             END IF;
             IF has_function_privilege(
                 'app_user',
-                'public.b26_p2_attest_provenance_evidence(uuid, text, text)',
+                'public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz)',
                 'EXECUTE'
             ) THEN
                 RAISE EXCEPTION 'b26_p2_xiv_ingress_topology_dead'
@@ -8369,7 +8594,7 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1; -- ±1 cent rounding tolerance
+            tolerance_cents INTEGER := 1; -- ┬▒1 cent rounding tolerance
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
@@ -10777,6 +11002,34 @@ ALTER TABLE ONLY public.b26_p2_execution_quarantine FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: b26_p2_history_integrity_observations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_history_integrity_observations (
+    id bigint NOT NULL,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    ledger_count bigint NOT NULL,
+    ledger_tip text,
+    observer_violations text DEFAULT ''::text NOT NULL,
+    author name DEFAULT SESSION_USER NOT NULL
+);
+
+
+--
+-- Name: b26_p2_history_integrity_observations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.b26_p2_history_integrity_observations ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.b26_p2_history_integrity_observations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: b26_p2_ingress_auth_witness; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -10945,8 +11198,28 @@ CREATE TABLE public.b26_p2_verdict_supersession_ledger (
     semantic_regime text DEFAULT 'xvii-sovereign-v1'::text NOT NULL,
     recorded_at timestamp with time zone DEFAULT now() NOT NULL,
     prev_entry_hash text,
-    entry_hash text
+    entry_hash text,
+    seq bigint NOT NULL
 );
+
+
+--
+-- Name: b26_p2_verdict_supersession_ledger_seq_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.b26_p2_verdict_supersession_ledger_seq_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: b26_p2_verdict_supersession_ledger_seq_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.b26_p2_verdict_supersession_ledger_seq_seq OWNED BY public.b26_p2_verdict_supersession_ledger.seq;
 
 
 --
@@ -15706,6 +15979,13 @@ ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_mod
 
 
 --
+-- Name: b26_p2_verdict_supersession_ledger seq; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_verdict_supersession_ledger ALTER COLUMN seq SET DEFAULT nextval('public.b26_p2_verdict_supersession_ledger_seq_seq'::regclass);
+
+
+--
 -- Name: celery_taskmeta id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -15978,6 +16258,14 @@ ALTER TABLE ONLY public.b26_p2_execution_outbox
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine
     ADD CONSTRAINT b26_p2_execution_quarantine_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: b26_p2_history_integrity_observations b26_p2_history_integrity_observations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_history_integrity_observations
+    ADD CONSTRAINT b26_p2_history_integrity_observations_pkey PRIMARY KEY (id);
 
 
 --
@@ -25901,5 +26189,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lPDcrb09x9YeGKCEKJooozp9ZTwu4V59rgvylqg5zNsTDakZ3c8bT00XiybwNMH
+\unrestrict Z5GpcuBWx7RdTIEPedswJfbH7McG0INpmrdLjYjCJpUDAEE7JwgcPwuqENclKdM
 
