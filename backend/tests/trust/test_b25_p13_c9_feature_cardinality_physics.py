@@ -289,19 +289,36 @@ def _link_c9_current_providers(conn, tenant_id) -> None:
             ),
             {"source": _xix_source},
         )
+        # XXI: the v2 seam requires creation attestation for shopify
+        # (positive law). These synthetic settlements are lawful
+        # creations by fixture intent (same scaffolding class as the
+        # explicit family claims above): attest creation status with
+        # coincident instants. Other providers carry no lifecycle
+        # surface.
+        _lc_status: object = None
+        _lc_moment: object = None
+        if _xix_provider == "shopify":
+            _lc_status = "paid"
+            _lc_moment = datetime.now(timezone.utc)
         conn.execute(
             text(
                 "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
                 " wi.id, wi.provider, wi.provider_native_event_reference,"
                 " 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',"
                 " 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',"
-                " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE, NULL, NULL)"
+                " 'hmac-sha256-timestamped-hex', 'v1',"
+                " :lc_status, NULL, FALSE, :lc_moment, :lc_moment)"
                 " FROM public.webhook_ingress_identities AS wi"
                 " WHERE wi.tenant_id = :t"
                 " AND wi.idempotency_key LIKE 'c9-link-%'"
                 " AND wi.provider = :provider"
             ),
-            {"t": str(tenant_id), "provider": _xix_provider},
+            {
+                "t": str(tenant_id),
+                "provider": _xix_provider,
+                "lc_status": _lc_status,
+                "lc_moment": _lc_moment,
+            },
         )
     conn.execute(
         text(

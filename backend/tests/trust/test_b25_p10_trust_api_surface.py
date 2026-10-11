@@ -48,6 +48,24 @@ P10_RUNTIME_PATH = ROOT / "backend/app/api/trust_api.py"
 P9_AUTH_PATH = ROOT / "backend/app/trust/machine_auth.py"
 
 
+@pytest.fixture(autouse=True)
+def _clean_history_integrity(monkeypatch) -> None:
+    """Stub the XXI history-continuity gate as clean.
+
+    These route-level tests use dummy sessions and exercise wire
+    behaviour, not history continuity (dedicated P5-builder
+    fake-session tests plus the XXI live composition gate prove every
+    refusal direction).
+    """
+
+    async def _clean(_session: object) -> tuple[bool, str]:
+        return True, ""
+
+    monkeypatch.setattr(
+        "app.trust.builder.read_history_integrity_status", _clean
+    )
+
+
 def _stub_audit_record():
     """Minimal P7 identity for route-level unit tests.
 

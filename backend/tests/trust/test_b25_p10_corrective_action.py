@@ -60,6 +60,24 @@ def _stub_audit_record():
     return SimpleNamespace(audit_ref="urn:skeldir:audit:route-unit-stub")
 
 
+@pytest.fixture(autouse=True)
+def _clean_history_integrity(monkeypatch) -> None:
+    """Stub the XXI history-continuity gate as clean.
+
+    These route-level tests use dummy sessions and exercise wire
+    behaviour, not history continuity (dedicated P5-builder
+    fake-session tests plus the XXI live composition gate prove every
+    refusal direction).
+    """
+
+    async def _clean(_session: object) -> tuple[bool, str]:
+        return True, ""
+
+    monkeypatch.setattr(
+        "app.trust.builder.read_history_integrity_status", _clean
+    )
+
+
 def _stub_issuance_finalisation(monkeypatch, module) -> None:
     async def _noop(**kwargs):
         return None
