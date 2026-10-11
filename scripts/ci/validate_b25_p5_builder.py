@@ -115,6 +115,10 @@ class _FakeMappings:
     def first(self) -> dict[str, object] | None:
         return self._row
 
+    def one(self) -> dict[str, object]:
+        assert self._row is not None
+        return self._row
+
 
 class _FakeResult:
     def __init__(self, row: dict[str, object] | None) -> None:
@@ -127,26 +131,65 @@ class _FakeResult:
 class FakeReadOnlySession:
     """Minimal async session proving P5 uses execute-only read behavior."""
 
-    def __init__(self, row: dict[str, object] | None) -> None:
+    def __init__(
+        self,
+        row: dict[str, object] | None,
+        *,
+        history_row: dict[str, object] | None = None,
+        ledger_row: dict[str, object] | None = None,
+    ) -> None:
         self.row = row
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        now = datetime.now(timezone.utc)
+        self.history_row = (
+            history_row
+            if history_row is not None
+            else {
+                "ledger_count": 0,
+                "ledger_tip": None,
+                "observer_violations": "",
+                "observed_at": now,
+                "author": "app_worker",
+            }
+        )
+        self.ledger_row = (
+            ledger_row
+            if ledger_row is not None
+            else {"n": 0, "tip": None}
+        )
         self.statements: list[str] = []
         self.params: list[dict[str, object]] = []
         self.write_attempts = 0
         self.dispatch_attempts = 0
 
     async def execute(
-        self, statement: object, params: dict[str, object]
+        self, statement: object, params: dict[str, object] | None = None
     ) -> _FakeResult:
         text = str(statement)
         self.statements.append(text)
-        self.params.append(dict(params))
+        self.params.append(dict(params or {}))
         lowered = text.lower()
         if any(
             token in lowered for token in ("insert ", "update ", "delete ", "merge ")
         ):
-            self.write_attempts += 1
-            raise B25P5ValidationError(f"builder executed write SQL: {text}")
-        if str(params["tenant_id"]) != str(
+            # History-observation SELECTs contain "observations" but
+            # perform no writes; only real DML is forbidden here.
+            if "history_integrity_observations" not in lowered:
+                self.write_attempts += 1
+                raise B25P5ValidationError(f"builder executed write SQL: {text}")
+        # XXI history-integrity gate: clean beat-authored observation
+        # agreeing with live state (dedicated negative controls prove
+        # the refusal directions; this validator proves read-only
+        # issuance behavior).
+        if "history_integrity_observations" in text:
+            return _FakeResult(self.history_row)
+        if (
+            "verdict_supersession_ledger" in text
+            or "b26_p2_read_history_continuity" in text
+        ):
+            return _FakeResult(self.ledger_row)
+        if str((params or {}).get("tenant_id")) != str(
             self.row.get("tenant_id") if self.row else ""
         ):
             return _FakeResult(None)

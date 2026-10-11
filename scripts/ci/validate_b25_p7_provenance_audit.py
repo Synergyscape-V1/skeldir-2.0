@@ -222,6 +222,10 @@ class _FakeMappings:
     def first(self) -> dict[str, object] | None:
         return self._row
 
+    def one(self) -> dict[str, object]:
+        assert self._row is not None
+        return self._row
+
 
 class _FakeResult:
     def __init__(self, row: dict[str, object] | None = None) -> None:
@@ -234,8 +238,33 @@ class _FakeResult:
 class FakeTrustAuditSession:
     """Async session fixture that models one-row audit idempotency semantics."""
 
-    def __init__(self, row: dict[str, object] | None) -> None:
+    def __init__(
+        self,
+        row: dict[str, object] | None,
+        *,
+        history_row: dict[str, object] | None = None,
+        ledger_row: dict[str, object] | None = None,
+    ) -> None:
         self.row = row
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        now = datetime.now(timezone.utc)
+        self.history_row = (
+            history_row
+            if history_row is not None
+            else {
+                "ledger_count": 0,
+                "ledger_tip": None,
+                "observer_violations": "",
+                "observed_at": now,
+                "author": "app_worker",
+            }
+        )
+        self.ledger_row = (
+            ledger_row
+            if ledger_row is not None
+            else {"n": 0, "tip": None}
+        )
         self.statements: list[str] = []
         self.params: list[dict[str, object]] = []
         self.access_rows: dict[tuple[str, str], dict[str, object]] = {}
@@ -244,13 +273,23 @@ class FakeTrustAuditSession:
         self.scope_denial_rows: set[tuple[str, str]] = set()
 
     async def execute(
-        self, statement: object, params: dict[str, object]
+        self, statement: object, params: dict[str, object] | None = None
     ) -> _FakeResult:
         sql = str(statement)
         self.statements.append(sql)
-        self.params.append(dict(params))
+        self.params.append(dict(params or {}))
+        # XXI history-integrity gate: clean beat-authored observation
+        # agreeing with live state (dedicated negative controls prove
+        # the refusal directions; this validator proves audit behavior).
+        if "history_integrity_observations" in sql:
+            return _FakeResult(self.history_row)
+        if (
+            "verdict_supersession_ledger" in sql
+            or "b26_p2_read_history_continuity" in sql
+        ):
+            return _FakeResult(self.ledger_row)
         if "FROM public.b23_match_verdicts" in sql:
-            if str(params["tenant_id"]) != str(
+            if str((params or {}).get("tenant_id")) != str(
                 self.row.get("tenant_id") if self.row else ""
             ):
                 return _FakeResult(None)
