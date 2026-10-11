@@ -730,11 +730,16 @@ def test_b057_p5_full_chain_webhook_to_matview():
 
         event_ts = datetime.now(timezone.utc).replace(microsecond=0)
         window_start, window_end = _compute_window(event_ts)
+        # XXI v3 positive creation law: honest creation bodies carry
+        # a creation status and a coincident update instant.
+        created_iso = event_ts.isoformat().replace("+00:00", "Z")
         payload = {
             "id": 424242,
             "total_price": "10.50",
             "currency": "USD",
-            "created_at": event_ts.isoformat().replace("+00:00", "Z"),
+            "created_at": created_iso,
+            "financial_status": "paid",
+            "updated_at": created_iso,
         }
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         signature = _sign_shopify(body, tenant_a.shopify_secret)
