@@ -1,7 +1,7 @@
 {
   "producer": "b26_p2_capability_surface",
   "migration_head": "202609300004",
-  "authority_universe_hash": "33a66cdaa62d23861a66911c735068a15f3a03202e98c3a1ff46676c3f73f629",
+  "authority_universe_hash": "af506eb4dfbb6d5590b84feca40bbfe79137682cc739484f67c5fa5cc3cd23fc",
   "reviewed_at_git_sha": "PENDING_XXI_MERGE_HEAD",
   "meaning_surface_counts": {
     "routine_meaning": 168,
@@ -10,5 +10,5 @@
     "rls_meaning": 17,
     "ownership": 129
   },
-  "review_note": "B2.6-P2 Corrective XXI sovereign release continuity reviewed: release-bound minting ABI (v1 atomic/attester dropped; v2 carries DB-enforced lifecycle attestation; auth-root refuses incompatible schema), positive Shopify creation law (derivation + family choke + DB seam; non-list refunds refused), monotonic disqualification as persisted demotion data surviving supported rollback, seq-anchored observable history (continuity observer + beat observations + Trust degradation on stale/violated/divergent), single currentness retained + rollback reader unity, XII/XIII/XIV topology adjudicators track the v2 ABI in both directions (upgrade + downgrade restore), effect-level proof via real Trust adapter and real P3 logic; live hash from PG15 fresh lane xxi_lane_f (prepare+alembic head 202609300004). reviewed_at_git_sha set to the XXI merge SHA on landing."
+  "review_note": "B2.6-P2 Corrective XXI sovereign release continuity reviewed: release-bound minting ABI (v1 atomic/attester dropped; v2 carries DB-enforced lifecycle attestation; auth-root refuses incompatible schema), positive Shopify creation law (derivation + family choke + DB seam; non-list refunds refused), monotonic disqualification as persisted demotion data surviving supported rollback, seq-anchored observable history (continuity observer + beat observations + Trust degradation on stale/violated/divergent), single currentness retained + rollback reader unity, XII/XIII/XIV topology adjudicators track the v2 ABI in both directions (upgrade + downgrade restore), effect-level proof via real Trust adapter and real P3 logic; live hash from PG15 fresh lanes xxi_lane_f + xxi_lane_g converging (prepare+alembic head 202609300004; repeat-stable across processes; zero open-world unknowns under XXI coverage). reviewed_at_git_sha set to the XXI merge SHA on landing."
 }
