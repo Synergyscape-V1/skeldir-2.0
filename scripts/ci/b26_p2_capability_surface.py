@@ -717,7 +717,11 @@ KNOWN_P2_DEFINERS = frozenset(
         # family, the strip helpers, and the classifier are SECURITY
         # INVOKER pure computation: EXECUTE surface census + X coverage
         # registry.)
-        "b26_p2_attest_provenance_evidence",
+        #
+        # Corrective XXI retires the v1 attester/particle names below
+        # (release-bound ABI: the signatures no longer exist at heads
+        # >= 202609300004, so no live lane can exhibit them and no
+        # allowlist entry may demand them).
         "b26_p2_canonical_scope_identity_for_window",
         "b26_p2_mark_conducted",
         "b26_p2_operational_disposition",
@@ -758,7 +762,7 @@ KNOWN_P2_DEFINERS = frozenset(
         # P2-covered (b26_p2_xiii_coverage) and falsified by the XIII
         # battery (AUTH/CAP/SEM/TEMP cells) plus the XIII live
         # validators. (XIII provision/oracle grant no runtime EXECUTE.)
-        "b26_p2_authenticate_ingress_atomic",
+        # XXI retires the v1 atomic name (see above).
         "b26_p2_xiii_topology_check",
         # Corrective XIV: the atomic transition additionally binds the
         # immutable auth-root evidence identity (same grant surface, new
