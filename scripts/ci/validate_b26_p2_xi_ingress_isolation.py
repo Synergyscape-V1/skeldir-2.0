@@ -315,7 +315,9 @@ def _live_checks(
         checks["ingress_routine_grants"] = routines
         allowed_routines = {
             "b26_p2_record_ingress_auth_witness",
-            "b26_p2_attest_provenance_evidence",
+            # B2.6-P2 Corrective XXI: the release-bound v2 minting ABI
+            # replaces v1 (retired); same ingress-only rationale.
+            "b26_p2_attest_provenance_evidence_v2",
             "b26_p2_state_eligible_for_p3",
             "b26_p2_canonical_scope_identity_for_window",
             "b26_p2_classify_candidate",
@@ -327,7 +329,7 @@ def _live_checks(
             # design (app_user holds neither). Topology check XIII
             # supersedes XII with the authorship closure included.
             "b26_p2_record_provider_auth_consequence",
-            "b26_p2_authenticate_ingress_atomic",
+            "b26_p2_authenticate_ingress_atomic_v2",
             "b26_p2_xiii_topology_check",
             # B2.6-P2 Corrective XIV: topology check XIV supersedes
             # XIII with the root-evidence substrate (read-only checks
