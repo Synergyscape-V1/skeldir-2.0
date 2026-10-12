@@ -138,7 +138,12 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "backend/app/revenue_verification/match_engine_kernel.py",
     ):
         body = (REPO_ROOT / rel).read_text(encoding="utf-8")
-        if "b26_p2_ingress_has_current_authority(" not in body:
+        # The 300005 follow-up routes Bayesian readers through the
+        # verdict-keyed wrapper (same canonical predicate, proven
+        # row-for-row); either spelling satisfies the double-gating
+        # requirement, neither may be absent.
+        if ("b26_p2_ingress_has_current_authority(" not in body
+                and "b26_p2_verdict_has_current_authority(" not in body):
             violations.append(f"xx_comp_reader_missing_predicate:{rel}")
     if not [v for v in violations if "xx_comp_reader_missing_predicate" in v]:
         checks["bayesian_kernel_read_predicate"] = True
@@ -170,12 +175,12 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         checks["relay_hint_hardened"] = True
 
     # Construction contract equals the migration head (advanced by
-    # XXI to 202609300004; the XX closure properties below hold at
-    # the current head).
+    # the XXI follow-up to 202609300005; the XX closure properties
+    # below hold at the current head).
     contract = (
         REPO_ROOT / "backend" / "app" / "core" / "construction_authority.py"
     ).read_text(encoding="utf-8")
-    if 'REQUIRED_SCHEMA_REVISION = "202609300004"' not in contract:
+    if 'REQUIRED_SCHEMA_REVISION = "202609300005"' not in contract:
         violations.append("xx_comp_construction_contract_not_advanced")
     else:
         checks["construction_contract_at_xx"] = True
@@ -618,7 +623,8 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
         cur.execute(
             "SELECT floor_revision FROM public.b26_p2_operational_floor WHERE id=1"
         )
-        # Floor advances with the head (XXI: 202609300004).
+        # Floor stays at 202609300004 under the additive 300005
+        # follow-up (verdict reader only; no semantic-law advance).
         if cur.fetchone()[0] != "202609300004":
             violations.append("xx_comp_floor_not_advanced")
         else:

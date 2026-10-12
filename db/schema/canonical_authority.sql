@@ -694,3 +694,16 @@ DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
 DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN EXECUTE 'GRANT SELECT ON TABLE public.b26_p2_history_integrity_observations TO app_user'; END IF; END $$;
 DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN EXECUTE 'GRANT EXECUTE ON FUNCTION public.b26_p2_read_history_continuity() TO app_worker'; END IF; END $$;
 DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN EXECUTE 'GRANT EXECUTE ON FUNCTION public.b26_p2_read_history_continuity() TO app_user'; END IF; END $$;
+-- === 202609300005 follow-up: verdict-keyed canonical-authority reader ===
+-- Bayesian financial readers must consult the canonical predicate (XX
+-- single-currentness law) but the B2.4 isolation law forbids the Bayesian
+-- package from naming identity-bearing references. The P2-owned wrapper
+-- resolves the verdict's backing ingress inside P2-owned SQL. It is
+-- STABLE with invoker rights (callers already hold SELECT on
+-- b23_match_verdicts); the identity table is read only by the
+-- pre-existing DEFINER predicate. EXECUTE solely for the two Bayesian-read
+-- principals; every other principal (including the remaining runtime
+-- roles) is fenced by the REVOKE below.
+REVOKE ALL ON FUNCTION public.b26_p2_verdict_has_current_authority(uuid) FROM PUBLIC;
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN EXECUTE 'GRANT EXECUTE ON FUNCTION public.b26_p2_verdict_has_current_authority(uuid) TO app_user'; END IF; END $$;
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN EXECUTE 'GRANT EXECUTE ON FUNCTION public.b26_p2_verdict_has_current_authority(uuid) TO app_worker'; END IF; END $$;

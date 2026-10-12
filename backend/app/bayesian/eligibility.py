@@ -165,8 +165,8 @@ _PREFLIGHT_SQL = (
               -- state plus the canonical predicate over the backing
               -- ingress, so law-level revocation (registry/floor/
               -- family-source) is observed here too.
-              AND public.b26_p2_ingress_has_current_authority(
-                      v.webhook_ingress_identity_id
+              AND public.b26_p2_verdict_has_current_authority(
+                      v.id
                   )
         ),
         excluded_match_verdicts AS (
@@ -199,9 +199,9 @@ _PREFLIGHT_SQL = (
                        AND v.id = re.match_verdict_id
                        AND v.b26_p2_source_authority_state = 'current'
                        -- XX (H-XX-A): single currentness law.
-                       AND public.b26_p2_ingress_has_current_authority(
-                               v.webhook_ingress_identity_id
-                           )
+                        AND public.b26_p2_verdict_has_current_authority(
+                                v.id
+                            )
               )
         ),
         excluded_revenue_events AS (

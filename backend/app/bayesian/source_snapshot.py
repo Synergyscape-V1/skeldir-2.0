@@ -314,8 +314,8 @@ _SOURCE_QUERIES = {
               AND e.event_type IN :conversion_event_types
               AND v.status IN :match_verdict_statuses
               AND v.b26_p2_source_authority_state = 'current'
-              AND public.b26_p2_ingress_has_current_authority(
-                      v.webhook_ingress_identity_id
+              AND public.b26_p2_verdict_has_current_authority(
+                      v.id
                   )
             ORDER BY v.tenant_id ASC, e.occurred_at ASC NULLS LAST, v.id ASC
             """
@@ -356,9 +356,9 @@ _SOURCE_QUERIES = {
                      WHERE v.tenant_id = b23_revenue_events.tenant_id
                        AND v.id = b23_revenue_events.match_verdict_id
                        AND v.b26_p2_source_authority_state = 'current'
-                       AND public.b26_p2_ingress_has_current_authority(
-                               v.webhook_ingress_identity_id
-                           )
+                        AND public.b26_p2_verdict_has_current_authority(
+                                v.id
+                            )
               )
             ORDER BY tenant_id ASC, event_occurred_at ASC NULLS LAST, id ASC
             """
