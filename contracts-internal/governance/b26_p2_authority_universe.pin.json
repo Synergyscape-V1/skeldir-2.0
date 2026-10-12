@@ -2,7 +2,7 @@
   "producer": "b26_p2_capability_surface",
   "migration_head": "202609300004",
   "authority_universe_hash": "ac3258e316c429ea304b9c23a1a3eacee2f2d8f1ad85af8512e3a7bc22a26d51",
-  "reviewed_at_git_sha": "PENDING_XXI_MERGE_HEAD",
+  "reviewed_at_git_sha": "609e40842b3101ce270e04dbd009825d10a66a0d",
   "meaning_surface_counts": {
     "routine_meaning": 168,
     "trigger_meaning": 27,
