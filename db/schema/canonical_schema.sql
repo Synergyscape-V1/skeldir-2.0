@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Z5GpcuBWx7RdTIEPedswJfbH7McG0INpmrdLjYjCJpUDAEE7JwgcPwuqENclKdM
+\restrict xnDU8Tbv6Y9OuZV7Rw8wPm5gbKvSwd0SuTFG1OkZtjnj5b5oym8gstn60YkoRQX
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -6900,7 +6900,7 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             -- XXI: the XX-era body revoked the consequence recorder
             -- from app_ingress here; XIII (root-of-trust closure)
             -- deliberately re-granted it (record path needs ingress
-            -- authorship, canonical_authority ┬ºconsequence), so the
+            -- authorship, canonical_authority (consequence)), so the
             -- revoke is dropped: re-asserting it would clobber live
             -- posture and break every ingress record path.
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM app_user;
@@ -26189,5 +26189,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Z5GpcuBWx7RdTIEPedswJfbH7McG0INpmrdLjYjCJpUDAEE7JwgcPwuqENclKdM
+\unrestrict xnDU8Tbv6Y9OuZV7Rw8wPm5gbKvSwd0SuTFG1OkZtjnj5b5oym8gstn60YkoRQX
 

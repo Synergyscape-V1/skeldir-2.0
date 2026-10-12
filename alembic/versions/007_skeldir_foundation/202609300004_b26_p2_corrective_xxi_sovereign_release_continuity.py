@@ -1683,7 +1683,7 @@ CREATE OR REPLACE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability
             -- XXI: the XX-era body revoked the consequence recorder
             -- from app_ingress here; XIII (root-of-trust closure)
             -- deliberately re-granted it (record path needs ingress
-            -- authorship, canonical_authority §consequence), so the
+            -- authorship, canonical_authority (consequence)), so the
             -- revoke is dropped: re-asserting it would clobber live
             -- posture and break every ingress record path.
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM app_user;
