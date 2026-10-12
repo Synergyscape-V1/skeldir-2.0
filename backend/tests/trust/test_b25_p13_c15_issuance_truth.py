@@ -334,7 +334,35 @@ async def _seed_tenant(engine, label: str):
     # The seeding transaction committed on block exit; link the verdict
     # to P2-authenticated ingress so it holds current authority.
     await _link_p13_verdicts([link_info])
+    # XXI history prerequisite: match_verdict issuance requires a fresh
+    # worker-authored clean observation agreeing with live ledger state
+    # (production obtains this from the scheduled beat task). Observe
+    # after all seeding so the recorded count/tip is current.
+    await _observe_history_as_worker()
     return tenant_id, token, subject_urn
+
+
+async def _observe_history_as_worker() -> None:
+    """Record one worker-authored history observation for lane tests."""
+    import psycopg2  # noqa: PLC0415
+
+    from test_b25_p13_e2e_trust_closure import (  # noqa: PLC0415
+        _worker_database_url,
+    )
+
+    worker_dsn = _worker_database_url().replace(
+        "postgresql+asyncpg://", "postgresql://"
+    )
+    conn = psycopg2.connect(worker_dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM public.b26_p2_observe_history_integrity()"
+            )
+            cur.fetchall()
+    finally:
+        conn.close()
 
 
 def _configure_signing(monkeypatch, *, kid: str = SIGNING_KID, seed: bytes) -> None:
