@@ -4713,7 +4713,11 @@
   owning_phase: B2.6-P1
   protected_invariant: The exact candidate has an independently successful B2.5-P13
     run from the same governance event whose C19, C20, C21, and P14 subordinate jobs
-    all completed successfully.
+    all completed successfully. Exceptionally, a push landing whose merge tree is
+    API-verified byte-identical to its second-parent PR-tip tree may inherit that
+    tip's pull_request-event evidence (recorded as source_via merge-tip-tree-identical),
+    because it is evidence about identical bytes; all other cases still require the
+    same-event, exact-SHA run.
   command: python scripts/ci/attest_b26_p1_inherited_conduction.py --evidence-out
     evidence/b26-p1/inherited/cell.json
   workflow_references:
@@ -4722,7 +4726,8 @@
   local_reproduction_command: python scripts/ci/attest_b26_p1_inherited_conduction.py
     --help
   expected_failure_meaning: The candidate lacks same-event, exact-SHA production-conduction
-    evidence for inherited B2.3-to-B2.5 truth and signing physics.
+    evidence for inherited B2.3-to-B2.5 truth and signing physics, and no tree-identical
+    merge-tip evidence applies.
   first_diagnostic_command: python scripts/ci/attest_b26_p1_inherited_conduction.py
     --help
   depends_on_db: true
