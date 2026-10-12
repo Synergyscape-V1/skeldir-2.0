@@ -192,6 +192,28 @@ BEARER_KEYED_ADMISSION_TABLES = frozenset(
     }
 )
 
+#: Owner-custodied history tables (B2.6-P2 Corrective XX/XXI). The verdict
+#: supersession ledger carries a tenant_id column, so discovery flags it,
+#: but tenant RLS on this table would certify nothing: no runtime principal
+#: holds any privilege on it at all (REVOKE ALL FROM PUBLIC and from every
+#: runtime role; reads go only through owner-context DEFINER functions
+#: exposing aggregate continuity, never row contents). The enforced
+#: invariants instead: zero SELECT/INSERT/UPDATE/DELETE/TRUNCATE for every
+#: application role and for PUBLIC, verified live below on every run. Any
+#: GRANT that makes the ledger directly readable or writable outside the
+#: DEFINER path REDs this rule. Adding tenant RLS purely to satisfy a
+#: coverage count would document a guarantee the architecture deliberately
+#: places elsewhere (beat observations plus the committed anchor detect
+#: owner-grade rewrite; no RLS policy can constrain the table owner).
+#: DDL custody (migration_owner ownership) is verified by the C21
+#: authority universes and the P14 manifest, not by this grant-shape rule,
+#: which governs runtime application roles only.
+OWNER_CUSTODIED_HISTORY_TABLES = frozenset(
+    {
+        "b26_p2_verdict_supersession_ledger",
+    }
+)
+
 #: INSERT on a bearer-keyed admission table belongs only to the producer
 #: principal that issues execution authority alongside durable ingress.
 BEARER_ADMISSION_ISSUER = "app_user"
@@ -257,12 +279,61 @@ def _bearer_admission_grants_ok(conn, table_name: str) -> list[str]:
     return problems
 
 
+def _owner_custody_grants_ok(conn, table_name: str) -> list[str]:
+    """Verify the grant shape that replaces RLS for owner-custodied tables."""
+    problems: list[str] = []
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT rolname FROM pg_roles
+            WHERE rolname LIKE 'app%' OR rolname = 'migration_owner'
+            ORDER BY 1
+            """
+        )
+        roles = [str(r[0]) for r in cur.fetchall()]
+    with conn.cursor() as cur:
+        for role in roles:
+            if role == "migration_owner":
+                # DDL custody (ownership) is verified by the C21 authority
+                # universes and the P14 manifest, not by this grant-shape
+                # rule, which governs runtime application roles only.
+                continue
+            for priv in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+                cur.execute(
+                    "SELECT has_table_privilege(%s, %s, %s)",
+                    (role, f"public.{table_name}", priv),
+                )
+                if bool(cur.fetchone()[0]):
+                    problems.append(
+                        f"{table_name}: runtime role {role} holds {priv}"
+                        " outside the owner-context reader path"
+                    )
+        cur.execute(
+            """
+            SELECT count(*) FROM information_schema.role_table_grants
+            WHERE table_schema = 'public' AND table_name = %s
+              AND grantee = 'PUBLIC' AND privilege_type = 'SELECT'
+            """,
+            (table_name,),
+        )
+        if int(cur.fetchone()[0]) > 0:
+            problems.append(f"{table_name}: PUBLIC holds SELECT")
+    return problems
+
+
 def assert_rls_coverage(discovered: list[dict], conn=None) -> None:
     if not discovered:
         raise ProbeFailure("tenant-scoped discovery returned zero tables")
 
     missing: list[str] = []
     for row in discovered:
+        if row["table_name"] in OWNER_CUSTODIED_HISTORY_TABLES:
+            if conn is None:
+                raise ProbeFailure(
+                    f"{row['table_name']}: owner-custody grant verification needs a connection"
+                )
+            missing.extend(_owner_custody_grants_ok(conn, str(row["table_name"])))
+            continue
         if row["table_name"] in BEARER_KEYED_ADMISSION_TABLES:
             if conn is None:
                 raise ProbeFailure(
