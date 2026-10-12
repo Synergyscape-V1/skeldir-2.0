@@ -57,6 +57,10 @@
     "202609300004": {
       "file": "202609300004_b26_p2_corrective_xxi_sovereign_release_continuity.py",
       "sha256": "0228383b0512972209e6bbf568312a678d0fba43a4564830a6a675dc7ed6fe28"
+    },
+    "202609300005": {
+      "file": "202609300005_b26_p2_bayesian_verdict_authority_reader.py",
+      "sha256": "e0e3f7100e27cd552c27d4877e57f622c1bdee6fe4f95a9fe5459cd48f122e7d"
     }
   }
 }

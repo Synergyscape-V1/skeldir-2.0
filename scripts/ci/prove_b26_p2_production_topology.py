@@ -1380,12 +1380,12 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        # XXI: the head advances to the sovereign-release-continuity
-        # revision; the XX head must remain an ancestor (linear
-        # ancestry, no forks).
-        if "202609300004" not in heads.stdout:
+        # XXI follow-up: the head advances to the verdict-reader
+        # revision; the XXI (300004) and XX heads must remain ancestors
+        # (linear ancestry, no forks).
+        if "202609300005" not in heads.stdout:
             return _fail("migration_head_missing_corrective_xxi")
-        details["migration_head"] = "202609300004"
+        details["migration_head"] = "202609300005"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",

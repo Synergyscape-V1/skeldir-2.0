@@ -6536,6 +6536,21 @@ CREATE FUNCTION public.b26_p2_table_owner(p_table regclass) RETURNS name
         $$;
 
 
+-- Name: b26_p2_verdict_has_current_authority(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_verdict_has_current_authority(p_verdict uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+          SELECT public.b26_p2_ingress_has_current_authority(
+            (SELECT v.webhook_ingress_identity_id
+               FROM public.b23_match_verdicts AS v
+              WHERE v.id = p_verdict)
+          );
+        $$;
+
+
 --
 -- Name: b26_p2_verify_history_continuity(); Type: FUNCTION; Schema: public; Owner: -
 --

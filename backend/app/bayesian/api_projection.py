@@ -68,9 +68,9 @@ def build_b24_confidence_projection_query() -> TextClause:
                      WHERE v.tenant_id = revenue.tenant_id
                        AND v.id = revenue.match_verdict_id
                        AND v.b26_p2_source_authority_state = 'current'
-                       AND public.b26_p2_ingress_has_current_authority(
-                               v.webhook_ingress_identity_id
-                           )
+                        AND public.b26_p2_verdict_has_current_authority(
+                                v.id
+                            )
               )
             GROUP BY revenue.tenant_id, UPPER(TRIM(revenue.currency_code))
         ),

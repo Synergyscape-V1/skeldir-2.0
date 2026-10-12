@@ -93,6 +93,36 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     ):
         if token not in upgrade:
             violations.append(f"xxi_comp_law_missing:{token}")
+    # 300005 follow-up (B2.4 isolation): the verdict-keyed reader must
+    # exist with least-privilege grants and a fail-closed downgrade.
+    # Read from the 300005 file, never from the 300004 text above.
+    try:
+        mig5 = (
+            REPO_ROOT
+            / "alembic"
+            / "versions"
+            / "007_skeldir_foundation"
+            / "202609300005_b26_p2_bayesian_verdict_authority_reader.py"
+        ).read_text(encoding="utf-8")
+    except OSError as exc:
+        violations.append(f"xxi_comp_reader_migration_unreadable:{exc}")
+        mig5 = ""
+    # Adjacent string literals in the migration source mean the full
+    # statements never appear on one line; check the load-bearing
+    # fragments independently (name + fenced-grant + fail-closed drop).
+    for token in (
+        "b26_p2_verdict_has_current_authority(",
+        "REVOKE ALL ON FUNCTION",
+        "GRANT EXECUTE ON FUNCTION",
+        "DROP FUNCTION IF EXISTS",
+        "down_revision = \"202609300004\"",
+    ):
+        if token not in mig5:
+            violations.append(f"xxi_comp_reader_law_missing:{token[:40]}")
+    if "app_worker" not in mig5 or "app_user" not in mig5:
+        violations.append("xxi_comp_reader_grant_principals_missing")
+    if not [v for v in violations if "xxi_comp_reader_" in v]:
+        checks["verdict_reader_law_present"] = True
     # v1 minting signatures must be dropped (ABI retirement). Python
     # string literals wrap across lines, so compare quote-stripped,
     # whitespace-collapsed text.
@@ -226,7 +256,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         checks["beat_task_registered"] = True
     contract = (REPO_ROOT / "backend" / "app" / "core"
                 / "construction_authority.py").read_text(encoding="utf-8")
-    if 'REQUIRED_SCHEMA_REVISION = "202609300004"' not in contract:
+    if 'REQUIRED_SCHEMA_REVISION = "202609300005"' not in contract:
         violations.append("xxi_comp_construction_contract_not_advanced")
     else:
         checks["construction_contract_at_xxi"] = True
@@ -927,8 +957,11 @@ def _live_checks(
             "SELECT id::text, entry_hash FROM"
             " public.b26_p2_verdict_supersession_ledger ORDER BY seq ASC")
         _ledger_before = cur.fetchall()
+        # Explicit supported-boundary target (not -1): with the
+        # additive 300005 follow-up, -1 would stop at 300004 and never
+        # exercise the 300003 boundary this leg exists to prove.
         down = _sp.run(
-            [sys.executable, "-m", "alembic", "downgrade", "-1"],
+            [sys.executable, "-m", "alembic", "downgrade", "202609300003"],
             capture_output=True, text=True, cwd=str(REPO_ROOT), env=env,
         )
         if down.returncode != 0:
@@ -992,7 +1025,7 @@ def _live_checks(
                     f"xxi_comp_reupgrade_failed:{up.stderr[-200:]}")
             else:
                 cur.execute("SELECT version_num FROM alembic_version")
-                if cur.fetchone()[0] != "202609300004":
+                if cur.fetchone()[0] != "202609300005":
                     violations.append("xxi_comp_reupgrade_wrong_revision")
                 else:
                     checks["downgrade_reupgrade_converges"] = True
@@ -1027,6 +1060,32 @@ def _live_checks(
             violations.append("xxi_comp_floor_not_xxi")
         else:
             checks["floor_at_xxi"] = True
+        # 300005 follow-up: the verdict-keyed reader is live with exactly
+        # the two Bayesian-read grants and fails closed for others. The
+        # operational floor intentionally stays at 300004 (additive
+        # helper; no semantic-law advance).
+        cur.execute(
+            "SELECT count(*) FROM pg_proc p JOIN pg_namespace n"
+            " ON n.oid = p.pronamespace"
+            " WHERE n.nspname = 'public'"
+            " AND p.proname = 'b26_p2_verdict_has_current_authority'"
+        )
+        if cur.fetchone()[0] != 1:
+            violations.append("xxi_comp_reader_absent_live")
+        else:
+            cur.execute(
+                "SELECT grantee FROM information_schema.role_routine_grants"
+                " WHERE routine_schema = 'public'"
+                " AND routine_name = 'b26_p2_verdict_has_current_authority'"
+                " AND grantee NOT IN ('migration_owner', 'postgres')"
+                " ORDER BY grantee"
+            )
+            _holders = sorted(r[0] for r in cur.fetchall())
+            if _holders != ["app_user", "app_worker"]:
+                violations.append(
+                    f"xxi_comp_reader_grants_wrong:{_holders}")
+            else:
+                checks["verdict_reader_live_fenced"] = True
         cur.close()
     except Exception as exc:
         import traceback as _tb  # noqa: PLC0415

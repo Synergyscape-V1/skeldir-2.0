@@ -518,16 +518,16 @@ def main() -> int:
             except ConstructionAuthorityError:
                 checks["nc10_old_revision_red"] = True
                 reds["NC-10"] = "RED:predecessor schema refused at boot gate"
-            # XXI: the contract advances with the head; the predecessor
-            # under test is now one step deeper (300003 refused, head
-            # 300004 serves).
+            # XXI follow-up: the contract advances with the head; the
+            # predecessor under test is now one step deeper (300004
+            # refused, head 300005 serves).
             try:
-                assert_production_construction_authority(["202609300003"])
+                assert_production_construction_authority(["202609300004"])
                 violations.append("xix_nc10_old_revision_served")
             except ConstructionAuthorityError:
                 checks["nc10_old_revision_red"] = True
-            assert_production_construction_authority(["202609300004"])
-            if migration_graph_head() != "202609300004":
+            assert_production_construction_authority(["202609300005"])
+            if migration_graph_head() != "202609300005":
                 violations.append("xix_nc10_head_mismatch")
             else:
                 checks["nc10_head_current"] = True
@@ -669,9 +669,9 @@ def main() -> int:
                         ccur.execute(
                             "SELECT version_num FROM alembic_version"
                         )
-                        # Downgrade -1 from the XXI head lands on the
-                        # XX revision (one step back from current).
-                        if ccur.fetchone()[0] != "202609300003":
+                        # Downgrade -1 from the follow-up head lands on
+                        # the XXI revision (one step back from current).
+                        if ccur.fetchone()[0] != "202609300004":
                             violations.append(
                                 "xix_nc09_downgrade_wrong_revision"
                             )
@@ -757,7 +757,7 @@ def main() -> int:
                             ccur.execute(
                                 "SELECT version_num FROM alembic_version"
                             )
-                            if ccur.fetchone()[0] != "202609300004":
+                            if ccur.fetchone()[0] != "202609300005":
                                 violations.append(
                                     "xix_nc09_reupgrade_wrong_revision"
                                 )

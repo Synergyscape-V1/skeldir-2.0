@@ -77,6 +77,14 @@ _XXI_NEW = frozenset(
         "app_user:EXECUTE:b26_p2_read_history_continuity",
         "app_worker:EXECUTE:b26_p2_read_history_continuity",
         "app_worker:EXECUTE:b26_p2_observe_history_integrity",
+        # Verdict-keyed canonical-authority reader (300005 follow-up to
+        # the B2.4 isolation defect: read-only STABLE invoker-rights
+        # wrapper over the canonical predicate; no new DEFINER; EXECUTE
+        # only for the two Bayesian-read principals). Covered by the
+        # row-for-row differential battery (TRUE/FALSE/transition legs)
+        # and the B2.4-P1 authority-schema gate (token absent).
+        "app_user:EXECUTE:b26_p2_verdict_has_current_authority",
+        "app_worker:EXECUTE:b26_p2_verdict_has_current_authority",
     }
 )
 
