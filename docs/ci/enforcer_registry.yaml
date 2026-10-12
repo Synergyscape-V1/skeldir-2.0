@@ -4659,7 +4659,9 @@
   protected_invariant: The required B2.6-P1 context succeeds only after independently
     verifying one content-addressed PASS cell from every declared producer on the
     exact candidate SHA, tree, migration head, workflow event, semantic contract,
-    scenario, and falsifier.
+    scenario, and falsifier. The inherited-physics cell may name a tree-identical
+    merge-tip run (source_via merge-tip-tree-identical) when the cell itself binds
+    this candidate SHA; all other cells require same-event, exact-SHA identity.
   command: python scripts/ci/adjudicate_b26_p1_proof_plane.py --evidence-root evidence/b26-p1
     --capsule-out evidence/b26-p1/capsule.json
   workflow_references:
