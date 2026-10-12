@@ -124,12 +124,17 @@ def _assert_no_p2_disallowed_fields(payload_text: str) -> None:
 async def test_b22_p2_webhook_success_persists_minimized_raw_event_substrate_only():
     tenant_id, api_key, secrets = await create_tenant_with_secrets()
     order_id = int(uuid4().int % 1_000_000)
+    # XXI v3 positive creation law: honest creation bodies carry a
+    # creation status and a coincident update instant.
+    created_iso = datetime.now(timezone.utc).isoformat()
     body = json.dumps(
         {
             "id": order_id,
             "total_price": "16.25",
             "currency": "USD",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": created_iso,
+            "financial_status": "paid",
+            "updated_at": created_iso,
         }
     ).encode()
     signature = sign_shopify(body, secrets["shopify_webhook_secret"])
@@ -220,12 +225,15 @@ async def test_b22_p2_duplicate_webhook_does_not_reenqueue_downstream_side_effec
 ):
     tenant_id, api_key, secrets = await create_tenant_with_secrets()
     order_id = int(uuid4().int % 1_000_000)
+    created_iso = datetime.now(timezone.utc).isoformat()
     body = json.dumps(
         {
             "id": order_id,
             "total_price": "24.00",
             "currency": "USD",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": created_iso,
+            "financial_status": "paid",
+            "updated_at": created_iso,
         }
     ).encode()
     signature = sign_shopify(body, secrets["shopify_webhook_secret"])

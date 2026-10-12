@@ -90,6 +90,9 @@ SAFE_REFUSAL_REASONS = {
     ReasonCode.UNSUPPORTED_SUBJECT_TYPE.value,
     ReasonCode.RESPONSE_BUDGET_EXCEEDED.value,
     ReasonCode.TENANT_CONTEXT_MISSING.value,
+    # XXI: history-continuity refusal is audit-safe (PII-free reason,
+    # no evidence refs beyond the governed refusal envelope).
+    ReasonCode.HISTORY_INTEGRITY_UNVERIFIABLE.value,
 }
 
 

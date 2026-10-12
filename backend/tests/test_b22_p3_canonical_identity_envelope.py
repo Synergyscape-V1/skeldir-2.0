@@ -161,7 +161,7 @@ async def test_b22_p3_all_supported_providers_persist_canonical_identity_envelop
     paypal_txn_id = f"txn_{uuid4().hex[:10]}"
 
     shopify_body = json.dumps(
-        {"id": shopify_id, "total_price": "19.95", "currency": "USD", "created_at": now_iso}
+        {"id": shopify_id, "total_price": "19.95", "currency": "USD", "created_at": now_iso, "financial_status": "paid", "updated_at": now_iso}
     ).encode()
     woo_body = json.dumps(
         {
@@ -268,8 +268,11 @@ async def test_b22_p3_all_supported_providers_persist_canonical_identity_envelop
 async def test_b22_p3_verified_state_is_first_class_queryable():
     tenant_id, api_key, secrets = await create_tenant_with_secrets()
     order_id = int(uuid4().int % 1_000_000)
+    # XXI v3 positive creation law: honest creation bodies carry a
+    # creation status and a coincident update instant.
+    _created_iso = datetime.now(timezone.utc).isoformat()
     body = json.dumps(
-        {"id": order_id, "total_price": "10.00", "currency": "USD", "created_at": datetime.now(timezone.utc).isoformat()}
+        {"id": order_id, "total_price": "10.00", "currency": "USD", "created_at": _created_iso, "financial_status": "paid", "updated_at": _created_iso}
     ).encode()
 
     transport = ASGITransport(app=app, raise_app_exceptions=False)
@@ -309,12 +312,15 @@ async def test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailabl
 ):
     tenant_id, api_key, secrets = await create_tenant_with_secrets()
     order_id = int(uuid4().int % 1_000_000)
+    _created_iso = datetime.now(timezone.utc).isoformat()
     body = json.dumps(
         {
             "id": order_id,
             "total_price": "10.00",
             "currency": "USD",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": _created_iso,
+            "financial_status": "paid",
+            "updated_at": _created_iso,
         }
     ).encode()
 
@@ -351,12 +357,15 @@ async def test_b22_p3_authoritative_path_avoids_request_time_schema_introspectio
     monkeypatch: pytest.MonkeyPatch,
 ):
     _, api_key, secrets = await create_tenant_with_secrets()
+    _created_iso = datetime.now(timezone.utc).isoformat()
     body = json.dumps(
         {
             "id": int(uuid4().int % 1_000_000),
             "total_price": "10.00",
             "currency": "USD",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": _created_iso,
+            "financial_status": "paid",
+            "updated_at": _created_iso,
         }
     ).encode()
     original_execute = event_service.AsyncSession.execute

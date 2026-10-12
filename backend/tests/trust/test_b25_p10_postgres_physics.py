@@ -58,6 +58,31 @@ def _registry() -> TrustKeyRegistry:
     )
 
 
+def _observe_history_as_worker(migration_dsn: str) -> None:
+    """Record one worker-authored history observation (XXI Gate N).
+
+    Match_verdict issuance requires a fresh beat-authored clean
+    observation agreeing with live ledger state. Production obtains
+    this from the scheduled beat task; lane tests establish the same
+    prerequisite explicitly, after seeding and before issuing.
+    """
+    import psycopg2  # noqa: PLC0415
+
+    worker_dsn = migration_dsn.replace(
+        "migration_owner:migration_owner", "app_worker:app_worker"
+    )
+    conn = psycopg2.connect(worker_dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM public.b26_p2_observe_history_integrity()"
+            )
+            cur.fetchall()
+    finally:
+        conn.close()
+
+
 async def _insert_tenant(connection, tenant_id: UUID, label: str) -> None:
     await connection.execute(
         text(
@@ -614,6 +639,9 @@ async def test_postgres_maximum_query_resource_envelope(monkeypatch) -> None:
                 count=200,
                 base_time=base_time,
             )
+        # XXI history prerequisite: worker-authored clean observation
+        # after seeding, before issuance (mirrors the production beat).
+        _observe_history_as_worker(get_migration_database_url())
         refs = [f"urn:skeldir:match_verdict:{row[0]}" for row in seeded[:50]]
 
         audit_latencies_ms: list[float] = []

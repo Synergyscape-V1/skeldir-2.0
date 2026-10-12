@@ -491,6 +491,31 @@ async def _link_p13_verdicts(link_infos: list[dict]) -> None:
                 )
     finally:
         await owner_engine.dispose()
+    # XXI history prerequisite: match_verdict issuance requires a fresh
+    # worker-authored clean observation agreeing with live ledger state
+    # (production obtains this from the scheduled beat task). Observe
+    # here — after all linking, before any test issues envelopes — so
+    # every caller of this shared linker inherits a current observation.
+    await _observe_history_as_worker()
+
+
+async def _observe_history_as_worker() -> None:
+    """Record one worker-authored history observation for lane tests."""
+    import psycopg2  # noqa: PLC0415
+
+    worker_dsn = _worker_database_url().replace(
+        "postgresql+asyncpg://", "postgresql://"
+    )
+    conn = psycopg2.connect(worker_dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM public.b26_p2_observe_history_integrity()"
+            )
+            cur.fetchall()
+    finally:
+        conn.close()
 
 
 #: The single statement a B2.4 worker uses to terminalize a fit. Every C4/C5

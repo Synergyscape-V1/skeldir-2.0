@@ -333,12 +333,17 @@ def _runtime_component_integrity() -> dict[str, Any]:
 def _make_shopify_case(
     *, api_key: str, secret: str, event_id: int, topic: str = "orders/create"
 ) -> WebhookCase:
+    # XXI v3 positive creation law: honest creation bodies carry a
+    # creation status and a coincident update instant.
+    created_iso = datetime.now(timezone.utc).isoformat()
     body = json.dumps(
         {
             "id": event_id,
             "total_price": "19.95",
             "currency": "USD",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": created_iso,
+            "financial_status": "paid",
+            "updated_at": created_iso,
         }
     ).encode("utf-8")
     headers = {

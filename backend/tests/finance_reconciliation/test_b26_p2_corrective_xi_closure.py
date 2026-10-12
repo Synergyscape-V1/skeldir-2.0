@@ -283,8 +283,9 @@ def _witness_and_attest(
             apply_xix_family_gucs_psycopg2(
                 cur, ids.get("provider", "stripe"))
             cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic"
-                "(%s, %s, %s, %s, %s, %s, 'v1')",
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2"
+                "(%s, %s, %s, %s, %s, %s, 'v1',"
+                " NULL, NULL, FALSE, NULL, NULL)",
                 (str(ids["ingress_id"]), ids.get("provider", "stripe"),
                  evt_ref, "c" * 64, "d" * 64,
                  "hmac-sha256-timestamped-hex"),
@@ -413,8 +414,9 @@ def test_xa1_assertion_promotes_nothing() -> None:
                 cur, ids.get("provider", "stripe"))
             denied = _refused(
                 lambda: cur.execute(
-                    "SELECT public.b26_p2_attest_provenance_evidence"
-                    "(%s, 'governed_attestation', %s)",
+                    "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                    "(%s, 'governed_attestation', %s,"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ids["ingress_id"]), f"b26p2xi:{ids['tag']}"),
                 )
             )
@@ -463,8 +465,9 @@ def test_xa1_assertion_promotes_nothing() -> None:
                 cur, ids.get("provider", "stripe"))
             reason = _refused(
                 lambda: cur.execute(
-                    "SELECT public.b26_p2_attest_provenance_evidence"
-                    "(%s, 'signed_provider_reingestion', %s)",
+                    "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                    "(%s, 'signed_provider_reingestion', %s,"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ids["ingress_id"]), f"b26p2xi:{ids['tag']}"),
                 )
             )
@@ -474,8 +477,9 @@ def test_xa1_assertion_promotes_nothing() -> None:
                 cur, ids.get("provider", "stripe"))
             reason = _refused(
                 lambda: cur.execute(
-                    "SELECT public.b26_p2_attest_provenance_evidence"
-                    "(%s, 'governed_attestation', %s)",
+                    "SELECT public.b26_p2_attest_provenance_evidence_v2"
+                    "(%s, 'governed_attestation', %s,"
+                    " NULL, NULL, FALSE, NULL, NULL)",
                     (str(ids["ingress_id"]), f"b26p2xi:{ids['tag']}"),
                 )
             )
@@ -606,9 +610,10 @@ def test_xb1_generic_runtimes_hold_no_ingress_capability() -> None:
                 apply_xix_family_gucs_psycopg2(cur, "stripe")
                 denied = _refused(
                     lambda: cur.execute(
-                        "SELECT public.b26_p2_attest_provenance_evidence"
+                        "SELECT public.b26_p2_attest_provenance_evidence_v2"
                         "('00000000-0000-0000-0000-000000000000',"
-                        " 'governed_attestation', 'x')"
+                        " 'governed_attestation', 'x',"
+                        " NULL, NULL, FALSE, NULL, NULL)"
                     )
                 )
                 assert "permission denied" in denied.lower(), (role, denied)

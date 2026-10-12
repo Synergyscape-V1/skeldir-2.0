@@ -162,12 +162,17 @@ async def test_b22_p5_negative_control_matrix_includes_route_owned_provider_safe
         webhooks_api, "_schedule_downstream_tasks", _capture_schedule_downstream_tasks
     )
 
+    # XXI v3 positive creation law: honest creation bodies carry a
+    # creation status and a coincident update instant.
+    _nc_iso = datetime.now(timezone.utc).isoformat()
     valid_shopify_body = json.dumps(
         {
             "id": int(uuid4().int % 1_000_000),
             "total_price": "17.00",
             "currency": "USD",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": _nc_iso,
+            "financial_status": "paid",
+            "updated_at": _nc_iso,
         }
     ).encode()
     malformed_shopify_body = b"{not-json"

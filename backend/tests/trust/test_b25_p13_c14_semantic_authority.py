@@ -47,6 +47,25 @@ NOW = datetime(2026, 8, 28, 12, 0, 2, tzinfo=timezone.utc)
 ROOT = Path(__file__).resolve().parents[3]
 
 
+@pytest.fixture(autouse=True)
+def _clean_history_integrity(monkeypatch) -> None:
+    """Stub the XXI history-continuity gate as clean.
+
+    These tests use dummy sessions and assert envelope semantics,
+    not history continuity (dedicated P5-builder fake-session tests
+    plus the XXI live composition gate prove every refusal
+    direction). Without the stub, match_verdict issuance would error
+    on the dummy session instead of exercising the assertions below.
+    """
+
+    async def _clean(_session: object) -> tuple[bool, str]:
+        return True, ""
+
+    monkeypatch.setattr(
+        "app.trust.builder.read_history_integrity_status", _clean
+    )
+
+
 class _CountingPrivateKey:
     def __init__(self) -> None:
         seed = hashlib.sha256(b"b25-p13-c14-semantic-authority").digest()

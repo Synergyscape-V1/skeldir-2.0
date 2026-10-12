@@ -333,6 +333,8 @@ async def _seed_tenant(engine, label: str):
             )
     # The seeding transaction committed on block exit; link the verdict
     # to P2-authenticated ingress so it holds current authority.
+    # Linking records the worker-authored history observation lane
+    # issuance requires (XXI Gate N).
     await _link_p13_verdicts([link_info])
     return tenant_id, token, subject_urn
 

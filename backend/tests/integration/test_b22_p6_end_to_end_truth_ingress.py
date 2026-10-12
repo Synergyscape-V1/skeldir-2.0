@@ -152,6 +152,10 @@ def _provider_cases(*, now_iso: str, secrets: dict[str, str]) -> list[dict[str, 
             "total_price": "20.00",
             "currency": "USD",
             "created_at": now_iso,
+            # XXI v3 positive creation law: honest creation bodies carry
+            # a creation status and a coincident update instant.
+            "financial_status": "paid",
+            "updated_at": now_iso,
         }
     ).encode()
     woocommerce_body = json.dumps(

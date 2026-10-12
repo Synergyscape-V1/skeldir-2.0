@@ -4557,6 +4557,24 @@
   local_reproduction_command: python -c "from scripts.ci.b26_p2_xviii_coverage import XVIII_COVERED_SURFACES"
   risk_if_removed: New XVIII surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-xxi-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xxi_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XXI registry extends XVIII coverage for the
+    release-bound v2 minting ABI and the owner-context history
+    continuity EXECUTE surfaces.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XXI coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xxi_coverage import XXI_COVERED_SURFACES"
+  risk_if_removed: New XXI surfaces could stay untested silently.
+  decision: keep_utility
 - gate_id: b26-p2-xv-binding
   workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
   job: B2.6-P1 Static Semantic Authority
@@ -4900,4 +4918,27 @@
   risk_if_removed: A lawful revocation would leave Trust/coverage/P3
     disagreeing, forged transport meaning would book revenue, backfill
     history would read current, and ledger rewrites would stay silent.
+  decision: enforce
+- gate_id: b26-p2-xxi-composition
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xxi_composition.py
+  owning_phase: B2.6-P2
+  protected_invariant: Sovereign release continuity across versions,
+    event meaning, history, rollback, readers, and proof plane; topology
+    adjudicators track the ABI in both migration directions.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XXI sovereign continuity; no
+    predecessor gate observes version-incompatible minting, positive
+    family evidence, persisted demotion across rollback, beat-observed
+    history with Trust degradation, or real-reader proof behavior.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_xxi_composition.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xxi_composition.py --help
+  risk_if_removed: An obsolete binary would mint on the new schema,
+    unsigned topics would confer family, rollback would resurrect
+    disqualified money, history rewrites would stay silent, and the
+    proof plane would substitute reimplementations for readers.
   decision: enforce

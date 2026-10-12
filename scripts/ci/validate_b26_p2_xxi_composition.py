@@ -68,6 +68,16 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     except OSError as exc:
         violations.append(f"xxi_comp_unreadable:{exc}")
         return
+    # Migration bytes must survive every construction path byte-identical
+    # (alembic + psql-applied canonical dump): non-ASCII in function
+    # bodies mojibakes across client encodings and breaks bootstrap
+    # equivalence while each path stays internally green.
+    try:
+        mig.encode("ascii")
+    except UnicodeEncodeError as exc:
+        violations.append(f"xxi_comp_non_ascii_bytes:{exc}")
+    else:
+        checks["migration_ascii_only"] = True
     upgrade = mig.split("def downgrade", 1)[0]
     downgrade = mig.split("def downgrade", 1)[1] if "def downgrade" in mig else ""
     for token in (

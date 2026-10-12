@@ -128,12 +128,17 @@ def sign_shopify(body: bytes, secret: str) -> str:
 
 
 def _shopify_request_body() -> bytes:
+    # XXI v3 positive creation law: honest creation bodies carry a
+    # creation status and a coincident update instant.
+    _iso = datetime.now(timezone.utc).isoformat()
     return json.dumps(
         {
             "id": int(uuid4().int % 1_000_000),
             "total_price": "22.50",
             "currency": "USD",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": _iso,
+            "financial_status": "paid",
+            "updated_at": _iso,
         }
     ).encode()
 
