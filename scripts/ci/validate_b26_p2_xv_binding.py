@@ -162,6 +162,10 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 "total_price": "76.00",
                 "currency": "USD",
                 "created_at": "2025-11-10T14:30:00Z",
+                # XXI v3 positive creation law: honest creation bodies
+                # carry a creation status and a coincident update instant.
+                "financial_status": "paid",
+                "updated_at": "2025-11-10T14:30:00Z",
             }
         ).encode(),
         "paypal": _json.dumps(
