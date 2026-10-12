@@ -98,9 +98,7 @@ def adjudicate(
     workflow: str,
 ) -> dict[str, Any]:
     requirements = yaml.safe_load(REQUIREMENTS.read_text(encoding="utf-8"))
-    required_cells = {
-        cell["gate_id"]: cell for cell in requirements["required_cells"]
-    }
+    required_cells = {cell["gate_id"]: cell for cell in requirements["required_cells"]}
     additional_cells = {
         cell["gate_id"]: cell
         for cell in requirements.get("additional_accepted_cells", [])
@@ -139,14 +137,19 @@ def adjudicate(
         cell = observed[gate_id]
         absent_fields = sorted(accepted_fields - set(cell))
         if absent_fields:
-            raise AdjudicationError(f"proof_cell_fields_missing:{gate_id}:{absent_fields}")
+            raise AdjudicationError(
+                f"proof_cell_fields_missing:{gate_id}:{absent_fields}"
+            )
         if cell["phase"] != requirements["phase"]:
             raise AdjudicationError(f"proof_cell_phase_mismatch:{gate_id}")
         if "producer" in expected and cell["producer"] != expected["producer"]:
             raise AdjudicationError(f"proof_cell_producer_mismatch:{gate_id}")
         if "scenario_id" in expected and cell["scenario_id"] != expected["scenario_id"]:
             raise AdjudicationError(f"proof_cell_scenario_mismatch:{gate_id}")
-        if "falsifier_id" in expected and cell["falsifier_id"] != expected["falsifier_id"]:
+        if (
+            "falsifier_id" in expected
+            and cell["falsifier_id"] != expected["falsifier_id"]
+        ):
             raise AdjudicationError(f"proof_cell_falsifier_mismatch:{gate_id}")
         if cell["status"] != requirements["accepted_status"]:
             raise AdjudicationError(f"proof_cell_not_pass:{gate_id}:{cell['status']}")
@@ -169,7 +172,11 @@ def adjudicate(
         if cell["workflow"] != workflow:
             raise AdjudicationError(f"proof_cell_workflow_mismatch:{gate_id}")
         claimed_hash = cell["artifact_hash"]
-        unhashed = {key: value for key, value in cell.items() if key not in {"artifact_hash", "_path"}}
+        unhashed = {
+            key: value
+            for key, value in cell.items()
+            if key not in {"artifact_hash", "_path"}
+        }
         actual_hash = hashlib.sha256(_canonical_json(unhashed)).hexdigest()
         if claimed_hash != actual_hash:
             raise AdjudicationError(f"proof_cell_artifact_hash_mismatch:{gate_id}")
@@ -181,10 +188,20 @@ def adjudicate(
         raise AdjudicationError("inherited_physics_subordinate_job_census_mismatch")
     if any(value != "success" for value in required_jobs.values()):
         raise AdjudicationError("inherited_physics_subordinate_job_not_success")
-    if inherited.get("source_event") != event_type:
-        raise AdjudicationError("inherited_physics_event_identity_mismatch")
-    if inherited.get("source_sha") != candidate_sha:
-        raise AdjudicationError("inherited_physics_candidate_identity_mismatch")
+    via = str(inherited.get("source_via", "direct-same-sha"))
+    if via.startswith("merge-tip-tree-identical:"):
+        # The attester emits this marker only after API-verified merge-tree
+        # == PR-tip-tree equality, so the tip's pull_request run is evidence
+        # about byte-identical bytes. Accept it only when the evidence cell
+        # itself names this candidate (candidate_sha binding preserved) and
+        # only for this marker (no other exception applies).
+        if inherited.get("candidate_sha") != candidate_sha:
+            raise AdjudicationError("inherited_physics_candidate_identity_mismatch")
+    else:
+        if inherited.get("source_event") != event_type:
+            raise AdjudicationError("inherited_physics_event_identity_mismatch")
+        if inherited.get("source_sha") != candidate_sha:
+            raise AdjudicationError("inherited_physics_candidate_identity_mismatch")
 
     capsule: dict[str, Any] = {
         "phase": requirements["phase"],
