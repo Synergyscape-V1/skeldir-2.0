@@ -70,11 +70,17 @@ async def _emit_marker(sql: str) -> None:
 async def _emit_literal_marker(marker: str) -> None:
     marker = _sanitize_marker(marker)
     await _emit_marker(f"SELECT '{marker}';")
-    # Observable emission receipt (independent of postgres-log capture):
-    # if a marker is missing from the DB-log snapshot, this line proves
-    # whether the suite emitted it, separating suite behavior from
-    # log-collection behavior. It carries no authority and changes none.
+    # Observable emission receipts, two independent channels so a broken
+    # pipe cannot hide them: job stdout (visible in CI logs) and a
+    # dedicated receipt file the collection loop reads directly (no
+    # shell text processing between emission and consumption). Neither
+    # carries authority and neither changes verdict semantics.
     print(f"MARKER_EMITTED::{marker}", flush=True)
+    try:
+        with open("/tmp/r2_marker_receipts.log", "a", encoding="utf-8") as fh:
+            fh.write(f"MARKER_EMITTED::{marker}\n")
+    except OSError as exc:
+        print(f"MARKER_RECEIPT_FILE_FAIL={type(exc).__name__}:{exc}", flush=True)
 
 
 def _normalize_sql(sql: str) -> str:

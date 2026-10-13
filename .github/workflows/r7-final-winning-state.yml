@@ -370,7 +370,7 @@ jobs:
           # log-capture gap exactly instead of a bare count mismatch. This
           # changes no verdict semantics: the audit still requires the
           # markers in the DB log.
-          EXPECTED_MARKERS=$(grep -o "MARKER_EMITTED::[^[:space:]]*" /tmp/r2_scenario.log | sort -u || true)
+          EXPECTED_MARKERS=$(cat /tmp/r2_marker_receipts.log 2>/dev/null | sort -u || true)
           for _ in $(seq 1 60); do
             podman logs "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1 || true
             MISSING=""
