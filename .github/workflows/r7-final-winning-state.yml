@@ -353,6 +353,12 @@ jobs:
           LOG_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "R2_LOG_SINCE=${LOG_SINCE}"
           WINDOW_ID="r7_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          # Control probe: the same marker text emitted via psql (simple
+          # protocol) instead of the app engine (prepared protocol). If the
+          # snapshot contains this probe but not the suite markers, the loss
+          # is specific to the app-engine path; if neither appears, the
+          # snapshot itself is not receiving this server's statements.
+          psql -h "${R7_PG_HOST}" -U "${R7_PG_ADMIN_USER}" -d r2 -c "SELECT 'R2_PROBE_DIRECT::${GITHUB_SHA}::${WINDOW_ID}';" >/dev/null
           python scripts/r2/runtime_scenario_suite.py \
             --candidate-sha "${GITHUB_SHA}" \
             --window-id "${WINDOW_ID}" \
@@ -400,6 +406,11 @@ jobs:
           done
           if [ -n "$MISSING" ]; then
             echo "R2_MARKER_LOG_CAPTURE_GAP (emitted but absent from container-log snapshot):$MISSING" | tee -a /tmp/r2_db.log
+          fi
+          if grep -qF "R2_PROBE_DIRECT::${GITHUB_SHA}::${WINDOW_ID}" /tmp/r7_postgres.log; then
+            echo "R2_PROBE_DIRECT_PRESENT_IN_SNAPSHOT"
+          else
+            echo "R2_PROBE_DIRECT_ABSENT_FROM_SNAPSHOT"
           fi
 
           python scripts/r2/db_log_window_audit.py \
