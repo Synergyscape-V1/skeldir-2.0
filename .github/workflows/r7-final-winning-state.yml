@@ -231,6 +231,15 @@ jobs:
             ELSE
               ALTER ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
             END IF;
+            -- R7 R3 needs the dedicated ingress principal BEFORE any lane
+            -- migrates, so the conditional v2 EXECUTE grants fire
+            -- (production topology: the API relays to an auth root instead
+            -- of persisting ingress directly).
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+              CREATE ROLE app_ingress LOGIN PASSWORD 'app_ingress' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+            ELSE
+              ALTER ROLE app_ingress LOGIN PASSWORD 'app_ingress' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+            END IF;
           END
           $$;
           SQL
@@ -497,12 +506,44 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3
           R3_API_BASE_URL: http://127.0.0.1:8000
+          B26_P2_AUTH_ROOT_URL: http://127.0.0.1:8001
           DATABASE_POOL_SIZE: "40"
           DATABASE_MAX_OVERFLOW: "40"
           LOG_LEVEL: "DEBUG"
         run: |
           set -euo pipefail
           pkill -f "uvicorn app.main:app" || true
+          pkill -f "uvicorn app.auth_service.server:app" || true
+          # Production topology: the API relays verified arrivals to the
+          # dedicated authentication trust root over HTTP; without it the
+          # relay falls through to the direct path, which fails closed
+          # (ingress capability lives only in the auth root by design).
+          printf '%s' "postgresql://app_ingress:app_ingress@127.0.0.1:5432/r3" > /tmp/r7_ingress_dsn_r3
+          chmod 600 /tmp/r7_ingress_dsn_r3
+          nohup env PYTHONUNBUFFERED=1 SKELDIR_PROCESS_ROLE=auth_ingress \
+            DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3" \
+            B26_P2_INGRESS_DATABASE_URL="" \
+            B26_P2_INGRESS_DATABASE_URL_FILE=/tmp/r7_ingress_dsn_r3 \
+            PLATFORM_TOKEN_ENCRYPTION_KEY=e2e-platform-key \
+            PLATFORM_TOKEN_KEY_ID=e2e-key \
+            python -u -m uvicorn app.auth_service.server:app \
+            --host 127.0.0.1 \
+            --port 8001 \
+            --log-level warning \
+            --workers 1 > /tmp/r7_uvicorn_auth_root.log 2>&1 &
+          echo $! > /tmp/auth_root.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8001/health/live >/dev/null; then
+              echo "R3_AUTH_ROOT_READY"
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -fsS http://127.0.0.1:8001/health/live >/dev/null; then
+            echo "R3 auth root failed liveness checks"
+            tail -n 100 /tmp/r7_uvicorn_auth_root.log || true
+            exit 1
+          fi
           nohup env PYTHONUNBUFFERED=1 python -u -m uvicorn app.main:app \
             --host 127.0.0.1 \
             --port 8000 \
@@ -539,6 +580,7 @@ jobs:
         shell: bash
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3
+          B26_P2_AUTH_ROOT_URL: http://127.0.0.1:8001
           MIGRATION_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r3
           R3_ADMIN_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r3
           R3_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
@@ -663,6 +705,7 @@ jobs:
           CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/r4
           CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/r4
           R4_ADMIN_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r4
+          B26_P2_AUTH_ROOT_URL: http://127.0.0.1:8002
         run: |
           set -euo pipefail
           echo "R7_PHASE_START=R4 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ) sha=${GITHUB_SHA}"
@@ -673,6 +716,35 @@ jobs:
           psql -h "${R7_PG_HOST}" -U "${R7_PG_ADMIN_USER}" -d r4 -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;" >/dev/null
 
           pkill -f "uvicorn app.main:app" || true
+          # Production topology (same law as R3b): webhook arrivals relay
+          # to a dedicated auth root; the R4 lane gets its own root so
+          # phases stay isolated (R3 keeps :8001).
+          printf '%s' "postgresql://app_ingress:app_ingress@127.0.0.1:5432/r4" > /tmp/r7_ingress_dsn_r4
+          chmod 600 /tmp/r7_ingress_dsn_r4
+          pkill -f "uvicorn app.auth_service.server:app" || true
+          nohup env PYTHONUNBUFFERED=1 SKELDIR_PROCESS_ROLE=auth_ingress \
+            DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r4" \
+            B26_P2_INGRESS_DATABASE_URL="" \
+            B26_P2_INGRESS_DATABASE_URL_FILE=/tmp/r7_ingress_dsn_r4 \
+            PLATFORM_TOKEN_ENCRYPTION_KEY=e2e-platform-key \
+            PLATFORM_TOKEN_KEY_ID=e2e-key \
+            python -u -m uvicorn app.auth_service.server:app \
+            --host 127.0.0.1 \
+            --port 8002 \
+            --log-level warning \
+            --workers 1 > /tmp/r7_uvicorn_auth_root_r4.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8002/health/live >/dev/null; then
+              echo "R4_AUTH_ROOT_READY"
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -fsS http://127.0.0.1:8002/health/live >/dev/null; then
+            echo "R4 auth root failed liveness checks"
+            tail -n 100 /tmp/r7_uvicorn_auth_root_r4.log || true
+            exit 1
+          fi
           nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/r7_uvicorn_r4.log 2>&1 &
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
