@@ -70,6 +70,11 @@ async def _emit_marker(sql: str) -> None:
 async def _emit_literal_marker(marker: str) -> None:
     marker = _sanitize_marker(marker)
     await _emit_marker(f"SELECT '{marker}';")
+    # Observable emission receipt (independent of postgres-log capture):
+    # if a marker is missing from the DB-log snapshot, this line proves
+    # whether the suite emitted it, separating suite behavior from
+    # log-collection behavior. It carries no authority and changes none.
+    print(f"MARKER_EMITTED::{marker}", flush=True)
 
 
 def _normalize_sql(sql: str) -> str:
