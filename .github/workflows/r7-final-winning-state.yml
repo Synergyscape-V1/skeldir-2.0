@@ -370,9 +370,14 @@ jobs:
           # log-capture gap exactly instead of a bare count mismatch. This
           # changes no verdict semantics: the audit still requires the
           # markers in the DB log.
+          echo "R2_COLLECT_LOOP_START receipts_file_bytes=$(wc -c < /tmp/r2_marker_receipts.log 2>/dev/null || echo MISSING)"
           EXPECTED_MARKERS=$(cat /tmp/r2_marker_receipts.log 2>/dev/null | sort -u || true)
+          echo "R2_COLLECT_EXPECTED_COUNT=$(echo "$EXPECTED_MARKERS" | grep -c MARKER_EMITTED || true)"
+          ITER=0
           for _ in $(seq 1 60); do
+            ITER=$((ITER + 1))
             podman logs "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1 || true
+            SNAP_BYTES=$(wc -c < /tmp/r7_postgres.log || echo 0)
             MISSING=""
             for m in $EXPECTED_MARKERS; do
               marker="${m#MARKER_EMITTED::}"
@@ -385,7 +390,11 @@ jobs:
               break
             fi
             if [ -z "$MISSING" ]; then
+              echo "R2_COLLECT_CONVERGED iter=$ITER snap_bytes=$SNAP_BYTES"
               break
+            fi
+            if [ "$ITER" = "60" ]; then
+              echo "R2_COLLECT_EXHAUSTED iters=60 snap_bytes=$SNAP_BYTES"
             fi
             sleep 1
           done
