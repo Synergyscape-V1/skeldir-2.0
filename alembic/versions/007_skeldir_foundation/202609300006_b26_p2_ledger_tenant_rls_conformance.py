@@ -21,7 +21,7 @@ itself fails on lanes without a migration_owner login (R7 R4a).
 Runtime roles hold no privileges on the table at all, so they remain
 denied exactly as before; before/after effective-privilege probing is
 byte-identical (grants stay the authority mechanism, as on every other
-table). TRUNCATE is privilege-checked, not RLS-filtered, and remains
+table). TRUNCATE is privilege-checked, not RLS-filtered, and remains  # CI:DESTRUCTIVE_OK - prose-only mention; this revision executes no TRUNCATE (CREATE POLICY + ENABLE/FORCE RLS only)
 owner-only. The ledger immutability triggers are untouched. The
 maintenance trust boundary is unchanged: the owner can still alter its
 own table, and that alteration remains detectable only through the beat
