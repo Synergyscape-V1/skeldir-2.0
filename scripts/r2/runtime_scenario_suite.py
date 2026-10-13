@@ -81,6 +81,13 @@ async def _emit_literal_marker(marker: str) -> None:
             fh.write(f"MARKER_EMITTED::{marker}\n")
     except OSError as exc:
         print(f"MARKER_RECEIPT_FILE_FAIL={type(exc).__name__}:{exc}", flush=True)
+    # Log-delivery pacing: window markers must survive container-log
+    # capture on hosted runners, where a millisecond burst of marker +
+    # scenario statements has observably lost single lines (podman-log
+    # snapshot held 13/14 with only S1_END absent). Spacing emits ~50ms
+    # apart keeps the audit's DB-log-visibility property intact while
+    # staying far below any timing threshold. No verdict semantics change.
+    await asyncio.sleep(0.05)
 
 
 def _normalize_sql(sql: str) -> str:
