@@ -272,8 +272,27 @@ jobs:
           echo "=== EG-R1-4: Live Stack Boot + /health and /metrics ===" | tee -a $GITHUB_STEP_SUMMARY
           mkdir -p "$ARTIFACTS_DIR/LIVE_STACK"
 
-          # Configure database connection for backend
-          export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$POSTGRES_DB"
+          # R1 boots the production construction route. EG-R1-3 above keeps
+          # testing canonical apply + idempotency on $POSTGRES_DB, but a
+          # canonical-built database carries no construction authority
+          # (B2.5-P14 Corrective V: no grants vocabulary, no seeds, empty
+          # alembic_version) and the boot guard correctly refuses it with
+          # construction_authority_boot_waiting forever. The live stack
+          # therefore boots a freshly MIGRATED lane instead: same postgres,
+          # same shipping provisioner and linear history production uses.
+          export R1_BOOT_DB="${POSTGRES_DB}_boot"
+          podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $R1_BOOT_DB;"
+          podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -v ON_ERROR_STOP=1 -c "CREATE DATABASE $R1_BOOT_DB OWNER $POSTGRES_USER;"
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/postgres" \
+            --database-name "$R1_BOOT_DB"
+          MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@localhost:5432/$R1_BOOT_DB" \
+            alembic upgrade head
+          # Configure database connection for backend (migrated lane).
+          export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$R1_BOOT_DB"
+          # Readiness secret contract for ENVIRONMENT=test requires the
+          # migration DSN to be present even though boot only reads it.
+          export MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@localhost:5432/$R1_BOOT_DB"
           export ENVIRONMENT="test"
           export CONTRACT_TESTING="1"
           export LOG_LEVEL="INFO"
@@ -358,8 +377,10 @@ jobs:
           echo "=== EG-R1-5: Live Contract Enforcement + Postgres Interaction (CLOSURE) ===" | tee -a $GITHUB_STEP_SUMMARY
           mkdir -p "$ARTIFACTS_DIR/CONTRACT_ENFORCEMENT"
 
-          # Configure database connection (same as API uses)
-          export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$POSTGRES_DB"
+          # Configure database connection (same migrated lane the API boots;
+          # R1_BOOT_DB is recomputed here because steps do not share env).
+          export R1_BOOT_DB="${POSTGRES_DB}_boot"
+          export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$R1_BOOT_DB"
 
           GATE_PASS=true
 
@@ -371,12 +392,12 @@ jobs:
           echo "" | tee -a $GITHUB_STEP_SUMMARY
 
           # Print the DATABASE_URL used by API (password redacted)
-          API_DB_URL_REDACTED="postgresql://$POSTGRES_USER:****@localhost:5432/$POSTGRES_DB"
+          API_DB_URL_REDACTED="postgresql://$POSTGRES_USER:****@localhost:5432/$R1_BOOT_DB"
           echo "**API DATABASE_URL:** \`$API_DB_URL_REDACTED\`" | tee -a $GITHUB_STEP_SUMMARY
 
           # Get DB identity from psql
           echo "**psql DB identity query:**" | tee -a $GITHUB_STEP_SUMMARY
-          DB_IDENTITY=$(podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "
+          DB_IDENTITY=$(podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $R1_BOOT_DB -t -c "
             SELECT
               inet_server_addr() as server_addr,
               inet_server_port() as server_port,
@@ -389,8 +410,8 @@ jobs:
           echo "$DB_IDENTITY" > "$ARTIFACTS_DIR/CONTRACT_ENFORCEMENT/db_identity.log"
 
           # Verify the database name matches
-          if echo "$DB_IDENTITY" | grep -q "$POSTGRES_DB"; then
-            echo "✅ **EG-R1-FIX-1 PASS:** psql connected to database '$POSTGRES_DB'" | tee -a $GITHUB_STEP_SUMMARY
+          if echo "$DB_IDENTITY" | grep -q "$R1_BOOT_DB"; then
+            echo "✅ **EG-R1-FIX-1 PASS:** psql connected to database '$R1_BOOT_DB'" | tee -a $GITHUB_STEP_SUMMARY
           else
             echo "❌ **EG-R1-FIX-1 FAIL:** Database name mismatch" | tee -a $GITHUB_STEP_SUMMARY
             GATE_PASS=false
@@ -446,7 +467,7 @@ jobs:
           # Prove the same queries work from psql (same DB instance)
           echo "**Replicating queries via psql (same DB):**" | tee -a $GITHUB_STEP_SUMMARY
 
-          PSQL_PROOF=$(podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "
+          PSQL_PROOF=$(podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $R1_BOOT_DB -t -c "
             -- Query 1: Basic connectivity
             SELECT 'SELECT_1_OK' as test1 WHERE 1=1;
             -- Query 2: RLS check (same as /health/ready)
