@@ -181,6 +181,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # R3 storms at concurrency 200 against pooled API/auth-root/harness
+          # connections; the default cap of 100 produced FATAL reserved-slot
+          # errors and client timeouts. max_connections=200 mirrors the
+          # production topology (docker-compose.c19.yml), which sizes the
+          # lane so pool behavior -- not the server cap -- is measured.
+          # Thresholds asserted by the harness are unchanged.
           podman run -d --name "${R7_PG_CONTAINER}" \
             -p "${R7_PG_PORT}:5432" \
             --shm-size=1g \
@@ -195,6 +201,7 @@ jobs:
               -c log_filename=postgresql.log \
               -c log_rotation_size=0 \
               -c log_rotation_age=0 \
+              -c max_connections=200 \
               -c shared_buffers=1GB \
               -c work_mem=32MB \
               -c maintenance_work_mem=256MB \
