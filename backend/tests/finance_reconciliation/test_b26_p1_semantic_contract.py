@@ -552,11 +552,13 @@ def test_b26_p1_migration_graph_is_alembic_native() -> None:
     # observations, topology adjudicator tracking); ancestry remains
     # linear. The 300005 follow-up advances the head for the
     # verdict-keyed canonical-authority reader (B2.4 isolation fix;
-    # additive helper, floor stays at 300004).
+    # additive helper, floor stays at 300004). The 300006 follow-up
+    # brings the supersession ledger into tenant RLS conformance
+    # (owner-only policy; no principal's effective access changes).
     assert set(graph) == native_revisions
     assert "202512151410" in graph
     assert "202511171000" not in graph
-    assert heads == set(script.get_heads()) == {"202609300005"}
+    assert heads == set(script.get_heads()) == {"202609300006"}
     assert "202609072001" in graph
     assert "202609170001" in graph
     assert "202609180001" in graph

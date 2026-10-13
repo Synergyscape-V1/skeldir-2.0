@@ -70,6 +70,24 @@ async def _emit_marker(sql: str) -> None:
 async def _emit_literal_marker(marker: str) -> None:
     marker = _sanitize_marker(marker)
     await _emit_marker(f"SELECT '{marker}';")
+    # Observable emission receipts, two independent channels so a broken
+    # pipe cannot hide them: job stdout (visible in CI logs) and a
+    # dedicated receipt file the collection loop reads directly (no
+    # shell text processing between emission and consumption). Neither
+    # carries authority and neither changes verdict semantics.
+    print(f"MARKER_EMITTED::{marker}", flush=True)
+    try:
+        with open("/tmp/r2_marker_receipts.log", "a", encoding="utf-8") as fh:
+            fh.write(f"MARKER_EMITTED::{marker}\n")
+    except OSError as exc:
+        print(f"MARKER_RECEIPT_FILE_FAIL={type(exc).__name__}:{exc}", flush=True)
+    # Log-delivery pacing: window markers must survive container-log
+    # capture on hosted runners, where a millisecond burst of marker +
+    # scenario statements has observably lost single lines (podman-log
+    # snapshot held 13/14 with only S1_END absent). Spacing emits ~50ms
+    # apart keeps the audit's DB-log-visibility property intact while
+    # staying far below any timing threshold. No verdict semantics change.
+    await asyncio.sleep(0.05)
 
 
 def _normalize_sql(sql: str) -> str:

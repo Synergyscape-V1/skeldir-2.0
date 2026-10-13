@@ -181,6 +181,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # R3 storms at concurrency 200 against pooled API/auth-root/harness
+          # connections; the default cap of 100 produced FATAL reserved-slot
+          # errors and client timeouts. max_connections=200 mirrors the
+          # production topology (compose file c19), which sizes the
+          # lane so pool behavior -- not the server cap -- is measured.
+          # Thresholds asserted by the harness are unchanged.
           podman run -d --name "${R7_PG_CONTAINER}" \
             -p "${R7_PG_PORT}:5432" \
             --shm-size=1g \
@@ -190,7 +196,12 @@ jobs:
             "${POSTGRES_DIGEST}" \
               -c log_statement=all \
               -c log_destination=stderr \
-              -c logging_collector=off \
+              -c logging_collector=on \
+              -c log_directory=log \
+              -c log_filename=postgresql.log \
+              -c log_rotation_size=0 \
+              -c log_rotation_age=0 \
+              -c max_connections=200 \
               -c shared_buffers=1GB \
               -c work_mem=32MB \
               -c maintenance_work_mem=256MB \
@@ -226,6 +237,15 @@ jobs:
               CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
             ELSE
               ALTER ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+            END IF;
+            -- R7 R3 needs the dedicated ingress principal BEFORE any lane
+            -- migrates, so the conditional v2 EXECUTE grants fire
+            -- (production topology: the API relays to an auth root instead
+            -- of persisting ingress directly).
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
+              CREATE ROLE app_ingress LOGIN PASSWORD 'app_ingress' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+            ELSE
+              ALTER ROLE app_ingress LOGIN PASSWORD 'app_ingress' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
             END IF;
           END
           $$;
@@ -353,6 +373,12 @@ jobs:
           LOG_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "R2_LOG_SINCE=${LOG_SINCE}"
           WINDOW_ID="r7_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          # Control probe: the same marker text emitted via psql (simple
+          # protocol) instead of the app engine (prepared protocol). If the
+          # snapshot contains this probe but not the suite markers, the loss
+          # is specific to the app-engine path; if neither appears, the
+          # snapshot itself is not receiving this server's statements.
+          psql -h "${R7_PG_HOST}" -U "${R7_PG_ADMIN_USER}" -d r2 -c "SELECT 'R2_PROBE_DIRECT::${GITHUB_SHA}::${WINDOW_ID}';" >/dev/null
           python scripts/r2/runtime_scenario_suite.py \
             --candidate-sha "${GITHUB_SHA}" \
             --window-id "${WINDOW_ID}" \
@@ -362,13 +388,59 @@ jobs:
           # log itself, so reading the whole log is what the standalone R2 lane
           # does. A --since bound adds no bounding and can drop a marker emitted
           # in the same second as the timestamp.
-          for _ in $(seq 1 15); do
-            podman logs "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1 || true
-            if grep -q "R2_WINDOW_END::${GITHUB_SHA}::${WINDOW_ID}" /tmp/r7_postgres.log; then
+          # Receipt-driven capture: the suite prints MARKER_EMITTED::<marker>
+          # per emit (stdout, independent of container-log delivery). Poll
+          # until every receipted marker is visible in the snapshot (up to
+          # 60s for log-delivery variance), then run the unchanged strict
+          # audit. If receipted markers never arrive, the failure names the
+          # log-capture gap exactly instead of a bare count mismatch. This
+          # changes no verdict semantics: the audit still requires the
+          # markers in the DB log.
+          echo "R2_COLLECT_LOOP_START receipts_file_bytes=$(wc -c < /tmp/r2_marker_receipts.log 2>/dev/null || echo MISSING)"
+          EXPECTED_MARKERS=$(cat /tmp/r2_marker_receipts.log 2>/dev/null | sort -u || true)
+          echo "R2_COLLECT_EXPECTED_COUNT=$(echo "$EXPECTED_MARKERS" | grep -c MARKER_EMITTED || true)"
+          ITER=0
+          for _ in $(seq 1 60); do
+            ITER=$((ITER + 1))
+            # Retrieve the server log FILE directly: `podman logs` delivery
+            # on hosted runners has observably dropped recent statement
+            # lines that the server demonstrably emitted (suite receipts +
+            # local container replication prove emission and server logging).
+            # File retrieval bypasses the log-driver path while the audit
+            # still parses genuine server-side log content (unchanged
+            # strength); fall back to `podman logs` if the copy fails.
+            if ! podman cp "${R7_PG_CONTAINER}:/var/lib/postgresql/data/log/postgresql.log" /tmp/r7_postgres.log 2>/dev/null; then
+              podman logs "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1 || true
+            fi
+            SNAP_BYTES=$(wc -c < /tmp/r7_postgres.log || echo 0)
+            MISSING=""
+            for m in $EXPECTED_MARKERS; do
+              marker="${m#MARKER_EMITTED::}"
+              if ! grep -qF "$marker" /tmp/r7_postgres.log; then
+                MISSING="$MISSING $marker"
+              fi
+            done
+            if [ -z "$EXPECTED_MARKERS" ]; then
+              echo "R2_MARKER_RECEIPTS_ABSENT_FROM_SUITE_STDOUT" | tee -a /tmp/r2_db.log
               break
+            fi
+            if [ -z "$MISSING" ]; then
+              echo "R2_COLLECT_CONVERGED iter=$ITER snap_bytes=$SNAP_BYTES"
+              break
+            fi
+            if [ "$ITER" = "60" ]; then
+              echo "R2_COLLECT_EXHAUSTED iters=60 snap_bytes=$SNAP_BYTES"
             fi
             sleep 1
           done
+          if [ -n "$MISSING" ]; then
+            echo "R2_MARKER_LOG_CAPTURE_GAP (emitted but absent from container-log snapshot):$MISSING" | tee -a /tmp/r2_db.log
+          fi
+          if grep -qF "R2_PROBE_DIRECT::${GITHUB_SHA}::${WINDOW_ID}" /tmp/r7_postgres.log; then
+            echo "R2_PROBE_DIRECT_PRESENT_IN_SNAPSHOT"
+          else
+            echo "R2_PROBE_DIRECT_ABSENT_FROM_SNAPSHOT"
+          fi
 
           python scripts/r2/db_log_window_audit.py \
             --log-file /tmp/r7_postgres.log \
@@ -441,12 +513,44 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3
           R3_API_BASE_URL: http://127.0.0.1:8000
+          B26_P2_AUTH_ROOT_URL: http://127.0.0.1:8001
           DATABASE_POOL_SIZE: "40"
           DATABASE_MAX_OVERFLOW: "40"
           LOG_LEVEL: "DEBUG"
         run: |
           set -euo pipefail
           pkill -f "uvicorn app.main:app" || true
+          pkill -f "uvicorn app.auth_service.server:app" || true
+          # Production topology: the API relays verified arrivals to the
+          # dedicated authentication trust root over HTTP; without it the
+          # relay falls through to the direct path, which fails closed
+          # (ingress capability lives only in the auth root by design).
+          printf '%s' "postgresql://app_ingress:app_ingress@127.0.0.1:5432/r3" > /tmp/r7_ingress_dsn_r3
+          chmod 600 /tmp/r7_ingress_dsn_r3
+          nohup env PYTHONUNBUFFERED=1 SKELDIR_PROCESS_ROLE=auth_ingress \
+            DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3" \
+            B26_P2_INGRESS_DATABASE_URL="" \
+            B26_P2_INGRESS_DATABASE_URL_FILE=/tmp/r7_ingress_dsn_r3 \
+            PLATFORM_TOKEN_ENCRYPTION_KEY=e2e-platform-key \
+            PLATFORM_TOKEN_KEY_ID=e2e-key \
+            python -u -m uvicorn app.auth_service.server:app \
+            --host 127.0.0.1 \
+            --port 8001 \
+            --log-level warning \
+            --workers 1 > /tmp/r7_uvicorn_auth_root.log 2>&1 &
+          echo $! > /tmp/auth_root.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8001/health/live >/dev/null; then
+              echo "R3_AUTH_ROOT_READY"
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -fsS http://127.0.0.1:8001/health/live >/dev/null; then
+            echo "R3 auth root failed liveness checks"
+            tail -n 100 /tmp/r7_uvicorn_auth_root.log || true
+            exit 1
+          fi
           nohup env PYTHONUNBUFFERED=1 python -u -m uvicorn app.main:app \
             --host 127.0.0.1 \
             --port 8000 \
@@ -483,6 +587,7 @@ jobs:
         shell: bash
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3
+          B26_P2_AUTH_ROOT_URL: http://127.0.0.1:8001
           MIGRATION_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r3
           R3_ADMIN_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r3
           R3_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
@@ -607,6 +712,7 @@ jobs:
           CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/r4
           CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/r4
           R4_ADMIN_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r4
+          B26_P2_AUTH_ROOT_URL: http://127.0.0.1:8002
         run: |
           set -euo pipefail
           echo "R7_PHASE_START=R4 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ) sha=${GITHUB_SHA}"
@@ -617,6 +723,35 @@ jobs:
           psql -h "${R7_PG_HOST}" -U "${R7_PG_ADMIN_USER}" -d r4 -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;" >/dev/null
 
           pkill -f "uvicorn app.main:app" || true
+          # Production topology (same law as R3b): webhook arrivals relay
+          # to a dedicated auth root; the R4 lane gets its own root so
+          # phases stay isolated (R3 keeps :8001).
+          printf '%s' "postgresql://app_ingress:app_ingress@127.0.0.1:5432/r4" > /tmp/r7_ingress_dsn_r4
+          chmod 600 /tmp/r7_ingress_dsn_r4
+          pkill -f "uvicorn app.auth_service.server:app" || true
+          nohup env PYTHONUNBUFFERED=1 SKELDIR_PROCESS_ROLE=auth_ingress \
+            DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r4" \
+            B26_P2_INGRESS_DATABASE_URL="" \
+            B26_P2_INGRESS_DATABASE_URL_FILE=/tmp/r7_ingress_dsn_r4 \
+            PLATFORM_TOKEN_ENCRYPTION_KEY=e2e-platform-key \
+            PLATFORM_TOKEN_KEY_ID=e2e-key \
+            python -u -m uvicorn app.auth_service.server:app \
+            --host 127.0.0.1 \
+            --port 8002 \
+            --log-level warning \
+            --workers 1 > /tmp/r7_uvicorn_auth_root_r4.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8002/health/live >/dev/null; then
+              echo "R4_AUTH_ROOT_READY"
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -fsS http://127.0.0.1:8002/health/live >/dev/null; then
+            echo "R4 auth root failed liveness checks"
+            tail -n 100 /tmp/r7_uvicorn_auth_root_r4.log || true
+            exit 1
+          fi
           nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/r7_uvicorn_r4.log 2>&1 &
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8000/health >/dev/null; then

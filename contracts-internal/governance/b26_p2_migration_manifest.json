@@ -61,6 +61,10 @@
     "202609300005": {
       "file": "202609300005_b26_p2_bayesian_verdict_authority_reader.py",
       "sha256": "e0e3f7100e27cd552c27d4877e57f622c1bdee6fe4f95a9fe5459cd48f122e7d"
+    },
+    "202609300006": {
+      "file": "202609300006_b26_p2_ledger_tenant_rls_conformance.py",
+      "sha256": "24d0fb616b96a81622f1c4f17978f919ab7c55e236f04a9a92af43af32e03914"
     }
   }
 }
