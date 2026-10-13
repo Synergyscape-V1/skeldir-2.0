@@ -7,11 +7,22 @@ DEFINER readers only). Tenant FORCE RLS is a frozen requirement, and no
 exemption is taken: this revision brings the ledger into conformance
 without changing any principal's effective access.
 
-The single policy permits only migration_owner (the table owner and the
-user every ledger DEFINER routine executes as). Runtime roles hold no
-privileges on the table at all, so they remain denied exactly as before;
-before/after effective-privilege probing is byte-identical. TRUNCATE is
-privilege-checked, not RLS-filtered, and remains owner-only. The
+The single FOR ALL policy names no role at all (applies to PUBLIC),
+following the owner-agnostic law of 202609270003: lanes whose migrations
+run under a lane-owner role (R7's r7_admin, R3's r3 owner, ...) create
+the ledger and its SECURITY DEFINER trigger owned by that role, and
+inside the DEFINER trigger current_user IS the lane owner. A TO
+migration_owner clause would apply on canonical lanes only; on every
+other lane FORCE RLS with no applicable policy would default-deny the
+trigger's own INSERT and break verdict corrections, and worse, Postgres
+refuses CREATE POLICY naming a nonexistent role, so the migration
+itself fails on lanes without a migration_owner login (R7 R4a).
+
+Runtime roles hold no privileges on the table at all, so they remain
+denied exactly as before; before/after effective-privilege probing is
+byte-identical (grants stay the authority mechanism, as on every other
+table). TRUNCATE is privilege-checked, not RLS-filtered, and remains
+owner-only. The ledger immutability triggers are untouched. The
 maintenance trust boundary is unchanged: the owner can still alter its
 own table, and that alteration remains detectable only through the beat
 observations plus the committed anchor, exactly as documented.
@@ -30,9 +41,13 @@ down_revision = "202609300005"
 
 def upgrade() -> None:
     op.execute(
+        "DROP POLICY IF EXISTS b26_p2_supersession_ledger_owner_all"
+        " ON public.b26_p2_verdict_supersession_ledger"
+    )
+    op.execute(
         "CREATE POLICY b26_p2_supersession_ledger_owner_all"
         " ON public.b26_p2_verdict_supersession_ledger"
-        " FOR ALL TO migration_owner USING (true) WITH CHECK (true)"
+        " FOR ALL USING (true) WITH CHECK (true)"
     )
     op.execute(
         "ALTER TABLE public.b26_p2_verdict_supersession_ledger"

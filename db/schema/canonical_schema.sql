@@ -24730,7 +24730,7 @@ ALTER TABLE public.b26_p2_scope_policy_authority ENABLE ROW LEVEL SECURITY;
 -- Name: b26_p2_verdict_supersession_ledger b26_p2_supersession_ledger_owner_all; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY b26_p2_supersession_ledger_owner_all ON public.b26_p2_verdict_supersession_ledger TO migration_owner USING (true) WITH CHECK (true);
+CREATE POLICY b26_p2_supersession_ledger_owner_all ON public.b26_p2_verdict_supersession_ledger USING (true) WITH CHECK (true);
 
 
 --
