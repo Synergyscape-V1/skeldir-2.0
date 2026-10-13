@@ -11217,6 +11217,8 @@ CREATE TABLE public.b26_p2_verdict_supersession_ledger (
     seq bigint NOT NULL
 );
 
+ALTER TABLE ONLY public.b26_p2_verdict_supersession_ledger FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: b26_p2_verdict_supersession_ledger_seq_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -24723,6 +24725,19 @@ ALTER TABLE public.b26_p2_scheduler_heartbeat ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.b26_p2_scope_policy_authority ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: b26_p2_verdict_supersession_ledger b26_p2_supersession_ledger_owner_all; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY b26_p2_supersession_ledger_owner_all ON public.b26_p2_verdict_supersession_ledger TO migration_owner USING (true) WITH CHECK (true);
+
+
+--
+-- Name: b26_p2_verdict_supersession_ledger; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.b26_p2_verdict_supersession_ledger ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: b27_explanation_materializations; Type: ROW SECURITY; Schema: public; Owner: -

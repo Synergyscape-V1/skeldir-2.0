@@ -332,7 +332,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 image, "python", "/proof/assert_b26_p2_authority_universe.py",
                 "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202609300005",
+                "--migration-head", "202609300006",
                 "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
@@ -642,7 +642,7 @@ def main() -> int:
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
               f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                  "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                  "--migration-head", "202609300005",
+                  "--migration-head", "202609300006",
                 "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

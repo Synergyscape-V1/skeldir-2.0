@@ -256,7 +256,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         checks["beat_task_registered"] = True
     contract = (REPO_ROOT / "backend" / "app" / "core"
                 / "construction_authority.py").read_text(encoding="utf-8")
-    if 'REQUIRED_SCHEMA_REVISION = "202609300005"' not in contract:
+    if 'REQUIRED_SCHEMA_REVISION = "202609300006"' not in contract:
         violations.append("xxi_comp_construction_contract_not_advanced")
     else:
         checks["construction_contract_at_xxi"] = True
@@ -1025,7 +1025,7 @@ def _live_checks(
                     f"xxi_comp_reupgrade_failed:{up.stderr[-200:]}")
             else:
                 cur.execute("SELECT version_num FROM alembic_version")
-                if cur.fetchone()[0] != "202609300005":
+                if cur.fetchone()[0] != "202609300006":
                     violations.append("xxi_comp_reupgrade_wrong_revision")
                 else:
                     checks["downgrade_reupgrade_converges"] = True
