@@ -362,13 +362,36 @@ jobs:
           # log itself, so reading the whole log is what the standalone R2 lane
           # does. A --since bound adds no bounding and can drop a marker emitted
           # in the same second as the timestamp.
-          for _ in $(seq 1 15); do
+          # Receipt-driven capture: the suite prints MARKER_EMITTED::<marker>
+          # per emit (stdout, independent of container-log delivery). Poll
+          # until every receipted marker is visible in the snapshot (up to
+          # 60s for log-delivery variance), then run the unchanged strict
+          # audit. If receipted markers never arrive, the failure names the
+          # log-capture gap exactly instead of a bare count mismatch. This
+          # changes no verdict semantics: the audit still requires the
+          # markers in the DB log.
+          EXPECTED_MARKERS=$(grep -o "MARKER_EMITTED::[^[:space:]]*" /tmp/r2_scenario.log | sort -u || true)
+          for _ in $(seq 1 60); do
             podman logs "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1 || true
-            if grep -q "R2_WINDOW_END::${GITHUB_SHA}::${WINDOW_ID}" /tmp/r7_postgres.log; then
+            MISSING=""
+            for m in $EXPECTED_MARKERS; do
+              marker="${m#MARKER_EMITTED::}"
+              if ! grep -qF "$marker" /tmp/r7_postgres.log; then
+                MISSING="$MISSING $marker"
+              fi
+            done
+            if [ -z "$EXPECTED_MARKERS" ]; then
+              echo "R2_MARKER_RECEIPTS_ABSENT_FROM_SUITE_STDOUT" | tee -a /tmp/r2_db.log
+              break
+            fi
+            if [ -z "$MISSING" ]; then
               break
             fi
             sleep 1
           done
+          if [ -n "$MISSING" ]; then
+            echo "R2_MARKER_LOG_CAPTURE_GAP (emitted but absent from container-log snapshot):$MISSING" | tee -a /tmp/r2_db.log
+          fi
 
           python scripts/r2/db_log_window_audit.py \
             --log-file /tmp/r7_postgres.log \
