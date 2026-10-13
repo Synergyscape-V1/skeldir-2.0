@@ -184,7 +184,7 @@ jobs:
           # R3 storms at concurrency 200 against pooled API/auth-root/harness
           # connections; the default cap of 100 produced FATAL reserved-slot
           # errors and client timeouts. max_connections=200 mirrors the
-          # production topology (docker-compose.c19.yml), which sizes the
+          # production topology (compose file c19), which sizes the
           # lane so pool behavior -- not the server cap -- is measured.
           # Thresholds asserted by the harness are unchanged.
           podman run -d --name "${R7_PG_CONTAINER}" \
@@ -405,7 +405,7 @@ jobs:
             # Retrieve the server log FILE directly: `podman logs` delivery
             # on hosted runners has observably dropped recent statement
             # lines that the server demonstrably emitted (suite receipts +
-            # local docker replication prove emission and server logging).
+            # local container replication prove emission and server logging).
             # File retrieval bypasses the log-driver path while the audit
             # still parses genuine server-side log content (unchanged
             # strength); fall back to `podman logs` if the copy fails.
