@@ -144,7 +144,12 @@ def _shopify_order_body(
             "id": int(order_id),
             "total_price": f"{Decimal(amount_minor) / Decimal(100):.2f}",
             "currency": "USD",
+            # Positive-creation evidence the derivation law requires: a real
+            # orders/create carries a creation financial status plus coherent
+            # creation/update instants (see derive_shopify_lifecycle).
+            "financial_status": "paid",
             "created_at": occurred_at.isoformat(),
+            "updated_at": occurred_at.isoformat(),
         },
         separators=(",", ":"),
     ).encode("utf-8")
