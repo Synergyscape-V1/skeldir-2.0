@@ -27,3 +27,42 @@ export const NAV_LINK_COLORS = {
 export function navLinkAppearanceFromVisible(isVisible: boolean): NavLinkAppearance {
   return isVisible ? NAV_LINK_APPEARANCE.solid : NAV_LINK_APPEARANCE.overlay;
 }
+
+/**
+ * App paths that render on a light/white background from the first paint.
+ * The global header must use `data-nav-appearance="solid"` (dark link text +
+ * white bar) on these routes — not `overlay` (white link text for hero pages).
+ *
+ * Home (`/`) and `/agencies` keep overlay-at-top until scroll. Methodology routes,
+ * legal placeholders, pricing, resources, etc. are listed here.
+ */
+export const NAV_SOLID_FROM_LOAD_PREFIXES = [
+  "/pricing",
+  "/resources",
+  "/book-demo",
+  "/product",
+  "/privacy",
+  "/terms",
+  "/gdpr",
+  "/security",
+  "/methodology",
+  "/ai-boundary",
+  "/trust-envelope",
+  "/revenue-verification",
+  "/attribution-methodology",
+  "/discrepancy-taxonomy",
+  "/docs",
+  "/api",
+  "/about",
+  "/careers",
+  "/press",
+  "/status",
+] as const;
+
+/** @param pathname Next.js pathname (may be null during SSR) */
+export function pathnameNeedsSolidNavFromLoad(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return NAV_SOLID_FROM_LOAD_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}

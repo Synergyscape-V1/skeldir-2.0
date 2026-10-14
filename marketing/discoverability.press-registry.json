@@ -1,0 +1,11 @@
+{
+  "$comment": "D6-b press surface registry. Public /press copy and discoverability gates must align with these fields.",
+  "route": "/press",
+  "indexability": true,
+  "sitemap_required": true,
+  "noindex_required": false,
+  "last_reviewed": "2026-02-25",
+  "owner": "Skeldir Growth",
+  "approved_media_claims": [],
+  "press_kit_available": false
+}

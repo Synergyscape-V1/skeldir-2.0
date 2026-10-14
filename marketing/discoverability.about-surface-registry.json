@@ -1,0 +1,58 @@
+{
+  "$comment": "D6-b About surface registry. /about copy, positioning, and harness gates must align with these fields and entity-semantics-registry.json.",
+  "route": "/about",
+  "canonical_entity_definition": "Skeldir is financial-trust infrastructure for deterministic revenue verification. It helps digital operators and finance teams distinguish platform-reported revenue claims from revenue supported by independent commerce and payment evidence.",
+  "approved_positioning_terms": [
+    "financial-trust infrastructure",
+    "deterministic revenue verification",
+    "verified revenue",
+    "independent commerce and payment evidence",
+    "audit-ready trust context",
+    "privacy-preserving design",
+    "tenant-scoped financial memory",
+    "AI explanation boundary"
+  ],
+  "disallowed_positioning_terms": [
+    "AI attribution assistant",
+    "analytics dashboard",
+    "ad optimization platform",
+    "financial product",
+    "Bayesian truth engine",
+    "guaranteed revenue truth",
+    "zero PII",
+    "full audit trail",
+    "integer-cents reconciliation",
+    "integer minor units"
+  ],
+  "indexability": true,
+  "sitemap_required": true,
+  "schema_allowed": "WebPage",
+  "primary_audience": [
+    "digital operators",
+    "finance and revenue operations teams",
+    "downstream automated systems"
+  ],
+  "proof_routes": [
+    "/methodology",
+    "/revenue-verification",
+    "/attribution-methodology",
+    "/discrepancy-taxonomy",
+    "/trust-envelope",
+    "/ai-boundary",
+    "/security",
+    "/privacy",
+    "/api",
+    "/docs"
+  ],
+  "required_boundary_phrases": [
+    "financial-trust infrastructure",
+    "deterministic revenue verification",
+    "platform-reported",
+    "independent commerce",
+    "not an analytics dashboard",
+    "not an AI attribution assistant",
+    "verification scope"
+  ],
+  "last_reviewed": "2026-02-25",
+  "owner": "Skeldir Growth"
+}

@@ -1,0 +1,77 @@
+{
+  "$comment": "Approved public contact channels. D6-b /press must only render emails listed here with publicly_rendered: true.",
+  "contacts": [
+    {
+      "contact_type": "privacy",
+      "email": "engineering@skeldir.com",
+      "publicly_rendered": true,
+      "approved_by": "Skeldir Security & Engineering",
+      "last_reviewed": "2026-02-25",
+      "purpose": "Privacy posture inquiries (primary on /privacy)",
+      "fallback_behavior": "Do not render on /privacy if contact_approved is false in privacy-surface registry."
+    },
+    {
+      "contact_type": "press",
+      "email": "press@skeldir.com",
+      "publicly_rendered": true,
+      "approved_by": "Skeldir Growth",
+      "last_reviewed": "2026-02-25",
+      "purpose": "Media, analyst, and factual verification inquiries",
+      "fallback_behavior": "Do not render on public pages if publicly_rendered is false."
+    },
+    {
+      "contact_type": "security_engineering",
+      "email": "engineering@skeldir.com",
+      "publicly_rendered": true,
+      "approved_by": "Skeldir Security & Engineering",
+      "last_reviewed": "2026-02-25",
+      "purpose": "Security and technical governance inquiries referenced from press routing",
+      "fallback_behavior": "Prefer /security page for security posture; email for direct engagement."
+    },
+    {
+      "contact_type": "sales",
+      "email": "sales@skeldir.com",
+      "publicly_rendered": true,
+      "approved_by": "Skeldir Growth",
+      "last_reviewed": "2026-02-25",
+      "purpose": "Commercial and procurement inquiries",
+      "fallback_behavior": "Do not render on public pages if publicly_rendered is false."
+    },
+    {
+      "contact_type": "security",
+      "email": "security@skeldir.com",
+      "publicly_rendered": true,
+      "approved_by": "Skeldir Security & Engineering",
+      "last_reviewed": "2026-02-25",
+      "purpose": "Security posture and vulnerability reporting (primary on /security)",
+      "fallback_behavior": "May be linked from press page via /security route."
+    },
+    {
+      "contact_type": "support",
+      "email": "support@skeldir.com",
+      "publicly_rendered": true,
+      "approved_by": "Skeldir Infrastructure",
+      "last_reviewed": "2026-02-25",
+      "purpose": "Operational status and service inquiries (primary on /status)",
+      "fallback_behavior": "May be linked from other surfaces; not required on /press."
+    },
+    {
+      "contact_type": "integration",
+      "email": "sales@skeldir.com",
+      "publicly_rendered": true,
+      "approved_by": "Skeldir Growth",
+      "last_reviewed": "2026-02-25",
+      "purpose": "API and integration agreement inquiries (primary on /api)",
+      "fallback_behavior": "Do not render on /api if contact_approved is false in api-surface registry."
+    },
+    {
+      "contact_type": "careers",
+      "email": "engineering@skeldir.com",
+      "publicly_rendered": true,
+      "approved_by": "Skeldir Engineering",
+      "last_reviewed": "2026-02-25",
+      "purpose": "Talent and careers inquiries (primary on /careers)",
+      "fallback_behavior": "Do not render on /careers if publicly_rendered is false or careers registry contact_approved is false."
+    }
+  ]
+}

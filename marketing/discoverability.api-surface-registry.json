@@ -1,0 +1,25 @@
+{
+  "$comment": "D6-b API surface registry. Public /api copy and harness gates must align with these fields.",
+  "route": "/api",
+  "public_api_reference_available": false,
+  "public_endpoint_details_rendered": false,
+  "access_model": "agreement_required",
+  "authorized_integrator_only": true,
+  "contact_channel": "sales@skeldir.com",
+  "contact_approved": true,
+  "last_reviewed": "2026-02-25",
+  "owner": "Skeldir Product Engineering",
+  "indexability": true,
+  "sitemap_required": true,
+  "schema_allowed": "WebPage",
+  "required_boundary_phrases": [
+    "authorized integrator",
+    "agreement",
+    "concrete endpoint",
+    "authentication details",
+    "verification context",
+    "deterministic value",
+    "verification status",
+    "advisory"
+  ]
+}

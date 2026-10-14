@@ -1,14 +1,21 @@
 import type { Metadata } from "next";
+import { Manrope } from "next/font/google";
+import { canonicalUrl } from "@/lib/crawlUrls";
+import { RESOURCES_HUB_DESCRIPTION } from "@/lib/schema/pageSchemas";
+
+const manrope = Manrope({
+    subsets: ["latin"],
+    weight: ["400", "500", "600", "700", "800"],
+    variable: "--font-manrope",
+});
 
 export const metadata: Metadata = {
     title: "Resources | Skeldir – Marketing Attribution Insights",
-    description:
-        "Learn how to navigate attribution discrepancies, understand ROAS ranges, and defend budget shifts with evidence-based frameworks from Skeldir.",
+    description: RESOURCES_HUB_DESCRIPTION,
     openGraph: {
         title: "Resources | Skeldir – Marketing Attribution Insights",
-        description:
-            "Learn how to navigate attribution discrepancies, understand ROAS ranges, and defend budget shifts with evidence-based frameworks from Skeldir.",
-        url: "https://skeldir.com/resources",
+        description: RESOURCES_HUB_DESCRIPTION,
+        url: canonicalUrl("/resources"),
         siteName: "Skeldir",
         images: [
             {
@@ -24,12 +31,11 @@ export const metadata: Metadata = {
     twitter: {
         card: "summary_large_image",
         title: "Resources | Skeldir – Marketing Attribution Insights",
-        description:
-            "Learn how to navigate attribution discrepancies, understand ROAS ranges, and defend budget shifts with evidence-based frameworks from Skeldir.",
+        description: RESOURCES_HUB_DESCRIPTION,
         images: ["/images/resources/article-1-hero.png"],
     },
     alternates: {
-        canonical: "https://skeldir.com/resources",
+        canonical: canonicalUrl("/resources"),
     },
 };
 
@@ -38,5 +44,5 @@ export default function ResourcesLayout({
 }: {
     children: React.ReactNode;
 }) {
-    return <>{children}</>;
+    return <div className={manrope.variable}>{children}</div>;
 }

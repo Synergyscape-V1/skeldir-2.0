@@ -1,0 +1,316 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-05-23T19:49:14.687Z",
+  "phase": "D6",
+  "entries": [
+    {
+      "query": "Why are Meta numbers higher than Stripe?",
+      "query_category": "platform_discrepancy",
+      "buyer_role": "CFO / Finance lead",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/meta-vs-stripe",
+      "route_status": "live",
+      "proof_routes": [
+        "/methodology",
+        "/revenue-verification",
+        "/discrepancy-taxonomy"
+      ],
+      "claim_registry_refs": [
+        "D5-CLAIM-002"
+      ],
+      "priority": "P0",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "Why do Google Ads and Shopify revenue disagree?",
+      "query_category": "platform_discrepancy",
+      "buyer_role": "Finance operator",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/google-ads-vs-shopify",
+      "route_status": "live",
+      "proof_routes": [
+        "/revenue-verification",
+        "/attribution-methodology"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P0",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "How do I audit platform-reported revenue?",
+      "query_category": "finance_audit",
+      "buyer_role": "Internal audit",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/finance-roas-audit-checklist",
+      "route_status": "live",
+      "proof_routes": [
+        "/revenue-verification",
+        "/methodology"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P0",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "How do I reconcile Shopify orders to ad-channel claims?",
+      "query_category": "revenue_verification",
+      "buyer_role": "RevOps",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/shopify-reconciliation",
+      "route_status": "live",
+      "proof_routes": [
+        "/revenue-verification",
+        "/discrepancy-taxonomy"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P0",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What causes attribution discrepancies?",
+      "query_category": "attribution_methodology",
+      "buyer_role": "Growth lead",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/discrepancy-taxonomy",
+      "route_status": "live",
+      "proof_routes": [
+        "/attribution-methodology",
+        "/methodology"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P1",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "How should finance validate ROAS before budget shifts?",
+      "query_category": "finance_audit",
+      "buyer_role": "CFO",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/finance-roas-audit-checklist",
+      "route_status": "live",
+      "proof_routes": [
+        "/revenue-verification",
+        "/methodology"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P0",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What does Skeldir mean by verified revenue?",
+      "query_category": "revenue_verification",
+      "buyer_role": "Buyer",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/revenue-verification",
+      "route_status": "live",
+      "proof_routes": [
+        "/methodology",
+        "/trust-envelope"
+      ],
+      "claim_registry_refs": [
+        "D5-CLAIM-002"
+      ],
+      "priority": "P0",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What is a TrustEnvelope?",
+      "query_category": "trust_envelope",
+      "buyer_role": "Engineering buyer",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/trust-envelope",
+      "route_status": "live",
+      "proof_routes": [
+        "/docs",
+        "/api"
+      ],
+      "claim_registry_refs": [
+        "D5-CLAIM-004"
+      ],
+      "priority": "P0",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What is deterministic attribution?",
+      "query_category": "attribution_methodology",
+      "buyer_role": "Data lead",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/deterministic-attribution-methods",
+      "route_status": "live",
+      "proof_routes": [
+        "/methodology",
+        "/attribution-methodology"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P1",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What is deterministic vs probabilistic confidence?",
+      "query_category": "confidence_semantics",
+      "buyer_role": "Finance + ML skeptic",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "route_status": "live",
+      "proof_routes": [
+        "/trust-envelope",
+        "/methodology"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P0",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What does AI explain versus calculate?",
+      "query_category": "ai_boundary",
+      "buyer_role": "Security-conscious buyer",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/ai-boundary",
+      "route_status": "live",
+      "proof_routes": [
+        "/methodology",
+        "/resources/evidence/ai-llm-explanation-boundary"
+      ],
+      "claim_registry_refs": [
+        "D5-CLAIM-003"
+      ],
+      "priority": "P0",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What are the privacy/no-PII boundaries?",
+      "query_category": "privacy_boundary",
+      "buyer_role": "Legal / security",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/privacy-no-pii-methodology",
+      "route_status": "live",
+      "proof_routes": [
+        "/security",
+        "/methodology"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P1",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What benchmark limitations apply?",
+      "query_category": "benchmark_methodology",
+      "buyer_role": "Finance",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/benchmark-methodology",
+      "route_status": "live",
+      "proof_routes": [
+        "/methodology"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P1",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "How do TikTok SKAN and modeled conversions skew totals?",
+      "query_category": "platform_discrepancy",
+      "buyer_role": "Performance marketer",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/tiktok-discrepancies",
+      "route_status": "live",
+      "proof_routes": [
+        "/discrepancy-taxonomy",
+        "/revenue-verification"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P2",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "How does Pinterest discovery half-life affect tie-out?",
+      "query_category": "platform_discrepancy",
+      "buyer_role": "Growth",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/pinterest-discrepancies",
+      "route_status": "live",
+      "proof_routes": [
+        "/attribution-methodology"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P2",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "How should I reconcile PayPal wallet flows to store orders?",
+      "query_category": "platform_discrepancy",
+      "buyer_role": "Finance",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/paypal-reconciliation",
+      "route_status": "live",
+      "proof_routes": [
+        "/revenue-verification"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P2",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What is different about WooCommerce plugin stacks?",
+      "query_category": "platform_discrepancy",
+      "buyer_role": "Engineering",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/woocommerce-reconciliation",
+      "route_status": "live",
+      "proof_routes": [
+        "/docs"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P2",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "Where is the evidence library hub?",
+      "query_category": "revenue_verification",
+      "buyer_role": "Agent",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence",
+      "route_status": "live",
+      "proof_routes": [
+        "/methodology",
+        "/revenue-verification"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P1",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    },
+    {
+      "query": "What is the TrustEnvelope retrieval spec (non-canonical)?",
+      "query_category": "trust_envelope",
+      "buyer_role": "Agent",
+      "search_intent": "commercial_investigation",
+      "agent_retrieval_intent": "cite_static_route",
+      "canonical_route": "/resources/evidence/trust-envelope-technical-spec",
+      "route_status": "live",
+      "proof_routes": [
+        "/trust-envelope",
+        "/api"
+      ],
+      "claim_registry_refs": [],
+      "priority": "P2",
+      "owner": "Skeldir Product Engineering",
+      "last_reviewed": "2026-05-23"    }
+  ]
+}

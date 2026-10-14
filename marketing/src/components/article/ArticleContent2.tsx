@@ -1,5 +1,3 @@
-"use client";
-
 import { Manrope } from "next/font/google";
 import { ExternalLink } from "lucide-react";
 
@@ -82,17 +80,7 @@ function ExternalCitation({
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 transition-colors"
-            style={{
-                color: "#3B82F6",
-                textDecoration: "none",
-            }}
-            onMouseEnter={(e) => {
-                e.currentTarget.style.textDecoration = "underline";
-            }}
-            onMouseLeave={(e) => {
-                e.currentTarget.style.textDecoration = "none";
-            }}
+            className="inline-flex items-center gap-1 text-blue-600 no-underline hover:underline transition-colors"
         >
             {children}
             <ExternalLink className="w-3.5 h-3.5 inline-block" />

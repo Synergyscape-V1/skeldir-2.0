@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { JsonLd } from "@/components/schema/JsonLd";
 import { HeroSection } from "@/components/layout/HeroSection";
 import { PartnerLogos } from "@/components/layout/PartnerLogos";
 import { ProblemStatement } from "@/components/layout/ProblemStatement";
@@ -9,12 +10,42 @@ import { TestimonialCarousel } from "@/components/layout/TestimonialCarousel";
 import { InteractiveDemo } from "@/components/layout/InteractiveDemo";
 import { FinalCTA } from "@/components/layout/FinalCTA";
 import { Footer } from "@/components/layout/Footer";
+import { absoluteUrl } from "@/lib/siteCrawl";
+import { organizationJsonLd, webSiteJsonLd, webPageJsonLd } from "@/lib/schema/entity";
+import { SITE_DESCRIPTION, SITE_DOCUMENT_TITLE } from "@/lib/siteMetadata";
+import { HOME_PAGE_H1_ARIA_LABEL } from "@/lib/homeHeroCopy";
 
 // Image preload is handled in layout.tsx
+
+export const metadata: Metadata = {
+  title: SITE_DOCUMENT_TITLE,
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    title: SITE_DOCUMENT_TITLE,
+    description: SITE_DESCRIPTION,
+  },
+  twitter: {
+    title: SITE_DOCUMENT_TITLE,
+    description: SITE_DESCRIPTION,
+  },
+  alternates: {
+    canonical: absoluteUrl("/"),
+  },
+};
 
 export default function Home() {
   return (
     <main className="min-h-screen flex flex-col font-sans">
+      <JsonLd
+        data={[
+          organizationJsonLd(),
+          webSiteJsonLd(),
+          webPageJsonLd("/", {
+            name: HOME_PAGE_H1_ARIA_LABEL,
+            description: SITE_DESCRIPTION,
+          }),
+        ]}
+      />
       {/* Hero Section - responsive img (replaces CSS background) for instant LCP */}
       <section
         className="hero-section hero-background-reveal"

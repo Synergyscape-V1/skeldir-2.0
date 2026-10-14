@@ -1,0 +1,45 @@
+{
+  "$comment": "D6-b privacy surface registry. /privacy copy, indexability, and harness gates must align with these fields.",
+  "route": "/privacy",
+  "public_page_type": "privacy_posture",
+  "legal_review_status": "pending",
+  "operator_approved": false,
+  "indexability": false,
+  "sitemap_required": false,
+  "schema_allowed": "WebPage",
+  "allowed_claims": [
+    "privacy posture",
+    "data minimization",
+    "operator-authorized data",
+    "tenant-scoped records",
+    "privacy-preserving design",
+    "personal identifiers minimized",
+    "public privacy summary"
+  ],
+  "disallowed_claims": [
+    "GDPR compliant",
+    "CCPA compliant",
+    "no PII",
+    "zero PII",
+    "no durable PII",
+    "retention schedule",
+    "subprocessor list",
+    "transfer mechanism",
+    "DPA available"
+  ],
+  "contact_channels": [
+    "engineering@skeldir.com",
+    "security@skeldir.com"
+  ],
+  "contact_approved": true,
+  "last_reviewed": "2026-02-25",
+  "owner": "Skeldir Operator + Legal",
+  "required_boundary_phrases": [
+    "public privacy posture",
+    "privacy posture summary",
+    "not a complete legal privacy policy",
+    "data minimization",
+    "tenant-scoped",
+    "approved legal and operator channels"
+  ]
+}

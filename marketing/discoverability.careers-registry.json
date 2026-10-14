@@ -1,0 +1,22 @@
+{
+  "$comment": "D6-b careers surface registry. Public /careers copy and harness gates must align with these fields.",
+  "route": "/careers",
+  "current_hiring_state": "talent_inquiry_only",
+  "active_roles_count": 0,
+  "public_roles": [],
+  "talent_contact_channel": "engineering@skeldir.com",
+  "contact_approved": true,
+  "last_reviewed": "2026-02-25",
+  "owner": "Skeldir Engineering",
+  "indexability": true,
+  "sitemap_required": true,
+  "schema_allowed": "WebPage",
+  "job_posting_allowed": false,
+  "approved_talent_intake_phrases": [
+    "welcome highly relevant inquiries",
+    "talent inquiry",
+    "not a job board",
+    "no public roles"
+  ],
+  "approved_benefit_claims": []
+}

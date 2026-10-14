@@ -1,0 +1,21 @@
+{
+  "$comment": "D6-b operational status registry. Public /status copy and harness gates must align with these fields.",
+  "route": "/status",
+  "current_public_state": "no_incidents_reported",
+  "active_incidents": [],
+  "scheduled_maintenance": [],
+  "status_update_mode": "manual",
+  "last_reviewed": "2026-02-25",
+  "owner": "Skeldir Infrastructure",
+  "operator_contact_channel": "support@skeldir.com",
+  "approved_operational_claims": [
+    "no active incidents",
+    "no service degradations currently reported",
+    "manual status declaration",
+    "not an automated real-time feed",
+    "affected operators",
+    "scheduled maintenance"
+  ],
+  "indexability": true,
+  "sitemap_required": true
+}

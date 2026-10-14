@@ -1,0 +1,256 @@
+#!/usr/bin/env node
+
+/**
+ * Skeldir D2 — crawl graph, sitemap, robots, canonicals, noindex boundaries, footer hygiene.
+ * D2-C2 — URL authority, static sitemap/robots contract, defective route canonical coherence.
+ */
+
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { parseArticleSlugsFromContent } from './discoverability/lib/content-slugs.mjs';
+import {
+  parseSitemapLocs,
+  validateSitemapXmlWellFormed,
+  validateSitemapMatchesExpected,
+  validateRobotsPolicy,
+  extractCanonicalHrefs,
+  sitemapPathToOutRelative,
+  htmlHasNoindexRobots,
+  htmlHasNoindexFollow,
+  validateFooterLegalAndSupportHygiene,
+  assertDiscoverabilityGitBranchPolicy,
+  validateRobotsDoesNotBlockMetaNoindexRoutes,
+  META_NOINDEX_PUBLIC_PATHS,
+  validateBookDemoDefectiveRequiresNoindex,
+  validateBookDemoDefectiveNoSelfCanonical,
+  validateManifestOriginMatchesAuthority,
+  validateSitemapSourceStaticSafe,
+  validateRobotsSourceStaticAndNoLiteralOrigin,
+  validateRobotsSitemapUrlMatchesAuthority,
+  validateSitemapLocPathsNoTrailingSlashExceptRoot,
+  validateSitemapLocCanonicalPathAlignment,
+} from './discoverability/lib/d2-crawl-graph.mjs';
+import { validateResourcesHubAnchors, validateBookDemoSitemapContainment } from './discoverability/lib/d1-html-retrieval.mjs';
+
+const MARKETING_ROOT = process.cwd();
+const OUT_DIR = path.join(MARKETING_ROOT, 'out');
+const REGISTRY_PATH = path.join(MARKETING_ROOT, 'discoverability.routes.json');
+
+let failures = 0;
+let passes = 0;
+
+function fail(msg) {
+  console.error(`  ❌ FAIL: ${msg}`);
+  failures++;
+}
+
+function pass(msg) {
+  console.log(`  ✅ PASS: ${msg}`);
+  passes++;
+}
+
+function locToCanonicalPath(loc) {
+  const u = new URL(loc);
+  return u.pathname || '/';
+}
+
+function main() {
+  console.log('╔══════════════════════════════════════════════╗');
+  console.log('║  Skeldir D2 — Crawl graph & index control     ║');
+  console.log('╚══════════════════════════════════════════════╝\n');
+
+  console.log('[0] Git branch policy (isolated feature branch)');
+  const gitErrs = assertDiscoverabilityGitBranchPolicy(MARKETING_ROOT);
+  if (gitErrs.length) {
+    for (const e of gitErrs) fail(e);
+  } else pass('Git branch policy satisfied (or skipped)');
+
+  console.log('\n[1] Production build');
+  const build = spawnSync('npm run build', {
+    cwd: MARKETING_ROOT,
+    shell: true,
+    stdio: 'inherit',
+  });
+  if (build.status !== 0) {
+    fail('npm run build exited non-zero');
+    process.exit(1);
+  }
+  pass('npm run build completed');
+
+  console.log('\n[1b] D2-C2 — crawl URL authority, manifest parity, static sitemap/robots source');
+  const mo = validateManifestOriginMatchesAuthority(MARKETING_ROOT);
+  if (mo.length) for (const e of mo) fail(e);
+  else pass('sitemap manifest origin matches crawlUrls.ts');
+
+  const ss = validateSitemapSourceStaticSafe(MARKETING_ROOT);
+  if (ss.length) for (const e of ss) fail(e);
+  else pass('sitemap.ts static-export guard + no literal origin');
+
+  const rs = validateRobotsSourceStaticAndNoLiteralOrigin(MARKETING_ROOT);
+  if (rs.length) for (const e of rs) fail(e);
+  else pass('robots.ts static-export guard + no literal origin');
+
+  console.log('\n[2] Sitemap file presence & XML');
+  const sitemapPath = path.join(OUT_DIR, 'sitemap.xml');
+  if (!fs.existsSync(sitemapPath)) {
+    fail('out/sitemap.xml missing');
+    process.exit(1);
+  }
+  const sitemapXml = fs.readFileSync(sitemapPath, 'utf8');
+  const wf = validateSitemapXmlWellFormed(sitemapXml, MARKETING_ROOT);
+  if (wf.length) {
+    for (const e of wf) fail(e);
+  } else pass('sitemap XML structure and locs look valid');
+
+  const locs = parseSitemapLocs(sitemapXml);
+  const trail = validateSitemapLocPathsNoTrailingSlashExceptRoot(locs, MARKETING_ROOT);
+  if (trail.length) for (const e of trail) fail(e);
+  else pass('sitemap locs: no stray trailing slash on non-root paths (D2-C2)');
+
+  const smErrs = validateSitemapMatchesExpected(MARKETING_ROOT, locs);
+  if (smErrs.length) {
+    for (const e of smErrs) fail(e);
+  } else pass('sitemap URLs match discoverability manifest + articlesData slugs');
+
+  console.log('\n[3] robots.txt');
+  const robotsPath = path.join(OUT_DIR, 'robots.txt');
+  if (!fs.existsSync(robotsPath)) {
+    fail('out/robots.txt missing');
+    process.exit(1);
+  }
+  const robotsTxt = fs.readFileSync(robotsPath, 'utf8');
+  const rb = validateRobotsPolicy(robotsTxt, MARKETING_ROOT);
+  if (rb.length) {
+    for (const e of rb) fail(e);
+  } else pass('robots.txt policy-safe and references sitemap');
+
+  const rsm = validateRobotsSitemapUrlMatchesAuthority(robotsTxt, MARKETING_ROOT);
+  if (rsm.length) for (const e of rsm) fail(e);
+  else pass('robots Sitemap: URL matches crawlUrls authority exactly (D2-C2)');
+
+  console.log('\n[3b] robots.txt must not block meta-noindex HTML routes (D2-C crawlability law)');
+  const crawlBlock = validateRobotsDoesNotBlockMetaNoindexRoutes(robotsTxt, META_NOINDEX_PUBLIC_PATHS);
+  if (crawlBlock.length) {
+    for (const e of crawlBlock) fail(e);
+  } else pass('robots Disallow does not block meta-noindex surfaces');
+
+  const registry = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8'));
+
+  console.log('\n[4] Registry /book-demo sitemap containment (D0)');
+  const bdErrs = validateBookDemoSitemapContainment(registry);
+  if (bdErrs.length) {
+    for (const e of bdErrs) fail(e);
+  } else pass('/book-demo registry containment OK');
+
+  console.log('\n[5] Canonical tags match sitemap URLs (incl. D2-C2 trailing alignment)');
+  for (const loc of locs) {
+    const pathname = locToCanonicalPath(loc);
+    const rel = sitemapPathToOutRelative(pathname);
+    if (!rel) {
+      fail(`cannot map sitemap loc to out file: ${loc}`);
+      continue;
+    }
+    const htmlPath = path.join(OUT_DIR, rel);
+    if (!fs.existsSync(htmlPath)) {
+      fail(`HTML missing for sitemap URL ${loc} → ${rel}`);
+      continue;
+    }
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    const cans = extractCanonicalHrefs(html);
+    if (cans.length !== 1) {
+      fail(`${rel}: expected exactly 1 canonical, found ${cans.length} (${cans.join(', ')})`);
+      continue;
+    }
+    const norm = (u) => {
+      const x = new URL(u);
+      let p = x.pathname;
+      if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
+      return `${x.origin}${p}`;
+    };
+    if (norm(cans[0]) !== norm(loc)) {
+      fail(`${rel}: canonical ${cans[0]} does not match sitemap loc ${loc}`);
+      continue;
+    }
+    const align = validateSitemapLocCanonicalPathAlignment(loc, cans[0]);
+    if (align.length) {
+      for (const e of align) fail(`${rel}: ${e}`);
+      continue;
+    }
+    const cp = new URL(cans[0]).pathname;
+    if (cp !== '/' && cp.endsWith('/')) {
+      fail(`${rel}: canonical must not use trailing slash on non-root path (D2-C2)`);
+      continue;
+    }
+    pass(`${rel}: canonical matches sitemap + trailing policy`);
+  }
+
+  console.log('\n[6] Noindex boundaries, /implementations removal, /book-demo defective containment (D2-C + D2-C2)');
+  const loginHtml = path.join(OUT_DIR, 'Login.html');
+  const signupHtml = path.join(OUT_DIR, 'signup.html');
+  const tyHtml = path.join(OUT_DIR, 'book-demo', 'thank-you.html');
+  for (const [label, p] of [
+    ['Login', loginHtml],
+    ['signup', signupHtml],
+    ['book-demo/thank-you', tyHtml],
+  ]) {
+    if (!fs.existsSync(p)) {
+      fail(`missing ${label} HTML at ${p}`);
+      continue;
+    }
+    const h = fs.readFileSync(p, 'utf8');
+    if (!htmlHasNoindexRobots(h)) fail(`${label} missing noindex robots meta`);
+    else pass(`${label} has noindex`);
+  }
+
+  const implDir = path.join(OUT_DIR, 'implementations');
+  if (fs.existsSync(implDir)) {
+    fail('out/implementations/ must be absent — review artifacts removed from public export (D2-C strategy A)');
+  } else pass('implementations/ absent from static export (removed from public/)');
+
+  const bookDemoPath = path.join(OUT_DIR, 'book-demo.html');
+  if (!fs.existsSync(bookDemoPath)) {
+    fail('missing book-demo.html');
+  } else {
+    const bookHtml = fs.readFileSync(bookDemoPath, 'utf8');
+    const bdNo = validateBookDemoDefectiveRequiresNoindex(registry, bookHtml);
+    if (bdNo.length) {
+      for (const e of bdNo) fail(e);
+    } else pass('/book-demo defective containment: noindex,follow present (crawlable deindexing)');
+
+    const bdCanon = validateBookDemoDefectiveNoSelfCanonical(registry, bookHtml);
+    if (bdCanon.length) {
+      for (const e of bdCanon) fail(e);
+    } else pass('/book-demo defective: no self-canonical (D2-C2 coherence)');
+  }
+
+  console.log('\n[7] Resources hub article anchors');
+  const hubPath = path.join(OUT_DIR, 'resources.html');
+  const hub = fs.readFileSync(hubPath, 'utf8');
+  const slugs = parseArticleSlugsFromContent(MARKETING_ROOT);
+  const hubErrs = validateResourcesHubAnchors(hub, slugs);
+  if (hubErrs.length) {
+    for (const e of hubErrs) fail(e);
+  } else pass('resources hub links every article slug');
+
+  console.log('\n[8] Footer legal/support link hygiene (built homepage)');
+  const indexHtml = fs.readFileSync(path.join(OUT_DIR, 'index.html'), 'utf8');
+  const fe = validateFooterLegalAndSupportHygiene(indexHtml);
+  if (fe.length) {
+    for (const e of fe) fail(e);
+  } else pass('homepage footer legal/support links are truthful');
+
+  console.log('\n[9] book-demo must not appear in sitemap');
+  if (locs.some((l) => locToCanonicalPath(l).replace(/\/$/, '') === '/book-demo')) {
+    fail('/book-demo must not be listed in sitemap while contained');
+  } else pass('/book-demo absent from sitemap');
+
+  console.log('\n──────────────────────────────────────────────');
+  if (failures > 0) {
+    console.error(`\nD2 harness: ${failures} failure(s), ${passes} pass(es).`);
+    process.exit(1);
+  }
+  console.log(`\nD2 harness: all checks passed (${passes} passes).`);
+}
+
+main();

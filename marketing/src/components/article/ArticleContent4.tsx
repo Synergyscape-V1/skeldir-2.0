@@ -1,6 +1,4 @@
-"use client";
-
-import { CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import { ExternalLink } from "lucide-react";
 
 // Typography styles matching the established pattern

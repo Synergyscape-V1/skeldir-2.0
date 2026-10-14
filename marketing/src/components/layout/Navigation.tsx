@@ -8,7 +8,10 @@ import { Menu, X } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { NavTextLink } from "@/components/layout/NavTextLink";
-import { navLinkAppearanceFromVisible } from "@/components/layout/navLinkPhysics";
+import {
+  navLinkAppearanceFromVisible,
+  pathnameNeedsSolidNavFromLoad,
+} from "@/components/layout/navLinkPhysics";
 
 const navLinks = [
   { href: "/product", label: "Product" },
@@ -47,9 +50,8 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
 
   const isHomeOrAgencies =
     pathname === "/" || (pathname && pathname.startsWith("/agencies"));
-  // Pages with white/light backgrounds need solid nav from the start
-  const pagesWithWhiteBackground = ['/pricing', '/resources', '/book-demo'];
-  const shouldForceVisible = forceVisible || pagesWithWhiteBackground.some(path => pathname?.startsWith(path));
+  // Light-background pages need solid nav from the first paint (see navLinkPhysics.ts)
+  const shouldForceVisible = forceVisible || pathnameNeedsSolidNavFromLoad(pathname);
 
   useEffect(() => {
     setIsClient(true);
