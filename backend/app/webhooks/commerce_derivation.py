@@ -214,16 +214,21 @@ class SovereignCommerce:
     event_timestamp: datetime
 
 
-# XXI (H-XXI-03): positive Shopify creation law. The transported topic
-# asserts creation; only a body that positively reads as a creation
-# earns the orders.create family. Creation-shaped means: a creation
-# financial status, no terminal lifecycle markers, an empty refunds
-# list, and both creation/update instants present within skew of each
-# other (a later update restates an existing obligation; it is not a
-# new creation fact). This bound mirrors the database lifecycle
+# XXI (H-XXI-03) + family-law v4: positive Shopify creation law. The
+# transported topic asserts creation; only a body that positively reads
+# as a creation earns the orders.create family. Creation-shaped means: a
+# creation financial status, no terminal lifecycle markers, an empty
+# refunds list, and both creation/update instants present within skew of
+# each other. Genuine creates carry coincident instants (same Shopify
+# transaction); any material update skew marks a restated obligation,
+# not a new creation fact -- and the unsigned topic cannot rehabilitate
+# it, because the tenant holds its own webhook secret and every body
+# byte is forgeable. The v3 300 s window admitted forged nonterminal
+# shapes (+90/+120/+240 s updates verified end to end, ADD2-VF1); v4
+# narrows the moment to 60 s. This bound mirrors the database lifecycle
 # admission (b26_p2_enforce_lifecycle_admission); both cite contract
-# event-family-law.v3.json.
-SHOPIFY_CREATION_SKEW_SECONDS = 300
+# event-family-law.v4.json.
+SHOPIFY_CREATION_SKEW_SECONDS = 60
 SHOPIFY_CREATION_FINANCIAL_STATUSES = frozenset(
     {"pending", "authorized", "paid", "partially_paid"}
 )
