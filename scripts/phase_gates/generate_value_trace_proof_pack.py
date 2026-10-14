@@ -87,11 +87,14 @@ def _collect_paginated_items(
         payload = _api_get_json(url, token=token)
         page_items = payload.get(payload_key, [])
         if not isinstance(page_items, list):
-            raise RuntimeError(f"GitHub API payload missing list key: {payload_key}")
+            raise RuntimeError(
+                f"GitHub API response missing list key {payload_key!r} for {endpoint}"
+            )
         items.extend(item for item in page_items if isinstance(item, dict))
         if len(page_items) < 100:
-            return items
+            break
         page += 1
+    return items
 
 
 def _collect_run_artifacts(api_url: str, repo: str, run_id: str, token: str) -> Dict[str, int]:
