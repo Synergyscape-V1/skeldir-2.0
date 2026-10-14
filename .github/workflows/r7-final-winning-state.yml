@@ -527,8 +527,14 @@ jobs:
           # (ingress capability lives only in the auth root by design).
           printf '%s' "postgresql://app_ingress:app_ingress@127.0.0.1:5432/r3" > /tmp/r7_ingress_dsn_r3
           chmod 600 /tmp/r7_ingress_dsn_r3
+          # EXPERIMENT (exp/r7-sidecar-pool): size the sidecar pools to the
+          # offered relay concurrency (default 5+10 serializes 200-way
+          # bursts at the sidecar DB pool; hypothesis H-B1). Revert or adopt
+          # per outcome; see ledger ADD2-B-DIAG.
           nohup env PYTHONUNBUFFERED=1 SKELDIR_PROCESS_ROLE=auth_ingress \
             DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3" \
+            DATABASE_POOL_SIZE="40" \
+            DATABASE_MAX_OVERFLOW="40" \
             B26_P2_INGRESS_DATABASE_URL="" \
             B26_P2_INGRESS_DATABASE_URL_FILE=/tmp/r7_ingress_dsn_r3 \
             PLATFORM_TOKEN_ENCRYPTION_KEY=e2e-platform-key \
@@ -696,6 +702,9 @@ jobs:
             ss -ltnp | grep ":8000" || true
             ls -l /tmp/r7_uvicorn_r3.log || true
             tail -n 200 /tmp/r7_uvicorn_r3.log || true
+            echo "--- auth-root sidecar log (relay path evidence) ---"
+            ls -l /tmp/r7_uvicorn_auth_root.log || true
+            tail -n 200 /tmp/r7_uvicorn_auth_root.log || true
             exit 1
           fi
 
@@ -731,6 +740,8 @@ jobs:
           pkill -f "uvicorn app.auth_service.server:app" || true
           nohup env PYTHONUNBUFFERED=1 SKELDIR_PROCESS_ROLE=auth_ingress \
             DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r4" \
+            DATABASE_POOL_SIZE="40" \
+            DATABASE_MAX_OVERFLOW="40" \
             B26_P2_INGRESS_DATABASE_URL="" \
             B26_P2_INGRESS_DATABASE_URL_FILE=/tmp/r7_ingress_dsn_r4 \
             PLATFORM_TOKEN_ENCRYPTION_KEY=e2e-platform-key \
