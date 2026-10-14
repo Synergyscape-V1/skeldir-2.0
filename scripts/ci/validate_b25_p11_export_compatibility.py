@@ -23,7 +23,7 @@ SCAN_ROOTS = (
     ROOT / "contracts",
     ROOT / "api-contracts",
 )
-SHADOW_ROOT_NAMES = frozenset({".tmp", "tmp", ".tmp_audit", "graphify-out"})
+SHADOW_ROOT_NAMES = frozenset({".tmp", "tmp", ".tmp_audit"})
 
 TRUST_EXPORT = Path("backend/app/api/trust_export.py")
 LEGACY_EXPORT = Path("backend/app/api/export.py")
