@@ -654,6 +654,72 @@ async def db_duplicate_canonical_keys_between(
     )
 
 
+async def db_activity_trace_sample(
+    conn: asyncpg.Connection, database_name: str
+) -> dict[str, object]:
+    """One intra-leg pg_stat_activity snapshot (P3 stage-timing evidence).
+
+    Observation only: classifies every client backend by state and wait
+    event, plus long-open-transaction counts. The before/after
+    connection snapshots cannot see intra-storm queueing (pools held
+    across relay round-trips show as idle ClientRead, lock waits show
+    here). Never affects pass/fail.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT state AS state,
+               COALESCE(wait_event_type, '-') AS wait_type,
+               COALESCE(wait_event, '-') AS wait_event,
+               COUNT(*)::int AS n
+        FROM pg_stat_activity
+        WHERE datname = $1 AND backend_type = 'client backend'
+        GROUP BY 1, 2, 3
+        ORDER BY 4 DESC
+        """,
+        database_name,
+    )
+    long_txn = await conn.fetchval(
+        """
+        SELECT COUNT(*)::int FROM pg_stat_activity
+        WHERE datname = $1 AND backend_type = 'client backend'
+          AND xact_start IS NOT NULL
+          AND now() - xact_start > interval '5 seconds'
+        """,
+        database_name,
+    )
+    return {
+        "groups": [
+            {"state": r["state"], "wait_type": r["wait_type"],
+             "wait_event": r["wait_event"], "n": int(r["n"])}
+            for r in rows
+        ],
+        "long_open_xact_count": int(long_txn or 0),
+    }
+
+
+async def db_activity_trace_during(
+    conn: asyncpg.Connection,
+    database_name: str,
+    stop: "asyncio.Event",
+    interval_s: float = 2.0,
+) -> list[dict[str, object]]:
+    """Sample db_activity_trace_sample until stop is set. Best-effort."""
+    import asyncio as _asyncio
+
+    samples: list[dict[str, object]] = []
+    while not stop.is_set():
+        try:
+            sample = await db_activity_trace_sample(conn, database_name)
+            samples.append(sample)
+        except Exception:
+            break
+        try:
+            await _asyncio.wait_for(stop.wait(), timeout=interval_s)
+        except Exception:
+            break
+    return samples
+
+
 async def db_connection_snapshot(conn: asyncpg.Connection, database_name: str) -> dict[str, int]:
     row = await conn.fetchrow(
         """
@@ -1594,14 +1660,29 @@ async def scenario_s8_perf_gate(
     )
 
     resource_before = await db_connection_snapshot(admin_conn, runtime_database_name)
-    status_counts, timeouts, conn_errors, latency_ms, elapsed_s, target_request_count = await _http_fire_rate_controlled(
-        client,
-        request_templates,
-        concurrency=max(1, concurrency),
-        timeout_s=timeout_s,
-        target_rps=profile.target_rps,
-        duration_s=profile.duration_s,
+    import asyncio as _asyncio_trace
+
+    _trace_stop = _asyncio_trace.Event()
+    _trace_task = _asyncio_trace.ensure_future(
+        db_activity_trace_during(
+            admin_conn, runtime_database_name, _trace_stop
+        )
     )
+    try:
+        status_counts, timeouts, conn_errors, latency_ms, elapsed_s, target_request_count = await _http_fire_rate_controlled(
+            client,
+            request_templates,
+            concurrency=max(1, concurrency),
+            timeout_s=timeout_s,
+            target_rps=profile.target_rps,
+            duration_s=profile.duration_s,
+        )
+    finally:
+        _trace_stop.set()
+    try:
+        db_activity_trace = await _asyncio_trace.wait_for(_trace_task, timeout=15.0)
+    except Exception:
+        db_activity_trace = []
     test_end_utc = _now_utc()
     resource_after = await db_connection_snapshot(admin_conn, runtime_database_name)
 
@@ -1687,6 +1768,13 @@ async def scenario_s8_perf_gate(
             "resource_stable": resource_stable,
             "resource_snapshot_before": resource_before,
             "resource_snapshot_after": resource_after,
+            # XXI P3: intra-leg DB activity trace (observation only).
+            # Point snapshots before/after cannot see intra-storm
+            # queueing; this trace shows, per 2s sample, where client
+            # backends actually spent the leg (active vs idle/ClientRead
+            # vs lock/IO waits, long open transactions). Informational:
+            # no threshold reads it and `passed` ignores it.
+            "db_activity_trace": db_activity_trace,
             "window_start_utc": test_start_utc.isoformat(),
             "window_end_utc": test_end_utc.isoformat(),
             "replay_canonical_rows_for_key": replay_canonical,
