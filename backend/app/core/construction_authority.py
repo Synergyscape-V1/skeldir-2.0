@@ -251,7 +251,7 @@ def _migration_modules(migrations_root: Path | None = None):
 #: positive event meaning, monotonic disqualification, observable
 #: history): this build requires XXI physics and must refuse earlier
 #: schema.
-REQUIRED_SCHEMA_REVISION = "202609300008"
+REQUIRED_SCHEMA_REVISION = "202609300009"
 
 #: Every revision a process running this build may serve traffic against.
 #: Exactly one today. Widening this set is a deliberate, reviewable act that

@@ -73,6 +73,10 @@
     "202609300008": {
       "file": "202609300008_b26_p2_auth_root_construction_grant.py",
       "sha256": "aeb3c49a886897dfbd9f96ed9bb5d21a8803fc7edcd2e4c4cf7a3fe175425c16"
+    },
+    "202609300009": {
+      "file": "202609300009_b26_p2_publication_history_reader_grant.py",
+      "sha256": "a46a698898d2d735adae70ffc872491464dfdd626970a25f89e6ba5efdcdb026"
     }
   }
 }

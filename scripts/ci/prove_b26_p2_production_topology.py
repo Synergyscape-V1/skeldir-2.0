@@ -1383,9 +1383,9 @@ def main() -> int:
         # Follow-up: the head advances to the ledger-RLS revision, then
         # family-law v4, then the F5 construction grant; the 300007/300006
         # (XXI) and XX heads must remain ancestors (linear ancestry, no forks).
-        if "202609300008" not in heads.stdout:
+        if "202609300009" not in heads.stdout:
             return _fail("migration_head_missing_corrective_xxi")
-        details["migration_head"] = "202609300008"
+        details["migration_head"] = "202609300009"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
