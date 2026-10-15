@@ -69,6 +69,10 @@
     "202609300007": {
       "file": "202609300007_b26_p2_family_law_v4_creation_moment.py",
       "sha256": "f9df4132bf513623b683897391f502d287150ce220043955e04ee1847bb27853"
+    },
+    "202609300008": {
+      "file": "202609300008_b26_p2_auth_root_construction_grant.py",
+      "sha256": "aeb3c49a886897dfbd9f96ed9bb5d21a8803fc7edcd2e4c4cf7a3fe175425c16"
     }
   }
 }
