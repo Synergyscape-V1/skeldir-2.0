@@ -520,14 +520,16 @@ def main() -> int:
                 reds["NC-10"] = "RED:predecessor schema refused at boot gate"
             # Ledger-RLS follow-up: the contract advances with the head;
             # the predecessor under test is now one step deeper (300005
-            # refused, head 300006 serves).
+            # refused, head 300007 serves). Family-law v4 follow-up:
+            # creation-moment skew 300s -> 60s; the serves/head pins
+            # advance with the head, the refusal pins stay (falsifiers).
             try:
                 assert_production_construction_authority(["202609300005"])
                 violations.append("xix_nc10_old_revision_served")
             except ConstructionAuthorityError:
                 checks["nc10_old_revision_red"] = True
-            assert_production_construction_authority(["202609300006"])
-            if migration_graph_head() != "202609300006":
+            assert_production_construction_authority(["202609300007"])
+            if migration_graph_head() != "202609300007":
                 violations.append("xix_nc10_head_mismatch")
             else:
                 checks["nc10_head_current"] = True
@@ -757,7 +759,7 @@ def main() -> int:
                             ccur.execute(
                                 "SELECT version_num FROM alembic_version"
                             )
-                            if ccur.fetchone()[0] != "202609300006":
+                            if ccur.fetchone()[0] != "202609300007":
                                 violations.append(
                                     "xix_nc09_reupgrade_wrong_revision"
                                 )

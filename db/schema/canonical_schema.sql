@@ -4263,7 +4263,7 @@ BEGIN
                 RAISE EXCEPTION 'b26_p2_lifecycle_moment_missing'
                     USING ERRCODE = '42501';
             END IF;
-            IF abs(extract(epoch FROM (p_updated_at - p_created_at))) > 300 THEN
+            IF abs(extract(epoch FROM (p_updated_at - p_created_at))) > 60 THEN
                 RAISE EXCEPTION 'b26_p2_lifecycle_not_creation_moment'
                     USING ERRCODE = '42501';
             END IF;
@@ -4278,7 +4278,7 @@ BEGIN
             END IF;
             IF p_created_at IS NOT NULL AND p_updated_at IS NOT NULL
                AND abs(extract(epoch FROM (p_updated_at - p_created_at)))
-                   > 300 THEN
+                   > 60 THEN
                 RAISE EXCEPTION 'b26_p2_lifecycle_not_creation_moment'
                     USING ERRCODE = '42501';
             END IF;
