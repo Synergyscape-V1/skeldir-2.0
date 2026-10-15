@@ -41,7 +41,7 @@ def _relay_client(timeout_seconds: float) -> Any:
     except RuntimeError:
         loop_id = 0
     client = _RELAY_CLIENTS.get(loop_id)
-    if client is None:
+    if client is None or getattr(client, "is_closed", False):
         client = httpx.AsyncClient(timeout=timeout_seconds)
         _RELAY_CLIENTS[loop_id] = client
     return client
