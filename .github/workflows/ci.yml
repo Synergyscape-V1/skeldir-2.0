@@ -3518,9 +3518,25 @@ jobs:
   phase1-runtime-conformance:
     name: Phase 1 Runtime Conformance
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -3537,6 +3553,12 @@ jobs:
         run: |
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
+          # XXI P1/P4: the API boot guard is fatal without a verified
+          # database (no silent-serve topology exists anymore), so this
+          # job provisions a migrated lane like its neighbors instead
+          # of booting against an absent database. Conformance now
+          # runs production-equivalent (verified construction).
+          alembic upgrade head
 
       - name: Execute runtime OpenAPI conformance tests
         run: |
