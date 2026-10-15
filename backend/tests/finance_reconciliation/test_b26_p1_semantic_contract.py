@@ -557,10 +557,12 @@ def test_b26_p1_migration_graph_is_alembic_native() -> None:
     # (owner-only policy; no principal's effective access changes).
     # The 300007 follow-up narrows the Shopify creation moment
     # (family-law v4: 300s -> 60s in derivation and DB admission).
+    # The 300008 follow-up grants the auth root EXECUTE on the
+    # construction-revisions function (F5 construction guard).
     assert set(graph) == native_revisions
     assert "202512151410" in graph
     assert "202511171000" not in graph
-    assert heads == set(script.get_heads()) == {"202609300007"}
+    assert heads == set(script.get_heads()) == {"202609300008"}
     assert "202609072001" in graph
     assert "202609170001" in graph
     assert "202609180001" in graph
