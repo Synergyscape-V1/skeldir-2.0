@@ -292,6 +292,7 @@ def main() -> int:
                         "202609300004",
                         "202609300005",
                         "202609300006",
+                        "202609300007",
                     ):
                         violations.append("x_two_phase_authority_pin_stale")
                 except (OSError, ValueError) as exc:
