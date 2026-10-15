@@ -280,6 +280,13 @@ OWNER_CUSTODIED_LEDGER_TABLES = frozenset(
 #: Table privileges the custody rule inspects (complete DML/DDL surface).
 LEDGER_CUSTODY_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
 
+#: Column-grantable privileges. has_table_privilege does NOT observe
+#: column-scoped grants (proven hermetically: GRANT SELECT(col) leaves
+#: has_table_privilege SELECT false), so every column must be swept
+#: explicitly with has_column_privilege, which -- like its table twin --
+#: resolves role-membership inheritance.
+LEDGER_CUSTODY_COLUMN_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "REFERENCES")
+
 
 def _ledger_owner_custody_grants_ok(conn, table_name: str) -> list[str]:
     """Verify the grant shape that enforces owner-custodied ledger isolation."""
@@ -301,6 +308,17 @@ def _ledger_owner_custody_grants_ok(conn, table_name: str) -> list[str]:
         )
         roles = [(str(r[0]), bool(r[1])) for r in cur.fetchall()]
     with conn.cursor() as cur:
+        cur.execute(
+            "SELECT a.attname FROM pg_attribute a "
+            "JOIN pg_class c ON c.oid = a.attrelid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'public' AND c.relname = %s "
+            "AND a.attnum > 0 AND NOT a.attisdropped "
+            "ORDER BY 1",
+            (table_name,),
+        )
+        columns = [str(r[0]) for r in cur.fetchall()]
+    with conn.cursor() as cur:
         for role, is_super in roles:
             if role == owner or is_super:
                 continue
@@ -314,6 +332,22 @@ def _ledger_owner_custody_grants_ok(conn, table_name: str) -> list[str]:
                         f"{table_name}: role {role} holds {priv} "
                         f"(owner-custodied ledger must grant nothing)"
                     )
+            # Column-scoped grants are invisible to has_table_privilege:
+            # a GRANT SELECT(col)/UPDATE(col) to an ordinary role would
+            # expose that column of every tenant's rows with no table
+            # signal. Sweep every column explicitly.
+            for column in columns:
+                for priv in LEDGER_CUSTODY_COLUMN_PRIVILEGES:
+                    cur.execute(
+                        "SELECT has_column_privilege(%s, %s, %s, %s)",
+                        (role, qualified, column, priv),
+                    )
+                    if bool(cur.fetchone()[0]):
+                        problems.append(
+                            f"{table_name}.{column}: role {role} holds "
+                            f"column {priv} "
+                            f"(owner-custodied ledger must grant nothing)"
+                        )
         # PUBLIC is not a role name has_table_privilege accepts; read the
         # ACL catalog directly (table + columns). Any PUBLIC entry at all
         # is a violation: the table is created REVOKE ALL FROM PUBLIC.
