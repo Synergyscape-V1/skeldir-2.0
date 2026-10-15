@@ -92,6 +92,17 @@ class MatchVerdictSource:
     # demoted history must never enter a signed export, while
     # never-linked rows keep their honest degraded envelopes.
     ingress_authority_state: str = "unknown"
+    # XXI P1 (cohort confinement): the event-family-law version that
+    # established this verdict's meaning, resolved lane-locally from
+    # publication history against the backing ingress mint instant
+    # (latest law recorded at or before the mint; 'unknown' when the
+    # mint instant is absent). event_family_law_current is False for
+    # rows established under a superseded law: such rows never confirm
+    # by age (see the confirmation sweep), keep amounts, authority and
+    # ambiguous presentation, and must be read with the residual
+    # deviation, never as current-law verified meaning.
+    event_family_law_version: str = "unknown"
+    event_family_law_current: bool = True
 
 
 @dataclass(frozen=True)
@@ -515,6 +526,12 @@ def match_verdict_source_from_mapping(row: Any) -> MatchVerdictSource:
         ingress_authority_state=str(
             mapping.get("ingress_authority_state", "unknown")
         ),
+        event_family_law_version=str(
+            mapping.get("event_family_law_version") or "unknown"
+        ),
+        event_family_law_current=bool(
+            mapping.get("event_family_law_current", True)
+        ),
     )
 
 
@@ -567,7 +584,35 @@ async def read_match_verdict_source(
                         v.webhook_ingress_identity_id
                     )
                 ) AS ingress_has_current_authority,
-                v.b26_p2_source_authority_state AS ingress_authority_state
+                v.b26_p2_source_authority_state AS ingress_authority_state,
+                -- XXI P1: minting-law cohort, lane-local and exact (see
+                -- the confirmation sweep for the rule and its limits).
+                (
+                    SELECT h.law_version
+                    FROM public.b26_p2_publication_history AS h
+                    WHERE h.law_kind = 'event-family-law'
+                      AND h.law_id = 'b26-p2-event-family-law'
+                      AND h.recorded_at <= COALESCE(
+                          i.verified_at, v.created_at
+                      )
+                    -- Tie-break by version: a mint at exactly a shared
+                    -- activation instant reads the newest tied law,
+                    -- consistent with the sweep's strict-greater rule
+                    -- (a tie is never "newer", so ties confirm).
+                    ORDER BY h.recorded_at DESC, h.law_version DESC
+                    LIMIT 1
+                ) AS event_family_law_version,
+                (
+                    NOT EXISTS (
+                        SELECT 1
+                        FROM public.b26_p2_publication_history AS h2
+                        WHERE h2.law_kind = 'event-family-law'
+                          AND h2.law_id = 'b26-p2-event-family-law'
+                          AND h2.recorded_at > COALESCE(
+                              i.verified_at, v.created_at
+                          )
+                    )
+                ) AS event_family_law_current
             FROM public.b23_match_verdicts AS v
             LEFT JOIN public.webhook_ingress_identities AS i
               ON i.id = v.webhook_ingress_identity_id
@@ -683,7 +728,30 @@ async def query_match_verdict_sources(
                     v.webhook_ingress_identity_id
                 )
             ) AS ingress_has_current_authority,
-            v.b26_p2_source_authority_state AS ingress_authority_state
+            v.b26_p2_source_authority_state AS ingress_authority_state,
+            (
+                SELECT h.law_version
+                FROM public.b26_p2_publication_history AS h
+                WHERE h.law_kind = 'event-family-law'
+                  AND h.law_id = 'b26-p2-event-family-law'
+                  AND h.recorded_at <= COALESCE(
+                      i.verified_at, v.created_at
+                  )
+                -- Tie-break by version (see the single-read query).
+                ORDER BY h.recorded_at DESC, h.law_version DESC
+                LIMIT 1
+            ) AS event_family_law_version,
+            (
+                NOT EXISTS (
+                    SELECT 1
+                    FROM public.b26_p2_publication_history AS h2
+                    WHERE h2.law_kind = 'event-family-law'
+                      AND h2.law_id = 'b26-p2-event-family-law'
+                      AND h2.recorded_at > COALESCE(
+                          i.verified_at, v.created_at
+                      )
+                )
+            ) AS event_family_law_current
         FROM public.b23_match_verdicts AS v
         LEFT JOIN public.webhook_ingress_identities AS i
           ON i.id = v.webhook_ingress_identity_id
