@@ -257,6 +257,128 @@ def _bearer_admission_grants_ok(conn, table_name: str) -> list[str]:
     return problems
 
 
+#: Owner-custodied ledgers (B2.6-P2 Corrective XXI follow-up, revision
+#: 202609300006). The ledger carries every tenant's rows under a single
+#: role-agnostic FOR ALL policy (applies to PUBLIC): a tenant predicate
+#: is incompatible with the cross-tenant beat observers, which must read
+#: the tip/count across tenants (b26_p2_observe_history_integrity and
+#: readers are SECURITY DEFINER owner-context routines, and RLS cannot
+#: distinguish owner-acting-for-beat from owner-acting-directly). The
+#: real enforcement is therefore the grant shape -- zero privileges for
+#: every runtime principal -- and this rule asserts it every run, for
+#: every role including PUBLIC and roles created later: a future
+#: mistaken GRANT is the only path by which the permissive policy could
+#: expose rows, so any grant at all is a failure. Owner and platform
+#: superuser/predefined roles are excluded (ownership is verified by
+#: the C21 authority universes; platform roles are outside tenant scope).
+OWNER_CUSTODIED_LEDGER_TABLES = frozenset(
+    {
+        "b26_p2_verdict_supersession_ledger",
+    }
+)
+
+#: Table privileges the custody rule inspects (complete DML/DDL surface).
+LEDGER_CUSTODY_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+
+#: Column-grantable privileges. has_table_privilege does NOT observe
+#: column-scoped grants (proven hermetically: GRANT SELECT(col) leaves
+#: has_table_privilege SELECT false), so every column must be swept
+#: explicitly with has_column_privilege, which -- like its table twin --
+#: resolves role-membership inheritance.
+LEDGER_CUSTODY_COLUMN_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "REFERENCES")
+
+
+def _ledger_owner_custody_grants_ok(conn, table_name: str) -> list[str]:
+    """Verify the grant shape that enforces owner-custodied ledger isolation."""
+    problems: list[str] = []
+    qualified = f"public.{table_name}"
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT pg_get_userbyid(c.relowner) FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'public' AND c.relname = %s",
+            (table_name,),
+        )
+        row = cur.fetchone()
+        owner = str(row[0]) if row else ""
+        cur.execute(
+            "SELECT rolname, rolsuper FROM pg_roles "
+            "WHERE rolname NOT LIKE 'pg\\_%' ESCAPE '\\' "
+            "ORDER BY 1"
+        )
+        roles = [(str(r[0]), bool(r[1])) for r in cur.fetchall()]
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT a.attname FROM pg_attribute a "
+            "JOIN pg_class c ON c.oid = a.attrelid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'public' AND c.relname = %s "
+            "AND a.attnum > 0 AND NOT a.attisdropped "
+            "ORDER BY 1",
+            (table_name,),
+        )
+        columns = [str(r[0]) for r in cur.fetchall()]
+    with conn.cursor() as cur:
+        for role, is_super in roles:
+            if role == owner or is_super:
+                continue
+            for priv in LEDGER_CUSTODY_PRIVILEGES:
+                cur.execute(
+                    "SELECT has_table_privilege(%s, %s, %s)",
+                    (role, qualified, priv),
+                )
+                if bool(cur.fetchone()[0]):
+                    problems.append(
+                        f"{table_name}: role {role} holds {priv} "
+                        f"(owner-custodied ledger must grant nothing)"
+                    )
+            # Column-scoped grants are invisible to has_table_privilege:
+            # a GRANT SELECT(col)/UPDATE(col) to an ordinary role would
+            # expose that column of every tenant's rows with no table
+            # signal. Sweep every column explicitly.
+            for column in columns:
+                for priv in LEDGER_CUSTODY_COLUMN_PRIVILEGES:
+                    cur.execute(
+                        "SELECT has_column_privilege(%s, %s, %s, %s)",
+                        (role, qualified, column, priv),
+                    )
+                    if bool(cur.fetchone()[0]):
+                        problems.append(
+                            f"{table_name}.{column}: role {role} holds "
+                            f"column {priv} "
+                            f"(owner-custodied ledger must grant nothing)"
+                        )
+        # PUBLIC is not a role name has_table_privilege accepts; read the
+        # ACL catalog directly (table + columns). Any PUBLIC entry at all
+        # is a violation: the table is created REVOKE ALL FROM PUBLIC.
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                CROSS JOIN LATERAL aclexplode(
+                    COALESCE(c.relacl, acldefault('r', c.relowner))) AS a
+                WHERE n.nspname = 'public' AND c.relname = %s
+                  AND a.grantee = 0
+            ) OR EXISTS (
+                SELECT 1 FROM pg_attribute a
+                JOIN pg_class c ON c.oid = a.attrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                CROSS JOIN LATERAL aclexplode(a.attacl) AS acl
+                WHERE n.nspname = 'public' AND c.relname = %s
+                  AND a.attacl IS NOT NULL AND acl.grantee = 0
+            )
+            """,
+            (table_name, table_name),
+        )
+        if bool(cur.fetchone()[0]):
+            problems.append(
+                f"{table_name}: PUBLIC holds grants "
+                f"(owner-custodied ledger must grant nothing)"
+            )
+    return problems
+
+
 def assert_rls_coverage(discovered: list[dict], conn=None) -> None:
     if not discovered:
         raise ProbeFailure("tenant-scoped discovery returned zero tables")
@@ -270,6 +392,15 @@ def assert_rls_coverage(discovered: list[dict], conn=None) -> None:
                 )
             missing.extend(_bearer_admission_grants_ok(conn, str(row["table_name"])))
             continue
+        if row["table_name"] in OWNER_CUSTODIED_LEDGER_TABLES:
+            if conn is None:
+                raise ProbeFailure(
+                    f"{row['table_name']}: owner-custody grant verification needs a connection"
+                )
+            missing.extend(_ledger_owner_custody_grants_ok(conn, str(row["table_name"])))
+            # No continue: the ledger carries RLS + FORCE + full policy
+            # coverage as well, verified by the general rule below. The
+            # grant shape above is the additional enforcement.
         cmd_set = {str(c).upper() for c in row["policy_cmds"]}
         has_full_coverage = (
             "ALL" in cmd_set
