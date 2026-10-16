@@ -678,6 +678,23 @@ async def db_activity_trace_sample(
         """,
         database_name,
     )
+    holding = await conn.fetch(
+        """
+        SELECT COALESCE(s.wait_event, '-') AS wait_event,
+               COUNT(*)::int AS n,
+               LEFT(REGEXP_REPLACE(COALESCE(s.query, ''), '\\s+', ' ', 'g'),
+                    120) AS query_head,
+               MAX(COALESCE(EXTRACT(EPOCH FROM (now() - s.query_start)),
+                            0))::float AS max_query_s
+        FROM pg_stat_activity AS s
+        WHERE s.datname = $1 AND s.backend_type = 'client backend'
+          AND s.state = 'active' AND s.pid <> pg_backend_pid()
+        GROUP BY 1, 3
+        ORDER BY 2 DESC
+        LIMIT 12
+        """,
+        database_name,
+    )
     long_txn = await conn.fetchval(
         """
         SELECT COUNT(*)::int FROM pg_stat_activity
@@ -692,6 +709,12 @@ async def db_activity_trace_sample(
             {"state": r["state"], "wait_type": r["wait_type"],
              "wait_event": r["wait_event"], "n": int(r["n"])}
             for r in rows
+        ],
+        "holding_queries": [
+            {"wait_event": h["wait_event"], "n": int(h["n"]),
+             "query_head": h["query_head"],
+             "max_query_s": float(h["max_query_s"])}
+            for h in holding
         ],
         "long_open_xact_count": int(long_txn or 0),
     }

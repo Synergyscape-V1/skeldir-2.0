@@ -776,7 +776,8 @@ def main() -> int:
                                     "202609300006",
                                     "202609300007",
                                     "202609300008",
-                                    "202609300009"):
+                                    "202609300009",
+                                    "202609300010"):
                         violations.append(
                             f"x_proof_plane_unexpected_head:{head}"
                         )

@@ -77,6 +77,10 @@
     "202609300009": {
       "file": "202609300009_b26_p2_publication_history_reader_grant.py",
       "sha256": "a46a698898d2d735adae70ffc872491464dfdd626970a25f89e6ba5efdcdb026"
+    },
+    "202609300010": {
+      "file": "202609300010_b26_p2_lineage_lookup_index.py",
+      "sha256": "5cf9ec820283bcb821a4b76c41987b35eb24b8e1fedbb4efe81510f77f551146"
     }
   }
 }

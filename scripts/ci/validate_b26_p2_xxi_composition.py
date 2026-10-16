@@ -259,7 +259,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     # Family-law v4 follow-up advances the construction contract to
     # the current head; F5 advances it to 300008. A stale contract
     # fails closed here.
-    if 'REQUIRED_SCHEMA_REVISION = "202609300009"' not in contract:
+    if 'REQUIRED_SCHEMA_REVISION = "202609300010"' not in contract:
         violations.append("xxi_comp_construction_contract_not_advanced")
     else:
         checks["construction_contract_at_xxi"] = True
@@ -1028,7 +1028,7 @@ def _live_checks(
                     f"xxi_comp_reupgrade_failed:{up.stderr[-200:]}")
             else:
                 cur.execute("SELECT version_num FROM alembic_version")
-                if cur.fetchone()[0] != "202609300009":
+                if cur.fetchone()[0] != "202609300010":
                     violations.append("xxi_comp_reupgrade_wrong_revision")
                 else:
                     checks["downgrade_reupgrade_converges"] = True
