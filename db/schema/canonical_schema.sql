@@ -20778,6 +20778,13 @@ CREATE INDEX ix_kombu_message_visible ON public.kombu_message USING btree (visib
 
 
 --
+-- Name: ix_p3_lineage_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_p3_lineage_lookup ON public.b26_p2_provider_auth_consequence USING btree (tenant_id, body_sha256, provider_event_reference) INCLUDE (webhook_ingress_identity_id);
+
+
+--
 -- Name: ix_public_celery_task_failures_task_id; Type: INDEX; Schema: public; Owner: -
 --
 
