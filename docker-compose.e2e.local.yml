@@ -1,0 +1,10 @@
+# XXI P3 local relay-path run: host PG occupies 5432 and host 8080 is taken,
+# so remap only the HOST-side ports. Container-side networking is unchanged;
+# the committed docker-compose.e2e.yml is untouched.
+services:
+  postgres:
+    ports: !override
+      - "5433:5432"
+  mock_platform:
+    ports: !override
+      - "8081:8080"
