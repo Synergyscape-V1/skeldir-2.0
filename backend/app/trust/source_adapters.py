@@ -535,6 +535,62 @@ def match_verdict_source_from_mapping(row: Any) -> MatchVerdictSource:
     )
 
 
+async def _resolve_event_family_law_cohort(
+    session: AsyncSession, *, mint_moment: Any
+) -> tuple[str | None, bool]:
+    """Resolve the minting-law cohort for one mint moment (XXI P1).
+
+    Runs as its own statement so the money-bearing verdict SELECT keeps
+    its exact historical shape: the B2.6-P1 semantic gate forbids
+    coverage-money SQL combined with subselects outside grandfathered
+    files, and this lookup aggregates no money and names no
+    denominator. Same predicate as the confirmation sweep (latest law
+    recorded at-or-before the mint; tie-break by version so a tie is
+    never "newer"), evaluated against the same table in the same
+    session. A missing moment fails closed (unknown, not current).
+    """
+    if mint_moment is None:
+        return None, False
+    row = (
+        (
+            await session.execute(
+                text(
+                    """
+                    SELECT
+                        (
+                            SELECT h.law_version
+                            FROM public.b26_p2_publication_history AS h
+                            WHERE h.law_kind = 'event-family-law'
+                              AND h.law_id = 'b26-p2-event-family-law'
+                              AND h.recorded_at <= :mint_moment
+                            ORDER BY h.recorded_at DESC, h.law_version DESC
+                            LIMIT 1
+                        ) AS event_family_law_version,
+                        (
+                            NOT EXISTS (
+                                SELECT 1
+                                FROM public.b26_p2_publication_history AS h2
+                                WHERE h2.law_kind = 'event-family-law'
+                                  AND h2.law_id = 'b26-p2-event-family-law'
+                                  AND h2.recorded_at > :mint_moment
+                            )
+                        ) AS event_family_law_current
+                    """
+                ),
+                {"mint_moment": mint_moment},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        return None, False
+    values = dict(row) if not isinstance(row, dict) else row
+    return values.get("event_family_law_version"), bool(
+        values.get("event_family_law_current", False)
+    )
+
+
 async def read_match_verdict_source(
     session: AsyncSession,
     *,
@@ -585,34 +641,10 @@ async def read_match_verdict_source(
                     )
                 ) AS ingress_has_current_authority,
                 v.b26_p2_source_authority_state AS ingress_authority_state,
-                -- XXI P1: minting-law cohort, lane-local and exact (see
-                -- the confirmation sweep for the rule and its limits).
-                (
-                    SELECT h.law_version
-                    FROM public.b26_p2_publication_history AS h
-                    WHERE h.law_kind = 'event-family-law'
-                      AND h.law_id = 'b26-p2-event-family-law'
-                      AND h.recorded_at <= COALESCE(
-                          i.verified_at, v.created_at
-                      )
-                    -- Tie-break by version: a mint at exactly a shared
-                    -- activation instant reads the newest tied law,
-                    -- consistent with the sweep's strict-greater rule
-                    -- (a tie is never "newer", so ties confirm).
-                    ORDER BY h.recorded_at DESC, h.law_version DESC
-                    LIMIT 1
-                ) AS event_family_law_version,
-                (
-                    NOT EXISTS (
-                        SELECT 1
-                        FROM public.b26_p2_publication_history AS h2
-                        WHERE h2.law_kind = 'event-family-law'
-                          AND h2.law_id = 'b26-p2-event-family-law'
-                          AND h2.recorded_at > COALESCE(
-                              i.verified_at, v.created_at
-                          )
-                    )
-                ) AS event_family_law_current
+                -- XXI P1: the minting moment feeds the lane-local cohort
+                -- lookup below (own statement; see
+                -- _resolve_event_family_law_cohort).
+                i.verified_at AS ingress_verified_at
             FROM public.b23_match_verdicts AS v
             LEFT JOIN public.webhook_ingress_identities AS i
               ON i.id = v.webhook_ingress_identity_id
@@ -625,7 +657,16 @@ async def read_match_verdict_source(
     row = result.mappings().first()
     if row is None:
         return None
-    return match_verdict_source_from_mapping(row)
+    mapping = dict(row)
+    mint_moment = mapping.get("ingress_verified_at") or mapping.get(
+        "created_at"
+    )
+    law_version, law_current = await _resolve_event_family_law_cohort(
+        session, mint_moment=mint_moment
+    )
+    mapping["event_family_law_version"] = law_version
+    mapping["event_family_law_current"] = law_current
+    return match_verdict_source_from_mapping(mapping)
 
 
 async def read_confidence_projection_source(
@@ -729,29 +770,10 @@ async def query_match_verdict_sources(
                 )
             ) AS ingress_has_current_authority,
             v.b26_p2_source_authority_state AS ingress_authority_state,
-            (
-                SELECT h.law_version
-                FROM public.b26_p2_publication_history AS h
-                WHERE h.law_kind = 'event-family-law'
-                  AND h.law_id = 'b26-p2-event-family-law'
-                  AND h.recorded_at <= COALESCE(
-                      i.verified_at, v.created_at
-                  )
-                -- Tie-break by version (see the single-read query).
-                ORDER BY h.recorded_at DESC, h.law_version DESC
-                LIMIT 1
-            ) AS event_family_law_version,
-            (
-                NOT EXISTS (
-                    SELECT 1
-                    FROM public.b26_p2_publication_history AS h2
-                    WHERE h2.law_kind = 'event-family-law'
-                      AND h2.law_id = 'b26-p2-event-family-law'
-                      AND h2.recorded_at > COALESCE(
-                          i.verified_at, v.created_at
-                      )
-                )
-            ) AS event_family_law_current
+            -- XXI P1: the minting moment feeds the lane-local cohort
+            -- lookup below (own statement; see
+            -- _resolve_event_family_law_cohort).
+            i.verified_at AS ingress_verified_at
         FROM public.b23_match_verdicts AS v
         LEFT JOIN public.webhook_ingress_identities AS i
           ON i.id = v.webhook_ingress_identity_id
@@ -766,4 +788,16 @@ async def query_match_verdict_sources(
         )
     )
     result = await session.execute(statement, params)
-    return tuple(match_verdict_source_from_mapping(row) for row in result.mappings())
+    sources: list[MatchVerdictSource] = []
+    for row in result.mappings():
+        mapping = dict(row)
+        mint_moment = mapping.get("ingress_verified_at") or mapping.get(
+            "created_at"
+        )
+        law_version, law_current = await _resolve_event_family_law_cohort(
+            session, mint_moment=mint_moment
+        )
+        mapping["event_family_law_version"] = law_version
+        mapping["event_family_law_current"] = law_current
+        sources.append(match_verdict_source_from_mapping(mapping))
+    return tuple(sources)
