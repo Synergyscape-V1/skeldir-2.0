@@ -551,41 +551,44 @@ async def _resolve_event_family_law_cohort(
     """
     if mint_moment is None:
         return None, False
-    row = (
-        (
-            await session.execute(
-                text(
-                    """
-                    SELECT
-                        (
-                            SELECT h.law_version
-                            FROM public.b26_p2_publication_history AS h
-                            WHERE h.law_kind = 'event-family-law'
-                              AND h.law_id = 'b26-p2-event-family-law'
-                              AND h.recorded_at <= :mint_moment
-                            ORDER BY h.recorded_at DESC, h.law_version DESC
-                            LIMIT 1
-                        ) AS event_family_law_version,
-                        (
-                            NOT EXISTS (
-                                SELECT 1
-                                FROM public.b26_p2_publication_history AS h2
-                                WHERE h2.law_kind = 'event-family-law'
-                                  AND h2.law_id = 'b26-p2-event-family-law'
-                                  AND h2.recorded_at > :mint_moment
-                            )
-                        ) AS event_family_law_current
-                    """
-                ),
-                {"mint_moment": mint_moment},
-            )
+    result_mappings = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    (
+                        SELECT h.law_version
+                        FROM public.b26_p2_publication_history AS h
+                        WHERE h.law_kind = 'event-family-law'
+                          AND h.law_id = 'b26-p2-event-family-law'
+                          AND h.recorded_at <= :mint_moment
+                        ORDER BY h.recorded_at DESC, h.law_version DESC
+                        LIMIT 1
+                    ) AS event_family_law_version,
+                    (
+                        NOT EXISTS (
+                            SELECT 1
+                            FROM public.b26_p2_publication_history AS h2
+                            WHERE h2.law_kind = 'event-family-law'
+                              AND h2.law_id = 'b26-p2-event-family-law'
+                              AND h2.recorded_at > :mint_moment
+                        )
+                    ) AS event_family_law_current
+                """
+            ),
+            {"mint_moment": mint_moment},
         )
-        .mappings()
-        .first()
+    ).mappings()
+    # MappingResult in production (.first), plain sequences in test
+    # doubles: read the head row through either shape.
+    first = (
+        result_mappings.first()
+        if hasattr(result_mappings, "first")
+        else (result_mappings[0] if len(result_mappings) else None)
     )
-    if row is None:
+    if first is None:
         return None, False
-    values = dict(row) if not isinstance(row, dict) else row
+    values = dict(first) if not isinstance(first, dict) else first
     return values.get("event_family_law_version"), bool(
         values.get("event_family_law_current", False)
     )
