@@ -124,11 +124,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Remove model versioning from attribution_allocations."""
+    """Remove the versioning index added by this migration.
 
-    # Remove index first (downgrade rollback)
+    allocation_ratio/model_version are owned by 202511131232, which
+    predates this revision in every chain (this migration re-adds them
+    idempotently after a merge conflict). Dropping them here broke the
+    downgrade path: 202511161110's downgrade recreates
+    mv_allocation_summary selecting attribution_allocations.model_version
+    after this revision is undone, and the later 202511131232 downgrade
+    already removes the columns once the view is gone. Column drops stay
+    with their owning migration.
+    """
+
+    # Remove index (downgrade rollback)
     op.execute("DROP INDEX IF EXISTS idx_attribution_allocations_event_model_channel")  # CI:DESTRUCTIVE_OK - Downgrade rollback
-
-    # Remove columns (downgrade rollback)
-    op.execute("ALTER TABLE attribution_allocations DROP COLUMN IF EXISTS model_version")  # CI:DESTRUCTIVE_OK - Downgrade rollback
-    op.execute("ALTER TABLE attribution_allocations DROP COLUMN IF EXISTS allocation_ratio")  # CI:DESTRUCTIVE_OK - Downgrade rollback

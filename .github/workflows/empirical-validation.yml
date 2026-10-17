@@ -24,6 +24,10 @@ env:
   POSTGRES_PASSWORD: skeldir_ci_validation
   POSTGRES_DB: skeldir_validation
   DATABASE_URL: postgresql://skeldir:skeldir_ci_validation@localhost:5432/skeldir_validation
+  # alembic/env.py fails closed under CI=true without an explicit
+  # migration URL (strict migration/runtime identity separation); the
+  # fail-loud migration step surfaced this previously-swallowed gap.
+  MIGRATION_DATABASE_URL: postgresql://skeldir:skeldir_ci_validation@localhost:5432/skeldir_validation
   SYSTEM_PHASE: B0.1
 
 jobs:

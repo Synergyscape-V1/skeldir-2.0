@@ -196,6 +196,32 @@ def downgrade() -> None:
     op.execute(
         "ALTER TABLE llm_monthly_costs ADD CONSTRAINT llm_monthly_costs_tenant_id_month_key UNIQUE (tenant_id, month)"
     )
+    # Restore the pre-202602051200 tenant-only RLS policy before dropping
+    # user_id: the upgrade replaced this policy with a user-scoped
+    # predicate, and PostgreSQL refuses to drop a column a live policy
+    # depends on (detected by the B0.3 schema-closure gate's
+    # downgrade-from-migrated path; previously masked because lanes
+    # downgraded from empty and the step was a no-op).
+    op.execute("DROP POLICY IF EXISTS tenant_isolation_policy ON llm_monthly_costs")
+    op.execute(
+        """
+        CREATE POLICY tenant_isolation_policy ON llm_monthly_costs
+            USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
+            WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON POLICY tenant_isolation_policy ON llm_monthly_costs IS
+            'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().'
+        """
+    )
+    # The upgrade dropped this index; recreate it so the downgraded
+    # schema matches the pre-202602051200 construction.
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_llm_monthly_tenant_month "
+        "ON llm_monthly_costs(tenant_id, month DESC)"
+    )
     op.execute("ALTER TABLE llm_monthly_costs DROP COLUMN IF EXISTS user_id")
 
     # Drop added columns from llm_api_calls
@@ -205,6 +231,21 @@ def downgrade() -> None:
     op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS request_metadata_ref")
     op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS distillation_eligible")
     op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS provider")
+    # Same policy-before-column ordering fix as llm_monthly_costs above.
+    op.execute("DROP POLICY IF EXISTS tenant_isolation_policy ON llm_api_calls")
+    op.execute(
+        """
+        CREATE POLICY tenant_isolation_policy ON llm_api_calls
+            USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
+            WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON POLICY tenant_isolation_policy ON llm_api_calls IS
+            'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().'
+        """
+    )
     op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS user_id")
 
     op.execute("ALTER TABLE llm_api_calls ALTER COLUMN was_cached DROP NOT NULL")

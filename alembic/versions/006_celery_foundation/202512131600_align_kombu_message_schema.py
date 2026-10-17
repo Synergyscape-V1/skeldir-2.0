@@ -141,6 +141,15 @@ def downgrade() -> None:
             ON public.kombu_message ("timestamp");
         """
     )
+    # The upgrade dropped the legacy queue index; restore it so the
+    # downgrade of 202512120900 (which drops it without IF EXISTS) runs
+    # against the state this revision once removed.
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_kombu_message_queue
+            ON public.kombu_message (queue);
+        """
+    )
     op.execute("ALTER TABLE public.kombu_message DROP CONSTRAINT IF EXISTS fk_kombu_message_queue;")
     op.execute("ALTER TABLE public.kombu_message ALTER COLUMN queue_id DROP NOT NULL;")
     op.execute("ALTER TABLE public.kombu_message DROP COLUMN IF EXISTS queue_id;")
@@ -177,7 +186,8 @@ def downgrade() -> None:
                   AND data_type <> 'double precision'
             ) THEN
                 ALTER TABLE public.kombu_message
-                ALTER COLUMN "timestamp" TYPE DOUBLE PRECISION;
+                ALTER COLUMN "timestamp" TYPE DOUBLE PRECISION
+                USING EXTRACT(EPOCH FROM "timestamp");
                 ALTER TABLE public.kombu_message
                 ALTER COLUMN "timestamp" SET NOT NULL;
             END IF;
