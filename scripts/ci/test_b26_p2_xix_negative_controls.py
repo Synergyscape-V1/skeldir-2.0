@@ -543,8 +543,8 @@ def main() -> int:
                 violations.append("xix_nc10_old_revision_served")
             except ConstructionAuthorityError:
                 checks["nc10_old_revision_red"] = True
-            assert_production_construction_authority(["202609300010"])
-            if migration_graph_head() != "202609300010":
+            assert_production_construction_authority(["202609300009"])
+            if migration_graph_head() != "202609300009":
                 violations.append("xix_nc10_head_mismatch")
             else:
                 checks["nc10_head_current"] = True
@@ -774,7 +774,7 @@ def main() -> int:
                             ccur.execute(
                                 "SELECT version_num FROM alembic_version"
                             )
-                            if ccur.fetchone()[0] != "202609300010":
+                            if ccur.fetchone()[0] != "202609300009":
                                 violations.append(
                                     "xix_nc09_reupgrade_wrong_revision"
                                 )
