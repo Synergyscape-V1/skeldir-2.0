@@ -657,8 +657,24 @@ def main() -> int:
 
     # NC-09: downgrade round-trip on this lane (LAST: it moves the
     # schema revision). Downgrade -1, run the runtime attack matrix,
-    # re-upgrade to head, verify head.
+    # re-upgrade to head, verify head. The expected revisions are
+    # chain-derived from alembic's own revision graph -- the battery
+    # runs whatever the candidate stack is, so "one step back" and
+    # "restored head" must be resolved from the chain, not literals
+    # that go stale as the chain grows past them.
     import os  # noqa: PLC0415
+
+    from alembic.config import Config as AlembicConfig  # noqa: PLC0415
+    from alembic.script import ScriptDirectory  # noqa: PLC0415
+
+    _alembic_cfg = AlembicConfig(str(REPO_ROOT / "alembic.ini"))
+    _chain = ScriptDirectory.from_config(_alembic_cfg)
+    head_before = _chain.get_current_head()
+    if not head_before:  # pragma: no cover - a mixed-revision chain has a head
+        raise RuntimeError("alembic chain has no head")
+    expected_down = _chain.get_revision(head_before).down_revision
+    if isinstance(expected_down, tuple):  # merge revisions name both sides
+        expected_down = expected_down[0]
 
     env = dict(os.environ)
     env["MIGRATION_DATABASE_URL"] = admin_dsn
@@ -686,9 +702,10 @@ def main() -> int:
                         ccur.execute(
                             "SELECT version_num FROM alembic_version"
                         )
-                        # Downgrade -1 from the ledger-RLS head lands on
-                        # the 300005 revision (one step back from current).
-                        if ccur.fetchone()[0] != "202609300005":
+                        # Downgrade -1 must land exactly one step back
+                        # (resolved from the chain above, not a pinned
+                        # historical revision that the chain outgrew).
+                        if ccur.fetchone()[0] != expected_down:
                             violations.append(
                                 "xix_nc09_downgrade_wrong_revision"
                             )
@@ -774,7 +791,9 @@ def main() -> int:
                             ccur.execute(
                                 "SELECT version_num FROM alembic_version"
                             )
-                            if ccur.fetchone()[0] != "202609300010":
+                            # Re-upgrade must restore exactly the head this
+                            # lane had before the downgrade round-trip.
+                            if ccur.fetchone()[0] != head_before:
                                 violations.append(
                                     "xix_nc09_reupgrade_wrong_revision"
                                 )

@@ -128,10 +128,16 @@ jobs:
           pip install -r requirements-dev.txt
       
       - name: Run database migrations
+        # Alembic runs from the repository root: alembic.ini (and its
+        # script_location) live there; running it from backend/ failed
+        # with "No 'script_location' key found in configuration", and
+        # the `|| echo` swallow then left the lane unmigrated — the
+        # exact shape the API boot guard refuses
+        # (construction_authority_boot_retrying, relation
+        # "public.alembic_version" does not exist), so this phase never
+        # validated anything. Fail loud on migration failure by design.
         run: |
-          cd backend
-          # Run Alembic migrations
-          alembic upgrade head || echo "Migrations may not be fully configured yet"
+          alembic upgrade head
       
       - name: Start FastAPI backend
         run: |
@@ -500,10 +506,10 @@ jobs:
           pip install -q -r requirements.txt
       
       - name: Run database migrations
+        # Same correction as Phase 1: alembic runs from the repository
+        # root where alembic.ini lives, and fail loud on error.
         run: |
-          cd backend
-          export DATABASE_URL="${{ env.DATABASE_URL }}"
-          alembic upgrade head || echo "Migrations may not be complete"
+          alembic upgrade head
       
       - name: Start FastAPI backend
         run: |
