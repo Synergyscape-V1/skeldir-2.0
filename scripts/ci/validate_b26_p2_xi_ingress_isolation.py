@@ -340,6 +340,11 @@ def _live_checks(
             # only, mints nothing; fail-closed). The trust root reads
             # it on the duplicate-resolution path.
             "b26_p2_ingress_has_current_authority",
+            # B2.6-P2 Corrective F5: the auth root verifies construction
+            # itself (boot-fatal + per-request guard read the lane
+            # revision through this STABLE DEFINER; answers only, mints
+            # nothing). Granted by 202609300008, role-guarded.
+            "skeldir_database_construction_revisions",
         }
         for routine in routines:
             if routine not in allowed_routines:
