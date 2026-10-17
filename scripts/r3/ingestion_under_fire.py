@@ -738,9 +738,6 @@ async def db_activity_trace_during(
             break
         try:
             await _asyncio.wait_for(stop.wait(), timeout=interval_s)
-            break  # stop was set: leg over, no more samples.
-        except _asyncio.TimeoutError:
-            continue  # normal sampling tick.
         except Exception:
             break
     return samples
