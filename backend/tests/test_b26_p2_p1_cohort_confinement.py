@@ -4,17 +4,20 @@ A verdict whose establishing meaning predates the current event-family
 law keeps provisional state, amounts, authority and ambiguous
 presentation forever; only silent promotion to confirmed is withheld
 (A.4 witness holds: coverage counts provisional). The same lane-local
-rule annotates readers with the minting law version.
+rule annotates readers with the minting law version, and the
+disclosure matrix below pins the consumer-visible presentation the
+builder derives from it (governed fields only: status, completeness,
+reason-code decision entry).
 
 DB-backed tests skip without a database (same convention as B2.3-P6).
-Pure mapping unit tests always run.
+Pure mapping/disclosure unit tests always run.
 """
 
 from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -23,7 +26,15 @@ from app.db.session import engine, get_b23_session
 from app.revenue_verification.state_transitions import (
     transition_stale_provisional_to_confirmed,
 )
-from app.trust.source_adapters import match_verdict_source_from_mapping
+from app.trust.builder import (
+    _event_meaning_reason_code,
+    _qualified_data_completeness,
+    _qualified_match_verdict_status,
+)
+from app.trust.source_adapters import (
+    MatchVerdictSource,
+    match_verdict_source_from_mapping,
+)
 
 TENANT_FIX = "21111111-2222-4333-8444-555555555555"
 
@@ -233,3 +244,118 @@ def test_mapping_defaults_without_law_keys():
     )
     assert src.event_family_law_version == "unknown"
     assert src.event_family_law_current is True
+
+
+def _source(**overrides: object) -> MatchVerdictSource:
+    now = datetime.now(timezone.utc)
+    base: dict[str, object] = {
+        "id": uuid4(),
+        "tenant_id": UUID(TENANT_FIX),
+        "webhook_ingress_identity_id": uuid4(),
+        "provider": "shopify",
+        "canonical_commerce_reference": "order-1",
+        "provider_native_event_reference": "evt-1",
+        "provider_native_commerce_reference": "order-1",
+        "status": "matched_confirmed",
+        "match_quality": "high",
+        "canonical_net_verified_amount_minor": 76000,
+        "currency_code": "USD",
+        "last_transition_at": now,
+        "created_at": now,
+        "updated_at": now,
+    }
+    base.update(overrides)
+    return MatchVerdictSource(**base)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    (
+        pytest.param(
+            {
+                "status": "matched_confirmed",
+                "event_family_law_current": False,
+                "event_family_law_version": "v3",
+            },
+            ("ambiguous", "degraded", "event_family_law_superseded:v3"),
+            id="superseded_confirmed_reads_ambiguous",
+        ),
+        pytest.param(
+            {
+                "status": "matched_provisional",
+                "event_family_law_current": False,
+                "event_family_law_version": "v3",
+            },
+            ("ambiguous", "degraded", "event_family_law_superseded:v3"),
+            id="superseded_provisional_stays_ambiguous",
+        ),
+        pytest.param(
+            {
+                "status": "matched_confirmed",
+                "event_family_law_current": True,
+                "event_family_law_version": "v4",
+            },
+            ("matched", "complete", "event_family_law:v4"),
+            id="current_law_confirmed_cites_version",
+        ),
+        pytest.param(
+            {
+                "status": "matched_provisional",
+                "event_family_law_current": True,
+                "event_family_law_version": "v4",
+            },
+            ("ambiguous", "insufficient_evidence", "event_family_law:v4"),
+            id="current_law_provisional_stays_ambiguous",
+        ),
+        pytest.param(
+            {
+                "status": "unmatched",
+                "event_family_law_current": True,
+                "event_family_law_version": "v4",
+            },
+            ("unmatched", "partial", "event_family_law:v4"),
+            id="current_law_unmatched_cites_version",
+        ),
+        pytest.param(
+            {"ingress_has_current_authority": False},
+            ("unavailable", "unavailable", "source_authority_not_current"),
+            id="demoted_ingress_precedence",
+        ),
+        pytest.param(
+            {
+                "ingress_has_current_authority": False,
+                "event_family_law_current": False,
+                "event_family_law_version": "v3",
+            },
+            ("unavailable", "unavailable", "source_authority_not_current"),
+            id="demoted_ingress_precedence_over_law",
+        ),
+        pytest.param(
+            {
+                "provider": "woocommerce",
+                "event_family_law_current": False,
+                "event_family_law_version": "v3",
+            },
+            ("matched", "complete", None),
+            id="non_shopify_law_untouched",
+        ),
+        pytest.param(
+            {
+                "event_family_law_current": True,
+                "event_family_law_version": "unknown",
+            },
+            ("matched", "complete", None),
+            id="shopify_unresolved_version_untouched",
+        ),
+    ),
+)
+def test_event_meaning_disclosure_matrix(
+    overrides: dict[str, object],
+    expected: tuple[str, str, str | None],
+) -> None:
+    """XXI P1: consumer-visible disclosure matrix on governed fields."""
+    source = _source(**overrides)
+    expected_status, expected_completeness, expected_reason = expected
+    assert _qualified_match_verdict_status(source) == expected_status
+    assert _qualified_data_completeness(source) == expected_completeness
+    assert _event_meaning_reason_code(source) == expected_reason
