@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -302,6 +303,30 @@ def _extract_profile_metrics_from_r3_log(
     if not bool(payload.get("passed")):
         raise RuntimeError(f"R3 profile verdict failed: {profile_name}")
     return payload
+
+
+def _extract_profile_window_best_effort(
+    log_path: Path, profile_name: str
+) -> dict[str, Any]:
+    """Read a profile verdict for diagnostics, tolerating a failed profile."""
+    try:
+        verdicts = _parse_r3_verdicts(log_path)
+    except RuntimeError:
+        return {}
+    payload = verdicts.get(profile_name)
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        "passed": bool(payload.get("passed")),
+        "window_start_utc": payload.get("window_start_utc"),
+        "window_end_utc": payload.get("window_end_utc"),
+        "target_rps": payload.get("target_rps"),
+        "achieved_rps": payload.get("achieved_rps"),
+        "elapsed_s": payload.get("elapsed_s"),
+        "latency_p50_ms": payload.get("latency_p50_ms"),
+        "latency_p95_ms": payload.get("latency_p95_ms"),
+        "latency_p99_ms": payload.get("latency_p99_ms"),
+    }
 
 
 def _r3_leg_span_seconds(env: dict[str, str]) -> int:
@@ -1299,10 +1324,16 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             stdout=llm_load_log_handle,
             stderr=subprocess.STDOUT,
         )
-        run_step(
-            "r3_ingestion_under_fire",
-            [sys.executable, "scripts/r3/ingestion_under_fire.py"],
-        )
+        r3_step_error: Exception | None = None
+        try:
+            run_step(
+                "r3_ingestion_under_fire",
+                [sys.executable, "scripts/r3/ingestion_under_fire.py"],
+            )
+        except Exception as exc:  # noqa: BLE001 - diagnostics first, re-raised below
+            r3_step_error = exc
+        # Let the bounded helpers finish even when the R3 leg failed, so a
+        # failing composed run still yields conduction and queue evidence.
         try:
             llm_load_returncode = llm_load_proc.wait(timeout=llm_duration_s + 180)
         except subprocess.TimeoutExpired as exc:
@@ -1318,7 +1349,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "queue_liveness_probe.py did not exit before the wait deadline"
             ) from exc
 
-        r3_profile = _extract_profile_metrics_from_r3_log(
+        r3_window = _extract_profile_window_best_effort(
             cfg.logs_dir / "r3_ingestion_under_fire.log",
             "EG3_4_Test2_Month18",
         )
@@ -1334,18 +1365,89 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "--out-dir",
             str(cfg.artifact_dir / "sql"),
         ]
-        if cfg.full_physics:
+        if (
+            cfg.full_physics
+            and r3_window.get("window_start_utc")
+            and r3_window.get("window_end_utc")
+        ):
             collect_phase8_sql_cmd += [
                 "--window-start",
-                str(r3_profile.get("window_start_utc") or ""),
+                str(r3_window["window_start_utc"]),
                 "--window-end",
-                str(r3_profile.get("window_end_utc") or ""),
+                str(r3_window["window_end_utc"]),
             ]
-        run_step("collect_phase8_sql", collect_phase8_sql_cmd)
-        sql_probe_summary = json.loads(
-            (cfg.artifact_dir / "sql" / "phase8_sql_probe_summary.json").read_text(
-                encoding="utf-8"
+        collect_error: Exception | None = None
+        try:
+            run_step("collect_phase8_sql", collect_phase8_sql_cmd)
+        except Exception as exc:  # noqa: BLE001 - recorded in diagnostics
+            collect_error = exc
+        sql_summary_path = cfg.artifact_dir / "sql" / "phase8_sql_probe_summary.json"
+        sql_probe_summary: dict[str, Any] = {}
+        if sql_summary_path.exists():
+            sql_probe_summary = json.loads(sql_summary_path.read_text(encoding="utf-8"))
+        llm_probe_payload: dict[str, Any] = {}
+        if llm_load_artifact.exists():
+            try:
+                loaded = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    llm_probe_payload = loaded
+            except json.JSONDecodeError:
+                llm_probe_payload = {}
+        if r3_step_error is not None or collect_error is not None:
+            failure_diagnostics = {
+                "r3_step_error": str(r3_step_error) if r3_step_error else None,
+                "r3_test2": r3_window,
+                "llm_load_returncode": llm_load_returncode,
+                "llm_load_status": llm_probe_payload.get("status"),
+                "llm_load_error": llm_probe_payload.get("error"),
+                "llm_load_dispatched_count": llm_probe_payload.get("dispatched_count"),
+                "llm_load_started_at": llm_probe_payload.get("started_at"),
+                "llm_load_finished_at": llm_probe_payload.get("finished_at"),
+                "queue_probe_returncode": queue_probe_returncode,
+                "collect_phase8_sql_error": str(collect_error) if collect_error else None,
+                "perf_window": sql_probe_summary.get("perf_window"),
+                "perf_composed_llm_calls": sql_probe_summary.get(
+                    "perf_composed_llm_calls"
+                ),
+                "perf_composed_llm_api_calls": sql_probe_summary.get(
+                    "perf_composed_llm_api_calls"
+                ),
+                "perf_composed_llm_audit_calls": sql_probe_summary.get(
+                    "perf_composed_llm_audit_calls"
+                ),
+                "perf_revenue_ledger_rows_during_window": sql_probe_summary.get(
+                    "perf_revenue_ledger_rows_during_window"
+                ),
+            }
+            (
+                cfg.artifact_dir / "phase8_failure_diagnostics.json"
+            ).write_text(
+                json.dumps(failure_diagnostics, indent=2, sort_keys=True),
+                encoding="utf-8",
             )
+            try:
+                _run_logged(
+                    cfg,
+                    name="compose_logs_failure",
+                    cmd=[
+                        "docker",
+                        "compose",
+                        "-f",
+                        "docker-compose.e2e.yml",
+                        "logs",
+                        "--no-color",
+                    ],
+                    env=env,
+                )
+            except Exception:  # noqa: BLE001 - diagnostics are best-effort
+                pass
+        if r3_step_error is not None:
+            raise r3_step_error
+        if collect_error is not None:
+            raise collect_error
+        r3_profile = _extract_profile_metrics_from_r3_log(
+            cfg.logs_dir / "r3_ingestion_under_fire.log",
+            "EG3_4_Test2_Month18",
         )
         perf_llm_calls = int(sql_probe_summary.get("perf_composed_llm_calls", 0))
         perf_llm_api_calls = int(
@@ -1357,10 +1459,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         perf_ledger_rows = int(
             sql_probe_summary.get("perf_revenue_ledger_rows_during_window", 0)
         )
-        llm_probe_dispatched = 0
-        if llm_load_artifact.exists():
-            llm_probe = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
-            llm_probe_dispatched = int(llm_probe.get("dispatched_count", 0) or 0)
+        llm_probe_dispatched = int(llm_probe_payload.get("dispatched_count", 0) or 0)
         target_request_count = int(r3_profile.get("target_request_count", 0) or 0)
         observed_request_count = int(r3_profile.get("observed_request_count", 0) or 0)
         status_counts = r3_profile.get("http_status_counts", {})
@@ -1599,6 +1698,9 @@ def main() -> int:
         return_code = 0
     except Exception as exc:  # noqa: BLE001
         summary["error"] = str(exc)
+        print(f"PHASE8_PACK_FAILURE: {exc}", file=sys.stderr)
+        for line in traceback.format_exc().splitlines():
+            print(f"PHASE8_PACK_TRACEBACK: {line}", file=sys.stderr)
         return_code = 1
     finally:
         summary["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

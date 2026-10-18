@@ -250,3 +250,38 @@ def test_r3_leg_span_matches_profile_defaults() -> None:
         "R3_EG34_TEST3_DURATION_S": "60",
     }
     assert _PACK._r3_leg_span_seconds(ci_env) == 150
+
+
+def _write_r3_log(tmp_path: Path, *, passed: bool) -> Path:
+    verdict = {
+        "passed": passed,
+        "window_start_utc": _WINDOW_START,
+        "window_end_utc": _WINDOW_END,
+        "target_rps": 46.0,
+        "achieved_rps": 34.348,
+        "elapsed_s": 80.3548,
+        "latency_p95_ms": 6167.017,
+    }
+    log = tmp_path / "r3_ingestion_under_fire.log"
+    log.write_text(
+        "R3_VERDICT_BEGIN EG3_4_Test2_Month18\n"
+        + json.dumps(verdict, indent=2)
+        + "\nR3_VERDICT_END EG3_4_Test2_Month18\n",
+        encoding="utf-8",
+    )
+    return log
+
+
+def test_best_effort_window_from_failed_verdict(tmp_path: Path) -> None:
+    log = _write_r3_log(tmp_path, passed=False)
+    window = _PACK._extract_profile_window_best_effort(log, "EG3_4_Test2_Month18")
+    assert window["passed"] is False
+    assert window["window_start_utc"] == _WINDOW_START
+    assert window["window_end_utc"] == _WINDOW_END
+    with pytest.raises(RuntimeError, match="verdict failed"):
+        _PACK._extract_profile_metrics_from_r3_log(log, "EG3_4_Test2_Month18")
+
+
+def test_best_effort_window_missing_log_returns_empty(tmp_path: Path) -> None:
+    missing = tmp_path / "absent.log"
+    assert _PACK._extract_profile_window_best_effort(missing, "EG3_4_Test2_Month18") == {}
