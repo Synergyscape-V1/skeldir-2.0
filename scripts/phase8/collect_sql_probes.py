@@ -166,6 +166,45 @@ def main() -> int:
                     "Performance evidence window unavailable: no authority window "
                     "and no load-helper interval"
                 )
+            perf_revenue_ledger_rows_during_window = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)::INTEGER
+                        FROM revenue_ledger
+                        WHERE tenant_id = :runtime_tenant_id
+                          AND created_at >= :started_at
+                          AND created_at <= :finished_at
+                        """
+                    ),
+                    {
+                        "runtime_tenant_id": tenant_id,
+                        "started_at": perf_window_start,
+                        "finished_at": perf_window_end,
+                    },
+                ).scalar_one()
+            )
+            # llm_api_calls and llm_call_audit are FORCE-RLS with a tenant+user
+            # predicate. The load helper seeds its own tenant and user, so the
+            # collector must bind both helper GUCs to see the conducted calls;
+            # under the runtime probe's RLS context these rows are invisible and
+            # the count reads zero regardless of real conduction.
+            helper_tenant_id = str(llm_load_probe.get("tenant_id") or "")
+            helper_user_id = str(llm_load_probe.get("user_id") or "")
+            if helper_tenant_id:
+                conn.execute(
+                    text(
+                        "SELECT set_config('app.current_tenant_id', :tenant_id, false)"
+                    ),
+                    {"tenant_id": helper_tenant_id},
+                )
+            if helper_user_id:
+                conn.execute(
+                    text(
+                        "SELECT set_config('app.current_user_id', :user_id, false)"
+                    ),
+                    {"user_id": helper_user_id},
+                )
             params = {
                 "tenant_id": llm_load_probe["tenant_id"],
                 "started_at": perf_window_start,
@@ -199,24 +238,6 @@ def main() -> int:
                         """
                     ),
                     params,
-                ).scalar_one()
-            )
-            perf_revenue_ledger_rows_during_window = int(
-                conn.execute(
-                    text(
-                        """
-                        SELECT COUNT(*)::INTEGER
-                        FROM revenue_ledger
-                        WHERE tenant_id = :runtime_tenant_id
-                          AND created_at >= :started_at
-                          AND created_at <= :finished_at
-                        """
-                    ),
-                    {
-                        "runtime_tenant_id": tenant_id,
-                        "started_at": perf_window_start,
-                        "finished_at": perf_window_end,
-                    },
                 ).scalar_one()
             )
             perf_composed_llm_api_calls = perf_api_calls
