@@ -11,7 +11,8 @@ from sqlalchemy.exc import DBAPIError
 
 from app.db.session import get_session
 from app.ingestion.event_service import EventIngestionService
-from app.models import AttributionEvent, SessionAuthority
+from app.models import AttributionEvent, EphemeralOrderResolution, SessionAuthority
+from app.privacy.ephemeral_resolution import upsert_ephemeral_resolution_links
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
@@ -443,3 +444,153 @@ async def test_b14_p2_runtime_db_rejects_stale_session_insert_despite_historical
         await session.rollback()
 
     assert "session authority violation" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_b14_p2_runtime_identical_binding_reupsert_is_write_noop(test_tenant):
+    tenant_id = test_tenant
+    session_id = uuid4()
+    order_id = f"pi_{uuid5(NAMESPACE_URL, f'noop_order:{uuid4()}').hex[:16]}"
+    now = datetime.now(timezone.utc)
+
+    async with get_session(tenant_id=tenant_id) as session:
+        await upsert_ephemeral_resolution_links(
+            session=session,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            order_id=order_id,
+            source="stripe",
+            now=now,
+        )
+
+    async with get_session(tenant_id=tenant_id) as session:
+        first = await session.scalar(
+            select(EphemeralOrderResolution).where(
+                EphemeralOrderResolution.tenant_id == tenant_id,
+                EphemeralOrderResolution.order_id == order_id,
+            )
+        )
+        assert first is not None
+        first_observed_at = first.observed_at
+        first_updated_at = first.updated_at
+        first_created_at = first.created_at
+        # RAW_SQL_ALLOWLIST: xmin tuple-version probe proves no UPDATE ran
+        first_xmin = (
+            await session.execute(
+                text(
+                    "SELECT xmin FROM public.ephemeral_order_resolution"
+                    " WHERE tenant_id = CAST(:tenant_id AS uuid)"
+                    " AND order_id = :order_id"
+                ),
+                {"tenant_id": str(tenant_id), "order_id": order_id},
+            )
+        ).scalar_one()
+    assert first_observed_at == now
+
+    async with get_session(tenant_id=tenant_id) as session:
+        await upsert_ephemeral_resolution_links(
+            session=session,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            order_id=order_id,
+            source="stripe",
+            now=now,
+        )
+
+    async with get_session(tenant_id=tenant_id) as session:
+        second = await session.scalar(
+            select(EphemeralOrderResolution).where(
+                EphemeralOrderResolution.tenant_id == tenant_id,
+                EphemeralOrderResolution.order_id == order_id,
+            )
+        )
+        assert second is not None
+        second_session_id = second.session_id
+        second_updated_at = second.updated_at
+        second_created_at = second.created_at
+        # RAW_SQL_ALLOWLIST: xmin tuple-version probe proves no UPDATE ran
+        second_xmin = (
+            await session.execute(
+                text(
+                    "SELECT xmin FROM public.ephemeral_order_resolution"
+                    " WHERE tenant_id = CAST(:tenant_id AS uuid)"
+                    " AND order_id = :order_id"
+                ),
+                {"tenant_id": str(tenant_id), "order_id": order_id},
+            )
+        ).scalar_one()
+    assert second_session_id == session_id
+    assert second_updated_at == first_updated_at
+    assert second_created_at == first_created_at
+    assert second_xmin == first_xmin
+
+
+@pytest.mark.asyncio
+async def test_b14_p2_runtime_stale_reupsert_cannot_override_newer_binding(
+    test_tenant,
+):
+    tenant_id = test_tenant
+    first_session_id = uuid4()
+    second_session_id = uuid4()
+    order_id = f"pi_{uuid5(NAMESPACE_URL, f'stale_order:{uuid4()}').hex[:16]}"
+    now = datetime.now(timezone.utc)
+    later = now + timedelta(seconds=2)
+
+    async with get_session(tenant_id=tenant_id) as session:
+        await upsert_ephemeral_resolution_links(
+            session=session,
+            tenant_id=tenant_id,
+            session_id=first_session_id,
+            order_id=order_id,
+            source="stripe",
+            now=now,
+        )
+
+    async with get_session(tenant_id=tenant_id) as session:
+        await upsert_ephemeral_resolution_links(
+            session=session,
+            tenant_id=tenant_id,
+            session_id=second_session_id,
+            order_id=order_id,
+            source="stripe",
+            now=later,
+        )
+
+    async with get_session(tenant_id=tenant_id) as session:
+        current = await session.scalar(
+            select(EphemeralOrderResolution).where(
+                EphemeralOrderResolution.tenant_id == tenant_id,
+                EphemeralOrderResolution.order_id == order_id,
+            )
+        )
+        assert current is not None
+        current_session_id = current.session_id
+        current_observed_at = current.observed_at
+        current_updated_at = current.updated_at
+    assert current_session_id == second_session_id
+    assert current_observed_at == later
+
+    async with get_session(tenant_id=tenant_id) as session:
+        await upsert_ephemeral_resolution_links(
+            session=session,
+            tenant_id=tenant_id,
+            session_id=first_session_id,
+            order_id=order_id,
+            source="stripe",
+            now=now,
+        )
+
+    async with get_session(tenant_id=tenant_id) as session:
+        untouched = await session.scalar(
+            select(EphemeralOrderResolution).where(
+                EphemeralOrderResolution.tenant_id == tenant_id,
+                EphemeralOrderResolution.order_id == order_id,
+            )
+        )
+        assert untouched is not None
+        untouched_session_id = untouched.session_id
+        untouched_observed_at = untouched.observed_at
+        untouched_updated_at = untouched.updated_at
+    assert untouched_session_id == second_session_id
+    assert untouched_observed_at == later
+    assert untouched_updated_at == current_updated_at
