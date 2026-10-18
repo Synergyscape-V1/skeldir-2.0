@@ -65,7 +65,7 @@ def _write_load_artifact(
     *,
     status: str = "ok",
     error: str | None = None,
-    dispatch_mode: str = "broker",
+    dispatch_mode: str = "inline",
     dispatched_count: int = 60,
     started_at: str = _LOAD_START,
     finished_at: str = _LOAD_FINISH,
@@ -177,9 +177,9 @@ def test_stale_interval_fails_closed(tmp_path: Path) -> None:
         _validate(tmp_path, llm_load_artifact=artifact)
 
 
-def test_inline_dispatch_mode_fails_closed(tmp_path: Path) -> None:
-    artifact = _write_load_artifact(tmp_path, dispatch_mode="inline")
-    with pytest.raises(RuntimeError, match="requires broker dispatch"):
+def test_broker_dispatch_mode_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path, dispatch_mode="broker")
+    with pytest.raises(RuntimeError, match="certified inline dispatch"):
         _validate(tmp_path, llm_load_artifact=artifact)
 
 
@@ -205,7 +205,7 @@ def test_honest_instrumentation_passes(tmp_path: Path) -> None:
     assert evidence["authority_window_start_utc"] == _WINDOW_START
     assert evidence["authority_window_end_utc"] == _WINDOW_END
     assert evidence["load_helper_dispatched_count"] == 60
-    assert evidence["load_helper_dispatch_mode"] == "broker"
+    assert evidence["load_helper_dispatch_mode"] == "inline"
 
 
 def test_ci_subset_sanity_still_requires_helper_integrity(tmp_path: Path) -> None:

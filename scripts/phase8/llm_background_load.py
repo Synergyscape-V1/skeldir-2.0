@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
+"""Phase 8 composed-instrumentation LLM load helper.
+
+Conducts the certified LLM workload inline through the provider boundary
+(``app.tasks.llm.explanation``'s ``generate_explanation``) while the R3 fire
+runs, and always leaves an artifact behind: status, error, dispatch mode,
+dispatch counts and the real start/finish interval. A failure writes a failed
+artifact and exits non-zero, so the fail-closed gate refuses an authoritative
+pass instead of silently accepting a missing instrument.
+"""
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import time
@@ -11,9 +21,6 @@ import sys
 from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine, text
-
-from app.schemas.llm_payloads import LLMTaskPayload
-from app.services.llm_dispatch import enqueue_llm_task
 
 
 def _import_db_secret_access():
@@ -98,32 +105,36 @@ def main() -> int:
     parser.add_argument("--artifact", required=True)
     args = parser.parse_args()
 
+    from app.db.session import get_session
+    from app.schemas.llm_payloads import LLMTaskPayload
+    from app.workers.llm import generate_explanation
+
     runtime_db_url = _runtime_sync_db_url()
     tenant_id = _seed_tenant(runtime_db_url)
     user_id = uuid4()
-    session_jti = uuid4()
-    session_iat = int(time.time())
 
     request_ids: list[str] = []
-    task_ids: list[str] = []
     started_at = datetime.now(timezone.utc)
     deadline = time.time() + max(1, int(args.duration_s))
     artifact_path = Path(args.artifact)
     result: dict[str, object] = {
         "status": "failed",
         "error": None,
-        "dispatch_mode": "broker",
+        "dispatch_mode": "inline",
         "task_name": "app.tasks.llm.explanation",
         "tenant_id": str(tenant_id),
         "user_id": str(user_id),
         "dispatched_count": 0,
         "first_request_id": None,
         "last_request_id": None,
-        "first_task_id": None,
-        "last_task_id": None,
         "started_at": started_at.isoformat(),
         "finished_at": None,
     }
+    _write_artifact(artifact_path, result)
+
+    async def _conduct(payload: LLMTaskPayload) -> None:
+        async with get_session(tenant_id=tenant_id, user_id=user_id) as session:
+            await generate_explanation(payload, session=session)
 
     try:
         while time.time() < deadline:
@@ -131,8 +142,6 @@ def main() -> int:
             payload = LLMTaskPayload(
                 tenant_id=tenant_id,
                 user_id=user_id,
-                jti=session_jti,
-                iat=session_iat,
                 correlation_id=request_id,
                 request_id=request_id,
                 prompt={
@@ -142,32 +151,21 @@ def main() -> int:
                 },
                 max_cost_cents=2,
             )
-            async_result = enqueue_llm_task("explanation", payload)
+            asyncio.run(_conduct(payload))
             request_ids.append(request_id)
-            if async_result is not None and getattr(async_result, "id", None):
-                task_ids.append(str(async_result.id))
             result["dispatched_count"] = len(request_ids)
+            result["first_request_id"] = request_ids[0]
+            result["last_request_id"] = request_ids[-1]
+            _write_artifact(artifact_path, result)
             time.sleep(max(0.01, float(args.interval_s)))
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
         result["finished_at"] = datetime.now(timezone.utc).isoformat()
-        result["first_request_id"] = request_ids[0] if request_ids else None
-        result["last_request_id"] = request_ids[-1] if request_ids else None
-        result["first_task_id"] = task_ids[0] if task_ids else None
-        result["last_task_id"] = task_ids[-1] if task_ids else None
         _write_artifact(artifact_path, result)
         raise
 
-    result.update(
-        {
-            "status": "ok",
-            "first_request_id": request_ids[0] if request_ids else None,
-            "last_request_id": request_ids[-1] if request_ids else None,
-            "first_task_id": task_ids[0] if task_ids else None,
-            "last_task_id": task_ids[-1] if task_ids else None,
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-        }
-    )
+    result["status"] = "ok"
+    result["finished_at"] = datetime.now(timezone.utc).isoformat()
     _write_artifact(artifact_path, result)
     return 0
 

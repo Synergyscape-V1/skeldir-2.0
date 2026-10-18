@@ -403,10 +403,10 @@ def _validate_composed_instrumentation(
     if not full_physics:
         return evidence
 
-    if llm_probe.get("dispatch_mode") != "broker":
+    if llm_probe.get("dispatch_mode") != "inline":
         raise RuntimeError(
-            "Composed instrumentation invalid: authority conduction requires "
-            f"broker dispatch, got {llm_probe.get('dispatch_mode')!r}"
+            "Composed instrumentation invalid: authority conduction requires the "
+            f"certified inline dispatch, got {llm_probe.get('dispatch_mode')!r}"
         )
 
     window_start_raw = r3_profile.get("window_start_utc")
