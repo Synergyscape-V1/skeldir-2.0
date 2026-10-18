@@ -105,7 +105,7 @@ def upgrade() -> None:
 
     # Enforce queue_id presence going forward and remove unused legacy queue name column.
     op.execute("ALTER TABLE public.kombu_message ALTER COLUMN queue_id SET NOT NULL;")
-    op.execute("ALTER TABLE public.kombu_message DROP COLUMN IF EXISTS queue;")
+    op.execute("ALTER TABLE public.kombu_message DROP COLUMN IF EXISTS queue;")  # CI:DESTRUCTIVE_OK - legacy column removal (kombu alignment)
 
     # Refresh indexes to match Kombu metadata (timestamp/id composite).
     op.execute("DROP INDEX IF EXISTS public.ix_kombu_message_timestamp;")
@@ -150,9 +150,9 @@ def downgrade() -> None:
             ON public.kombu_message (queue);
         """
     )
-    op.execute("ALTER TABLE public.kombu_message DROP CONSTRAINT IF EXISTS fk_kombu_message_queue;")
+    op.execute("ALTER TABLE public.kombu_message DROP CONSTRAINT IF EXISTS fk_kombu_message_queue;")  # CI:DESTRUCTIVE_OK - downgrade rollback
     op.execute("ALTER TABLE public.kombu_message ALTER COLUMN queue_id DROP NOT NULL;")
-    op.execute("ALTER TABLE public.kombu_message DROP COLUMN IF EXISTS queue_id;")
+    op.execute("ALTER TABLE public.kombu_message DROP COLUMN IF EXISTS queue_id;")  # CI:DESTRUCTIVE_OK - downgrade rollback
 
     # Best-effort type reversion to prior state.
     op.execute(
