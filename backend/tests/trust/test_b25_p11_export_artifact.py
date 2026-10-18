@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api import trust_export
+from app.trust.audit import TrustAuditError
 from app.trust.canonicalization import (
     canonicalize_envelope_payload,
     canonicalize_signature_material,
@@ -781,3 +782,68 @@ async def test_atomic_preflight_rejects_full_mixed_set_before_any_p7_issuance(
     assert "X-Trust-Continuation" not in response.headers
     assert observed_limits == [50]
     assert build_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_lost_export_signature_keeps_original_cause_when_issuance_concluded(
+    monkeypatch,
+) -> None:
+    """A deadline that cancels signing after the issued transition committed.
+
+    The unknown-transition refusal is correct there (the row already concluded),
+    so the cleanup must not replace the original deadline cause with the audit
+    error -- the route's typed 503 refusal depends on receiving that cause.
+    """
+    audit_error = TrustAuditError(
+        "export_artifact_unknown_transition_refused:expected=1:observed=0"
+    )
+
+    async def _refuse(**kwargs):
+        raise audit_error
+
+    async def _issued(**kwargs):
+        return {"artifact_hash": "sha256:concluded"}
+
+    monkeypatch.setattr(
+        trust_export, "record_trust_export_attempt_unknown", _refuse
+    )
+    monkeypatch.setattr(
+        trust_export, "load_durable_trust_export_artifact", _issued
+    )
+
+    await trust_export._preserve_ambiguity_for_lost_export_signature(
+        tenant_id=uuid4(),
+        attempt_id=uuid4(),
+        request_binding_hash="sha256:binding-concluded",
+        page_start=0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_lost_export_signature_refusal_propagates_when_no_durable_issuance(
+    monkeypatch,
+) -> None:
+    """Without a durable issued artifact the ambiguity is real and refuses."""
+
+    async def _refuse(**kwargs):
+        raise TrustAuditError(
+            "export_artifact_unknown_transition_refused:expected=1:observed=0"
+        )
+
+    async def _no_durable(**kwargs):
+        return None
+
+    monkeypatch.setattr(
+        trust_export, "record_trust_export_attempt_unknown", _refuse
+    )
+    monkeypatch.setattr(
+        trust_export, "load_durable_trust_export_artifact", _no_durable
+    )
+
+    with pytest.raises(TrustAuditError):
+        await trust_export._preserve_ambiguity_for_lost_export_signature(
+            tenant_id=uuid4(),
+            attempt_id=uuid4(),
+            request_binding_hash="sha256:binding-unconcluded",
+            page_start=0,
+        )

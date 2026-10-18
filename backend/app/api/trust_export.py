@@ -23,6 +23,7 @@ from app.api.trust_api import (
 )
 from app.db import session as db_session
 from app.trust.audit import (
+    TrustAuditError,
     build_unsigned_trust_envelope_with_audit,
     load_durable_trust_export_artifact,
     load_durable_trust_issuance_artifact,
@@ -435,6 +436,39 @@ async def _finalize_export_issuance_completions(
         )
 
 
+async def _preserve_ambiguity_for_lost_export_signature(
+    *,
+    tenant_id: UUID,
+    attempt_id: UUID,
+    request_binding_hash: str,
+    page_start: int,
+) -> None:
+    """Account for an outer-artifact signing attempt whose outcome did not return.
+
+    The handler deadline can cancel the signing call after the issued transition
+    has durably committed but before it returns. The unknown-transition update
+    then correctly refuses (the row is no longer 'signing'): only the response
+    was lost -- the consequence is concluded and re-serviceable from durable
+    evidence -- so that refusal is not an anomaly and must not mask the
+    original cause (the deadline), which the route converts into its typed
+    refusal. Where no durable issued artifact exists for this binding and page,
+    ambiguity is real and the refusal propagates unchanged.
+    """
+    try:
+        await record_trust_export_attempt_unknown(
+            tenant_id=tenant_id,
+            attempt_id=attempt_id,
+        )
+    except TrustAuditError:
+        durable = await load_durable_trust_export_artifact(
+            tenant_id=tenant_id,
+            request_binding_hash=request_binding_hash,
+            page_start=page_start,
+        )
+        if durable is None:
+            raise
+
+
 async def _create_export_with_capacity(
     *,
     export_request: ExportMatchVerdictRequest,
@@ -632,9 +666,11 @@ async def _create_export_with_capacity(
                 test_signing_registry=key_registry,
             )
         except BaseException:
-            await record_trust_export_attempt_unknown(
+            await _preserve_ambiguity_for_lost_export_signature(
                 tenant_id=caller.tenant_id,
                 attempt_id=export_attempt_id,
+                request_binding_hash=binding_hash,
+                page_start=start_position,
             )
             raise
     artifact_verification = verify_export_artifact(
