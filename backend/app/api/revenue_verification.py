@@ -15,12 +15,18 @@ from app.schemas.revenue_verification import (
     B23MatchVerdictDetailResponse,
 )
 from app.security.auth import AuthContext, get_auth_context
+from app.trust.source_adapters import resolve_event_family_law_cohort
 
 
 router = APIRouter()
 
 
-def _match_detail_from_row(row) -> B23MatchVerdictDetailResponse:
+def _match_detail_from_row(
+    row,
+    *,
+    event_family_law_version: str | None,
+    event_family_law_current: bool | None,
+) -> B23MatchVerdictDetailResponse:
     return B23MatchVerdictDetailResponse(
         id=row["id"],
         tenant_id=row["tenant_id"],
@@ -61,6 +67,8 @@ def _match_detail_from_row(row) -> B23MatchVerdictDetailResponse:
         last_transition_at=row["last_transition_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        event_family_law_version=event_family_law_version,
+        event_family_law_current=event_family_law_current,
     )
 
 
@@ -108,6 +116,7 @@ async def get_b23_match_verdict(
                 """
                 SELECT
                     v.*,
+                    i.verified_at AS ingress_verified_at,
                     EXISTS (
                         SELECT 1
                         FROM b23_revenue_events e
@@ -119,6 +128,9 @@ async def get_b23_match_verdict(
                           )
                     ) AS adjustments_applied
                 FROM b23_match_verdicts v
+                LEFT JOIN webhook_ingress_identities i
+                  ON i.tenant_id = v.tenant_id
+                 AND i.id = v.webhook_ingress_identity_id
                 WHERE v.tenant_id = :tenant_id
                   AND v.id = :verdict_id
                 """
@@ -131,7 +143,24 @@ async def get_b23_match_verdict(
     ).mappings().first()
     if row is None:
         raise HTTPException(status_code=404, detail="B2.3 match verdict not found.")
-    return _match_detail_from_row(row)
+    # XXI P1: consumer-visible event-family-law qualification. The law
+    # cohort resolves through the trust surface's governed resolver
+    # (single source of truth) against the tenant-coherent backing
+    # ingress mint; only Shopify rows are governed by the
+    # creation-window law. A missing mint fails closed (unknown, not
+    # current).
+    law_version: str | None = None
+    law_current: bool | None = None
+    if row["provider"] == "shopify":
+        resolved_version, law_current = await resolve_event_family_law_cohort(
+            db_session, mint_moment=row["ingress_verified_at"]
+        )
+        law_version = resolved_version or "unknown"
+    return _match_detail_from_row(
+        row,
+        event_family_law_version=law_version,
+        event_family_law_current=law_current,
+    )
 
 
 @router.get(

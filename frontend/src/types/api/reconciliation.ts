@@ -268,6 +268,10 @@ export interface components {
             updated_at: string;
             /** @description Current P2 authority of the verdict source ingress at read time: current, historically_unverifiable, unresolved, or unknown. */
             source_authority_state?: string;
+            /** @description XXI P1: the event-family law version that established this verdict meaning (latest law publication at or before the backing ingress mint). unknown when no law is recorded at the mint; null when the law does not govern the provider. */
+            event_family_law_version?: string | null;
+            /** @description XXI P1: false when a later event-family law publication supersedes the establishing law (the verdict must not read as current-law verified meaning); null when the law does not govern the provider. */
+            event_family_law_current?: boolean | null;
         };
         B23ExceptionRecordResponse: {
             /** Format: uuid */
@@ -1501,6 +1505,10 @@ export interface operations {
                         updated_at: string;
                         /** @description Current P2 authority of the verdict source ingress at read time: current, historically_unverifiable, unresolved, or unknown. */
                         source_authority_state?: string;
+                        /** @description XXI P1: the event-family law version that established this verdict meaning (latest law publication at or before the backing ingress mint). unknown when no law is recorded at the mint; null when the law does not govern the provider. */
+                        event_family_law_version?: string | null;
+                        /** @description XXI P1: false when a later event-family law publication supersedes the establishing law (the verdict must not read as current-law verified meaning); null when the law does not govern the provider. */
+                        event_family_law_current?: boolean | null;
                     };
                 };
             };

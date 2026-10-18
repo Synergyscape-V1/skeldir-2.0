@@ -82,6 +82,16 @@ class B23MatchVerdictDetailResponse(BaseModel):
     # source ingress at read time. 'current' verdicts may conduct;
     # any other state is explicitly non-authoritative history.
     source_authority_state: str = "unknown"
+    # XXI P1: the event-family law that established this verdict's
+    # meaning (latest law publication at or before the backing ingress
+    # mint). 'unknown' when no law is recorded at the mint. None when
+    # the law does not govern the provider (non-Shopify).
+    event_family_law_version: str | None = None
+    # XXI P1: False when a later event-family law publication
+    # supersedes the establishing law (the verdict must not read as
+    # current-law verified meaning). None when the law does not govern
+    # the provider.
+    event_family_law_current: bool | None = None
 
 
 class B23ExceptionRecordResponse(BaseModel):

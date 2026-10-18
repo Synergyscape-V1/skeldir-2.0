@@ -535,7 +535,7 @@ def match_verdict_source_from_mapping(row: Any) -> MatchVerdictSource:
     )
 
 
-async def _resolve_event_family_law_cohort(
+async def resolve_event_family_law_cohort(
     session: AsyncSession, *, mint_moment: Any
 ) -> tuple[str | None, bool]:
     """Resolve the minting-law cohort for one mint moment (XXI P1).
@@ -646,7 +646,7 @@ async def read_match_verdict_source(
                 v.b26_p2_source_authority_state AS ingress_authority_state,
                 -- XXI P1: the minting moment feeds the lane-local cohort
                 -- lookup below (own statement; see
-                -- _resolve_event_family_law_cohort).
+                -- resolve_event_family_law_cohort).
                 i.verified_at AS ingress_verified_at
             FROM public.b23_match_verdicts AS v
             LEFT JOIN public.webhook_ingress_identities AS i
@@ -664,7 +664,7 @@ async def read_match_verdict_source(
     mint_moment = mapping.get("ingress_verified_at") or mapping.get(
         "created_at"
     )
-    law_version, law_current = await _resolve_event_family_law_cohort(
+    law_version, law_current = await resolve_event_family_law_cohort(
         session, mint_moment=mint_moment
     )
     mapping["event_family_law_version"] = law_version
@@ -775,7 +775,7 @@ async def query_match_verdict_sources(
             v.b26_p2_source_authority_state AS ingress_authority_state,
             -- XXI P1: the minting moment feeds the lane-local cohort
             -- lookup below (own statement; see
-            -- _resolve_event_family_law_cohort).
+            -- resolve_event_family_law_cohort).
             i.verified_at AS ingress_verified_at
         FROM public.b23_match_verdicts AS v
         LEFT JOIN public.webhook_ingress_identities AS i
@@ -797,7 +797,7 @@ async def query_match_verdict_sources(
         mint_moment = mapping.get("ingress_verified_at") or mapping.get(
             "created_at"
         )
-        law_version, law_current = await _resolve_event_family_law_cohort(
+        law_version, law_current = await resolve_event_family_law_cohort(
             session, mint_moment=mint_moment
         )
         mapping["event_family_law_version"] = law_version

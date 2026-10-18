@@ -222,6 +222,45 @@ async def test_cohort_confinement_sweep_and_reader():
     assert s3.event_family_law_current is False
     assert s4.event_family_law_current is True
     assert s4.event_family_law_version != "unknown"
+    # XXI P1 reader disclosure: the reconciliation detail reader
+    # resolves the same law cohort through the governed trust
+    # resolver and discloses it, so a superseded-cohort verdict never
+    # reads as current-law verified meaning on that surface either.
+    from fastapi import Response as FastAPIResponse
+
+    from app.api.revenue_verification import get_b23_match_verdict
+    from app.security.auth import AuthContext
+
+    auth_context = AuthContext(
+        tenant_id=tenant_id,
+        user_id=uuid4(),
+        jti=uuid4(),
+        issued_at_epoch=0,
+        subject=None,
+        issuer=None,
+        audience=None,
+        claims={},
+    )
+    async with get_b23_session(tenant_id) as session:
+        detail_v3 = await get_b23_match_verdict(
+            verdict_id=v3,
+            response=FastAPIResponse(),
+            x_correlation_id=uuid4(),
+            auth_context=auth_context,
+            db_session=session,
+        )
+        detail_v4 = await get_b23_match_verdict(
+            verdict_id=v4,
+            response=FastAPIResponse(),
+            x_correlation_id=uuid4(),
+            auth_context=auth_context,
+            db_session=session,
+        )
+    assert detail_v3.provider == "shopify"
+    assert detail_v3.event_family_law_current is False
+    assert detail_v3.event_family_law_version == "unknown"
+    assert detail_v4.event_family_law_current is True
+    assert detail_v4.event_family_law_version not in {None, "unknown"}
 
 
 def test_mapping_defaults_without_law_keys():
