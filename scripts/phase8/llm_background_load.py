@@ -132,11 +132,10 @@ def main() -> int:
     }
     _write_artifact(artifact_path, result)
 
-    async def _conduct(payload: LLMTaskPayload) -> None:
-        async with get_session(tenant_id=tenant_id, user_id=user_id) as session:
-            await generate_explanation(payload, session=session)
-
-    try:
+    async def _conduct_loop() -> None:
+        # One event loop for the whole run: pooled asyncpg connections must not
+        # migrate across event loops (a per-dispatch asyncio.run reuses the
+        # pooled connection on a new loop and fails at the pre-ping).
         while time.time() < deadline:
             request_id = f"phase8-perf-llm-{uuid4().hex[:12]}"
             payload = LLMTaskPayload(
@@ -151,13 +150,17 @@ def main() -> int:
                 },
                 max_cost_cents=2,
             )
-            asyncio.run(_conduct(payload))
+            async with get_session(tenant_id=tenant_id, user_id=user_id) as session:
+                await generate_explanation(payload, session=session)
             request_ids.append(request_id)
             result["dispatched_count"] = len(request_ids)
             result["first_request_id"] = request_ids[0]
             result["last_request_id"] = request_ids[-1]
             _write_artifact(artifact_path, result)
-            time.sleep(max(0.01, float(args.interval_s)))
+            await asyncio.sleep(max(0.01, float(args.interval_s)))
+
+    try:
+        asyncio.run(_conduct_loop())
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
         result["finished_at"] = datetime.now(timezone.utc).isoformat()
