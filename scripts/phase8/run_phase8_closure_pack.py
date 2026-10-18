@@ -356,8 +356,11 @@ def _validate_composed_instrumentation(
     llm_load_artifact: Path,
     llm_load_log: Path,
     queue_probe_log: Path,
+    cpu_probe_artifact: Path,
+    cpu_probe_log: Path,
     llm_load_returncode: int,
     queue_probe_returncode: int,
+    cpu_probe_returncode: int,
     worker_probe: dict[str, Any],
     r3_profile: dict[str, Any],
     perf_llm_calls: int,
@@ -372,6 +375,33 @@ def _validate_composed_instrumentation(
         raise RuntimeError(
             "Composed instrumentation invalid: queue_liveness_probe.py exited "
             f"with code {queue_probe_returncode}; tail:\n{_read_log_tail(queue_probe_log)}"
+        )
+    if cpu_probe_returncode != 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner_cpu_probe.py exited "
+            f"with code {cpu_probe_returncode}; tail:\n{_read_log_tail(cpu_probe_log)}"
+        )
+    if not cpu_probe_artifact.exists():
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner CPU probe artifact missing "
+            f"({cpu_probe_artifact.name})"
+        )
+    cpu_probe = json.loads(cpu_probe_artifact.read_text(encoding="utf-8"))
+    if not isinstance(cpu_probe, dict):
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner CPU probe artifact is not "
+            "a JSON object"
+        )
+    if cpu_probe.get("status") != "ok":
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner CPU probe status="
+            f"{cpu_probe.get('status')!r} error={cpu_probe.get('error')!r}"
+        )
+    cpu_probe_samples = int(cpu_probe.get("sample_count", 0) or 0)
+    if cpu_probe_samples < 2:
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner CPU probe recorded fewer "
+            f"than 2 samples ({cpu_probe_samples})"
         )
     if not llm_load_artifact.exists():
         raise RuntimeError(
@@ -399,6 +429,14 @@ def _validate_composed_instrumentation(
         "load_helper_dispatch_mode": llm_probe.get("dispatch_mode"),
         "load_helper_started_at": llm_probe.get("started_at"),
         "load_helper_finished_at": llm_probe.get("finished_at"),
+        # Ordered-plan step 3 measurements (observation only).
+        "cpu_probe_sample_count": cpu_probe_samples,
+        "cpu_probe_total_busy_pct_avg": cpu_probe.get("total_busy_pct_avg"),
+        "cpu_probe_psi_some_stall_us": cpu_probe.get("psi_cpu_some_stall_us_total"),
+        "cpu_probe_psi_some_avg10_max": cpu_probe.get("psi_cpu_some_avg10_max"),
+        "cpu_probe_throttle_delta": cpu_probe.get("throttle_delta"),
+        "cpu_probe_classes": cpu_probe.get("classes"),
+        "cpu_probe_top_processes": cpu_probe.get("top_processes"),
     }
     if not full_physics:
         return evidence
@@ -1324,6 +1362,29 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             stdout=llm_load_log_handle,
             stderr=subprocess.STDOUT,
         )
+        # Ordered-plan step 3: runner-wide CPU/starvation accounting for the
+        # whole R3 leg (generator, api, auth root, postgres, workers).
+        cpu_probe_artifact = cfg.artifact_dir / "phase8_runner_cpu_probe.json"
+        cpu_probe_log_path = cfg.logs_dir / "runner_cpu_probe.log"
+        cpu_probe_log_handle = cpu_probe_log_path.open("w", encoding="utf-8")
+        cpu_probe_proc = subprocess.Popen(
+            [
+                sys.executable,
+                "scripts/phase8/runner_cpu_probe.py",
+                "--duration-s",
+                str(llm_duration_s),
+                "--interval-s",
+                "2.0",
+                "--artifact",
+                str(cpu_probe_artifact),
+                "--jsonl",
+                str(cfg.logs_dir / "runner_cpu_probe.jsonl"),
+            ],
+            cwd=str(cfg.repo_root),
+            env=env,
+            stdout=cpu_probe_log_handle,
+            stderr=subprocess.STDOUT,
+        )
         r3_step_error: Exception | None = None
         try:
             run_step(
@@ -1347,6 +1408,14 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
                 "queue_liveness_probe.py did not exit before the wait deadline"
+            ) from exc
+        try:
+            cpu_probe_returncode = cpu_probe_proc.wait(
+                timeout=llm_duration_s + 180
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "runner_cpu_probe.py did not exit before the wait deadline"
             ) from exc
 
         r3_window = _extract_profile_window_best_effort(
@@ -1556,8 +1625,11 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             llm_load_artifact=llm_load_artifact,
             llm_load_log=llm_load_log_path,
             queue_probe_log=queue_probe_log_path,
+            cpu_probe_artifact=cpu_probe_artifact,
+            cpu_probe_log=cpu_probe_log_path,
             llm_load_returncode=llm_load_returncode,
             queue_probe_returncode=queue_probe_returncode,
+            cpu_probe_returncode=cpu_probe_returncode,
             worker_probe=worker_probe,
             r3_profile=r3_profile,
             perf_llm_calls=perf_llm_calls,

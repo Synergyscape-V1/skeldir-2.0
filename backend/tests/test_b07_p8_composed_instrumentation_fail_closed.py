@@ -88,6 +88,30 @@ def _write_load_artifact(
     return artifact
 
 
+def _write_cpu_probe(
+    tmp_path: Path,
+    *,
+    status: str = "ok",
+    error: str | None = None,
+    sample_count: int = 90,
+) -> Path:
+    artifact = tmp_path / "phase8_runner_cpu_probe.json"
+    artifact.write_text(
+        json.dumps(
+            {
+                "status": status,
+                "error": error,
+                "sample_count": sample_count,
+                "total_busy_pct_avg": 71.2,
+                "psi_cpu_some_stall_us_total": 123456.7,
+                "classes": {"generator": {"cpu_pct_avg": 24.0}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return artifact
+
+
 def _validate(
     tmp_path: Path,
     *,
@@ -95,6 +119,8 @@ def _validate(
     llm_load_artifact: Path | None = None,
     llm_load_returncode: int = 0,
     queue_probe_returncode: int = 0,
+    cpu_probe_artifact: Path | None = None,
+    cpu_probe_returncode: int = 0,
     worker_probe: dict[str, Any] | None = None,
     r3_profile: dict[str, Any] | None = None,
     perf_llm_calls: int = 55,
@@ -103,14 +129,21 @@ def _validate(
     llm_log.write_text("load helper ok\n", encoding="utf-8")
     queue_log = tmp_path / "queue_liveness_probe.log"
     queue_log.write_text("queue probe ok\n", encoding="utf-8")
+    cpu_log = tmp_path / "runner_cpu_probe.log"
+    cpu_log.write_text("cpu probe ok\n", encoding="utf-8")
+    if cpu_probe_artifact is None:
+        cpu_probe_artifact = _write_cpu_probe(tmp_path)
     return _PACK._validate_composed_instrumentation(
         full_physics=full_physics,
         llm_load_artifact=llm_load_artifact
         or (tmp_path / "phase8_llm_perf_probe.json"),
         llm_load_log=llm_log,
         queue_probe_log=queue_log,
+        cpu_probe_artifact=cpu_probe_artifact,
+        cpu_probe_log=cpu_log,
         llm_load_returncode=llm_load_returncode,
         queue_probe_returncode=queue_probe_returncode,
+        cpu_probe_returncode=cpu_probe_returncode,
         worker_probe=worker_probe if worker_probe is not None else _worker_probe(),
         r3_profile=r3_profile if r3_profile is not None else _r3_profile(),
         perf_llm_calls=perf_llm_calls,
@@ -128,19 +161,81 @@ def test_failed_helper_returncode_fails_closed_with_log_tail(tmp_path: Path) -> 
     artifact = _write_load_artifact(tmp_path, dispatched_count=0)
     llm_log = tmp_path / "llm_background_load.log"
     llm_log.write_text("Traceback: provider boundary init failed\n", encoding="utf-8")
+    cpu_artifact = _write_cpu_probe(tmp_path)
+    cpu_log = tmp_path / "runner_cpu_probe.log"
+    cpu_log.write_text("cpu probe ok\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="exited with code 2") as excinfo:
         _PACK._validate_composed_instrumentation(
             full_physics=True,
             llm_load_artifact=artifact,
             llm_load_log=llm_log,
             queue_probe_log=tmp_path / "queue.log",
+            cpu_probe_artifact=cpu_artifact,
+            cpu_probe_log=cpu_log,
             llm_load_returncode=2,
             queue_probe_returncode=0,
+            cpu_probe_returncode=0,
             worker_probe=_worker_probe(),
             r3_profile=_r3_profile(),
             perf_llm_calls=0,
         )
     assert "provider boundary init failed" in str(excinfo.value)
+
+
+def test_missing_runner_cpu_probe_artifact_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    with pytest.raises(RuntimeError, match="runner CPU probe artifact missing"):
+        _validate(
+            tmp_path,
+            llm_load_artifact=artifact,
+            cpu_probe_artifact=tmp_path / "absent_runner_cpu_probe.json",
+        )
+
+
+def test_failed_runner_cpu_probe_fails_closed_with_log_tail(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    cpu_log = tmp_path / "runner_cpu_probe.log"
+    cpu_log.write_text("Traceback: /proc scan failed\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="runner_cpu_probe.py exited") as excinfo:
+        _PACK._validate_composed_instrumentation(
+            full_physics=True,
+            llm_load_artifact=artifact,
+            llm_load_log=tmp_path / "llm.log",
+            queue_probe_log=tmp_path / "queue.log",
+            cpu_probe_artifact=tmp_path / "phase8_runner_cpu_probe.json",
+            cpu_probe_log=cpu_log,
+            llm_load_returncode=0,
+            queue_probe_returncode=0,
+            cpu_probe_returncode=3,
+            worker_probe=_worker_probe(),
+            r3_profile=_r3_profile(),
+            perf_llm_calls=42,
+        )
+    assert "/proc scan failed" in str(excinfo.value)
+
+
+def test_runner_cpu_probe_non_ok_status_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    cpu_artifact = _write_cpu_probe(
+        tmp_path, status="failed", error="insufficient samples"
+    )
+    with pytest.raises(RuntimeError, match="runner CPU probe status='failed'"):
+        _validate(
+            tmp_path,
+            llm_load_artifact=artifact,
+            cpu_probe_artifact=cpu_artifact,
+        )
+
+
+def test_runner_cpu_probe_insufficient_samples_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    cpu_artifact = _write_cpu_probe(tmp_path, sample_count=1)
+    with pytest.raises(RuntimeError, match="fewer"):
+        _validate(
+            tmp_path,
+            llm_load_artifact=artifact,
+            cpu_probe_artifact=cpu_artifact,
+        )
 
 
 def test_failed_queue_probe_fails_closed(tmp_path: Path) -> None:
@@ -206,6 +301,8 @@ def test_honest_instrumentation_passes(tmp_path: Path) -> None:
     assert evidence["authority_window_end_utc"] == _WINDOW_END
     assert evidence["load_helper_dispatched_count"] == 60
     assert evidence["load_helper_dispatch_mode"] == "inline"
+    assert evidence["cpu_probe_sample_count"] == 90
+    assert evidence["cpu_probe_psi_some_stall_us"] == 123456.7
 
 
 def test_ci_subset_sanity_still_requires_helper_integrity(tmp_path: Path) -> None:
