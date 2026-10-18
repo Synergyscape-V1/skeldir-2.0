@@ -149,6 +149,11 @@ def main() -> int:
         perf_window_end: str | None = None
         perf_window_source: str | None = None
         if llm_load_probe:
+            if bool(args.window_start) != bool(args.window_end):
+                raise RuntimeError(
+                    "Performance evidence window invalid: pass both --window-start "
+                    "and --window-end"
+                )
             perf_window_start = args.window_start or llm_load_probe.get("started_at")
             perf_window_end = args.window_end or llm_load_probe.get("finished_at")
             perf_window_source = (
