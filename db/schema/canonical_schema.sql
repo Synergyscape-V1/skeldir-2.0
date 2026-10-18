@@ -4460,7 +4460,8 @@ CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
             END IF;
             IF current_user IN (
                 'migration_owner', 'postgres',
-                'app_worker', 'app_relay', 'app_beat'
+                'app_worker', 'app_relay', 'app_beat',
+                'app_celery_transport'
             ) THEN
                 RETURN NEW;
             END IF;

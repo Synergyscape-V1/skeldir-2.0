@@ -77,6 +77,10 @@
     "202609300009": {
       "file": "202609300009_b26_p2_publication_history_reader_grant.py",
       "sha256": "a46a698898d2d735adae70ffc872491464dfdd626970a25f89e6ba5efdcdb026"
+    },
+    "202610180001": {
+      "file": "202610180001_b26_p2_result_failure_transport_admission.py",
+      "sha256": "ed8177730df4e116199c20e97602da639fb232fd5b63857d277b50e5f49f7954"
     }
   }
 }

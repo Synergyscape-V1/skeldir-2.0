@@ -527,7 +527,10 @@ def main() -> int:
             # head to 300008; 300007 joins the refused predecessors, and
             # the serves/head pins advance again. P1 follow-up: the
             # publication-history reader grant advances the head to
-            # 300009; 300008 joins the refused predecessors.
+            # 300009; 300008 joins the refused predecessors. C19
+            # follow-up: the result-telemetry transport admission
+            # advances the head to 202610180001; 300009 joins the
+            # refused predecessors.
             try:
                 assert_production_construction_authority(["202609300005"])
                 violations.append("xix_nc10_old_revision_served")
@@ -543,8 +546,13 @@ def main() -> int:
                 violations.append("xix_nc10_old_revision_served")
             except ConstructionAuthorityError:
                 checks["nc10_old_revision_red"] = True
-            assert_production_construction_authority(["202609300009"])
-            if migration_graph_head() != "202609300009":
+            try:
+                assert_production_construction_authority(["202609300009"])
+                violations.append("xix_nc10_old_revision_served")
+            except ConstructionAuthorityError:
+                checks["nc10_old_revision_red"] = True
+            assert_production_construction_authority(["202610180001"])
+            if migration_graph_head() != "202610180001":
                 violations.append("xix_nc10_head_mismatch")
             else:
                 checks["nc10_head_current"] = True
