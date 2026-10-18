@@ -145,10 +145,37 @@ jobs:
     name: Provider Contract Tests (Implementation vs Contracts)
     runs-on: ubuntu-latest
     needs: contract-bundling
+    # The provider tests import app.main. The B2.6-P2 XXI-F5 construction
+    # authority boot guard (backend/app/main.py) verifies the schema
+    # revision against a live database at startup and refuses to serve
+    # (fatal, after a bounded retry window) when the database cannot
+    # vouch for the build. This job previously ran with a placeholder
+    # DATABASE_URL and no postgres service, so the guard's retry window
+    # (~4 min) ended in construction_authority_guard_fatal:unverifiable
+    # on test_contract_semantic_conformance[auth.bundled.yaml]. It now
+    # provisions a real postgres service, migrates it to head, and only
+    # then runs the provider tests; the boot wait remains fatal, only
+    # bounded lower for CI.
     env:
       CI: "true"
-      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
-    
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_test
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_test
+      SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S: "60"
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -169,6 +196,16 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt -r requirements-dev.txt
+      
+      - name: Provision provider-test database
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_test
+          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_test
+        run: |
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --database-name skeldir_test
+          python -m alembic upgrade head
       
       - name: Run provider contract tests
         run: |
