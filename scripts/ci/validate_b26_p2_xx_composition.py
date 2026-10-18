@@ -175,12 +175,15 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         checks["relay_hint_hardened"] = True
 
     # Construction contract equals the migration head (advanced by
-    # the ledger-RLS follow-up to 202609300006; the XX closure
-    # properties below hold at the current head).
+    # the ledger-RLS follow-up to 202609300006, then family-law v4 to
+    # 202609300007, then the F5 auth-root construction grant to
+    # 202609300008, then the P1 publication-history reader grant to
+    # 202609300009; the XX closure properties below hold at the
+    # current head).
     contract = (
         REPO_ROOT / "backend" / "app" / "core" / "construction_authority.py"
     ).read_text(encoding="utf-8")
-    if 'REQUIRED_SCHEMA_REVISION = "202609300006"' not in contract:
+    if 'REQUIRED_SCHEMA_REVISION = "202609300009"' not in contract:
         violations.append("xx_comp_construction_contract_not_advanced")
     else:
         checks["construction_contract_at_xx"] = True

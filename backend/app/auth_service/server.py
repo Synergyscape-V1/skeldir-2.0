@@ -40,6 +40,12 @@ from sqlalchemy import select, text
 app = FastAPI(title="Skeldir B2.6-P2 Authentication Trust Root (XIII)")
 
 
+#: Last construction revision verified at startup (None = never verified).
+#: Read by /health/ready so an unverified root is observable as a
+#: failure instead of silently serving.
+_CONSTRUCTION_VERIFIED_REVISION: str | None = None
+
+
 @app.on_event("startup")
 async def _startup_construction_authority_guard() -> None:
     """B2.6-P2 Corrective XXI: refuse to boot against an incompatible schema.
@@ -50,10 +56,18 @@ async def _startup_construction_authority_guard() -> None:
     (the database refuses unknown signatures), and this gate additionally
     refuses boot when the live construction revision differs from the
     one this build requires. Mismatch is retried for a bounded window
-    (migration in flight) then fatal; an unreachable database or a
-    missing ingress credential defers to readiness/per-request
-    fail-closed handling.
+    (migration in flight) then fatal.
+   
+    ADD2-F5: every other failure to verify is fatal too, after the same
+    bounded retries. There is no silent-serve path: an unreachable
+    database, a missing ingress credential, or a denied revision read
+    (e.g. a lane whose migration never granted this principal EXECUTE)
+    raises instead of logging 'deferred' and serving unverified. What
+    the process cannot vouch for, it must not mint against -- and that
+    must be observable (nonzero exit; /health/ready).
     """
+    global _CONSTRUCTION_VERIFIED_REVISION
+
     import asyncio
     import logging
 
@@ -76,21 +90,25 @@ async def _startup_construction_authority_guard() -> None:
             _ingress_boundary,
         )
     except Exception as exc:
-        logger.warning("construction_authority_guard_deferred:%s", exc)
-        return
+        raise RuntimeError(
+            "construction_authority_guard_fatal:ingress_session_unavailable:"
+            f"{exc}"
+        ) from exc
     if os.getenv("SKELDIR_PROCESS_ROLE", "").strip() != "auth_ingress":
         return
     if IngressAsyncSessionLocal is None:
-        logger.warning("construction_authority_guard_deferred:no_credential")
-        return
+        raise RuntimeError(
+            "construction_authority_guard_fatal:no_ingress_credential"
+        )
     deadline = asyncio.get_event_loop().time() + max(0.0, wait_s)
+    last_error: str = "unreadable"
     while True:
         observed: object = "unreadable"
         try:
             async with _ingress_boundary():
                 async with IngressAsyncSessionLocal() as session:
                     observed = await read_construction_revisions(session)
-                    assert_production_construction_authority(observed)
+                    revision = assert_production_construction_authority(observed)
         except ConstructionAuthorityError:
             now = asyncio.get_event_loop().time()
             if now >= deadline:
@@ -101,8 +119,19 @@ async def _startup_construction_authority_guard() -> None:
             await asyncio.sleep(2.0)
             continue
         except Exception as exc:
-            logger.warning("construction_authority_guard_deferred:%s", exc)
-            return
+            last_error = str(exc)
+            now = asyncio.get_event_loop().time()
+            if now >= deadline:
+                raise RuntimeError(
+                    "construction_authority_guard_fatal:unverifiable:"
+                    f"{last_error}"
+                ) from exc
+            logger.warning(
+                "construction_authority_boot_retrying:%s", last_error
+            )
+            await asyncio.sleep(2.0)
+            continue
+        _CONSTRUCTION_VERIFIED_REVISION = str(revision)
         logger.info("construction_authority_boot_ok")
         return
 
@@ -181,6 +210,28 @@ def _require_auth_role() -> None:
 async def health_live() -> dict:
     _require_auth_role()
     return {"status": "ok", "role": "auth_ingress"}
+
+
+@app.get("/health/ready")
+async def health_ready() -> dict:
+    """Readiness: the root verified construction at startup.
+
+    Returns 200 with the verified revision only if the startup guard
+    verified this database. Any other state (never verified, e.g. the
+    guard was bypassed or failed open) is an observable failure, not
+    silent serving.
+    """
+    _require_auth_role()
+    if _CONSTRUCTION_VERIFIED_REVISION is None:
+        raise HTTPException(
+            status_code=503,
+            detail="construction_authority_unverified",
+        )
+    return {
+        "status": "ok",
+        "role": "auth_ingress",
+        "construction_revision": _CONSTRUCTION_VERIFIED_REVISION,
+    }
 
 
 @app.post("/v1/authenticate-ingress", response_model=AuthenticateResponse)
@@ -387,6 +438,23 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
     async with _ingress_boundary(), get_ingress_session(
         tenant_id=tenant_uuid
     ) as session:
+        # ADD2-F5: per-request construction check. Boot verification
+        # cannot cover a database swapped under a live process; minting
+        # against an unvouched schema must fail the request, never serve
+        # silently. Cheap (two catalog reads); fails closed on any error.
+        from app.core.construction_authority import (  # noqa: PLC0415
+            assert_production_construction_authority as _assert_construction,
+            read_construction_revisions as _read_revisions,
+        )
+
+        try:
+            _observed = await _read_revisions(session)
+            _assert_construction(_observed)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"construction_authority_unverified:{exc}",
+            ) from exc
         # XVI (H-XVI-R6): sovereign content-addressed duplicate fence.
         # The relay-supplied event_id (idempotency key) is routing
         # information, not financial identity: the same provider event

@@ -121,20 +121,25 @@ app.include_router(budget.router, tags=["Budget"])
 
 @app.on_event("startup")
 async def _startup_construction_authority_guard() -> None:
-    """B2.6-P2 Corrective XIX: refuse to serve against an incompatible schema.
+    """B2.6-P2 Corrective XIX/XXI-F5: refuse to serve against an unverified schema.
 
     Readiness alone cannot keep a live-but-unready process from executing
     a stale money read if it stays routable: this process must not boot
     against a database whose construction revision differs from the one
     this build's authority physics requires. A mismatch raises (the
-    process fails and the orchestrator must not route to it); an
-    unreachable database defers to readiness (which 503s). Only the
-    revision law is boot-fatal: the exact-catalog physical comparison
-    stays at readiness (503, non-fatal) and in the P14 CI gates, since
-    minimal topologies legitimately differ in owners/grants. Because
+    process fails and the orchestrator must not route to it). XXI-F5
+    extends the same fate to every other verification failure: an
+    unreachable database, an unreadable revision, or a denied read is
+    retried for the same bounded window (migration in flight, transient
+    outage) and then fatal. There is no silent-serve path -- what the
+    process cannot vouch for, it must not serve against, and that is
+    observable (nonzero exit; /health/ready). Only the revision law is
+    boot-fatal: the exact-catalog physical comparison stays at
+    readiness (503, non-fatal) and in the P14 CI gates, since minimal
+    topologies legitimately differ in owners/grants. Because
     deployments may start processes while a migration is still in
-    flight, a mismatch is retried for a bounded window before it
-    becomes fatal (SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S,
+    flight, failures are retried for a bounded window before they
+    become fatal (SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S,
     default 240s): a process that outlasts the window without
     converging dies instead of serving stale law.
     """
@@ -157,6 +162,7 @@ async def _startup_construction_authority_guard() -> None:
     except ValueError:
         wait_s = 240.0
     deadline = asyncio.get_event_loop().time() + max(0.0, wait_s)
+    last_error: str = "unreadable"
     while True:
         observed: object = "unreadable"
         try:
@@ -173,8 +179,18 @@ async def _startup_construction_authority_guard() -> None:
             await asyncio.sleep(2.0)
             continue
         except Exception as exc:
-            logger.warning("construction_authority_guard_deferred:%s", exc)
-            return
+            last_error = str(exc)
+            now = asyncio.get_event_loop().time()
+            if now >= deadline:
+                raise RuntimeError(
+                    "construction_authority_guard_fatal:unverifiable:"
+                    f"{last_error}"
+                ) from exc
+            logger.warning(
+                "construction_authority_boot_retrying:%s", last_error
+            )
+            await asyncio.sleep(2.0)
+            continue
         logger.info("construction_authority_boot_ok")
         return
 

@@ -3518,9 +3518,25 @@ jobs:
   phase1-runtime-conformance:
     name: Phase 1 Runtime Conformance
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -3537,6 +3553,12 @@ jobs:
         run: |
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
+          # XXI P1/P4: the API boot guard is fatal without a verified
+          # database (no silent-serve topology exists anymore), so this
+          # job provisions a migrated lane like its neighbors instead
+          # of booting against an absent database. Conformance now
+          # runs production-equivalent (verified construction).
+          alembic upgrade head
 
       - name: Execute runtime OpenAPI conformance tests
         run: |
@@ -3949,6 +3971,19 @@ jobs:
           # b26_p2_xii_provision_ingress_topology() and mount the DSN.
           psql -h localhost -U postgres -c "CREATE USER app_ingress WITH PASSWORD 'app_ingress';"
 
+      - name: Apply migrations (verified construction prerequisite)
+        # B2.6-P2 Corrective F5: the API boot guard is fatal without a
+        # verified database by design (audit 66: no silent-serve
+        # topology). The guard is right; this job's prerequisites were
+        # wrong: it constructed the lane but never migrated it, so
+        # every app boot under it failed closed
+        # (construction_authority_guard_fatal:unverifiable). Provision
+        # a migrated lane like its neighbors (de19fbaaa precedent) so
+        # conformance runs production-equivalent (construction verified
+        # at boot). No guard, bar, or required-check change.
+        run: |
+          alembic upgrade head
+
       - name: H0-IMP diagnostic (environment dump)
         run: |
           echo "=== H0-IMP: Environment Diagnostic ==="
@@ -4090,6 +4125,16 @@ jobs:
           # B2.6-P2 Corrective XII: the dedicated ingress principal must
           # exist before any lane serves verified arrivals (see above).
           psql -h localhost -U postgres -c "CREATE USER app_ingress WITH PASSWORD 'app_ingress';"
+
+      - name: Apply migrations (verified construction prerequisite)
+        # Same F5 prerequisite as the phase-gates matrix lane above:
+        # the chain lane boots the app against skeldir_phase, so the
+        # lane must be constructed by the production route (alembic)
+        # before the first boot. Without this every phase in the chain
+        # fails closed at boot instead of running conformance.
+        run: |
+          alembic upgrade head
+
       - name: Run phase chain to B0.4
         run: |
           python scripts/phase_gates/run_chain.py B0.4

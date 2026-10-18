@@ -35,9 +35,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Restore ownership to postgres (previous migration role owner)
+    # Restore ownership to the migrating role (the pre-202512191900 owner:
+    # postgres in production, migration_owner in CI lanes). Naming postgres
+    # literally fails where the migration role is not a member of postgres;
+    # the B0.3 closure gate executes this downgrade for real since the F5
+    # pre-migrated lane step made the downgrade walk non-vacuous.
     for table in SOURCE_TABLES:
         op.execute(f"REVOKE SELECT ON {table} FROM app_user")
 
     for view in MATVIEWS:
-        op.execute(f"ALTER MATERIALIZED VIEW {view} OWNER TO postgres")
+        op.execute(f"ALTER MATERIALIZED VIEW {view} OWNER TO CURRENT_USER")

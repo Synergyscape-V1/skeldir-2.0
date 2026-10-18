@@ -65,6 +65,18 @@
     "202609300006": {
       "file": "202609300006_b26_p2_ledger_tenant_rls_conformance.py",
       "sha256": "24d0fb616b96a81622f1c4f17978f919ab7c55e236f04a9a92af43af32e03914"
+    },
+    "202609300007": {
+      "file": "202609300007_b26_p2_family_law_v4_creation_moment.py",
+      "sha256": "f9df4132bf513623b683897391f502d287150ce220043955e04ee1847bb27853"
+    },
+    "202609300008": {
+      "file": "202609300008_b26_p2_auth_root_construction_grant.py",
+      "sha256": "aeb3c49a886897dfbd9f96ed9bb5d21a8803fc7edcd2e4c4cf7a3fe175425c16"
+    },
+    "202609300009": {
+      "file": "202609300009_b26_p2_publication_history_reader_grant.py",
+      "sha256": "a46a698898d2d735adae70ffc872491464dfdd626970a25f89e6ba5efdcdb026"
     }
   }
 }
