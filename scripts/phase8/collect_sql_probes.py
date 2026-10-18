@@ -38,6 +38,8 @@ def main() -> int:
     parser.add_argument("--runtime-probe", required=True)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--llm-load-probe", required=False)
+    parser.add_argument("--window-start", required=False, default="")
+    parser.add_argument("--window-end", required=False, default="")
     args = parser.parse_args()
 
     runtime_probe = _read_runtime_probe(Path(args.runtime_probe))
@@ -143,11 +145,26 @@ def main() -> int:
         perf_composed_llm_api_calls = 0
         perf_composed_llm_audit_calls = 0
         perf_revenue_ledger_rows_during_window = 0
+        perf_window_start: str | None = None
+        perf_window_end: str | None = None
+        perf_window_source: str | None = None
         if llm_load_probe:
+            perf_window_start = args.window_start or llm_load_probe.get("started_at")
+            perf_window_end = args.window_end or llm_load_probe.get("finished_at")
+            perf_window_source = (
+                "authority_window"
+                if args.window_start and args.window_end
+                else "llm_load_interval"
+            )
+            if not perf_window_start or not perf_window_end:
+                raise RuntimeError(
+                    "Performance evidence window unavailable: no authority window "
+                    "and no load-helper interval"
+                )
             params = {
                 "tenant_id": llm_load_probe["tenant_id"],
-                "started_at": llm_load_probe["started_at"],
-                "finished_at": llm_load_probe["finished_at"],
+                "started_at": perf_window_start,
+                "finished_at": perf_window_end,
             }
             perf_api_calls = int(
                 conn.execute(
@@ -192,8 +209,8 @@ def main() -> int:
                     ),
                     {
                         "runtime_tenant_id": tenant_id,
-                        "started_at": llm_load_probe["started_at"],
-                        "finished_at": llm_load_probe["finished_at"],
+                        "started_at": perf_window_start,
+                        "finished_at": perf_window_end,
                     },
                 ).scalar_one()
             )
@@ -211,8 +228,9 @@ def main() -> int:
         "cost_correctness": cost_correctness,
         "pg_snapshot": pg_snapshot,
         "perf_window": {
-            "started_at": llm_load_probe.get("started_at") if llm_load_probe else None,
-            "finished_at": llm_load_probe.get("finished_at") if llm_load_probe else None,
+            "started_at": perf_window_start,
+            "finished_at": perf_window_end,
+            "source": perf_window_source,
         },
         "perf_composed_llm_api_calls": perf_composed_llm_api_calls,
         "perf_composed_llm_audit_calls": perf_composed_llm_audit_calls,

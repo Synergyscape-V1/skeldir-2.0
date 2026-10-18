@@ -1,0 +1,252 @@
+"""Fail-closed contract for the Phase 8 composed instrumentation.
+
+The gate must refuse authoritative composed evidence when the load helper is
+missing or failed, when its interval does not cover the R3 authority window,
+or when conduction is absent. These tests pin the attempt-3 false green
+(missing load-helper artifact, null perf window, zero LLM calls, no drain,
+no activity evidence) as a RED signature.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+
+def _load_pack_module():
+    repo_root = Path(__file__).resolve().parents[2]
+    path = repo_root / "scripts" / "phase8" / "run_phase8_closure_pack.py"
+    spec = importlib.util.spec_from_file_location("phase8_closure_pack", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_PACK = _load_pack_module()
+
+_WINDOW_START = "2026-10-18T14:59:48.000000+00:00"
+_WINDOW_END = "2026-10-18T15:00:48.000000+00:00"
+_PROBE_START = "2026-10-18T14:57:48.000000+00:00"
+_PROBE_FINISH = "2026-10-18T15:01:48.000000+00:00"
+_LOAD_START = "2026-10-18T14:57:30.000000+00:00"
+_LOAD_FINISH = "2026-10-18T15:06:45.000000+00:00"
+
+
+def _r3_profile() -> dict[str, Any]:
+    return {
+        "window_start_utc": _WINDOW_START,
+        "window_end_utc": _WINDOW_END,
+    }
+
+
+def _worker_probe(
+    *, started: str = _PROBE_START, finished: str = _PROBE_FINISH
+) -> dict[str, Any]:
+    return {
+        "started_at": started,
+        "finished_at": finished,
+        "summary": {
+            "sample_count": 479,
+            "max_total_messages": 7467,
+            "final_total_messages": 7467,
+        },
+    }
+
+
+def _write_load_artifact(
+    tmp_path: Path,
+    *,
+    status: str = "ok",
+    error: str | None = None,
+    dispatch_mode: str = "broker",
+    dispatched_count: int = 60,
+    started_at: str = _LOAD_START,
+    finished_at: str = _LOAD_FINISH,
+) -> Path:
+    artifact = tmp_path / "phase8_llm_perf_probe.json"
+    artifact.write_text(
+        json.dumps(
+            {
+                "status": status,
+                "error": error,
+                "dispatch_mode": dispatch_mode,
+                "task_name": "app.tasks.llm.explanation",
+                "dispatched_count": dispatched_count,
+                "started_at": started_at,
+                "finished_at": finished_at,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return artifact
+
+
+def _validate(
+    tmp_path: Path,
+    *,
+    full_physics: bool = True,
+    llm_load_artifact: Path | None = None,
+    llm_load_returncode: int = 0,
+    queue_probe_returncode: int = 0,
+    worker_probe: dict[str, Any] | None = None,
+    r3_profile: dict[str, Any] | None = None,
+    perf_llm_calls: int = 55,
+) -> dict[str, Any]:
+    llm_log = tmp_path / "llm_background_load.log"
+    llm_log.write_text("load helper ok\n", encoding="utf-8")
+    queue_log = tmp_path / "queue_liveness_probe.log"
+    queue_log.write_text("queue probe ok\n", encoding="utf-8")
+    return _PACK._validate_composed_instrumentation(
+        full_physics=full_physics,
+        llm_load_artifact=llm_load_artifact
+        or (tmp_path / "phase8_llm_perf_probe.json"),
+        llm_load_log=llm_log,
+        queue_probe_log=queue_log,
+        llm_load_returncode=llm_load_returncode,
+        queue_probe_returncode=queue_probe_returncode,
+        worker_probe=worker_probe if worker_probe is not None else _worker_probe(),
+        r3_profile=r3_profile if r3_profile is not None else _r3_profile(),
+        perf_llm_calls=perf_llm_calls,
+    )
+
+
+def test_attempt3_false_green_signature_missing_artifact_fails_closed(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(RuntimeError, match="artifact missing"):
+        _validate(tmp_path, perf_llm_calls=0)
+
+
+def test_failed_helper_returncode_fails_closed_with_log_tail(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path, dispatched_count=0)
+    llm_log = tmp_path / "llm_background_load.log"
+    llm_log.write_text("Traceback: provider boundary init failed\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="exited with code 2") as excinfo:
+        _PACK._validate_composed_instrumentation(
+            full_physics=True,
+            llm_load_artifact=artifact,
+            llm_load_log=llm_log,
+            queue_probe_log=tmp_path / "queue.log",
+            llm_load_returncode=2,
+            queue_probe_returncode=0,
+            worker_probe=_worker_probe(),
+            r3_profile=_r3_profile(),
+            perf_llm_calls=0,
+        )
+    assert "provider boundary init failed" in str(excinfo.value)
+
+
+def test_failed_queue_probe_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    with pytest.raises(RuntimeError, match="queue_liveness_probe.py exited"):
+        _validate(
+            tmp_path,
+            llm_load_artifact=artifact,
+            queue_probe_returncode=1,
+        )
+
+
+def test_non_ok_load_artifact_status_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(
+        tmp_path, status="failed", error="OperationalError: connection refused"
+    )
+    with pytest.raises(RuntimeError, match="load-helper status='failed'"):
+        _validate(tmp_path, llm_load_artifact=artifact)
+
+
+def test_zero_dispatches_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path, dispatched_count=0)
+    with pytest.raises(RuntimeError, match="dispatched zero calls"):
+        _validate(tmp_path, llm_load_artifact=artifact)
+
+
+def test_stale_interval_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(
+        tmp_path,
+        started_at="2026-10-18T14:55:00.000000+00:00",
+        finished_at="2026-10-18T14:57:00.000000+00:00",
+    )
+    with pytest.raises(RuntimeError, match="stale or mismatched load interval"):
+        _validate(tmp_path, llm_load_artifact=artifact)
+
+
+def test_inline_dispatch_mode_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path, dispatch_mode="inline")
+    with pytest.raises(RuntimeError, match="requires broker dispatch"):
+        _validate(tmp_path, llm_load_artifact=artifact)
+
+
+def test_absent_conduction_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    with pytest.raises(RuntimeError, match="absent conduction"):
+        _validate(tmp_path, llm_load_artifact=artifact, perf_llm_calls=0)
+
+
+def test_queue_probe_interval_must_cover_window(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    with pytest.raises(RuntimeError, match="queue liveness interval"):
+        _validate(
+            tmp_path,
+            llm_load_artifact=artifact,
+            worker_probe=_worker_probe(started="2026-10-18T15:00:00.000000+00:00"),
+        )
+
+
+def test_honest_instrumentation_passes(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path, dispatched_count=60)
+    evidence = _validate(tmp_path, llm_load_artifact=artifact, perf_llm_calls=42)
+    assert evidence["authority_window_start_utc"] == _WINDOW_START
+    assert evidence["authority_window_end_utc"] == _WINDOW_END
+    assert evidence["load_helper_dispatched_count"] == 60
+    assert evidence["load_helper_dispatch_mode"] == "broker"
+
+
+def test_ci_subset_sanity_still_requires_helper_integrity(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(
+        tmp_path,
+        dispatch_mode="inline",
+        started_at="2026-10-18T15:10:00.000000+00:00",
+        finished_at="2026-10-18T15:11:00.000000+00:00",
+    )
+    evidence = _validate(
+        tmp_path,
+        full_physics=False,
+        llm_load_artifact=artifact,
+        perf_llm_calls=0,
+    )
+    assert "authority_window_start_utc" not in evidence
+
+    zero_dispatch = _write_load_artifact(tmp_path, dispatched_count=0)
+    with pytest.raises(RuntimeError, match="dispatched zero calls"):
+        _validate(
+            tmp_path,
+            full_physics=False,
+            llm_load_artifact=zero_dispatch,
+            perf_llm_calls=0,
+        )
+
+
+def test_r3_leg_span_matches_profile_defaults() -> None:
+    full_env = {
+        "R3_NULL_BENCHMARK": "1",
+        "R3_NULL_BENCHMARK_DURATION_S": "60",
+        "R3_EG34_TEST1_DURATION_S": "60",
+        "R3_EG34_TEST2_DURATION_S": "60",
+        "R3_EG34_TEST3_DURATION_S": "300",
+    }
+    assert _PACK._r3_leg_span_seconds(full_env) == 480
+    ci_env = {
+        "R3_NULL_BENCHMARK": "1",
+        "R3_NULL_BENCHMARK_DURATION_S": "30",
+        "R3_EG34_TEST1_DURATION_S": "30",
+        "R3_EG34_TEST2_DURATION_S": "30",
+        "R3_EG34_TEST3_DURATION_S": "60",
+    }
+    assert _PACK._r3_leg_span_seconds(ci_env) == 150

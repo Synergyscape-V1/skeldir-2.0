@@ -304,6 +304,143 @@ def _extract_profile_metrics_from_r3_log(
     return payload
 
 
+def _r3_leg_span_seconds(env: dict[str, str]) -> int:
+    """Sum of the EG3.4/null-benchmark profile durations, i.e. the R3 leg span."""
+    total = 0
+    if str(env.get("R3_NULL_BENCHMARK", "1")).strip() == "1":
+        total += int(env.get("R3_NULL_BENCHMARK_DURATION_S", "0") or 0)
+    for key in (
+        "R3_EG34_TEST1_DURATION_S",
+        "R3_EG34_TEST2_DURATION_S",
+        "R3_EG34_TEST3_DURATION_S",
+    ):
+        total += int(env.get(key, "0") or 0)
+    return total
+
+
+def _read_log_tail(path: Path, max_lines: int = 40) -> str:
+    if not path.exists():
+        return "<log missing>"
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(lines[-max_lines:])
+
+
+def _validate_composed_instrumentation(
+    *,
+    full_physics: bool,
+    llm_load_artifact: Path,
+    llm_load_log: Path,
+    queue_probe_log: Path,
+    llm_load_returncode: int,
+    queue_probe_returncode: int,
+    worker_probe: dict[str, Any],
+    r3_profile: dict[str, Any],
+    perf_llm_calls: int,
+) -> dict[str, Any]:
+    """Fail closed on a missing/failed helper, a stale interval or absent conduction."""
+    if llm_load_returncode != 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: llm_background_load.py exited "
+            f"with code {llm_load_returncode}; tail:\n{_read_log_tail(llm_load_log)}"
+        )
+    if queue_probe_returncode != 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: queue_liveness_probe.py exited "
+            f"with code {queue_probe_returncode}; tail:\n{_read_log_tail(queue_probe_log)}"
+        )
+    if not llm_load_artifact.exists():
+        raise RuntimeError(
+            "Composed instrumentation invalid: load-helper artifact missing "
+            f"({llm_load_artifact.name})"
+        )
+    llm_probe = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
+    if not isinstance(llm_probe, dict):
+        raise RuntimeError(
+            "Composed instrumentation invalid: load-helper artifact is not a JSON object"
+        )
+    if llm_probe.get("status") != "ok":
+        raise RuntimeError(
+            "Composed instrumentation invalid: load-helper status="
+            f"{llm_probe.get('status')!r} error={llm_probe.get('error')!r}"
+        )
+    dispatched_count = int(llm_probe.get("dispatched_count", 0) or 0)
+    if dispatched_count <= 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: load-helper dispatched zero calls"
+        )
+
+    evidence: dict[str, Any] = {
+        "load_helper_dispatched_count": dispatched_count,
+        "load_helper_dispatch_mode": llm_probe.get("dispatch_mode"),
+        "load_helper_started_at": llm_probe.get("started_at"),
+        "load_helper_finished_at": llm_probe.get("finished_at"),
+    }
+    if not full_physics:
+        return evidence
+
+    if llm_probe.get("dispatch_mode") != "broker":
+        raise RuntimeError(
+            "Composed instrumentation invalid: authority conduction requires "
+            f"broker dispatch, got {llm_probe.get('dispatch_mode')!r}"
+        )
+
+    window_start_raw = r3_profile.get("window_start_utc")
+    window_end_raw = r3_profile.get("window_end_utc")
+    load_start_raw = llm_probe.get("started_at")
+    load_finish_raw = llm_probe.get("finished_at")
+    probe_start_raw = worker_probe.get("started_at")
+    probe_finish_raw = worker_probe.get("finished_at")
+    missing = [
+        name
+        for name, value in (
+            ("authority_window_start", window_start_raw),
+            ("authority_window_end", window_end_raw),
+            ("load_started_at", load_start_raw),
+            ("load_finished_at", load_finish_raw),
+            ("probe_started_at", probe_start_raw),
+            ("probe_finished_at", probe_finish_raw),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "Composed instrumentation invalid: missing interval timestamps "
+            f"({', '.join(missing)})"
+        )
+    window_start = datetime.fromisoformat(str(window_start_raw))
+    window_end = datetime.fromisoformat(str(window_end_raw))
+    load_start = datetime.fromisoformat(str(load_start_raw))
+    load_finish = datetime.fromisoformat(str(load_finish_raw))
+    probe_start = datetime.fromisoformat(str(probe_start_raw))
+    probe_finish = datetime.fromisoformat(str(probe_finish_raw))
+    if load_start > window_start or load_finish < window_end:
+        raise RuntimeError(
+            "Composed instrumentation invalid: stale or mismatched load interval; "
+            f"{load_start_raw}..{load_finish_raw} does not cover authority window "
+            f"{window_start_raw}..{window_end_raw}"
+        )
+    if probe_start > window_start or probe_finish < window_end:
+        raise RuntimeError(
+            "Composed instrumentation invalid: queue liveness interval; "
+            f"{probe_start_raw}..{probe_finish_raw} does not cover authority window "
+            f"{window_start_raw}..{window_end_raw}"
+        )
+    if perf_llm_calls <= 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: absent conduction; no LLM calls "
+            "recorded during the authority window"
+        )
+    evidence.update(
+        {
+            "authority_window_start_utc": window_start_raw,
+            "authority_window_end_utc": window_end_raw,
+            "queue_probe_started_at": probe_start_raw,
+            "queue_probe_finished_at": probe_finish_raw,
+        }
+    )
+    return evidence
+
+
 def _eg85_profile_metadata(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
     run_authority = _run_authority(cfg)
     if run_authority == "full_physics":
@@ -951,6 +1088,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
     container_identity_evidence: dict[str, Any] = {}
     llm_load_proc: subprocess.Popen[str] | None = None
     queue_probe_proc: subprocess.Popen[str] | None = None
+    llm_load_log_handle: Any = None
+    queue_probe_log_handle: Any = None
     queue_probe_artifact = cfg.artifact_dir / "phase8_worker_liveness_probe.json"
 
     def run_step(name: str, cmd: Sequence[str], *, cwd: Path | None = None) -> None:
@@ -1097,16 +1236,34 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "backend/tests/integration/test_b07_p8_topology_closure_pack.py",
             ],
         )
+        run_step(
+            "pytest_p8_instrumentation",
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "backend/tests/test_b07_p8_composed_instrumentation_fail_closed.py",
+            ],
+        )
         gates["eg8_2_unified_topologies"] = "pass"
         gates["eg8_4_ledger_audit_cost"] = "pass"
         gates["eg8_6_openapi_runtime_fidelity"] = "pass"
 
-        llm_duration_s = 120 if not cfg.ci_subset else 600
+        # The LLM load must conduct real work across the whole R3 leg,
+        # including the authority window (EG3.4 Test2). An interval that ends
+        # before the authority window starts is a stale instrument and is
+        # rejected below.
+        llm_duration_s = _r3_leg_span_seconds(env) + 120
         llm_interval_s = 1.0 if cfg.full_physics else 0.5
         queue_probe_duration_s = max(
             int(env.get("R3_EG34_TEST2_DURATION_S", "60")) + 180,
             240,
         )
+        queue_probe_log_path = cfg.logs_dir / "queue_liveness_probe.log"
+        llm_load_log_path = cfg.logs_dir / "llm_background_load.log"
+        queue_probe_log_handle = queue_probe_log_path.open("w", encoding="utf-8")
+        llm_load_log_handle = llm_load_log_path.open("w", encoding="utf-8")
         queue_probe_proc = subprocess.Popen(
             [
                 sys.executable,
@@ -1122,9 +1279,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             ],
             cwd=str(cfg.repo_root),
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=queue_probe_log_handle,
             stderr=subprocess.STDOUT,
-            text=True,
         )
         llm_load_artifact = cfg.artifact_dir / "phase8_llm_perf_probe.json"
         llm_load_proc = subprocess.Popen(
@@ -1140,34 +1296,52 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             ],
             cwd=str(cfg.repo_root),
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=llm_load_log_handle,
             stderr=subprocess.STDOUT,
-            text=True,
         )
         run_step(
             "r3_ingestion_under_fire",
             [sys.executable, "scripts/r3/ingestion_under_fire.py"],
         )
-        if llm_load_proc is not None:
-            llm_load_proc.wait(timeout=llm_duration_s + 120)
-        if queue_probe_proc is not None:
-            queue_probe_proc.wait(timeout=queue_probe_duration_s + 60)
+        try:
+            llm_load_returncode = llm_load_proc.wait(timeout=llm_duration_s + 180)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "llm_background_load.py did not exit before the wait deadline"
+            ) from exc
+        try:
+            queue_probe_returncode = queue_probe_proc.wait(
+                timeout=queue_probe_duration_s + 120
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "queue_liveness_probe.py did not exit before the wait deadline"
+            ) from exc
 
-        run_step(
-            "collect_phase8_sql",
-            [
-                sys.executable,
-                "scripts/phase8/collect_sql_probes.py",
-                "--db-url",
-                cfg.runtime_sync_dsn,
-                "--runtime-probe",
-                str(cfg.artifact_dir / "runtime_db_probe.json"),
-                "--llm-load-probe",
-                str(cfg.artifact_dir / "phase8_llm_perf_probe.json"),
-                "--out-dir",
-                str(cfg.artifact_dir / "sql"),
-            ],
+        r3_profile = _extract_profile_metrics_from_r3_log(
+            cfg.logs_dir / "r3_ingestion_under_fire.log",
+            "EG3_4_Test2_Month18",
         )
+        collect_phase8_sql_cmd = [
+            sys.executable,
+            "scripts/phase8/collect_sql_probes.py",
+            "--db-url",
+            cfg.runtime_sync_dsn,
+            "--runtime-probe",
+            str(cfg.artifact_dir / "runtime_db_probe.json"),
+            "--llm-load-probe",
+            str(llm_load_artifact),
+            "--out-dir",
+            str(cfg.artifact_dir / "sql"),
+        ]
+        if cfg.full_physics:
+            collect_phase8_sql_cmd += [
+                "--window-start",
+                str(r3_profile.get("window_start_utc") or ""),
+                "--window-end",
+                str(r3_profile.get("window_end_utc") or ""),
+            ]
+        run_step("collect_phase8_sql", collect_phase8_sql_cmd)
         sql_probe_summary = json.loads(
             (cfg.artifact_dir / "sql" / "phase8_sql_probe_summary.json").read_text(
                 encoding="utf-8"
@@ -1184,14 +1358,9 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             sql_probe_summary.get("perf_revenue_ledger_rows_during_window", 0)
         )
         llm_probe_dispatched = 0
-        if perf_llm_calls <= 0:
-            if llm_load_artifact.exists():
-                llm_probe = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
-                llm_probe_dispatched = int(llm_probe.get("dispatched_count", 0))
-        r3_profile = _extract_profile_metrics_from_r3_log(
-            cfg.logs_dir / "r3_ingestion_under_fire.log",
-            "EG3_4_Test2_Month18",
-        )
+        if llm_load_artifact.exists():
+            llm_probe = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
+            llm_probe_dispatched = int(llm_probe.get("dispatched_count", 0) or 0)
         target_request_count = int(r3_profile.get("target_request_count", 0) or 0)
         observed_request_count = int(r3_profile.get("observed_request_count", 0) or 0)
         status_counts = r3_profile.get("http_status_counts", {})
@@ -1253,6 +1422,11 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "Composed performance evidence invalid: non-zero HTTP error rate"
             )
 
+        if not queue_probe_artifact.exists():
+            raise RuntimeError(
+                "Worker liveness probe invalid: artifact missing "
+                f"({queue_probe_artifact.name})"
+            )
         worker_probe = json.loads(queue_probe_artifact.read_text(encoding="utf-8"))
         worker_summary = (
             worker_probe.get("summary", {}) if isinstance(worker_probe, dict) else {}
@@ -1274,10 +1448,22 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             raise RuntimeError(
                 "Worker liveness probe invalid: queue depth never increased above zero"
             )
-        # Kombu's SQL transport can keep rows invisible and stable while workers still consume tasks.
-        # For full-physics, prefer explicit queue drain or composed worker activity evidence,
-        # but do not hard-fail if neither is observed on hosted runners.
-        llm_activity_evidence = perf_llm_calls > 0 or llm_probe_dispatched > 0
+
+        # Fail closed: a missing or failed helper, a stale or mismatched
+        # interval, or absent conduction fails the gate. The workload, the
+        # bars and the statistical cage are unchanged.
+        composed_instrumentation = _validate_composed_instrumentation(
+            full_physics=cfg.full_physics,
+            llm_load_artifact=llm_load_artifact,
+            llm_load_log=llm_load_log_path,
+            queue_probe_log=queue_probe_log_path,
+            llm_load_returncode=llm_load_returncode,
+            queue_probe_returncode=queue_probe_returncode,
+            worker_probe=worker_probe,
+            r3_profile=r3_profile,
+            perf_llm_calls=perf_llm_calls,
+        )
+        llm_activity_evidence = perf_llm_calls > 0
 
         # CI subset is a sanity gate only; authoritative EG3.4 certification is full physics only.
         gates[_eg85_gate_name(run_authority)] = "pass"
@@ -1305,6 +1491,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "llm_api_calls_during_window": perf_llm_api_calls,
             "llm_audit_rows_during_window": perf_llm_audit_calls,
             "ledger_rows_written_during_window": perf_ledger_rows,
+            "llm_probe_dispatched": llm_probe_dispatched,
+            "composed_instrumentation": composed_instrumentation,
             "worker_liveness": {
                 "sample_count": worker_sample_count,
                 "peak_queue_depth": worker_peak_depth,
@@ -1353,6 +1541,12 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 queue_probe_proc.wait(timeout=5)
             except Exception:  # noqa: BLE001
                 queue_probe_proc.kill()
+        for handle in (llm_load_log_handle, queue_probe_log_handle):
+            if handle is not None:
+                try:
+                    handle.close()
+                except Exception:  # noqa: BLE001
+                    pass
         try:
             _run_logged(
                 cfg,

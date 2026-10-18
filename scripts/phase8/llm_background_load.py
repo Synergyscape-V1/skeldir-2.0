@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
-from uuid import uuid4
+from uuid import UUID, uuid4
+
+from sqlalchemy import create_engine, text
+
+from app.schemas.llm_payloads import LLMTaskPayload
+from app.services.llm_dispatch import enqueue_llm_task
 
 
 def _import_db_secret_access():
@@ -25,16 +29,11 @@ def _import_db_secret_access():
         raise
 
 
-resolve_runtime_database_url = _import_db_secret_access()
-
-from sqlalchemy import create_engine, text
-
-
 def _runtime_sync_db_url() -> str:
     explicit = os.getenv("B07_P8_RUNTIME_DATABASE_URL")
     if explicit:
         return explicit
-    runtime = resolve_runtime_database_url()
+    runtime = _import_db_secret_access()()
     if runtime.startswith("postgresql+asyncpg://"):
         return runtime.replace("postgresql+asyncpg://", "postgresql://", 1)
     return runtime
@@ -99,55 +98,77 @@ def main() -> int:
     parser.add_argument("--artifact", required=True)
     args = parser.parse_args()
 
-    from app.db.session import get_session
-    from app.schemas.llm_payloads import LLMTaskPayload
-    from app.workers.llm import generate_explanation
-
     runtime_db_url = _runtime_sync_db_url()
     tenant_id = _seed_tenant(runtime_db_url)
     user_id = uuid4()
+    session_jti = uuid4()
+    session_iat = int(time.time())
 
     request_ids: list[str] = []
+    task_ids: list[str] = []
     started_at = datetime.now(timezone.utc)
     deadline = time.time() + max(1, int(args.duration_s))
-    dispatched = 0
+    artifact_path = Path(args.artifact)
+    result: dict[str, object] = {
+        "status": "failed",
+        "error": None,
+        "dispatch_mode": "broker",
+        "task_name": "app.tasks.llm.explanation",
+        "tenant_id": str(tenant_id),
+        "user_id": str(user_id),
+        "dispatched_count": 0,
+        "first_request_id": None,
+        "last_request_id": None,
+        "first_task_id": None,
+        "last_task_id": None,
+        "started_at": started_at.isoformat(),
+        "finished_at": None,
+    }
 
-    async def _dispatch_inline(payload: LLMTaskPayload) -> None:
-        async with get_session(tenant_id=tenant_id, user_id=user_id) as session:
-            await generate_explanation(payload, session=session)
+    try:
+        while time.time() < deadline:
+            request_id = f"phase8-perf-llm-{uuid4().hex[:12]}"
+            payload = LLMTaskPayload(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                jti=session_jti,
+                iat=session_iat,
+                correlation_id=request_id,
+                request_id=request_id,
+                prompt={
+                    "simulated_output_text": "phase8-performance-load",
+                    "cache_enabled": False,
+                    "simulated_cost_cents": 1,
+                },
+                max_cost_cents=2,
+            )
+            async_result = enqueue_llm_task("explanation", payload)
+            request_ids.append(request_id)
+            if async_result is not None and getattr(async_result, "id", None):
+                task_ids.append(str(async_result.id))
+            result["dispatched_count"] = len(request_ids)
+            time.sleep(max(0.01, float(args.interval_s)))
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        result["finished_at"] = datetime.now(timezone.utc).isoformat()
+        result["first_request_id"] = request_ids[0] if request_ids else None
+        result["last_request_id"] = request_ids[-1] if request_ids else None
+        result["first_task_id"] = task_ids[0] if task_ids else None
+        result["last_task_id"] = task_ids[-1] if task_ids else None
+        _write_artifact(artifact_path, result)
+        raise
 
-    while time.time() < deadline:
-        request_id = f"phase8-perf-llm-{uuid4().hex[:12]}"
-        payload = LLMTaskPayload(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            correlation_id=request_id,
-            request_id=request_id,
-            prompt={
-                "simulated_output_text": "phase8-performance-load",
-                "cache_enabled": False,
-                "simulated_cost_cents": 1,
-            },
-            max_cost_cents=2,
-        )
-        asyncio.run(_dispatch_inline(payload))
-        request_ids.append(request_id)
-        dispatched += 1
-        time.sleep(max(0.01, float(args.interval_s)))
-
-    finished_at = datetime.now(timezone.utc)
-    _write_artifact(
-        Path(args.artifact),
+    result.update(
         {
-            "tenant_id": str(tenant_id),
-            "user_id": str(user_id),
-            "dispatched_count": dispatched,
+            "status": "ok",
             "first_request_id": request_ids[0] if request_ids else None,
             "last_request_id": request_ids[-1] if request_ids else None,
-            "started_at": started_at.isoformat(),
-            "finished_at": finished_at.isoformat(),
-        },
+            "first_task_id": task_ids[0] if task_ids else None,
+            "last_task_id": task_ids[-1] if task_ids else None,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        }
     )
+    _write_artifact(artifact_path, result)
     return 0
 
 
