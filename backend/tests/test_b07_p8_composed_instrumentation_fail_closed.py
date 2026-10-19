@@ -112,6 +112,47 @@ def _write_cpu_probe(
     return artifact
 
 
+def _write_pg_stat_probe(
+    tmp_path: Path,
+    *,
+    status: str = "ok",
+    error: str | None = None,
+    sample_count: int = 90,
+    pgss_available: bool = True,
+    pgss_error: str | None = None,
+) -> Path:
+    artifact = tmp_path / "phase8_pg_stat_probe.json"
+    artifact.write_text(
+        json.dumps(
+            {
+                "status": status,
+                "error": error,
+                "sample_count": sample_count,
+                "interval_s": 5.0,
+                "pgss_available": pgss_available,
+                "pgss_error": pgss_error,
+                "extversion": "1.10" if pgss_available else None,
+                "track_setting": "all" if pgss_available else None,
+                "totals_first": {"statements": 150, "calls": 10, "total_exec_ms": 1.0},
+                "totals_last": {"statements": 160, "calls": 4000, "total_exec_ms": 900.0},
+                "top_statements_by_delta": [
+                    {
+                        "qid": "1",
+                        "q": "INSERT INTO attribution_events ...",
+                        "calls": 3990,
+                        "total_exec_ms": 899.0,
+                        "mean_exec_ms": 0.2253,
+                        "rows": 3990,
+                        "toplevel": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return artifact
+
+
 def _validate(
     tmp_path: Path,
     *,
@@ -121,6 +162,8 @@ def _validate(
     queue_probe_returncode: int = 0,
     cpu_probe_artifact: Path | None = None,
     cpu_probe_returncode: int = 0,
+    pg_stat_probe_artifact: Path | None = None,
+    pg_stat_probe_returncode: int = 0,
     worker_probe: dict[str, Any] | None = None,
     r3_profile: dict[str, Any] | None = None,
     perf_llm_calls: int = 55,
@@ -131,8 +174,12 @@ def _validate(
     queue_log.write_text("queue probe ok\n", encoding="utf-8")
     cpu_log = tmp_path / "runner_cpu_probe.log"
     cpu_log.write_text("cpu probe ok\n", encoding="utf-8")
+    pg_stat_log = tmp_path / "pg_stat_probe.log"
+    pg_stat_log.write_text("pg_stat probe ok\n", encoding="utf-8")
     if cpu_probe_artifact is None:
         cpu_probe_artifact = _write_cpu_probe(tmp_path)
+    if pg_stat_probe_artifact is None:
+        pg_stat_probe_artifact = _write_pg_stat_probe(tmp_path)
     return _PACK._validate_composed_instrumentation(
         full_physics=full_physics,
         llm_load_artifact=llm_load_artifact
@@ -141,9 +188,12 @@ def _validate(
         queue_probe_log=queue_log,
         cpu_probe_artifact=cpu_probe_artifact,
         cpu_probe_log=cpu_log,
+        pg_stat_probe_artifact=pg_stat_probe_artifact,
+        pg_stat_probe_log=pg_stat_log,
         llm_load_returncode=llm_load_returncode,
         queue_probe_returncode=queue_probe_returncode,
         cpu_probe_returncode=cpu_probe_returncode,
+        pg_stat_probe_returncode=pg_stat_probe_returncode,
         worker_probe=worker_probe if worker_probe is not None else _worker_probe(),
         r3_profile=r3_profile if r3_profile is not None else _r3_profile(),
         perf_llm_calls=perf_llm_calls,
@@ -172,9 +222,12 @@ def test_failed_helper_returncode_fails_closed_with_log_tail(tmp_path: Path) -> 
             queue_probe_log=tmp_path / "queue.log",
             cpu_probe_artifact=cpu_artifact,
             cpu_probe_log=cpu_log,
+            pg_stat_probe_artifact=_write_pg_stat_probe(tmp_path),
+            pg_stat_probe_log=tmp_path / "pg_stat.log",
             llm_load_returncode=2,
             queue_probe_returncode=0,
             cpu_probe_returncode=0,
+            pg_stat_probe_returncode=0,
             worker_probe=_worker_probe(),
             r3_profile=_r3_profile(),
             perf_llm_calls=0,
@@ -204,9 +257,12 @@ def test_failed_runner_cpu_probe_fails_closed_with_log_tail(tmp_path: Path) -> N
             queue_probe_log=tmp_path / "queue.log",
             cpu_probe_artifact=tmp_path / "phase8_runner_cpu_probe.json",
             cpu_probe_log=cpu_log,
+            pg_stat_probe_artifact=_write_pg_stat_probe(tmp_path),
+            pg_stat_probe_log=tmp_path / "pg_stat.log",
             llm_load_returncode=0,
             queue_probe_returncode=0,
             cpu_probe_returncode=3,
+            pg_stat_probe_returncode=0,
             worker_probe=_worker_probe(),
             r3_profile=_r3_profile(),
             perf_llm_calls=42,
@@ -235,6 +291,82 @@ def test_runner_cpu_probe_insufficient_samples_fails_closed(tmp_path: Path) -> N
             tmp_path,
             llm_load_artifact=artifact,
             cpu_probe_artifact=cpu_artifact,
+        )
+
+
+def test_missing_pg_stat_probe_artifact_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    with pytest.raises(RuntimeError, match="pg_stat probe artifact missing"):
+        _validate(
+            tmp_path,
+            llm_load_artifact=artifact,
+            pg_stat_probe_artifact=tmp_path / "absent_pg_stat_probe.json",
+        )
+
+
+def test_failed_pg_stat_probe_fails_closed_with_log_tail(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    pg_stat_log = tmp_path / "pg_stat_probe.log"
+    pg_stat_log.write_text("Traceback: connection refused\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="pg_stat_probe.py exited") as excinfo:
+        _PACK._validate_composed_instrumentation(
+            full_physics=True,
+            llm_load_artifact=artifact,
+            llm_load_log=tmp_path / "llm.log",
+            queue_probe_log=tmp_path / "queue.log",
+            cpu_probe_artifact=_write_cpu_probe(tmp_path),
+            cpu_probe_log=tmp_path / "cpu.log",
+            pg_stat_probe_artifact=tmp_path / "phase8_pg_stat_probe.json",
+            pg_stat_probe_log=pg_stat_log,
+            llm_load_returncode=0,
+            queue_probe_returncode=0,
+            cpu_probe_returncode=0,
+            pg_stat_probe_returncode=2,
+            worker_probe=_worker_probe(),
+            r3_profile=_r3_profile(),
+            perf_llm_calls=42,
+        )
+    assert "connection refused" in str(excinfo.value)
+
+
+def test_pg_stat_probe_unavailable_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    pg_stat_artifact = _write_pg_stat_probe(
+        tmp_path,
+        status="failed",
+        error="pg_stat_statements unavailable",
+        pgss_available=False,
+        pgss_error="ProgrammingError: relation does not exist",
+    )
+    with pytest.raises(RuntimeError, match="pg_stat_statements unavailable"):
+        _validate(
+            tmp_path,
+            llm_load_artifact=artifact,
+            pg_stat_probe_artifact=pg_stat_artifact,
+        )
+
+
+def test_pg_stat_probe_non_ok_status_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    pg_stat_artifact = _write_pg_stat_probe(
+        tmp_path, status="failed", error="insufficient samples"
+    )
+    with pytest.raises(RuntimeError, match="pg_stat probe status='failed'"):
+        _validate(
+            tmp_path,
+            llm_load_artifact=artifact,
+            pg_stat_probe_artifact=pg_stat_artifact,
+        )
+
+
+def test_pg_stat_probe_insufficient_samples_fails_closed(tmp_path: Path) -> None:
+    artifact = _write_load_artifact(tmp_path)
+    pg_stat_artifact = _write_pg_stat_probe(tmp_path, sample_count=1)
+    with pytest.raises(RuntimeError, match="pg_stat probe recorded fewer"):
+        _validate(
+            tmp_path,
+            llm_load_artifact=artifact,
+            pg_stat_probe_artifact=pg_stat_artifact,
         )
 
 
@@ -303,6 +435,9 @@ def test_honest_instrumentation_passes(tmp_path: Path) -> None:
     assert evidence["load_helper_dispatch_mode"] == "inline"
     assert evidence["cpu_probe_sample_count"] == 90
     assert evidence["cpu_probe_psi_some_stall_us"] == 123456.7
+    assert evidence["pg_stat_probe_sample_count"] == 90
+    assert evidence["pg_stat_probe_extversion"] == "1.10"
+    assert evidence["pg_stat_probe_top_statements_by_delta"][0]["qid"] == "1"
 
 
 def test_ci_subset_sanity_still_requires_helper_integrity(tmp_path: Path) -> None:

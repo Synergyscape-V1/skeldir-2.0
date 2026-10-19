@@ -6,7 +6,11 @@ services:
     # two pools (API relay + dedicated auth root) instead of one. Grant
     # the lane headroom so pool sizing, not the server connection cap,
     # is what the load tests measure.
-    command: postgres -c max_connections=200
+    # XXI step 4: pg_stat_statements with track=all is the intra-postgres
+    # split instrument (scripts/phase8/pg_stat_probe.py) that names which
+    # statements (including function internals) burn the postgres cores
+    # during a failing R3 leg. Observation only; load semantics unchanged.
+    command: postgres -c max_connections=200 -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.max=5000 -c pg_stat_statements.track=all
     environment:
       POSTGRES_USER: skeldir
       POSTGRES_PASSWORD: skeldir_e2e

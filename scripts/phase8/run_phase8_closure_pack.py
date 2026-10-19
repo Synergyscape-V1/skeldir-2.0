@@ -358,9 +358,12 @@ def _validate_composed_instrumentation(
     queue_probe_log: Path,
     cpu_probe_artifact: Path,
     cpu_probe_log: Path,
+    pg_stat_probe_artifact: Path,
+    pg_stat_probe_log: Path,
     llm_load_returncode: int,
     queue_probe_returncode: int,
     cpu_probe_returncode: int,
+    pg_stat_probe_returncode: int,
     worker_probe: dict[str, Any],
     r3_profile: dict[str, Any],
     perf_llm_calls: int,
@@ -403,6 +406,40 @@ def _validate_composed_instrumentation(
             "Composed instrumentation invalid: runner CPU probe recorded fewer "
             f"than 2 samples ({cpu_probe_samples})"
         )
+    if pg_stat_probe_returncode != 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat_probe.py exited "
+            f"with code {pg_stat_probe_returncode}; tail:\n"
+            f"{_read_log_tail(pg_stat_probe_log)}"
+        )
+    if not pg_stat_probe_artifact.exists():
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat probe artifact missing "
+            f"({pg_stat_probe_artifact.name})"
+        )
+    pg_stat_probe = json.loads(pg_stat_probe_artifact.read_text(encoding="utf-8"))
+    if not isinstance(pg_stat_probe, dict):
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat probe artifact is not "
+            "a JSON object"
+        )
+    if pg_stat_probe.get("status") != "ok":
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat probe status="
+            f"{pg_stat_probe.get('status')!r} error={pg_stat_probe.get('error')!r}"
+        )
+    if not pg_stat_probe.get("pgss_available"):
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat_statements unavailable in "
+            f"the composed postgres (preloaded={pg_stat_probe.get('preloaded_libraries')!r}, "
+            f"error={pg_stat_probe.get('pgss_error')!r})"
+        )
+    pg_stat_probe_samples = int(pg_stat_probe.get("sample_count", 0) or 0)
+    if pg_stat_probe_samples < 2:
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat probe recorded fewer "
+            f"than 2 samples ({pg_stat_probe_samples})"
+        )
     if not llm_load_artifact.exists():
         raise RuntimeError(
             "Composed instrumentation invalid: load-helper artifact missing "
@@ -437,6 +474,16 @@ def _validate_composed_instrumentation(
         "cpu_probe_throttle_delta": cpu_probe.get("throttle_delta"),
         "cpu_probe_classes": cpu_probe.get("classes"),
         "cpu_probe_top_processes": cpu_probe.get("top_processes"),
+        # Ordered-plan step 4: intra-postgres split (observation only).
+        "pg_stat_probe_sample_count": pg_stat_probe_samples,
+        "pg_stat_probe_interval_s": pg_stat_probe.get("interval_s"),
+        "pg_stat_probe_extversion": pg_stat_probe.get("extversion"),
+        "pg_stat_probe_track_setting": pg_stat_probe.get("track_setting"),
+        "pg_stat_probe_totals_first": pg_stat_probe.get("totals_first"),
+        "pg_stat_probe_totals_last": pg_stat_probe.get("totals_last"),
+        "pg_stat_probe_top_statements_by_delta": pg_stat_probe.get(
+            "top_statements_by_delta"
+        ),
     }
     if not full_physics:
         return evidence
@@ -1177,6 +1224,14 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             ],
         )
         _wait_for_postgres(cfg.migration_dsn)
+        # XXI step 4: the composed postgres preloads pg_stat_statements
+        # (track=all); create the extension so the intra-postgres split
+        # probe can sample it. Fail-closed: a compose that lost the
+        # preload raises here and fails the run.
+        _exec_sql(
+            cfg.migration_dsn,
+            "CREATE EXTENSION IF NOT EXISTS pg_stat_statements",
+        )
         _provision_runtime_identity(cfg)
         run_step(
             "alembic_upgrade",
@@ -1385,6 +1440,30 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             stdout=cpu_probe_log_handle,
             stderr=subprocess.STDOUT,
         )
+        # Ordered-plan step 4: intra-postgres split for the same leg.
+        # pg_stat_statements (preloaded, track=all) is sampled here; the
+        # per-leg split is derived post-hoc from the artefact's samples.
+        pg_stat_probe_artifact = cfg.artifact_dir / "phase8_pg_stat_probe.json"
+        pg_stat_probe_log_path = cfg.logs_dir / "pg_stat_probe.log"
+        pg_stat_probe_log_handle = pg_stat_probe_log_path.open("w", encoding="utf-8")
+        pg_stat_probe_proc = subprocess.Popen(
+            [
+                sys.executable,
+                "scripts/phase8/pg_stat_probe.py",
+                "--duration-s",
+                str(llm_duration_s),
+                "--interval-s",
+                "5.0",
+                "--artifact",
+                str(pg_stat_probe_artifact),
+                "--jsonl",
+                str(cfg.logs_dir / "pg_stat_probe.jsonl"),
+            ],
+            cwd=str(cfg.repo_root),
+            env=env,
+            stdout=pg_stat_probe_log_handle,
+            stderr=subprocess.STDOUT,
+        )
         r3_step_error: Exception | None = None
         try:
             run_step(
@@ -1416,6 +1495,14 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
                 "runner_cpu_probe.py did not exit before the wait deadline"
+            ) from exc
+        try:
+            pg_stat_probe_returncode = pg_stat_probe_proc.wait(
+                timeout=llm_duration_s + 180
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "pg_stat_probe.py did not exit before the wait deadline"
             ) from exc
 
         r3_window = _extract_profile_window_best_effort(
@@ -1473,6 +1560,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "llm_load_started_at": llm_probe_payload.get("started_at"),
                 "llm_load_finished_at": llm_probe_payload.get("finished_at"),
                 "queue_probe_returncode": queue_probe_returncode,
+                "cpu_probe_returncode": cpu_probe_returncode,
+                "pg_stat_probe_returncode": pg_stat_probe_returncode,
                 "collect_phase8_sql_error": str(collect_error) if collect_error else None,
                 "perf_window": sql_probe_summary.get("perf_window"),
                 "perf_composed_llm_calls": sql_probe_summary.get(
@@ -1627,9 +1716,12 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             queue_probe_log=queue_probe_log_path,
             cpu_probe_artifact=cpu_probe_artifact,
             cpu_probe_log=cpu_probe_log_path,
+            pg_stat_probe_artifact=pg_stat_probe_artifact,
+            pg_stat_probe_log=pg_stat_probe_log_path,
             llm_load_returncode=llm_load_returncode,
             queue_probe_returncode=queue_probe_returncode,
             cpu_probe_returncode=cpu_probe_returncode,
+            pg_stat_probe_returncode=pg_stat_probe_returncode,
             worker_probe=worker_probe,
             r3_profile=r3_profile,
             perf_llm_calls=perf_llm_calls,
