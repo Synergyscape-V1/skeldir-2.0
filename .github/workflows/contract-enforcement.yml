@@ -165,13 +165,38 @@ jobs:
     name: Dynamic Contract Conformance
     runs-on: ubuntu-latest
     needs: contract-static
+    # The conformance tests import app.main. The B2.6-P2 XXI-F5 construction
+    # authority boot guard (backend/app/main.py) verifies the schema revision
+    # against a live database at startup and refuses to serve (fatal, after a
+    # bounded retry window) when the database cannot vouch for the build. This
+    # job previously ran with a placeholder DATABASE_URL and no postgres
+    # service, so the guard's retry window ended in
+    # construction_authority_guard_fatal:unverifiable on
+    # test_contract_semantic_conformance[auth.bundled.yaml] (run 39313015651,
+    # main 8216b6cc5). It now provisions a real postgres service, migrates it
+    # to head, and only then runs the conformance tests, mirroring the
+    # contract-provider-tests job in contract-artifacts.yml; the boot wait
+    # remains fatal, only bounded lower for CI.
     env:
-      # Contract tests import `app.main` (Settings validation requires DATABASE_URL).
-      # Use an ephemeral CI DSN to keep import deterministic; dynamic conformance
-      # tests exercise stubbed endpoints that do not require a live DB.
       CI: "true"
-      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_contract_conformance
-    
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_test
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_test
+      SKELDIR_CONSTRUCTION_AUTHORITY_BOOT_WAIT_S: "60"
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -197,6 +222,16 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r backend/requirements-dev.txt
+      
+      - name: Provision conformance database
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_test
+          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_test
+        run: |
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --database-name skeldir_test
+          python -m alembic upgrade head
       
       - name: Run Schemathesis Contract Tests
         run: |
