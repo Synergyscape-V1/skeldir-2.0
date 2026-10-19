@@ -472,14 +472,31 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             (
                 await session.execute(
                     text(
-                        "SELECT i.id::text AS iid"
-                        " FROM public.webhook_ingress_identities AS i"
-                        " JOIN public.b26_p2_provider_auth_consequence AS c"
-                        " ON c.webhook_ingress_identity_id = i.id"
-                        " AND c.tenant_id = i.tenant_id"
-                        " WHERE i.tenant_id = :tenant"
+                        # XX (hosted split, 1feced0d4): the hosted planner
+                        # evaluated the STABLE authority function once per
+                        # scanned candidate row (~438x per fence query),
+                        # making this the single largest postgres consumer
+                        # in the failing R3 legs. MATERIALIZED is load
+                        # bearing: it fences the byte-equality filter ahead
+                        # of has_current_authority so the function runs at
+                        # most once per byte match. Semantics unchanged:
+                        # consequence rows filtered by (tenant, bytes)
+                        # first, identities joined on (id, tenant), the
+                        # authority check remains the last gate, LIMIT 1
+                        # preserved.
+                        "WITH cand AS MATERIALIZED ("
+                        " SELECT c.webhook_ingress_identity_id AS iid,"
+                        " c.tenant_id AS tenant_id"
+                        " FROM public.b26_p2_provider_auth_consequence AS c"
+                        " WHERE c.tenant_id = :tenant"
                         " AND c.body_sha256 = :body_sha"
                         " AND c.provider_event_reference = :event_ref"
+                        ")"
+                        " SELECT i.id::text AS iid"
+                        " FROM public.webhook_ingress_identities AS i"
+                        " JOIN cand ON cand.iid = i.id"
+                        " AND cand.tenant_id = i.tenant_id"
+                        " WHERE i.tenant_id = :tenant"
                         " AND public.b26_p2_ingress_has_current_authority(i.id)"
                         " LIMIT 1"
                     ),
@@ -732,14 +749,22 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                 (
                     await session.execute(
                         text(
-                            "SELECT i.id::text AS iid"
-                            " FROM public.webhook_ingress_identities AS i"
-                            " JOIN public.b26_p2_provider_auth_consequence AS c"
-                            " ON c.webhook_ingress_identity_id = i.id"
-                            " AND c.tenant_id = i.tenant_id"
-                            " WHERE i.tenant_id = :tenant"
+                            # Same MATERIALIZED fence as the pre-check
+                            # above: byte filter before any authority
+                            # evaluation (rare path, same shape).
+                            "WITH cand AS MATERIALIZED ("
+                            " SELECT c.webhook_ingress_identity_id AS iid,"
+                            " c.tenant_id AS tenant_id"
+                            " FROM public.b26_p2_provider_auth_consequence AS c"
+                            " WHERE c.tenant_id = :tenant"
                             " AND c.body_sha256 = :body_sha"
                             " AND c.provider_event_reference = :event_ref"
+                            ")"
+                            " SELECT i.id::text AS iid"
+                            " FROM public.webhook_ingress_identities AS i"
+                            " JOIN cand ON cand.iid = i.id"
+                            " AND cand.tenant_id = i.tenant_id"
+                            " WHERE i.tenant_id = :tenant"
                             " AND public.b26_p2_ingress_has_current_authority(i.id)"
                             " LIMIT 1"
                         ),

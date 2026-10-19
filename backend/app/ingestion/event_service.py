@@ -1295,14 +1295,22 @@ async def _finalize_verified_ingress_post_commit(
                 (
                     await session.execute(
                         text(
-                            "SELECT i.id::text AS iid"
-                            " FROM public.webhook_ingress_identities AS i"
-                            " JOIN public.b26_p2_provider_auth_consequence AS c"
-                            " ON c.webhook_ingress_identity_id = i.id"
-                            " AND c.tenant_id = i.tenant_id"
-                            " WHERE i.tenant_id = :tenant"
+                            # Same MATERIALIZED fence as auth_service:
+                            # byte filter before any authority evaluation
+                            # (rare duplicate-resolution path, same shape).
+                            "WITH cand AS MATERIALIZED ("
+                            " SELECT c.webhook_ingress_identity_id AS iid,"
+                            " c.tenant_id AS tenant_id"
+                            " FROM public.b26_p2_provider_auth_consequence AS c"
+                            " WHERE c.tenant_id = :tenant"
                             " AND c.body_sha256 = :body_sha"
                             " AND c.provider_event_reference = :event_ref"
+                            ")"
+                            " SELECT i.id::text AS iid"
+                            " FROM public.webhook_ingress_identities AS i"
+                            " JOIN cand ON cand.iid = i.id"
+                            " AND cand.tenant_id = i.tenant_id"
+                            " WHERE i.tenant_id = :tenant"
                             " AND public.b26_p2_ingress_has_current_authority(i.id)"
                             " LIMIT 1"
                         ),
