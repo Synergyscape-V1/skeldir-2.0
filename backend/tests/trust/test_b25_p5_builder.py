@@ -27,6 +27,8 @@ from app.trust.benchmark_defaults import unavailable_benchmark_metadata
 from app.trust.canonicalization import canonicalize_envelope_payload
 from app.trust.money_source_adapter import AuthoritativeMoneyMinor
 from app.trust.policy_defaults import read_only_policy_authority
+from app.trust.provenance import REQUIRED_P7_PROVENANCE_SOURCE_CLASSES
+from app.trust.refusal import tagged_sha256
 from app.trust.source_adapters import (
     ConfidenceProjectionSource,
     iter_field_source_decisions,
@@ -139,6 +141,13 @@ def _row(
         "last_transition_at": now,
         "created_at": now,
         "updated_at": now,
+        # The fake serves this same row for the law-cohort lookup, so a
+        # resolved current-law row must carry its publication result
+        # (a row without these keys resolves fail-closed to
+        # superseded/unknown, which the P1 disclosure tests exercise
+        # explicitly).
+        "event_family_law_version": "v4",
+        "event_family_law_current": True,
     }
 
 
@@ -277,6 +286,84 @@ async def test_builder_emits_unsigned_schema_valid_canonical_match_verdict_paylo
     assert str(tenant_id) not in str(payload)
     assert session.write_attempts == 0
     assert result.read_only_observation.source_writes == 0
+
+
+_REASON_CODE_SOURCE_CLASS = "reason_code_decision"
+
+
+def _expected_reason_snapshot_hash(reason_code: str) -> str:
+    registration = next(
+        row
+        for row in REQUIRED_P7_PROVENANCE_SOURCE_CLASSES
+        if row.source_class == _REASON_CODE_SOURCE_CLASS
+    )
+    return tagged_sha256(
+        {
+            "source_class": registration.source_class,
+            "source_path": registration.source_path,
+            "decision_material": {"reason_code": reason_code},
+        }
+    )
+
+
+def _reason_code_entry(payload: dict[str, object]) -> dict[str, object]:
+    return next(
+        entry
+        for entry in payload["provenance_chain"]
+        if entry["provenance_type"] == _REASON_CODE_SOURCE_CLASS
+    )
+
+
+@pytest.mark.asyncio
+async def test_match_verdict_envelope_discloses_event_family_law_qualification() -> (
+    None
+):
+    """XXI P1 RED/GREEN: superseded-law rows never present as verified.
+
+    Green: the resolved current-law fixture (law v4) presents as matched
+    with complete completeness and a reason-code entry hash-bound to the
+    establishing version (event_family_law:v4). Red: the same row shape
+    resolved under a superseded law (v3) presents ambiguous with
+    degraded completeness and a hash-bound
+    event_family_law_superseded:v3 entry -- never the historical 'none'
+    code.
+    """
+    tenant_id = uuid4()
+    verdict_id = uuid4()
+    current_row = _row(tenant_id=tenant_id, verdict_id=verdict_id)
+    assert current_row["event_family_law_version"] == "v4"
+
+    current = await build_unsigned_trust_envelope(
+        FakeReadOnlySession(current_row), _request(tenant_id, verdict_id)
+    )
+    payload = current.unsigned_payload
+    assert payload is not None
+    canonicalize_envelope_payload(payload)
+    assert payload["match_verdict_status"] == "matched"
+    assert payload["data_completeness_status"] == "complete"
+    assert _reason_code_entry(payload)["source_snapshot_hash"] == (
+        _expected_reason_snapshot_hash("event_family_law:v4")
+    )
+
+    superseded_row = {
+        **current_row,
+        "event_family_law_version": "v3",
+        "event_family_law_current": False,
+    }
+    superseded = await build_unsigned_trust_envelope(
+        FakeReadOnlySession(superseded_row), _request(tenant_id, verdict_id)
+    )
+    payload_superseded = superseded.unsigned_payload
+    assert payload_superseded is not None
+    canonicalize_envelope_payload(payload_superseded)
+    assert payload_superseded["match_verdict_status"] == "ambiguous"
+    assert payload_superseded["data_completeness_status"] == "degraded"
+    assert _reason_code_entry(payload_superseded)["source_snapshot_hash"] == (
+        _expected_reason_snapshot_hash("event_family_law_superseded:v3")
+    )
+    assert _reason_code_entry(payload_superseded)["source_snapshot_hash"] != (
+        _expected_reason_snapshot_hash("none")
+    )
 
 
 @pytest.mark.asyncio

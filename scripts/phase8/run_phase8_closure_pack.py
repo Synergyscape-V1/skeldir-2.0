@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -302,6 +303,252 @@ def _extract_profile_metrics_from_r3_log(
     if not bool(payload.get("passed")):
         raise RuntimeError(f"R3 profile verdict failed: {profile_name}")
     return payload
+
+
+def _extract_profile_window_best_effort(
+    log_path: Path, profile_name: str
+) -> dict[str, Any]:
+    """Read a profile verdict for diagnostics, tolerating a failed profile."""
+    try:
+        verdicts = _parse_r3_verdicts(log_path)
+    except RuntimeError:
+        return {}
+    payload = verdicts.get(profile_name)
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        "passed": bool(payload.get("passed")),
+        "window_start_utc": payload.get("window_start_utc"),
+        "window_end_utc": payload.get("window_end_utc"),
+        "target_rps": payload.get("target_rps"),
+        "achieved_rps": payload.get("achieved_rps"),
+        "elapsed_s": payload.get("elapsed_s"),
+        "latency_p50_ms": payload.get("latency_p50_ms"),
+        "latency_p95_ms": payload.get("latency_p95_ms"),
+        "latency_p99_ms": payload.get("latency_p99_ms"),
+    }
+
+
+def _r3_leg_span_seconds(env: dict[str, str]) -> int:
+    """Sum of the EG3.4/null-benchmark profile durations, i.e. the R3 leg span."""
+    total = 0
+    if str(env.get("R3_NULL_BENCHMARK", "1")).strip() == "1":
+        total += int(env.get("R3_NULL_BENCHMARK_DURATION_S", "0") or 0)
+    for key in (
+        "R3_EG34_TEST1_DURATION_S",
+        "R3_EG34_TEST2_DURATION_S",
+        "R3_EG34_TEST3_DURATION_S",
+    ):
+        total += int(env.get(key, "0") or 0)
+    return total
+
+
+def _read_log_tail(path: Path, max_lines: int = 40) -> str:
+    if not path.exists():
+        return "<log missing>"
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(lines[-max_lines:])
+
+
+def _validate_composed_instrumentation(
+    *,
+    full_physics: bool,
+    llm_load_artifact: Path,
+    llm_load_log: Path,
+    queue_probe_log: Path,
+    cpu_probe_artifact: Path,
+    cpu_probe_log: Path,
+    pg_stat_probe_artifact: Path,
+    pg_stat_probe_log: Path,
+    llm_load_returncode: int,
+    queue_probe_returncode: int,
+    cpu_probe_returncode: int,
+    pg_stat_probe_returncode: int,
+    worker_probe: dict[str, Any],
+    r3_profile: dict[str, Any],
+    perf_llm_calls: int,
+) -> dict[str, Any]:
+    """Fail closed on a missing/failed helper, a stale interval or absent conduction."""
+    if llm_load_returncode != 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: llm_background_load.py exited "
+            f"with code {llm_load_returncode}; tail:\n{_read_log_tail(llm_load_log)}"
+        )
+    if queue_probe_returncode != 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: queue_liveness_probe.py exited "
+            f"with code {queue_probe_returncode}; tail:\n{_read_log_tail(queue_probe_log)}"
+        )
+    if cpu_probe_returncode != 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner_cpu_probe.py exited "
+            f"with code {cpu_probe_returncode}; tail:\n{_read_log_tail(cpu_probe_log)}"
+        )
+    if not cpu_probe_artifact.exists():
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner CPU probe artifact missing "
+            f"({cpu_probe_artifact.name})"
+        )
+    cpu_probe = json.loads(cpu_probe_artifact.read_text(encoding="utf-8"))
+    if not isinstance(cpu_probe, dict):
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner CPU probe artifact is not "
+            "a JSON object"
+        )
+    if cpu_probe.get("status") != "ok":
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner CPU probe status="
+            f"{cpu_probe.get('status')!r} error={cpu_probe.get('error')!r}"
+        )
+    cpu_probe_samples = int(cpu_probe.get("sample_count", 0) or 0)
+    if cpu_probe_samples < 2:
+        raise RuntimeError(
+            "Composed instrumentation invalid: runner CPU probe recorded fewer "
+            f"than 2 samples ({cpu_probe_samples})"
+        )
+    if pg_stat_probe_returncode != 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat_probe.py exited "
+            f"with code {pg_stat_probe_returncode}; tail:\n"
+            f"{_read_log_tail(pg_stat_probe_log)}"
+        )
+    if not pg_stat_probe_artifact.exists():
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat probe artifact missing "
+            f"({pg_stat_probe_artifact.name})"
+        )
+    pg_stat_probe = json.loads(pg_stat_probe_artifact.read_text(encoding="utf-8"))
+    if not isinstance(pg_stat_probe, dict):
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat probe artifact is not "
+            "a JSON object"
+        )
+    if pg_stat_probe.get("status") != "ok":
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat probe status="
+            f"{pg_stat_probe.get('status')!r} error={pg_stat_probe.get('error')!r}"
+        )
+    if not pg_stat_probe.get("pgss_available"):
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat_statements unavailable in "
+            f"the composed postgres (preloaded={pg_stat_probe.get('preloaded_libraries')!r}, "
+            f"error={pg_stat_probe.get('pgss_error')!r})"
+        )
+    pg_stat_probe_samples = int(pg_stat_probe.get("sample_count", 0) or 0)
+    if pg_stat_probe_samples < 2:
+        raise RuntimeError(
+            "Composed instrumentation invalid: pg_stat probe recorded fewer "
+            f"than 2 samples ({pg_stat_probe_samples})"
+        )
+    if not llm_load_artifact.exists():
+        raise RuntimeError(
+            "Composed instrumentation invalid: load-helper artifact missing "
+            f"({llm_load_artifact.name})"
+        )
+    llm_probe = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
+    if not isinstance(llm_probe, dict):
+        raise RuntimeError(
+            "Composed instrumentation invalid: load-helper artifact is not a JSON object"
+        )
+    if llm_probe.get("status") != "ok":
+        raise RuntimeError(
+            "Composed instrumentation invalid: load-helper status="
+            f"{llm_probe.get('status')!r} error={llm_probe.get('error')!r}"
+        )
+    dispatched_count = int(llm_probe.get("dispatched_count", 0) or 0)
+    if dispatched_count <= 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: load-helper dispatched zero calls"
+        )
+
+    evidence: dict[str, Any] = {
+        "load_helper_dispatched_count": dispatched_count,
+        "load_helper_dispatch_mode": llm_probe.get("dispatch_mode"),
+        "load_helper_started_at": llm_probe.get("started_at"),
+        "load_helper_finished_at": llm_probe.get("finished_at"),
+        # Ordered-plan step 3 measurements (observation only).
+        "cpu_probe_sample_count": cpu_probe_samples,
+        "cpu_probe_total_busy_pct_avg": cpu_probe.get("total_busy_pct_avg"),
+        "cpu_probe_psi_some_stall_us": cpu_probe.get("psi_cpu_some_stall_us_total"),
+        "cpu_probe_psi_some_avg10_max": cpu_probe.get("psi_cpu_some_avg10_max"),
+        "cpu_probe_throttle_delta": cpu_probe.get("throttle_delta"),
+        "cpu_probe_classes": cpu_probe.get("classes"),
+        "cpu_probe_top_processes": cpu_probe.get("top_processes"),
+        # Ordered-plan step 4: intra-postgres split (observation only).
+        "pg_stat_probe_sample_count": pg_stat_probe_samples,
+        "pg_stat_probe_interval_s": pg_stat_probe.get("interval_s"),
+        "pg_stat_probe_extversion": pg_stat_probe.get("extversion"),
+        "pg_stat_probe_track_setting": pg_stat_probe.get("track_setting"),
+        "pg_stat_probe_totals_first": pg_stat_probe.get("totals_first"),
+        "pg_stat_probe_totals_last": pg_stat_probe.get("totals_last"),
+        "pg_stat_probe_top_statements_by_delta": pg_stat_probe.get(
+            "top_statements_by_delta"
+        ),
+    }
+    if not full_physics:
+        return evidence
+
+    if llm_probe.get("dispatch_mode") != "inline":
+        raise RuntimeError(
+            "Composed instrumentation invalid: authority conduction requires the "
+            f"certified inline dispatch, got {llm_probe.get('dispatch_mode')!r}"
+        )
+
+    window_start_raw = r3_profile.get("window_start_utc")
+    window_end_raw = r3_profile.get("window_end_utc")
+    load_start_raw = llm_probe.get("started_at")
+    load_finish_raw = llm_probe.get("finished_at")
+    probe_start_raw = worker_probe.get("started_at")
+    probe_finish_raw = worker_probe.get("finished_at")
+    missing = [
+        name
+        for name, value in (
+            ("authority_window_start", window_start_raw),
+            ("authority_window_end", window_end_raw),
+            ("load_started_at", load_start_raw),
+            ("load_finished_at", load_finish_raw),
+            ("probe_started_at", probe_start_raw),
+            ("probe_finished_at", probe_finish_raw),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "Composed instrumentation invalid: missing interval timestamps "
+            f"({', '.join(missing)})"
+        )
+    window_start = datetime.fromisoformat(str(window_start_raw))
+    window_end = datetime.fromisoformat(str(window_end_raw))
+    load_start = datetime.fromisoformat(str(load_start_raw))
+    load_finish = datetime.fromisoformat(str(load_finish_raw))
+    probe_start = datetime.fromisoformat(str(probe_start_raw))
+    probe_finish = datetime.fromisoformat(str(probe_finish_raw))
+    if load_start > window_start or load_finish < window_end:
+        raise RuntimeError(
+            "Composed instrumentation invalid: stale or mismatched load interval; "
+            f"{load_start_raw}..{load_finish_raw} does not cover authority window "
+            f"{window_start_raw}..{window_end_raw}"
+        )
+    if probe_start > window_start or probe_finish < window_end:
+        raise RuntimeError(
+            "Composed instrumentation invalid: queue liveness interval; "
+            f"{probe_start_raw}..{probe_finish_raw} does not cover authority window "
+            f"{window_start_raw}..{window_end_raw}"
+        )
+    if perf_llm_calls <= 0:
+        raise RuntimeError(
+            "Composed instrumentation invalid: absent conduction; no LLM calls "
+            "recorded during the authority window"
+        )
+    evidence.update(
+        {
+            "authority_window_start_utc": window_start_raw,
+            "authority_window_end_utc": window_end_raw,
+            "queue_probe_started_at": probe_start_raw,
+            "queue_probe_finished_at": probe_finish_raw,
+        }
+    )
+    return evidence
 
 
 def _eg85_profile_metadata(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
@@ -951,6 +1198,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
     container_identity_evidence: dict[str, Any] = {}
     llm_load_proc: subprocess.Popen[str] | None = None
     queue_probe_proc: subprocess.Popen[str] | None = None
+    llm_load_log_handle: Any = None
+    queue_probe_log_handle: Any = None
     queue_probe_artifact = cfg.artifact_dir / "phase8_worker_liveness_probe.json"
 
     def run_step(name: str, cmd: Sequence[str], *, cwd: Path | None = None) -> None:
@@ -975,6 +1224,14 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             ],
         )
         _wait_for_postgres(cfg.migration_dsn)
+        # XXI step 4: the composed postgres preloads pg_stat_statements
+        # (track=all); create the extension so the intra-postgres split
+        # probe can sample it. Fail-closed: a compose that lost the
+        # preload raises here and fails the run.
+        _exec_sql(
+            cfg.migration_dsn,
+            "CREATE EXTENSION IF NOT EXISTS pg_stat_statements",
+        )
         _provision_runtime_identity(cfg)
         run_step(
             "alembic_upgrade",
@@ -1097,16 +1354,34 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "backend/tests/integration/test_b07_p8_topology_closure_pack.py",
             ],
         )
+        run_step(
+            "pytest_p8_instrumentation",
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "backend/tests/test_b07_p8_composed_instrumentation_fail_closed.py",
+            ],
+        )
         gates["eg8_2_unified_topologies"] = "pass"
         gates["eg8_4_ledger_audit_cost"] = "pass"
         gates["eg8_6_openapi_runtime_fidelity"] = "pass"
 
-        llm_duration_s = 120 if not cfg.ci_subset else 600
+        # The LLM load must conduct real work across the whole R3 leg,
+        # including the authority window (EG3.4 Test2). An interval that ends
+        # before the authority window starts is a stale instrument and is
+        # rejected below.
+        llm_duration_s = _r3_leg_span_seconds(env) + 120
         llm_interval_s = 1.0 if cfg.full_physics else 0.5
         queue_probe_duration_s = max(
             int(env.get("R3_EG34_TEST2_DURATION_S", "60")) + 180,
             240,
         )
+        queue_probe_log_path = cfg.logs_dir / "queue_liveness_probe.log"
+        llm_load_log_path = cfg.logs_dir / "llm_background_load.log"
+        queue_probe_log_handle = queue_probe_log_path.open("w", encoding="utf-8")
+        llm_load_log_handle = llm_load_log_path.open("w", encoding="utf-8")
         queue_probe_proc = subprocess.Popen(
             [
                 sys.executable,
@@ -1122,9 +1397,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             ],
             cwd=str(cfg.repo_root),
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=queue_probe_log_handle,
             stderr=subprocess.STDOUT,
-            text=True,
         )
         llm_load_artifact = cfg.artifact_dir / "phase8_llm_perf_probe.json"
         llm_load_proc = subprocess.Popen(
@@ -1140,38 +1414,198 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             ],
             cwd=str(cfg.repo_root),
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=llm_load_log_handle,
             stderr=subprocess.STDOUT,
-            text=True,
         )
-        run_step(
-            "r3_ingestion_under_fire",
-            [sys.executable, "scripts/r3/ingestion_under_fire.py"],
-        )
-        if llm_load_proc is not None:
-            llm_load_proc.wait(timeout=llm_duration_s + 120)
-        if queue_probe_proc is not None:
-            queue_probe_proc.wait(timeout=queue_probe_duration_s + 60)
-
-        run_step(
-            "collect_phase8_sql",
+        # Ordered-plan step 3: runner-wide CPU/starvation accounting for the
+        # whole R3 leg (generator, api, auth root, postgres, workers).
+        cpu_probe_artifact = cfg.artifact_dir / "phase8_runner_cpu_probe.json"
+        cpu_probe_log_path = cfg.logs_dir / "runner_cpu_probe.log"
+        cpu_probe_log_handle = cpu_probe_log_path.open("w", encoding="utf-8")
+        cpu_probe_proc = subprocess.Popen(
             [
                 sys.executable,
-                "scripts/phase8/collect_sql_probes.py",
-                "--db-url",
-                cfg.runtime_sync_dsn,
-                "--runtime-probe",
-                str(cfg.artifact_dir / "runtime_db_probe.json"),
-                "--llm-load-probe",
-                str(cfg.artifact_dir / "phase8_llm_perf_probe.json"),
-                "--out-dir",
-                str(cfg.artifact_dir / "sql"),
+                "scripts/phase8/runner_cpu_probe.py",
+                "--duration-s",
+                str(llm_duration_s),
+                "--interval-s",
+                "2.0",
+                "--artifact",
+                str(cpu_probe_artifact),
+                "--jsonl",
+                str(cfg.logs_dir / "runner_cpu_probe.jsonl"),
             ],
+            cwd=str(cfg.repo_root),
+            env=env,
+            stdout=cpu_probe_log_handle,
+            stderr=subprocess.STDOUT,
         )
-        sql_probe_summary = json.loads(
-            (cfg.artifact_dir / "sql" / "phase8_sql_probe_summary.json").read_text(
-                encoding="utf-8"
+        # Ordered-plan step 4: intra-postgres split for the same leg.
+        # pg_stat_statements (preloaded, track=all) is sampled here; the
+        # per-leg split is derived post-hoc from the artefact's samples.
+        pg_stat_probe_artifact = cfg.artifact_dir / "phase8_pg_stat_probe.json"
+        pg_stat_probe_log_path = cfg.logs_dir / "pg_stat_probe.log"
+        pg_stat_probe_log_handle = pg_stat_probe_log_path.open("w", encoding="utf-8")
+        pg_stat_probe_proc = subprocess.Popen(
+            [
+                sys.executable,
+                "scripts/phase8/pg_stat_probe.py",
+                "--duration-s",
+                str(llm_duration_s),
+                "--interval-s",
+                "5.0",
+                "--artifact",
+                str(pg_stat_probe_artifact),
+                "--jsonl",
+                str(cfg.logs_dir / "pg_stat_probe.jsonl"),
+            ],
+            cwd=str(cfg.repo_root),
+            env=env,
+            stdout=pg_stat_probe_log_handle,
+            stderr=subprocess.STDOUT,
+        )
+        r3_step_error: Exception | None = None
+        try:
+            run_step(
+                "r3_ingestion_under_fire",
+                [sys.executable, "scripts/r3/ingestion_under_fire.py"],
             )
+        except Exception as exc:  # noqa: BLE001 - diagnostics first, re-raised below
+            r3_step_error = exc
+        # Let the bounded helpers finish even when the R3 leg failed, so a
+        # failing composed run still yields conduction and queue evidence.
+        try:
+            llm_load_returncode = llm_load_proc.wait(timeout=llm_duration_s + 180)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "llm_background_load.py did not exit before the wait deadline"
+            ) from exc
+        try:
+            queue_probe_returncode = queue_probe_proc.wait(
+                timeout=queue_probe_duration_s + 120
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "queue_liveness_probe.py did not exit before the wait deadline"
+            ) from exc
+        try:
+            cpu_probe_returncode = cpu_probe_proc.wait(
+                timeout=llm_duration_s + 180
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "runner_cpu_probe.py did not exit before the wait deadline"
+            ) from exc
+        try:
+            pg_stat_probe_returncode = pg_stat_probe_proc.wait(
+                timeout=llm_duration_s + 180
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "pg_stat_probe.py did not exit before the wait deadline"
+            ) from exc
+
+        r3_window = _extract_profile_window_best_effort(
+            cfg.logs_dir / "r3_ingestion_under_fire.log",
+            "EG3_4_Test2_Month18",
+        )
+        collect_phase8_sql_cmd = [
+            sys.executable,
+            "scripts/phase8/collect_sql_probes.py",
+            "--db-url",
+            cfg.runtime_sync_dsn,
+            "--runtime-probe",
+            str(cfg.artifact_dir / "runtime_db_probe.json"),
+            "--llm-load-probe",
+            str(llm_load_artifact),
+            "--out-dir",
+            str(cfg.artifact_dir / "sql"),
+        ]
+        if (
+            cfg.full_physics
+            and r3_window.get("window_start_utc")
+            and r3_window.get("window_end_utc")
+        ):
+            collect_phase8_sql_cmd += [
+                "--window-start",
+                str(r3_window["window_start_utc"]),
+                "--window-end",
+                str(r3_window["window_end_utc"]),
+            ]
+        collect_error: Exception | None = None
+        try:
+            run_step("collect_phase8_sql", collect_phase8_sql_cmd)
+        except Exception as exc:  # noqa: BLE001 - recorded in diagnostics
+            collect_error = exc
+        sql_summary_path = cfg.artifact_dir / "sql" / "phase8_sql_probe_summary.json"
+        sql_probe_summary: dict[str, Any] = {}
+        if sql_summary_path.exists():
+            sql_probe_summary = json.loads(sql_summary_path.read_text(encoding="utf-8"))
+        llm_probe_payload: dict[str, Any] = {}
+        if llm_load_artifact.exists():
+            try:
+                loaded = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    llm_probe_payload = loaded
+            except json.JSONDecodeError:
+                llm_probe_payload = {}
+        if r3_step_error is not None or collect_error is not None:
+            failure_diagnostics = {
+                "r3_step_error": str(r3_step_error) if r3_step_error else None,
+                "r3_test2": r3_window,
+                "llm_load_returncode": llm_load_returncode,
+                "llm_load_status": llm_probe_payload.get("status"),
+                "llm_load_error": llm_probe_payload.get("error"),
+                "llm_load_dispatched_count": llm_probe_payload.get("dispatched_count"),
+                "llm_load_started_at": llm_probe_payload.get("started_at"),
+                "llm_load_finished_at": llm_probe_payload.get("finished_at"),
+                "queue_probe_returncode": queue_probe_returncode,
+                "cpu_probe_returncode": cpu_probe_returncode,
+                "pg_stat_probe_returncode": pg_stat_probe_returncode,
+                "collect_phase8_sql_error": str(collect_error) if collect_error else None,
+                "perf_window": sql_probe_summary.get("perf_window"),
+                "perf_composed_llm_calls": sql_probe_summary.get(
+                    "perf_composed_llm_calls"
+                ),
+                "perf_composed_llm_api_calls": sql_probe_summary.get(
+                    "perf_composed_llm_api_calls"
+                ),
+                "perf_composed_llm_audit_calls": sql_probe_summary.get(
+                    "perf_composed_llm_audit_calls"
+                ),
+                "perf_revenue_ledger_rows_during_window": sql_probe_summary.get(
+                    "perf_revenue_ledger_rows_during_window"
+                ),
+            }
+            (
+                cfg.artifact_dir / "phase8_failure_diagnostics.json"
+            ).write_text(
+                json.dumps(failure_diagnostics, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            try:
+                _run_logged(
+                    cfg,
+                    name="compose_logs_failure",
+                    cmd=[
+                        "docker",
+                        "compose",
+                        "-f",
+                        "docker-compose.e2e.yml",
+                        "logs",
+                        "--no-color",
+                    ],
+                    env=env,
+                )
+            except Exception:  # noqa: BLE001 - diagnostics are best-effort
+                pass
+        if r3_step_error is not None:
+            raise r3_step_error
+        if collect_error is not None:
+            raise collect_error
+        r3_profile = _extract_profile_metrics_from_r3_log(
+            cfg.logs_dir / "r3_ingestion_under_fire.log",
+            "EG3_4_Test2_Month18",
         )
         perf_llm_calls = int(sql_probe_summary.get("perf_composed_llm_calls", 0))
         perf_llm_api_calls = int(
@@ -1183,15 +1617,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         perf_ledger_rows = int(
             sql_probe_summary.get("perf_revenue_ledger_rows_during_window", 0)
         )
-        llm_probe_dispatched = 0
-        if perf_llm_calls <= 0:
-            if llm_load_artifact.exists():
-                llm_probe = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
-                llm_probe_dispatched = int(llm_probe.get("dispatched_count", 0))
-        r3_profile = _extract_profile_metrics_from_r3_log(
-            cfg.logs_dir / "r3_ingestion_under_fire.log",
-            "EG3_4_Test2_Month18",
-        )
+        llm_probe_dispatched = int(llm_probe_payload.get("dispatched_count", 0) or 0)
         target_request_count = int(r3_profile.get("target_request_count", 0) or 0)
         observed_request_count = int(r3_profile.get("observed_request_count", 0) or 0)
         status_counts = r3_profile.get("http_status_counts", {})
@@ -1253,6 +1679,11 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "Composed performance evidence invalid: non-zero HTTP error rate"
             )
 
+        if not queue_probe_artifact.exists():
+            raise RuntimeError(
+                "Worker liveness probe invalid: artifact missing "
+                f"({queue_probe_artifact.name})"
+            )
         worker_probe = json.loads(queue_probe_artifact.read_text(encoding="utf-8"))
         worker_summary = (
             worker_probe.get("summary", {}) if isinstance(worker_probe, dict) else {}
@@ -1274,10 +1705,28 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             raise RuntimeError(
                 "Worker liveness probe invalid: queue depth never increased above zero"
             )
-        # Kombu's SQL transport can keep rows invisible and stable while workers still consume tasks.
-        # For full-physics, prefer explicit queue drain or composed worker activity evidence,
-        # but do not hard-fail if neither is observed on hosted runners.
-        llm_activity_evidence = perf_llm_calls > 0 or llm_probe_dispatched > 0
+
+        # Fail closed: a missing or failed helper, a stale or mismatched
+        # interval, or absent conduction fails the gate. The workload, the
+        # bars and the statistical cage are unchanged.
+        composed_instrumentation = _validate_composed_instrumentation(
+            full_physics=cfg.full_physics,
+            llm_load_artifact=llm_load_artifact,
+            llm_load_log=llm_load_log_path,
+            queue_probe_log=queue_probe_log_path,
+            cpu_probe_artifact=cpu_probe_artifact,
+            cpu_probe_log=cpu_probe_log_path,
+            pg_stat_probe_artifact=pg_stat_probe_artifact,
+            pg_stat_probe_log=pg_stat_probe_log_path,
+            llm_load_returncode=llm_load_returncode,
+            queue_probe_returncode=queue_probe_returncode,
+            cpu_probe_returncode=cpu_probe_returncode,
+            pg_stat_probe_returncode=pg_stat_probe_returncode,
+            worker_probe=worker_probe,
+            r3_profile=r3_profile,
+            perf_llm_calls=perf_llm_calls,
+        )
+        llm_activity_evidence = perf_llm_calls > 0
 
         # CI subset is a sanity gate only; authoritative EG3.4 certification is full physics only.
         gates[_eg85_gate_name(run_authority)] = "pass"
@@ -1305,6 +1754,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "llm_api_calls_during_window": perf_llm_api_calls,
             "llm_audit_rows_during_window": perf_llm_audit_calls,
             "ledger_rows_written_during_window": perf_ledger_rows,
+            "llm_probe_dispatched": llm_probe_dispatched,
+            "composed_instrumentation": composed_instrumentation,
             "worker_liveness": {
                 "sample_count": worker_sample_count,
                 "peak_queue_depth": worker_peak_depth,
@@ -1353,6 +1804,12 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 queue_probe_proc.wait(timeout=5)
             except Exception:  # noqa: BLE001
                 queue_probe_proc.kill()
+        for handle in (llm_load_log_handle, queue_probe_log_handle):
+            if handle is not None:
+                try:
+                    handle.close()
+                except Exception:  # noqa: BLE001
+                    pass
         try:
             _run_logged(
                 cfg,
@@ -1405,6 +1862,9 @@ def main() -> int:
         return_code = 0
     except Exception as exc:  # noqa: BLE001
         summary["error"] = str(exc)
+        print(f"PHASE8_PACK_FAILURE: {exc}", file=sys.stderr)
+        for line in traceback.format_exc().splitlines():
+            print(f"PHASE8_PACK_TRACEBACK: {line}", file=sys.stderr)
         return_code = 1
     finally:
         summary["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

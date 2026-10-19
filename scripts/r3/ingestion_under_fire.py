@@ -311,7 +311,9 @@ async def _http_fire_rate_controlled(
     timeout_s: float,
     target_rps: float,
     duration_s: int,
-) -> tuple[dict[str, int], int, int, list[float], float, int]:
+) -> tuple[
+    dict[str, int], int, int, list[float], float, int, list[float], list[float]
+]:
     if not requests:
         raise RuntimeError("Rate-controlled fire requires at least one request template.")
     if target_rps <= 0:
@@ -324,12 +326,28 @@ async def _http_fire_rate_controlled(
     timeouts = 0
     connection_errors = 0
     latencies_ms: list[float] = []
+    # XXI P3 step 3: client-side starvation instrumentation (observation
+    # only; no threshold reads these). send_lag_ms = actual send start
+    # minus the rate-controller's schedule for that request; sem_wait_ms
+    # = time spent queued behind the asyncio semaphore. A starved runner
+    # inflates both while server-side work is unchanged.
+    send_lag_ms: list[float] = []
+    sem_wait_ms: list[float] = []
     total_requests = max(1, int(round(target_rps * duration_s)))
     attempts = max(1, _env_int("R3_HTTP_ATTEMPTS", 5))
 
-    async def _one(url: str, headers: dict[str, str], body: bytes) -> None:
+    async def _one(
+        url: str,
+        headers: dict[str, str],
+        body: bytes,
+        scheduled_at: float,
+        enqueued_at: float,
+    ) -> None:
         nonlocal timeouts, connection_errors
         async with sem:
+            acquired_at = time.perf_counter()
+            send_lag_ms.append((acquired_at - scheduled_at) * 1000.0)
+            sem_wait_ms.append((acquired_at - enqueued_at) * 1000.0)
             transient_request_error = False
             for attempt in range(attempts):
                 request_started = time.perf_counter()
@@ -365,11 +383,23 @@ async def _http_fire_rate_controlled(
         if delay_s > 0:
             await asyncio.sleep(delay_s)
         url, headers, body = requests[i % len(requests)]
-        tasks.append(asyncio.create_task(_one(url, headers, body)))
+        enqueued_at = time.perf_counter()
+        tasks.append(
+            asyncio.create_task(_one(url, headers, body, scheduled_at, enqueued_at))
+        )
 
     await asyncio.gather(*tasks)
     elapsed_s = time.perf_counter() - started
-    return status_counts, timeouts, connection_errors, latencies_ms, elapsed_s, total_requests
+    return (
+        status_counts,
+        timeouts,
+        connection_errors,
+        latencies_ms,
+        elapsed_s,
+        total_requests,
+        send_lag_ms,
+        sem_wait_ms,
+    )
 
 
 async def _wait_for_http_ready(
@@ -416,6 +446,10 @@ def _percentile(values: list[float], pct: float) -> float | None:
     rank = math.ceil((pct / 100.0) * len(ordered)) - 1
     rank = max(0, min(rank, len(ordered) - 1))
     return ordered[rank]
+
+
+def _round_or_none(value: float | None, digits: int = 3) -> float | None:
+    return round(value, digits) if value is not None else None
 
 
 def _database_name_from_dsn(dsn: str) -> str:
@@ -654,6 +688,98 @@ async def db_duplicate_canonical_keys_between(
     )
 
 
+async def db_activity_trace_sample(
+    conn: asyncpg.Connection, database_name: str
+) -> dict[str, object]:
+    """One intra-leg pg_stat_activity snapshot (P3 stage-timing evidence).
+
+    Observation only: classifies every client backend by state and wait
+    event, plus long-open-transaction counts. The before/after
+    connection snapshots cannot see intra-storm queueing (pools held
+    across relay round-trips show as idle ClientRead, lock waits show
+    here). Never affects pass/fail.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT state AS state,
+               COALESCE(wait_event_type, '-') AS wait_type,
+               COALESCE(wait_event, '-') AS wait_event,
+               COUNT(*)::int AS n
+        FROM pg_stat_activity
+        WHERE datname = $1 AND backend_type = 'client backend'
+        GROUP BY 1, 2, 3
+        ORDER BY 4 DESC
+        """,
+        database_name,
+    )
+    holding = await conn.fetch(
+        """
+        SELECT COALESCE(s.wait_event, '-') AS wait_event,
+               COUNT(*)::int AS n,
+               LEFT(REGEXP_REPLACE(COALESCE(s.query, ''), '\\s+', ' ', 'g'),
+                    120) AS query_head,
+               MAX(COALESCE(EXTRACT(EPOCH FROM (now() - s.query_start)),
+                            0))::float AS max_query_s
+        FROM pg_stat_activity AS s
+        WHERE s.datname = $1 AND s.backend_type = 'client backend'
+          AND s.state = 'active' AND s.pid <> pg_backend_pid()
+        GROUP BY 1, 3
+        ORDER BY 2 DESC
+        LIMIT 12
+        """,
+        database_name,
+    )
+    long_txn = await conn.fetchval(
+        """
+        SELECT COUNT(*)::int FROM pg_stat_activity
+        WHERE datname = $1 AND backend_type = 'client backend'
+          AND xact_start IS NOT NULL
+          AND now() - xact_start > interval '5 seconds'
+        """,
+        database_name,
+    )
+    return {
+        "groups": [
+            {"state": r["state"], "wait_type": r["wait_type"],
+             "wait_event": r["wait_event"], "n": int(r["n"])}
+            for r in rows
+        ],
+        "holding_queries": [
+            {"wait_event": h["wait_event"], "n": int(h["n"]),
+             "query_head": h["query_head"],
+             "max_query_s": float(h["max_query_s"])}
+            for h in holding
+        ],
+        "long_open_xact_count": int(long_txn or 0),
+    }
+
+
+async def db_activity_trace_during(
+    conn: asyncpg.Connection,
+    database_name: str,
+    stop: "asyncio.Event",
+    interval_s: float = 2.0,
+) -> list[dict[str, object]]:
+    """Sample db_activity_trace_sample until stop is set. Best-effort."""
+    import asyncio as _asyncio
+
+    samples: list[dict[str, object]] = []
+    while not stop.is_set():
+        try:
+            sample = await db_activity_trace_sample(conn, database_name)
+            samples.append(sample)
+        except Exception:
+            break
+        try:
+            await _asyncio.wait_for(stop.wait(), timeout=interval_s)
+            break  # stop was set: leg over, no more samples.
+        except _asyncio.TimeoutError:
+            continue  # normal sampling tick.
+        except Exception:
+            break
+    return samples
+
+
 async def db_connection_snapshot(conn: asyncpg.Connection, database_name: str) -> dict[str, int]:
     row = await conn.fetchrow(
         """
@@ -777,7 +903,16 @@ async def run_null_benchmark_gate(
             {"Content-Type": "application/json"},
             b"{}",
         )]
-        status_counts, timeouts, conn_errors, latencies_ms, elapsed_s, target_request_count = await _http_fire_rate_controlled(
+        (
+            status_counts,
+            timeouts,
+            conn_errors,
+            latencies_ms,
+            elapsed_s,
+            target_request_count,
+            send_lag_ms,
+            sem_wait_ms,
+        ) = await _http_fire_rate_controlled(
             client,
             request_templates,
             concurrency=concurrency,
@@ -833,6 +968,18 @@ async def run_null_benchmark_gate(
             "http_connection_errors": conn_errors,
             "client_stack": "httpx.AsyncClient",
             "concurrency_model": "asyncio-semaphore",
+            # XXI P3 step 3: client-side scheduling diagnostics
+            # (observation only).
+            "send_lag_p50_ms": _round_or_none(_percentile(send_lag_ms, 50)),
+            "send_lag_p95_ms": _round_or_none(_percentile(send_lag_ms, 95)),
+            "send_lag_max_ms": _round_or_none(_percentile(send_lag_ms, 100)),
+            "send_lag_over_1000ms_count": sum(
+                1 for value in send_lag_ms if value > 1000.0
+            ),
+            "semaphore_wait_p50_ms": _round_or_none(_percentile(sem_wait_ms, 50)),
+            "semaphore_wait_p95_ms": _round_or_none(_percentile(sem_wait_ms, 95)),
+            "semaphore_wait_max_ms": _round_or_none(_percentile(sem_wait_ms, 100)),
+            "client_drain_s": round(max(0.0, elapsed_s - float(duration_s)), 4),
         },
     )
 
@@ -1594,14 +1741,38 @@ async def scenario_s8_perf_gate(
     )
 
     resource_before = await db_connection_snapshot(admin_conn, runtime_database_name)
-    status_counts, timeouts, conn_errors, latency_ms, elapsed_s, target_request_count = await _http_fire_rate_controlled(
-        client,
-        request_templates,
-        concurrency=max(1, concurrency),
-        timeout_s=timeout_s,
-        target_rps=profile.target_rps,
-        duration_s=profile.duration_s,
+    import asyncio as _asyncio_trace
+
+    _trace_stop = _asyncio_trace.Event()
+    _trace_task = _asyncio_trace.ensure_future(
+        db_activity_trace_during(
+            admin_conn, runtime_database_name, _trace_stop
+        )
     )
+    try:
+        (
+            status_counts,
+            timeouts,
+            conn_errors,
+            latency_ms,
+            elapsed_s,
+            target_request_count,
+            send_lag_ms,
+            sem_wait_ms,
+        ) = await _http_fire_rate_controlled(
+            client,
+            request_templates,
+            concurrency=max(1, concurrency),
+            timeout_s=timeout_s,
+            target_rps=profile.target_rps,
+            duration_s=profile.duration_s,
+        )
+    finally:
+        _trace_stop.set()
+    try:
+        db_activity_trace = await _asyncio_trace.wait_for(_trace_task, timeout=15.0)
+    except Exception:
+        db_activity_trace = []
     test_end_utc = _now_utc()
     resource_after = await db_connection_snapshot(admin_conn, runtime_database_name)
 
@@ -1687,6 +1858,27 @@ async def scenario_s8_perf_gate(
             "resource_stable": resource_stable,
             "resource_snapshot_before": resource_before,
             "resource_snapshot_after": resource_after,
+            # XXI P3: intra-leg DB activity trace (observation only).
+            # Point snapshots before/after cannot see intra-storm
+            # queueing; this trace shows, per 2s sample, where client
+            # backends actually spent the leg (active vs idle/ClientRead
+            # vs lock/IO waits, long open transactions). Informational:
+            # no threshold reads it and `passed` ignores it.
+            "db_activity_trace": db_activity_trace,
+            # XXI P3 step 3: client-side scheduling diagnostics (observation
+            # only). elapsed overruns quantify a starved loadgen; these
+            # fields attribute them between the schedule loop, the
+            # semaphore, and the end-of-fire drain.
+            "send_lag_p50_ms": _round_or_none(_percentile(send_lag_ms, 50)),
+            "send_lag_p95_ms": _round_or_none(_percentile(send_lag_ms, 95)),
+            "send_lag_max_ms": _round_or_none(_percentile(send_lag_ms, 100)),
+            "send_lag_over_1000ms_count": sum(
+                1 for value in send_lag_ms if value > 1000.0
+            ),
+            "semaphore_wait_p50_ms": _round_or_none(_percentile(sem_wait_ms, 50)),
+            "semaphore_wait_p95_ms": _round_or_none(_percentile(sem_wait_ms, 95)),
+            "semaphore_wait_max_ms": _round_or_none(_percentile(sem_wait_ms, 100)),
+            "client_drain_s": round(max(0.0, elapsed_s - float(profile.duration_s)), 4),
             "window_start_utc": test_start_utc.isoformat(),
             "window_end_utc": test_end_utc.isoformat(),
             "replay_canonical_rows_for_key": replay_canonical,

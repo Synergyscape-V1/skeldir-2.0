@@ -19,6 +19,7 @@ and exits 0. Otherwise exits 1.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import sys
@@ -65,7 +66,7 @@ def _api_get_json(url: str, *, token: str) -> Dict[str, Any]:
             last_error = exc
             if exc.code < 500 or attempt == 3:
                 raise
-        except urllib.error.URLError as exc:
+        except (urllib.error.URLError, http.client.HTTPException) as exc:
             last_error = exc
             if attempt == 3:
                 raise
@@ -79,11 +80,13 @@ def _collect_paginated_items(
     endpoint: str,
     token: str,
     payload_key: str,
+    extra_query: str = "",
 ) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     page = 1
     while True:
-        url = f"{api_url}/repos/{repo}/{endpoint}?per_page=100&page={page}"
+        prefix = f"{extra_query}&" if extra_query else ""
+        url = f"{api_url}/repos/{repo}/{endpoint}?{prefix}per_page=100&page={page}"
         payload = _api_get_json(url, token=token)
         page_items = payload.get(payload_key, [])
         if not isinstance(page_items, list):
@@ -118,6 +121,7 @@ def _collect_run_jobs(api_url: str, repo: str, run_id: str, token: str) -> Dict[
         f"actions/runs/{run_id}/jobs",
         token,
         "jobs",
+        extra_query="filter=all",
     )
     mapping: Dict[str, str] = {}
     for j in jobs:

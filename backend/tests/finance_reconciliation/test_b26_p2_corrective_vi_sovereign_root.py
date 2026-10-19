@@ -1442,6 +1442,54 @@ def test_vi_taskmeta_failure_forge_refused_for_issuer() -> None:
         conn.close()
 
 
+def test_vi_taskmeta_failure_metadata_for_result_transport() -> None:
+    """C19 result-telemetry admission: the Celery result backend
+    connects as its own transport principal (app_celery_transport),
+    and FAILURE telemetry for a P2 execution task id must be storable
+    by that principal -- the VI fence guards non-transport principals
+    only, and its own contract comment names transports as the
+    legitimate writer. Before the transport-admission revision
+    (202610180001) this cell failed inside the trigger with a
+    permission-denied probe on b26_p2_task_authority_directory;
+    celery's database backend then retried _store_result with backoff
+    for ~8 minutes on pool=solo workers -- the exact wedge of the C19
+    context-robust closure red (run 39099129201)."""
+    ids = _seed_ingress("taskmeta-transport")
+    task_id = f"vi-transport-{uuid.uuid4().hex[:8]}"
+    _seed_dispatch(ids["tenant_id"], ids["ingress_id"], task_id)
+    import psycopg2
+
+    conn = psycopg2.connect(_role_dsn("app_celery_transport"))
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            # The store path celery actually performs: INSERT on the
+            # first result store, UPDATE on subsequent stores.
+            cur.execute(
+                "INSERT INTO public.celery_taskmeta (task_id, status,"
+                " date_done, traceback, name, worker)"
+                " VALUES (%s, 'FAILURE', now(), 'tb', 'x', 'w')",
+                (task_id,),
+            )
+            cur.execute(
+                "UPDATE public.celery_taskmeta SET status = 'FAILURE',"
+                " date_done = now() WHERE task_id = %s",
+                (task_id,),
+            )
+    finally:
+        conn.close()
+    admin = psycopg2.connect(_admin_dsn())
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "DELETE FROM public.celery_taskmeta WHERE task_id = %s",
+                (task_id,),
+            )
+    finally:
+        admin.close()
+
+
 def test_vi_dispatch_preexisting_failure_refuses() -> None:
     """Pre-registration closure: minting an execution over a recorded
     FAILURE row refuses -- genuine issuance never reuses a failed task

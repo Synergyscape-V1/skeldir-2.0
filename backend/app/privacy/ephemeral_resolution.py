@@ -169,6 +169,30 @@ async def resolve_session_candidate_with_ephemeral_substrate(
     return candidate_uuid
 
 
+def _resolution_write_is_noop(
+    row: Any,
+    *,
+    session_id: UUID,
+    now_utc: datetime,
+    expires_at: datetime,
+    source: str,
+) -> bool:
+    # The ON CONFLICT DO UPDATE is suppressed by its own
+    # observed_at <= now_utc guard whenever an existing observation is
+    # newer; when the binding is byte-identical the update would only
+    # rewrite updated_at. Skipping the statement in exactly those cases
+    # removes per-replay row-lock convoying on a single (tenant, key)
+    # row without changing the persisted state.
+    if row.observed_at > now_utc:
+        return True
+    return (
+        row.observed_at == now_utc
+        and row.session_id == session_id
+        and row.expires_at == expires_at
+        and row.source == source
+    )
+
+
 async def upsert_ephemeral_resolution_links(
     *,
     session: AsyncSession,
@@ -184,54 +208,98 @@ async def upsert_ephemeral_resolution_links(
 
     normalized_order_id = _normalize_resolution_key(order_id)
     if normalized_order_id is not None:
-        await session.execute(
-            insert(EphemeralOrderResolution)
-            .values(
-                tenant_id=tenant_id,
-                order_id=normalized_order_id,
-                session_id=session_id,
-                observed_at=now_utc,
-                expires_at=expires_at,
-                source=source,
-                created_at=now_utc,
-                updated_at=now_utc,
+        existing_order = (
+            await session.execute(
+                select(
+                    EphemeralOrderResolution.session_id,
+                    EphemeralOrderResolution.observed_at,
+                    EphemeralOrderResolution.expires_at,
+                    EphemeralOrderResolution.source,
+                )
+                .where(
+                    EphemeralOrderResolution.tenant_id == tenant_id,
+                    EphemeralOrderResolution.order_id == normalized_order_id,
+                )
+                .limit(1)
             )
-            .on_conflict_do_update(
-                index_elements=["tenant_id", "order_id"],
-                set_={
-                    "session_id": session_id,
-                    "observed_at": now_utc,
-                    "expires_at": expires_at,
-                    "source": source,
-                    "updated_at": now_utc,
-                },
-                where=EphemeralOrderResolution.observed_at <= now_utc,
+        ).first()
+        if existing_order is None or not _resolution_write_is_noop(
+            existing_order,
+            session_id=session_id,
+            now_utc=now_utc,
+            expires_at=expires_at,
+            source=source,
+        ):
+            await session.execute(
+                insert(EphemeralOrderResolution)
+                .values(
+                    tenant_id=tenant_id,
+                    order_id=normalized_order_id,
+                    session_id=session_id,
+                    observed_at=now_utc,
+                    expires_at=expires_at,
+                    source=source,
+                    created_at=now_utc,
+                    updated_at=now_utc,
+                )
+                .on_conflict_do_update(
+                    index_elements=["tenant_id", "order_id"],
+                    set_={
+                        "session_id": session_id,
+                        "observed_at": now_utc,
+                        "expires_at": expires_at,
+                        "source": source,
+                        "updated_at": now_utc,
+                    },
+                    where=EphemeralOrderResolution.observed_at <= now_utc,
+                )
             )
-        )
 
     normalized_click_id = _normalize_resolution_key(click_id)
     if normalized_click_id is not None:
-        await session.execute(
-            insert(EphemeralClickResolution)
-            .values(
-                tenant_id=tenant_id,
-                click_id=normalized_click_id,
-                session_id=session_id,
-                observed_at=now_utc,
-                expires_at=expires_at,
-                source=source,
-                created_at=now_utc,
-                updated_at=now_utc,
+        existing_click = (
+            await session.execute(
+                select(
+                    EphemeralClickResolution.session_id,
+                    EphemeralClickResolution.observed_at,
+                    EphemeralClickResolution.expires_at,
+                    EphemeralClickResolution.source,
+                )
+                .where(
+                    EphemeralClickResolution.tenant_id == tenant_id,
+                    EphemeralClickResolution.click_id == normalized_click_id,
+                )
+                .limit(1)
             )
-            .on_conflict_do_update(
-                index_elements=["tenant_id", "click_id"],
-                set_={
-                    "session_id": session_id,
-                    "observed_at": now_utc,
-                    "expires_at": expires_at,
-                    "source": source,
-                    "updated_at": now_utc,
-                },
-                where=EphemeralClickResolution.observed_at <= now_utc,
+        ).first()
+        if existing_click is None or not _resolution_write_is_noop(
+            existing_click,
+            session_id=session_id,
+            now_utc=now_utc,
+            expires_at=expires_at,
+            source=source,
+        ):
+            await session.execute(
+                insert(EphemeralClickResolution)
+                .values(
+                    tenant_id=tenant_id,
+                    click_id=normalized_click_id,
+                    session_id=session_id,
+                    observed_at=now_utc,
+                    expires_at=expires_at,
+                    source=source,
+                    created_at=now_utc,
+                    updated_at=now_utc,
+                )
+                .on_conflict_do_update(
+                    index_elements=["tenant_id", "click_id"],
+                    set_={
+                        "session_id": session_id,
+                        "observed_at": now_utc,
+                        "expires_at": expires_at,
+                        "source": source,
+                        "updated_at": now_utc,
+                    },
+                    where=EphemeralClickResolution.observed_at <= now_utc,
+                )
             )
-        )

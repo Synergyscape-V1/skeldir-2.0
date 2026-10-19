@@ -205,6 +205,29 @@ def upgrade() -> None:
         )
         """
     )
+    # Committed-root convergence: a full downgrade walk cascades every FK
+    # referencing public.tenants away (the 001-era teardown removes that
+    # table with CASCADE) while this table survives VII's downgrade, so the
+    # IF NOT EXISTS create above cannot restore the constraint on the
+    # re-upgrade. Re-assert it explicitly so downgrade-base/upgrade-head
+    # cycles stay canonical.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'public.b26_p2_evaluator_heartbeat'::regclass
+                  AND conname = 'b26_p2_evaluator_heartbeat_tenant_id_fkey'
+            ) THEN
+                ALTER TABLE public.b26_p2_evaluator_heartbeat
+                    ADD CONSTRAINT b26_p2_evaluator_heartbeat_tenant_id_fkey
+                    FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+                    ON DELETE CASCADE;
+            END IF;
+        END $$;
+        """
+    )
     op.execute(
         "ALTER TABLE public.b26_p2_evaluator_heartbeat ENABLE ROW LEVEL SECURITY"
     )

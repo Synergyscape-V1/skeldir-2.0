@@ -38,6 +38,8 @@ def main() -> int:
     parser.add_argument("--runtime-probe", required=True)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--llm-load-probe", required=False)
+    parser.add_argument("--window-start", required=False, default="")
+    parser.add_argument("--window-end", required=False, default="")
     args = parser.parse_args()
 
     runtime_probe = _read_runtime_probe(Path(args.runtime_probe))
@@ -143,11 +145,70 @@ def main() -> int:
         perf_composed_llm_api_calls = 0
         perf_composed_llm_audit_calls = 0
         perf_revenue_ledger_rows_during_window = 0
+        perf_window_start: str | None = None
+        perf_window_end: str | None = None
+        perf_window_source: str | None = None
         if llm_load_probe:
+            if bool(args.window_start) != bool(args.window_end):
+                raise RuntimeError(
+                    "Performance evidence window invalid: pass both --window-start "
+                    "and --window-end"
+                )
+            perf_window_start = args.window_start or llm_load_probe.get("started_at")
+            perf_window_end = args.window_end or llm_load_probe.get("finished_at")
+            perf_window_source = (
+                "authority_window"
+                if args.window_start and args.window_end
+                else "llm_load_interval"
+            )
+            if not perf_window_start or not perf_window_end:
+                raise RuntimeError(
+                    "Performance evidence window unavailable: no authority window "
+                    "and no load-helper interval"
+                )
+            perf_revenue_ledger_rows_during_window = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)::INTEGER
+                        FROM revenue_ledger
+                        WHERE tenant_id = :runtime_tenant_id
+                          AND created_at >= :started_at
+                          AND created_at <= :finished_at
+                        """
+                    ),
+                    {
+                        "runtime_tenant_id": tenant_id,
+                        "started_at": perf_window_start,
+                        "finished_at": perf_window_end,
+                    },
+                ).scalar_one()
+            )
+            # llm_api_calls and llm_call_audit are FORCE-RLS with a tenant+user
+            # predicate. The load helper seeds its own tenant and user, so the
+            # collector must bind both helper GUCs to see the conducted calls;
+            # under the runtime probe's RLS context these rows are invisible and
+            # the count reads zero regardless of real conduction.
+            helper_tenant_id = str(llm_load_probe.get("tenant_id") or "")
+            helper_user_id = str(llm_load_probe.get("user_id") or "")
+            if helper_tenant_id:
+                conn.execute(
+                    text(
+                        "SELECT set_config('app.current_tenant_id', :tenant_id, false)"
+                    ),
+                    {"tenant_id": helper_tenant_id},
+                )
+            if helper_user_id:
+                conn.execute(
+                    text(
+                        "SELECT set_config('app.current_user_id', :user_id, false)"
+                    ),
+                    {"user_id": helper_user_id},
+                )
             params = {
                 "tenant_id": llm_load_probe["tenant_id"],
-                "started_at": llm_load_probe["started_at"],
-                "finished_at": llm_load_probe["finished_at"],
+                "started_at": perf_window_start,
+                "finished_at": perf_window_end,
             }
             perf_api_calls = int(
                 conn.execute(
@@ -179,24 +240,6 @@ def main() -> int:
                     params,
                 ).scalar_one()
             )
-            perf_revenue_ledger_rows_during_window = int(
-                conn.execute(
-                    text(
-                        """
-                        SELECT COUNT(*)::INTEGER
-                        FROM revenue_ledger
-                        WHERE tenant_id = :runtime_tenant_id
-                          AND created_at >= :started_at
-                          AND created_at <= :finished_at
-                        """
-                    ),
-                    {
-                        "runtime_tenant_id": tenant_id,
-                        "started_at": llm_load_probe["started_at"],
-                        "finished_at": llm_load_probe["finished_at"],
-                    },
-                ).scalar_one()
-            )
             perf_composed_llm_api_calls = perf_api_calls
             perf_composed_llm_audit_calls = perf_audit_calls
             perf_composed_llm_calls = max(perf_api_calls, perf_audit_calls)
@@ -211,8 +254,9 @@ def main() -> int:
         "cost_correctness": cost_correctness,
         "pg_snapshot": pg_snapshot,
         "perf_window": {
-            "started_at": llm_load_probe.get("started_at") if llm_load_probe else None,
-            "finished_at": llm_load_probe.get("finished_at") if llm_load_probe else None,
+            "started_at": perf_window_start,
+            "finished_at": perf_window_end,
+            "source": perf_window_source,
         },
         "perf_composed_llm_api_calls": perf_composed_llm_api_calls,
         "perf_composed_llm_audit_calls": perf_composed_llm_audit_calls,

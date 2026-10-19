@@ -901,6 +901,46 @@ def _display_data_from_provider_text(raw_text: str) -> dict[str, object]:
     }
 
 
+def _qualified_match_verdict_status(source: MatchVerdictSource) -> str:
+    """XXI P1: presentation status under ingress authority and family law."""
+    if not source.ingress_has_current_authority:
+        return "unavailable"
+    normalized = normalize_match_verdict_status(source.status)
+    if source.provider == "shopify" and not source.event_family_law_current:
+        return "ambiguous" if normalized == "matched" else normalized
+    return normalized
+
+
+def _qualified_data_completeness(source: MatchVerdictSource) -> str:
+    """XXI P1: completeness semantics under ingress authority and family law."""
+    if not source.ingress_has_current_authority:
+        return "unavailable"
+    if source.provider == "shopify" and not source.event_family_law_current:
+        return "degraded"
+    return data_completeness_for_match_status(source.status)
+
+
+def _event_meaning_reason_code(source: MatchVerdictSource) -> str | None:
+    """XXI P1: consumer-visible event-meaning qualification.
+
+    Travels through the governed reason-code decision entry (XVIII
+    precedent; no new envelope field). Shopify rows cite the
+    event-family law version under which their meaning was
+    established; rows minted under a superseded law are disclosed as
+    such; every other row keeps the historical codes.
+    """
+    if not source.ingress_has_current_authority:
+        return "source_authority_not_current"
+    if source.provider != "shopify":
+        return None
+    version = source.event_family_law_version or "unknown"
+    if not source.event_family_law_current:
+        return f"event_family_law_superseded:{version}"
+    if version == "unknown":
+        return None
+    return f"event_family_law:{version}"
+
+
 def _match_verdict_payload(
     *,
     request: TrustEnvelopeBuildRequest,
@@ -961,27 +1001,25 @@ def _match_verdict_payload(
         # envelope schema is closed (additionalProperties forbidden)
         # and C14 fails closed on undeclared signed fields. The
         # degraded semantics travel through governed fields only.
-        "match_verdict_status": (
-            normalize_match_verdict_status(source.status)
-            if source.ingress_has_current_authority
-            else "unavailable"
-        ),
+        # XXI P1 (consumer-visible event meaning): the family law that
+        # established this verdict's meaning rides the same governed
+        # fields. A verdict established under a superseded event-family
+        # law never presents as verified: it reads ambiguous with
+        # amounts and authority kept, completeness reads degraded, and
+        # the reason-code entry cites the law version at mint. A
+        # current-law Shopify row cites its establishing version
+        # (event_family_law:vN) so the creation-window basis is
+        # checkable downstream; the (0,60]s indistinguishable kernel
+        # remains a recorded deviation, never a per-row claim.
+        "match_verdict_status": _qualified_match_verdict_status(source),
         "confidence_metadata": _confidence_unavailable(),
         "provenance_chain": build_match_verdict_provenance_chain(
             source=source,
             display_data=display_data,
             money_authority_projection=money_decision.external_projection(),
-            reason_code=(
-                None
-                if source.ingress_has_current_authority
-                else "source_authority_not_current"
-            ),
+            reason_code=_event_meaning_reason_code(source),
         ),
-        "data_completeness_status": (
-            data_completeness_for_match_status(source.status)
-            if source.ingress_has_current_authority
-            else "unavailable"
-        ),
+        "data_completeness_status": _qualified_data_completeness(source),
         "benchmark_metadata": unavailable_benchmark_metadata(),
         "policy_action_authority": read_only_policy_authority(),
         "fallback_applied": False,

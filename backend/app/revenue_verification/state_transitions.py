@@ -103,23 +103,52 @@ async def transition_stale_provisional_to_confirmed(
                           AND v.last_transition_at <= :fallback_transition_before
                       )
                   )
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM b23_revenue_events e
-                      WHERE e.tenant_id = v.tenant_id
-                        AND e.match_verdict_id = v.id
-                        AND (
-                            e.event_type IN (
-                                'partial_refund',
-                                'full_refund',
-                                'chargeback_opened',
-                                'chargeback_won',
-                                'chargeback_lost',
-                                'reversal'
-                            )
-                            OR e.is_gross_capture_correction = true
-                        )
-                  )
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM b23_revenue_events e
+                       WHERE e.tenant_id = v.tenant_id
+                         AND e.match_verdict_id = v.id
+                         AND (
+                             e.event_type IN (
+                                 'partial_refund',
+                                 'full_refund',
+                                 'chargeback_opened',
+                                 'chargeback_won',
+                                 'chargeback_lost',
+                                 'reversal'
+                             )
+                             OR e.is_gross_capture_correction = true
+                         )
+                   )
+                   -- XXI P1 (cohort confinement): a verdict whose
+                   -- establishing meaning predates the current
+                   -- event-family law never confirms by age. Cohort
+                   -- is lane-local and exact: a family law activates
+                   -- when its publication row is recorded, so a mint
+                   -- predating any newer law was established under a
+                   -- superseded law. Post-hoc distinction inside the
+                   -- old window is physically impossible (raw bodies
+                   -- never persist; lifecycle instants are transient),
+                   -- so the cohort shares one fate: provisional state,
+                   -- amounts, authority and ambiguous presentation are
+                   -- preserved (A.4 witness holds), and only the silent
+                   -- promotion to confirmed is withheld. Scoped to
+                   -- Shopify creation claims; all other providers and
+                   -- current-law rows confirm as before. A NULL mint
+                   -- instant fails closed (cannot prove current law).
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM b26_p2_publication_history h_new
+                       JOIN public.webhook_ingress_identities wi
+                         ON wi.id = v.webhook_ingress_identity_id
+                       WHERE h_new.law_kind = 'event-family-law'
+                         AND h_new.law_id = 'b26-p2-event-family-law'
+                         AND wi.provider = 'shopify'
+                         AND (
+                             wi.verified_at IS NULL
+                             OR h_new.recorded_at > wi.verified_at
+                         )
+                   )
                 ORDER BY COALESCE(v.provisional_expires_at, v.last_transition_at) ASC, v.id ASC
                 LIMIT :batch_size
                 FOR UPDATE SKIP LOCKED
