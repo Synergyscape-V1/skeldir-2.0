@@ -135,9 +135,13 @@ def _write_pg_stat_probe(
                 "track_setting": "all" if pgss_available else None,
                 "totals_first": {"statements": 150, "calls": 10, "total_exec_ms": 1.0},
                 "totals_last": {"statements": 160, "calls": 4000, "total_exec_ms": 900.0},
+                # Synthetic probe-artifact fixture: the query text below is a
+                # fake pg_stat_statements row used to exercise the composed-
+                # instrumentation validator; it is never executed.
                 "top_statements_by_delta": [
                     {
                         "qid": "1",
+                        # RAW_SQL_ALLOWLIST: fixture text only, never executed.
                         "q": "INSERT INTO attribution_events ...",
                         "calls": 3990,
                         "total_exec_ms": 899.0,
