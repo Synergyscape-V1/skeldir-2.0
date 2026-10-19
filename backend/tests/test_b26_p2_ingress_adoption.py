@@ -28,6 +28,7 @@ from app.ingestion.event_service import (  # noqa: E402
     _ingress_sovereign_mismatch,
     _is_b26_p2_adoption_error,
     _is_ingress_collision_integrity_error,
+    _session_may_author_verified_ingress,
 )
 
 pytestmark = pytest.mark.unit_pure
@@ -209,3 +210,26 @@ async def test_no_collision_returns_none():
         session, tenant_id=uuid4(), incoming=_incoming(), event_id=uuid4()
     )
     assert adopted is None
+
+
+def _bind_session(username):
+    url = SimpleNamespace(username=username)
+    return SimpleNamespace(get_bind=lambda: SimpleNamespace(url=url))
+
+
+def test_session_may_author_verified_ingress_mirrors_trigger_principal_set():
+    for username in ("app_ingress", "migration_owner", "postgres"):
+        assert _session_may_author_verified_ingress(_bind_session(username)) is True
+    for username in ("app_user", "APP_USER", " read_only "):
+        assert _session_may_author_verified_ingress(_bind_session(username)) is False
+    assert _session_may_author_verified_ingress(_bind_session("App_Ingress")) is True
+
+
+def test_session_may_author_verified_ingress_fails_open_on_unknown_bind():
+    assert _session_may_author_verified_ingress(_bind_session(None)) is True
+
+    class _Broken:
+        def get_bind(self):
+            raise RuntimeError("no bind")
+
+    assert _session_may_author_verified_ingress(_Broken()) is True

@@ -583,6 +583,34 @@ def _is_b26_p2_verified_authorship_error(error: Exception) -> bool:
     return "b26_p2_verified_authorship_refused" in str(error).lower()
 
 
+_VERIFIED_INGRESS_AUTHORING_SESSION_USERS = frozenset(
+    {"app_ingress", "migration_owner", "postgres"}
+)
+
+
+def _session_may_author_verified_ingress(session: AsyncSession) -> bool:
+    """True when this session's DB principal may author authenticity_verified.
+
+    Mirrors the database authorship gate
+    (b26_p2_enforce_ingress_verified_authorship: session_user IN
+    app_ingress/migration_owner/postgres). The gate remains the sole
+    enforcement point; this predicate only lets a session that can never
+    pass the gate avoid a deterministically refused write. An unreadable
+    or unknown bind fails toward the verified attempt (unchanged
+    behavior).
+    """
+    try:
+        url = getattr(session.get_bind(), "url", None)
+        username = getattr(url, "username", None)
+    except Exception:
+        return True
+    if username is None:
+        return True
+    return (
+        str(username).strip().lower() in _VERIFIED_INGRESS_AUTHORING_SESSION_USERS
+    )
+
+
 async def _ingress_needs_redrive(
     session: AsyncSession, *, tenant_id: UUID, idempotency_key: str
 ) -> bool:
@@ -1796,10 +1824,34 @@ class EventIngestionService:
             # can never see the uncommitted event, so pre-commit
             # ingress writes are structurally impossible here.
             pending_finalization: dict[str, Any] | None = None
-            session.add(event)
-            session.add(raw_event_payload)
-            if webhook_identity_payload is not None:
-                session.add(WebhookIngressIdentity(**webhook_identity_payload))
+            # B2.6-P2 Corrective XI efficiency: the database authorship
+            # gate refuses authenticity_verified inserts from sessions
+            # whose DB principal is not the dedicated ingress principal.
+            # For such a session the verified first flush is
+            # deterministically doomed; route this arrival directly onto
+            # the in-transaction precursor path (identical committed
+            # outcome: the same rollback, re-add and precursor flush as
+            # the refusal branch below). The gate remains the sole
+            # enforcement point; only the refused write is skipped.
+            direct_precursor = (
+                webhook_identity_payload is not None
+                and _is_verified_intended(webhook_identity_payload)
+                and not _session_may_author_verified_ingress(session)
+            )
+            if direct_precursor and webhook_identity_payload is not None:
+                await session.rollback()
+                session.add(event)
+                session.add(raw_event_payload)
+                session.add(
+                    WebhookIngressIdentity(
+                        **_precursor_payload(webhook_identity_payload)
+                    )
+                )
+            else:
+                session.add(event)
+                session.add(raw_event_payload)
+                if webhook_identity_payload is not None:
+                    session.add(WebhookIngressIdentity(**webhook_identity_payload))
             try:
                 await session.flush()  # Trigger constraint validation before commit
             except Exception as flush_error:
@@ -1904,6 +1956,15 @@ class EventIngestionService:
                             webhook_identity_payload,
                             auth_consequence,
                         )
+            else:
+                if direct_precursor and webhook_identity_payload is not None:
+                    # XIII: the precursor flush committed; P travels as
+                    # an in-memory HMAC snapshot to the post-commit
+                    # finalizer exactly as in the refusal path above.
+                    pending_finalization = _finalization_payload(
+                        webhook_identity_payload,
+                        auth_consequence,
+                    )
             if order_resolution_key is not None:
                 await upsert_durable_commerce_identity_link(
                     session=session,
