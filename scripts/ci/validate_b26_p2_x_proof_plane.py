@@ -57,8 +57,7 @@ def _run_validator(name: str, args: list[str]) -> tuple[int, str]:
         capture_output=True, text=True, timeout=600,
         cwd=str(REPO_ROOT),
     )
-    first = (proc.stdout or "").splitlines()
-    return proc.returncode, first[0] if first else ""
+    return proc.returncode, (proc.stdout or "").strip()
 
 
 def _psycopg():
@@ -381,7 +380,20 @@ def _pf04_canary_independence(admin_dsn: str) -> tuple[bool, str]:
         return False, f"authority_not_green:{first[:120]}"
     import re as _re
 
-    match = _re.search(r"\{.*\}", first, _re.DOTALL)
+    payload_match = _re.search(r"\{.*\}", first, _re.DOTALL)
+    if not payload_match:
+        return False, "authority_not_green:missing_json_payload"
+    try:
+        payload = json.loads(payload_match.group(0))
+    except json.JSONDecodeError:
+        return False, "authority_not_green:malformed_json_payload"
+    canaries = payload.get("checks", {}).get("live_canaries")
+    if (
+        not isinstance(canaries, dict)
+        or not canaries
+        or not all(value is True for value in canaries.values())
+    ):
+        return False, "authority_not_green:canaries_not_green"
     return True, "protected_canary_battery_self_contained"
 
 
@@ -777,7 +789,8 @@ def main() -> int:
                                     "202609300007",
                                     "202609300008",
                                     "202609300009",
-                                    "202610180001"):
+                                    "202610180001",
+                                    "202610180002"):
                         violations.append(
                             f"x_proof_plane_unexpected_head:{head}"
                         )
@@ -799,7 +812,8 @@ def main() -> int:
                           "202609300007",
                           "202609300008",
                           "202609300009",
-                          "202610180001"):
+                          "202610180001",
+                          "202610180002"):
                 battery: list[tuple[str, object]] = [
                     ("PF-X-01", lambda: _pf01_protected_adjudication(args.dsn)),
                     ("PF-X-02", _pf02_history_fail_closed),

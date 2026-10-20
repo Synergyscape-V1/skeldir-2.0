@@ -1382,11 +1382,12 @@ def main() -> int:
         )
         # Follow-up: the head advances to the ledger-RLS revision, then
         # family-law v4, then the F5 construction grant, then the C19
-        # result-telemetry transport admission; the 300009..300006 (XXI)
-        # and XX heads must remain ancestors (linear ancestry, no forks).
-        if "202610180001" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xxi")
-        details["migration_head"] = "202610180001"
+        # result-telemetry transport admission, then Corrective XXII;
+        # the 300009..300006 (XXI) and XX heads must remain ancestors
+        # (linear ancestry, no forks).
+        if "202610180002" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xxii")
+        details["migration_head"] = "202610180002"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",

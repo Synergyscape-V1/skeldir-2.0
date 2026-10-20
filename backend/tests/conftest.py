@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import ProgrammingError
 
 from app.db.dsn import to_sync_postgres_dsn
 from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
@@ -26,6 +25,7 @@ os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
 os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
 os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
 os.environ.setdefault("PLATFORM_TOKEN_KEY_ID", "test-key")
+os.environ.setdefault("B26_P2_HISTORY_WITNESS_REQUIRED", "false")
 
 # httpx/httpcore may emit INFO records with incompatible %-format args under pytest capture.
 # Keep backend test logging deterministic and focused on app-level signals.
@@ -78,11 +78,11 @@ else:
         os.environ["DATABASE_URL"] = "postgresql://app_user:app_user@127.0.0.1:5432/skeldir"
         print("[B0.5.3.3 Gate C] Local dev: Using localhost DSN fallback (override with DATABASE_URL env var)")
 
-from app.db.session import engine
+from app.db.session import engine  # noqa: E402
 
 # B0.5.3.3 Gate C: Trigger Celery configuration AFTER DATABASE_URL validation
 # This ensures settings is imported with validated credentials
-from app.celery_app import _ensure_celery_configured
+from app.celery_app import _ensure_celery_configured  # noqa: E402
 _ensure_celery_configured()
 
 _RUNTIME_IDENTITY_VERIFIED = False

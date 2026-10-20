@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional, Annotated
 
-from fastapi import APIRouter, Depends, Request, Response, Security, status
+from fastapi import APIRouter, Request, Response, Security, status
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from uuid import UUID, uuid4
@@ -291,8 +291,13 @@ async def api_health_detailed(
 
 @router.get("/api/health/ready")
 async def api_readiness(response: Response) -> dict:
-    """Contract alias to readiness semantics."""
-    readiness_result = _evaluate_security_readiness()
+    """Contract alias to readiness semantics.
+
+    This alias must enforce the same construction-authority gate as
+    /health/ready. A secrets-only alias would let a binary built for an
+    older schema keep receiving traffic after the database advanced.
+    """
+    readiness_result = await _evaluate_readiness()
     if readiness_result["status"] != "ok":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {

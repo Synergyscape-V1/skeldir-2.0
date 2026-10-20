@@ -58,11 +58,14 @@ def _clean_history_integrity(monkeypatch) -> None:
     on the dummy session instead of exercising the assertions below.
     """
 
-    async def _clean(_session: object) -> tuple[bool, str]:
+    async def _clean(_session: object, **_kwargs: object) -> tuple[bool, str]:
         return True, ""
 
     monkeypatch.setattr(
         "app.trust.builder.read_history_integrity_status", _clean
+    )
+    monkeypatch.setattr(
+        "app.trust.builder.read_source_money_conservation_status", _clean
     )
 
 

@@ -1126,8 +1126,23 @@ async def read_history_integrity_status(
             moment = moment.replace(tzinfo=timezone.utc)
         if (now - moment).total_seconds() > HISTORY_INTEGRITY_HORIZON_SECONDS:
             return False, "history_integrity_observation_stale"
+        if (moment - now).total_seconds() > HISTORY_INTEGRITY_HORIZON_SECONDS:
+            return False, "history_integrity_observation_future"
     if str(row["observer_violations"] or "").strip():
         return False, "history_integrity_violations_present"
+    # The observation row is writable by the maintenance principal and
+    # its author column is not a signature. Re-read the live protection
+    # and continuity verdict independently through the owner-context
+    # DEFINER reader, so a planted "clean" observation cannot hide a
+    # truncated, broken, or privilege-widened ledger.
+    violation_result = await db_session.execute(
+        text("SELECT public.b26_p2_read_history_violations()")
+    )
+    scalar_reader = getattr(violation_result, "scalar", None)
+    if scalar_reader is not None:
+        live_violations = str(scalar_reader() or "").strip()
+        if live_violations:
+            return False, "history_integrity_violations_present"
     # Live continuity is read through the owner-context DEFINER
     # function: runtime roles hold no direct rights on the ledger
     # (XXI least privilege), and a direct SELECT would fail closed
@@ -1137,7 +1152,9 @@ async def read_history_integrity_status(
     live = (
         (
             await db_session.execute(
-                text("SELECT n, tip FROM"
+                text("SELECT n, tip,"
+                     " public.b26_p2_read_history_prefix_digest()"
+                     " AS prefix_digest FROM"
                      " public.b26_p2_read_history_continuity()")
             )
         )
@@ -1151,6 +1168,75 @@ async def read_history_integrity_status(
         # other mismatch refuses.
         if not (live["tip"] is None and row["ledger_tip"] is None):
             return False, "history_integrity_live_tip_diverged"
+    witness_ok, witness_reason = _verify_signed_history_witness(
+        ledger_count=int(live["n"] or 0),
+        ledger_tip_hash=live["tip"] or None,
+        ledger_prefix_digest=live.get("prefix_digest"),
+    )
+    if not witness_ok:
+        return False, witness_reason
+    return True, ""
+
+
+def _verify_signed_history_witness(
+    *,
+    ledger_count: int,
+    ledger_tip_hash: str | None,
+    ledger_prefix_digest: str | None = None,
+) -> tuple[bool, str]:
+    """Verify the out-of-database signed checkpoint against live state.
+
+    The database observation (and even the ledger chain) can be produced
+    by the same principal that rewrites the ledger. The signed journal is
+    held outside that principal's control and commits to the exact live
+    count and tip. Missing, stale, malformed, future-dated, or divergent
+    journals refuse issuance rather than degrading to ledger-only trust.
+    """
+    from app.core.config import settings  # noqa: PLC0415
+    from app.trust.history_witness import (  # noqa: PLC0415
+        HistoryWitnessError,
+        verify_journal,
+    )
+
+    if not settings.B26_P2_HISTORY_WITNESS_REQUIRED:
+        return True, ""
+    try:
+        verify_journal(
+            settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH,
+            public_key_path=settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
+            genesis_hash=settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH,
+            require_freshness=True,
+            freshness_seconds=settings.B26_P2_HISTORY_WITNESS_HORIZON_SECONDS,
+            expected_count=ledger_count,
+            expected_tip_hash=ledger_tip_hash,
+            expected_prefix_digest=ledger_prefix_digest,
+        )
+    except HistoryWitnessError as exc:
+        return False, f"history_integrity_witness_refused:{exc}"
+    return True, ""
+
+
+async def read_source_money_conservation_status(
+    db_session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    verdict_id: UUID,
+) -> tuple[bool, str]:
+    """Check that current verdict money is the lawful source continuation."""
+    result = await db_session.execute(
+        text(
+            "SELECT violation FROM"
+            " public.b26_p2_verify_source_money_conservation("
+            ":tenant_id, :verdict_id)"
+        ),
+        {"tenant_id": str(tenant_id), "verdict_id": str(verdict_id)},
+    )
+    scalars = getattr(result, "scalars", None)
+    if scalars is None:
+        return True, ""
+    violations = [str(v) for v in scalars().all() if str(v).strip()]
+    if violations:
+        return False, "source_money_conservation_unverifiable:" + violations[0]
     return True, ""
 
 
@@ -1308,6 +1394,40 @@ async def build_unsigned_trust_envelope(
             ),
         )
 
+    # XXII (H-XXII-12): the schema compatibility check must run at the
+    # authorization point, not only at process start. A binary built for
+    # an older schema must not issue against a newer database simply
+    # because it started successfully.
+    from app.core.construction_authority import (  # noqa: PLC0415
+        ConstructionAuthorityError,
+        assert_production_construction_authority,
+        read_construction_revisions,
+    )
+
+    try:
+        connection_factory = getattr(db_session, "connection", None)
+        if connection_factory is not None:
+            assert_production_construction_authority(
+                await read_construction_revisions(await connection_factory())
+            )
+    except ConstructionAuthorityError:
+        refusal = build_error_envelope(
+            tenant_id=request.tenant_id,
+            reason_code="schema_version_unsupported",
+            created_at=created_at,
+            audience_id=audience_id,
+        )
+        return TrustEnvelopeBuildResult(
+            status="refused",
+            unsigned_payload=None,
+            refusal_payload=refusal,
+            reason_code="schema_version_unsupported",
+            field_source_decisions=decisions,
+            money_authority_decision=None,
+            read_only_observation=_read_only_observation(llm_modules=()),
+            authority_witness=None,
+        )
+
     # XXI (H-XXI-07/Gate N): live history-integrity gate for new
     # issuance. A Trust envelope asserts deterministic truth; when the
     # correction-history continuity proof is missing, stale, violated,
@@ -1329,6 +1449,31 @@ async def build_unsigned_trust_envelope(
             unsigned_payload=None,
             refusal_payload=refusal,
             reason_code="history_integrity_unverifiable",
+            field_source_decisions=decisions,
+            money_authority_decision=None,
+            read_only_observation=_read_only_observation(llm_modules=()),
+            authority_witness=None,
+        )
+
+    conservation_ok, conservation_reason = (
+        await read_source_money_conservation_status(
+            db_session,
+            tenant_id=request.tenant_id,
+            verdict_id=source.id,
+        )
+    )
+    if not conservation_ok:
+        refusal = build_error_envelope(
+            tenant_id=request.tenant_id,
+            reason_code="money_source_not_authoritative",
+            created_at=created_at,
+            audience_id=audience_id,
+        )
+        return TrustEnvelopeBuildResult(
+            status="refused",
+            unsigned_payload=None,
+            refusal_payload=refusal,
+            reason_code="money_source_not_authoritative",
             field_source_decisions=decisions,
             money_authority_decision=None,
             read_only_observation=_read_only_observation(llm_modules=()),
