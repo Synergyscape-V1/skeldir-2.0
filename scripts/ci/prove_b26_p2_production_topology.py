@@ -2884,10 +2884,11 @@ def main() -> int:
             build_manifest as _build_manifest,
         )
 
-        # Coverage registry: prefer the newest (XXI) law; fall back
+        # Coverage registry: prefer the newest (XXII) law; fall back
         # through predecessors for older lanes.
         _covered = None
         for _mod, _attr in (
+            ("scripts.ci.b26_p2_xxii_coverage", "XXII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xxi_coverage", "XXI_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xviii_coverage", "XVIII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xiv_coverage", "XIV_COVERED_SURFACES"),
