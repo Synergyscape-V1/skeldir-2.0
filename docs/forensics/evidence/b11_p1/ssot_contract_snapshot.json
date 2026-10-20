@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 74,
+  "keys_total": 80,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/attribution/deterministic-default-lookback-days",
@@ -269,6 +269,113 @@
         "local"
       ],
       "key": "B23_WORKER_PREFETCH_MULTIPLIER",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/history-witness-genesis-hash",
+      "call_sites": [
+        "backend/app/trust/builder.py",
+        "backend/app/tasks/b26_p2_history.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_HISTORY_WITNESS_GENESIS_HASH",
+      "owner": "backend-platform",
+      "rotation_criticality": "high"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/history-witness-horizon-seconds",
+      "call_sites": [
+        "backend/app/trust/builder.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_HISTORY_WITNESS_HORIZON_SECONDS",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/b26-p2/history-witness-journal-path",
+      "call_sites": [
+        "backend/app/trust/builder.py",
+        "backend/app/trust/history_witness.py",
+        "backend/app/tasks/b26_p2_history.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_HISTORY_WITNESS_JOURNAL_PATH",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/b26-p2/history-witness-private-key-path",
+      "call_sites": [
+        "backend/app/tasks/b26_p2_history.py",
+        "backend/app/trust/history_witness.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH",
+      "owner": "platform-security",
+      "rotation_criticality": "high"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/history-witness-public-key-path",
+      "call_sites": [
+        "backend/app/trust/builder.py",
+        "backend/app/trust/history_witness.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/history-witness-required",
+      "call_sites": [
+        "backend/app/trust/builder.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_HISTORY_WITNESS_REQUIRED",
       "owner": "backend-platform",
       "rotation_criticality": "none"
     },
