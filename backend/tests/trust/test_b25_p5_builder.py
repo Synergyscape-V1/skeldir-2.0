@@ -47,6 +47,16 @@ class _FakeMappings:
         return self._row
 
 
+@pytest.fixture(autouse=True)
+def _history_witness_not_required(monkeypatch) -> None:
+    """These fake-session tests exercise P5 fields, not witness custody."""
+    from app.core.config import settings  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        settings, "B26_P2_HISTORY_WITNESS_REQUIRED", False, raising=False
+    )
+
+
 class _FakeResult:
     def __init__(self, row: dict[str, object] | None) -> None:
         self._row = row

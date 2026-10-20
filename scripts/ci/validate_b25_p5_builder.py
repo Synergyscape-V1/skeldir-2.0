@@ -34,6 +34,14 @@ from app.trust.source_adapters import (  # noqa: E402
     TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY,
 )
 
+# This lane proves the P5 builder surface, not the XXII signed-witness
+# gate. The XXII composition gate provisions a real journal/key and
+# proves the fail-closed witness paths; here the inert session has no
+# journal, so requiring one would only test fixture setup.
+from app.core.config import settings as _settings  # noqa: E402
+
+_settings.B26_P2_HISTORY_WITNESS_REQUIRED = False
+
 
 class B25P5ValidationError(RuntimeError):
     """Raised when P5 validation fails."""

@@ -795,6 +795,18 @@ KNOWN_P2_DEFINERS = frozenset(
         "b26_p2_attest_provenance_evidence_v2",
         "b26_p2_read_history_continuity",
         "b26_p2_observe_history_integrity",
+        # Corrective XXII: the independent signed-history witness needs
+        # read-only owner-context access to the live (count, tip, entry
+        # hash, violations) so the observer can sign and verify a prefix
+        # without direct ledger rights, and the source-to-money
+        # conservation oracle answers a single verdict's continuity.
+        # All are STABLE, SECURITY DEFINER readers that mint and write
+        # nothing; their grants are surface-recorded in XXII coverage.
+        "b26_p2_read_history_witness_state",
+        "b26_p2_read_history_prefix_digest",
+        "b26_p2_read_history_entry_hash",
+        "b26_p2_read_history_violations",
+        "b26_p2_verify_source_money_conservation",
     }
 )
 

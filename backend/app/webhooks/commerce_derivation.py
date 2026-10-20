@@ -214,21 +214,19 @@ class SovereignCommerce:
     event_timestamp: datetime
 
 
-# XXI (H-XXI-03) + family-law v4: positive Shopify creation law. The
-# transported topic asserts creation; only a body that positively reads
-# as a creation earns the orders.create family. Creation-shaped means: a
-# creation financial status, no terminal lifecycle markers, an empty
-# refunds list, and both creation/update instants present within skew of
-# each other. Genuine creates carry coincident instants (same Shopify
-# transaction); any material update skew marks a restated obligation,
-# not a new creation fact -- and the unsigned topic cannot rehabilitate
-# it, because the tenant holds its own webhook secret and every body
-# byte is forgeable. The v3 300 s window admitted forged nonterminal
-# shapes (+90/+120/+240 s updates verified end to end, ADD2-VF1); v4
-# narrows the moment to 60 s. This bound mirrors the database lifecycle
-# admission (b26_p2_enforce_lifecycle_admission); both cite contract
-# event-family-law.v4.json.
-SHOPIFY_CREATION_SKEW_SECONDS = 60
+# XXII (H-XXII-09/10): positive Shopify creation law. The transported
+# topic asserts creation; only a body that positively reads as a creation
+# earns the orders.create family. Creation-shaped means: a creation
+# financial status, no terminal lifecycle markers, an empty refunds list,
+# and creation/update instants that are *coincident*. A resource update
+# necessarily advances updated_at, so any positive skew is an update
+# snapshot, not creation evidence; a negative skew is impossible provider
+# chronology. The prior 60 s absolute-delta window admitted exactly those
+# near-creation and reversed shapes. Future instants are refused against
+# the receipt clock. This law mirrors the database lifecycle admission
+# (b26_p2_enforce_lifecycle_admission).
+SHOPIFY_CREATION_SKEW_SECONDS = 0
+SHOPIFY_CREATION_FUTURE_TOLERANCE_SECONDS = 300
 SHOPIFY_CREATION_FINANCIAL_STATUSES = frozenset(
     {"pending", "authorized", "paid", "partially_paid"}
 )
@@ -288,12 +286,24 @@ def derive_shopify_lifecycle(payload: Mapping[str, Any]) -> ShopifyLifecycle:
         )
     created_at = _coerce_utc_instant(created_raw, field="shopify created_at")
     updated_at = _coerce_utc_instant(updated_raw, field="shopify updated_at")
-    skew = abs((updated_at - created_at).total_seconds())
+    now = datetime.now(timezone.utc)
+    if (
+        created_at - now
+    ).total_seconds() > SHOPIFY_CREATION_FUTURE_TOLERANCE_SECONDS or (
+        updated_at - now
+    ).total_seconds() > SHOPIFY_CREATION_FUTURE_TOLERANCE_SECONDS:
+        raise CommerceDerivationError(
+            "shopify body carries an implausibly future event instant"
+        )
+    if updated_at < created_at:
+        raise CommerceDerivationError(
+            "shopify body has reversed creation/update chronology"
+        )
+    skew = (updated_at - created_at).total_seconds()
     if skew > SHOPIFY_CREATION_SKEW_SECONDS:
         raise CommerceDerivationError(
             "shopify body is not a creation moment:"
-            f" updated_at skew {skew:.0f}s exceeds"
-            f" {SHOPIFY_CREATION_SKEW_SECONDS}s"
+            f" updated_at advances creation by {skew:.0f}s"
         )
     return ShopifyLifecycle(
         financial_status=status,

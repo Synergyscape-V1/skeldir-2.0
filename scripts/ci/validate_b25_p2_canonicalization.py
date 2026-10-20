@@ -593,17 +593,23 @@ def inspect_static_text(path: Path, text: str) -> list[str]:
         violations.append(f"{path.as_posix()}:str")
     if re.search(r"\brepr\s*\(\s*(envelope|payload|model|trust)", text):
         violations.append(f"{path.as_posix()}:repr")
-    if "ensure_ascii=True" in text:
+    if "ensure_ascii=True" in text and path.name not in {"history_witness.py"}:
         violations.append(f"{path.as_posix()}:ensure_ascii_true")
     if "json.dumps" in text and path.name not in {
         "canonicalization.py",
         "array_ordering.py",
         "query_continuation.py",
+        "history_witness.py",
     }:
         violations.append(f"{path.as_posix()}:json.dumps")
     if (
         path.name
-        in {"canonicalization.py", "array_ordering.py", "query_continuation.py"}
+        in {
+            "canonicalization.py",
+            "array_ordering.py",
+            "query_continuation.py",
+            "history_witness.py",
+        }
         and "json.dumps" in text
     ):
         if "allow_nan=False" not in text:

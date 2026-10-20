@@ -4035,6 +4035,24 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption() RETURNS trigg
 
 
 --
+-- Name: b26_p2_enforce_ingress_event_chronology(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_ingress_event_chronology() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF NEW.event_timestamp > clock_timestamp()
+                   + interval '300 seconds' THEN
+                RAISE EXCEPTION 'b26_p2_ingress_event_future_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
 -- Name: b26_p2_enforce_ingress_provenance(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4227,65 +4245,76 @@ CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_fam
     LANGUAGE plpgsql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-BEGIN
-    -- XXI (H-XXI-03): lifecycle admission is enforced at the minting
-    -- seam, not just in Python derivation. Terminal lifecycle markers
-    -- are never creation-family evidence, for any provider: a
-    -- cancelled or refunded body cannot found current authority even
-    -- when every other check passes (defense in depth behind the
-    -- derivation layer, which refuses these shapes first).
-    IF p_cancelled_at IS NOT NULL THEN
-        RAISE EXCEPTION 'b26_p2_lifecycle_cancelled_not_creation'
-            USING ERRCODE = '42501';
-    END IF;
-    IF COALESCE(p_refunds_present, false) THEN
-        RAISE EXCEPTION 'b26_p2_lifecycle_refunded_not_creation'
-            USING ERRCODE = '42501';
-    END IF;
-    -- Positive Shopify creation law: the transported topic asserts
-    -- creation, but only a body that positively reads as a creation
-    -- earns it. At mint time (p_require_creation_proof) the moments
-    -- and status must be fully present; at re-attestation only
-    -- positive contradictions refuse (the original mint already
-    -- established the creation; unknown fields cannot).
-    IF lower(public.b26_p2_ascii_strip(COALESCE(p_provider, ''))) = 'shopify'
-       AND lower(public.b26_p2_ascii_strip(COALESCE(p_family, '')))
-           = 'orders.create' THEN
-        IF p_require_creation_proof THEN
-            IF p_financial_status IS NULL
-               OR lower(public.b26_p2_ascii_strip(p_financial_status))
-                  NOT IN ('pending', 'authorized', 'paid',
-                          'partially_paid') THEN
-                RAISE EXCEPTION 'b26_p2_lifecycle_status_not_creation'
+        BEGIN
+            IF p_cancelled_at IS NOT NULL THEN
+                RAISE EXCEPTION 'b26_p2_lifecycle_cancelled_not_creation'
                     USING ERRCODE = '42501';
             END IF;
-            IF p_created_at IS NULL OR p_updated_at IS NULL THEN
-                RAISE EXCEPTION 'b26_p2_lifecycle_moment_missing'
+            IF COALESCE(p_refunds_present, false) THEN
+                RAISE EXCEPTION 'b26_p2_lifecycle_refunded_not_creation'
                     USING ERRCODE = '42501';
             END IF;
-            IF abs(extract(epoch FROM (p_updated_at - p_created_at))) > 60 THEN
-                RAISE EXCEPTION 'b26_p2_lifecycle_not_creation_moment'
+            IF lower(public.b26_p2_ascii_strip(COALESCE(p_provider, '')))
+                   = 'shopify'
+               AND lower(public.b26_p2_ascii_strip(COALESCE(p_family, '')))
+                   = 'orders.create' THEN
+                IF p_require_creation_proof THEN
+                    IF p_financial_status IS NULL
+                       OR lower(public.b26_p2_ascii_strip(p_financial_status))
+                          NOT IN ('pending', 'authorized', 'paid',
+                                  'partially_paid') THEN
+                        RAISE EXCEPTION
+                            'b26_p2_lifecycle_status_not_creation'
+                            USING ERRCODE = '42501';
+                    END IF;
+                    IF p_created_at IS NULL OR p_updated_at IS NULL THEN
+                        RAISE EXCEPTION 'b26_p2_lifecycle_moment_missing'
+                            USING ERRCODE = '42501';
+                    END IF;
+                ELSE
+                    IF p_financial_status IS NOT NULL
+                       AND lower(public.b26_p2_ascii_strip(p_financial_status))
+                          NOT IN ('pending', 'authorized', 'paid',
+                                  'partially_paid', 'voided', 'refunded',
+                                  'partially_refunded') THEN
+                        RAISE EXCEPTION
+                            'b26_p2_lifecycle_status_not_creation'
+                            USING ERRCODE = '42501';
+                    END IF;
+                END IF;
+                IF p_created_at IS NOT NULL AND p_updated_at IS NOT NULL THEN
+                    IF p_updated_at < p_created_at THEN
+                        RAISE EXCEPTION
+                            'b26_p2_lifecycle_reversed_chronology'
+                            USING ERRCODE = '42501';
+                    END IF;
+                    IF p_updated_at <> p_created_at THEN
+                        RAISE EXCEPTION
+                            'b26_p2_lifecycle_not_creation_moment'
+                            USING ERRCODE = '42501';
+                    END IF;
+                END IF;
+            END IF;
+            RETURN;
+        END $$;
+
+
+--
+-- Name: b26_p2_enforce_observation_chronology(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_observation_chronology() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            IF NEW.observed_at > clock_timestamp()
+                   + interval '120 seconds' THEN
+                RAISE EXCEPTION 'b26_p2_observation_future_refused'
                     USING ERRCODE = '42501';
             END IF;
-        ELSE
-            IF p_financial_status IS NOT NULL
-               AND lower(public.b26_p2_ascii_strip(p_financial_status))
-                   NOT IN ('pending', 'authorized', 'paid',
-                           'partially_paid', 'voided', 'refunded',
-                           'partially_refunded') THEN
-                RAISE EXCEPTION 'b26_p2_lifecycle_status_not_creation'
-                    USING ERRCODE = '42501';
-            END IF;
-            IF p_created_at IS NOT NULL AND p_updated_at IS NOT NULL
-               AND abs(extract(epoch FROM (p_updated_at - p_created_at)))
-                   > 60 THEN
-                RAISE EXCEPTION 'b26_p2_lifecycle_not_creation_moment'
-                    USING ERRCODE = '42501';
-            END IF;
-        END IF;
-    END IF;
-    RETURN;
-END $$;
+            RETURN NEW;
+        END $$;
 
 
 --
@@ -5516,6 +5545,96 @@ CREATE FUNCTION public.b26_p2_read_history_continuity() RETURNS TABLE(n bigint, 
 
 
 --
+-- Name: b26_p2_read_history_entry_hash(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_read_history_entry_hash(p_seq bigint) RETURNS text
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _hash text;
+        BEGIN
+            SELECT entry_hash INTO _hash
+              FROM public.b26_p2_verdict_supersession_ledger
+             WHERE seq = p_seq;
+            RETURN _hash;
+        END $$;
+
+
+--
+-- Name: b26_p2_read_history_prefix_digest(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_read_history_prefix_digest() RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        SELECT encode(
+            digest(
+                coalesce(
+                    string_agg(
+                        l.seq::text || ':' || l.entry_hash,
+                        '|' ORDER BY l.seq
+                    ),
+                    ''
+                ),
+                'sha256'
+            ),
+            'hex'
+        )
+          FROM public.b26_p2_verdict_supersession_ledger AS l
+        $$;
+
+
+--
+-- Name: b26_p2_read_history_violations(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_read_history_violations() RETURNS text
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _viol text := '';
+            _v text;
+        BEGIN
+            FOR _v IN SELECT violation
+                        FROM public.b26_p2_verify_history_protection()
+            LOOP
+                _viol := _viol || _v || ';';
+            END LOOP;
+            FOR _v IN SELECT violation
+                        FROM public.b26_p2_verify_history_continuity()
+            LOOP
+                _viol := _viol || _v || ';';
+            END LOOP;
+            RETURN _viol;
+        END $$;
+
+
+--
+-- Name: b26_p2_read_history_witness_state(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_read_history_witness_state() RETURNS TABLE(n bigint, tip_seq bigint, tip_hash text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        BEGIN
+            SELECT count(*),
+                   max(l.seq),
+                   (SELECT entry_hash
+                      FROM public.b26_p2_verdict_supersession_ledger
+                     ORDER BY seq DESC LIMIT 1)
+              INTO n, tip_seq, tip_hash
+              FROM public.b26_p2_verdict_supersession_ledger AS l;
+            RETURN NEXT;
+            RETURN;
+        END $$;
+
+
+--
 -- Name: b26_p2_record_conduction_receipt(text, text, integer, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6537,6 +6656,7 @@ CREATE FUNCTION public.b26_p2_table_owner(p_table regclass) RETURNS name
         $$;
 
 
+--
 -- Name: b26_p2_verdict_has_current_authority(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6727,6 +6847,123 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
             END IF;
             RETURN;
         END $_$;
+
+
+--
+-- Name: b26_p2_verify_source_money_conservation(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid, p_verdict_id uuid) RETURNS TABLE(violation text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _ingress uuid;
+            _verified integer;
+            _attributed integer;
+            _row record;
+            _prev record;
+            _first record;
+            _ingress_amount integer;
+            _count bigint;
+        BEGIN
+            SELECT v.webhook_ingress_identity_id,
+                   v.verified_amount_minor,
+                   v.attributed_amount_minor
+              INTO _ingress, _verified, _attributed
+              FROM public.b23_match_verdicts AS v
+             WHERE v.tenant_id = p_tenant_id
+               AND v.id = p_verdict_id;
+            IF NOT FOUND THEN
+                violation := 'conservation_verdict_missing';
+                RETURN NEXT;
+                RETURN;
+            END IF;
+
+            SELECT count(*) INTO _count
+              FROM public.b26_p2_verdict_supersession_ledger AS l
+             WHERE l.tenant_id = p_tenant_id
+               AND l.verdict_id = p_verdict_id;
+
+            IF _count = 0 THEN
+                IF _ingress IS NOT NULL THEN
+                    SELECT i.verified_amount_minor INTO _ingress_amount
+                      FROM public.webhook_ingress_identities AS i
+                     WHERE i.id = _ingress
+                       AND i.tenant_id = p_tenant_id;
+                    IF _ingress_amount IS NOT NULL
+                       AND _verified IS DISTINCT FROM _ingress_amount THEN
+                        violation :=
+                            'conservation_initial_amount_not_source';
+                        RETURN NEXT;
+                    END IF;
+                END IF;
+                RETURN;
+            END IF;
+
+            SELECT l.* INTO _first
+              FROM public.b26_p2_verdict_supersession_ledger AS l
+             WHERE l.tenant_id = p_tenant_id
+               AND l.verdict_id = p_verdict_id
+             ORDER BY l.seq ASC
+             LIMIT 1;
+
+            IF _first.prior_source_ingress IS NOT NULL THEN
+                SELECT i.verified_amount_minor INTO _ingress_amount
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE i.id = _first.prior_source_ingress
+                   AND i.tenant_id = p_tenant_id;
+                IF _ingress_amount IS NOT NULL
+                   AND _first.prior_verified_amount_minor
+                       IS DISTINCT FROM _ingress_amount THEN
+                    violation :=
+                        'conservation_first_prior_not_source';
+                    RETURN NEXT;
+                END IF;
+            ELSIF _ingress IS NOT NULL THEN
+                SELECT i.verified_amount_minor INTO _ingress_amount
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE i.id = _ingress
+                   AND i.tenant_id = p_tenant_id;
+                IF _ingress_amount IS NOT NULL
+                   AND _first.prior_verified_amount_minor
+                       IS DISTINCT FROM _ingress_amount THEN
+                    violation :=
+                        'conservation_first_prior_not_source';
+                    RETURN NEXT;
+                END IF;
+            END IF;
+
+            _prev := NULL;
+            FOR _row IN
+                SELECT l.*
+                  FROM public.b26_p2_verdict_supersession_ledger AS l
+                 WHERE l.tenant_id = p_tenant_id
+                   AND l.verdict_id = p_verdict_id
+                 ORDER BY l.seq ASC
+            LOOP
+                IF _prev IS NOT NULL THEN
+                    IF _row.prior_verified_amount_minor
+                           IS DISTINCT FROM _prev.new_verified_amount_minor
+                       OR _row.prior_attributed_amount_minor
+                           IS DISTINCT FROM _prev.new_attributed_amount_minor
+                       OR _row.prior_source_ingress
+                           IS DISTINCT FROM _prev.new_source_ingress THEN
+                        violation := 'conservation_chain_discontinuous';
+                        RETURN NEXT;
+                    END IF;
+                END IF;
+                _prev := _row;
+            END LOOP;
+
+            IF _prev.new_verified_amount_minor IS DISTINCT FROM _verified
+               OR _prev.new_attributed_amount_minor IS DISTINCT FROM _attributed
+               OR _prev.new_source_ingress IS DISTINCT FROM _ingress THEN
+                violation := 'conservation_ledger_not_current';
+                RETURN NEXT;
+            END IF;
+            RETURN;
+        END $$;
 
 
 --
@@ -8610,7 +8847,7 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1; -- ┬▒1 cent rounding tolerance
+            tolerance_cents INTEGER := 1; -- ±1 cent rounding tolerance
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
@@ -22844,6 +23081,13 @@ CREATE TRIGGER trg_b26_p2_ingress_duplicate_adoption BEFORE INSERT ON public.web
 
 
 --
+-- Name: webhook_ingress_identities trg_b26_p2_ingress_event_chronology; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_ingress_event_chronology BEFORE INSERT ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_event_chronology();
+
+
+--
 -- Name: webhook_ingress_identities trg_b26_p2_ingress_provenance; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -22869,6 +23113,13 @@ CREATE TRIGGER trg_b26_p2_ingress_verified_authorship BEFORE INSERT OR UPDATE OF
 --
 
 CREATE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability BEFORE UPDATE ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability();
+
+
+--
+-- Name: b26_p2_history_integrity_observations trg_b26_p2_observation_chronology; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_observation_chronology BEFORE INSERT ON public.b26_p2_history_integrity_observations FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_observation_chronology();
 
 
 --

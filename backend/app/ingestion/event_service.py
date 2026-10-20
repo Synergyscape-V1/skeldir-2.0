@@ -1184,6 +1184,8 @@ async def _finalize_verified_ingress_post_commit(
                     idempotency_key=idem,
                     verified_commerce_ingress_state=(_B26_P2_AUTHENTICATED_STATE),
                     verified_at=finalization.get("verified_at"),
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
                 )
             )
             await session.flush()

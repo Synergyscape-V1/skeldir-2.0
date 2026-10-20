@@ -655,6 +655,67 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         owner="backend-platform",
         call_sites=("backend/app/celery_app.py",),
     ),
+    "B26_P2_HISTORY_WITNESS_JOURNAL_PATH": _contract(
+        key="B26_P2_HISTORY_WITNESS_JOURNAL_PATH",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-journal-path",
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=(
+            "backend/app/trust/builder.py",
+            "backend/app/trust/history_witness.py",
+            "backend/app/tasks/b26_p2_history.py",
+        ),
+    ),
+    "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH": _contract(
+        key="B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-public-key-path",
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=(
+            "backend/app/trust/builder.py",
+            "backend/app/trust/history_witness.py",
+        ),
+    ),
+    "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH": _contract(
+        key="B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-private-key-path",
+        rotation_criticality="high",
+        owner="platform-security",
+        call_sites=(
+            "backend/app/tasks/b26_p2_history.py",
+            "backend/app/trust/history_witness.py",
+        ),
+    ),
+    "B26_P2_HISTORY_WITNESS_GENESIS_HASH": _contract(
+        key="B26_P2_HISTORY_WITNESS_GENESIS_HASH",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-genesis-hash",
+        rotation_criticality="high",
+        owner="backend-platform",
+        call_sites=(
+            "backend/app/trust/builder.py",
+            "backend/app/tasks/b26_p2_history.py",
+        ),
+    ),
+    "B26_P2_HISTORY_WITNESS_HORIZON_SECONDS": _contract(
+        key="B26_P2_HISTORY_WITNESS_HORIZON_SECONDS",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-horizon-seconds",
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=("backend/app/trust/builder.py",),
+    ),
+    "B26_P2_HISTORY_WITNESS_REQUIRED": _contract(
+        key="B26_P2_HISTORY_WITNESS_REQUIRED",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-required",
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=("backend/app/trust/builder.py",),
+    ),
 }
 
 

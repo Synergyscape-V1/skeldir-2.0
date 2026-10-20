@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional, Annotated
 
-from fastapi import APIRouter, Depends, Request, Response, Security, status
+from fastapi import APIRouter, Request, Response, Security, status
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from uuid import UUID, uuid4
@@ -290,11 +290,37 @@ async def api_health_detailed(
 
 
 @router.get("/api/health/ready")
-async def api_readiness(response: Response) -> dict:
-    """Contract alias to readiness semantics."""
-    readiness_result = _evaluate_security_readiness()
+async def api_readiness(request: Request):
+    """Contract alias to readiness semantics.
+
+    This alias must enforce the same construction-authority gate as
+    /health/ready. A secrets-only alias would let a binary built for an
+    older schema keep receiving traffic after the database advanced.
+    The 503 body is RFC 7807 problem+json, as the published contract
+    declares, so a failed readiness probe is machine-readable rather than
+    an undocumented health payload.
+    """
+    readiness_result = await _evaluate_readiness()
     if readiness_result["status"] != "ok":
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        failing = sorted(
+            key
+            for key, value in readiness_result.items()
+            if value == "error"
+        )
+        correlation_raw = request.headers.get("X-Correlation-ID")
+        try:
+            correlation_id = UUID(correlation_raw) if correlation_raw else uuid4()
+        except ValueError:
+            correlation_id = uuid4()
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            title="Service Unavailable",
+            detail="readiness failed: " + ", ".join(failing or ["unknown"]),
+            correlation_id=correlation_id,
+            type_url="https://api.skeldir.com/problems/service-unavailable",
+            code="SERVICE_UNAVAILABLE",
+        )
     return {
         "ready": readiness_result["status"] == "ok",
         "status": readiness_result["status"],

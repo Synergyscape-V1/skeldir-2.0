@@ -268,6 +268,43 @@ class Settings(BaseSettings):
         description="Enable synchronous scheduling of downstream ingestion follow-up tasks from webhook requests.",
     )
 
+    # B2.6-P2 Corrective XXII independent history witness. The journal and
+    # private key must live outside the database principal's control; the
+    # builder reads only the public key and the signed journal.
+    B26_P2_HISTORY_WITNESS_JOURNAL_PATH: str = Field(
+        "var/b26_p2/history_witness.jsonl",
+        description="Append-only signed history-witness journal path.",
+    )
+    B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH: str = Field(
+        "var/b26_p2/history_witness_ed25519.pub",
+        description="Ed25519 public verification key for the history witness.",
+    )
+    B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH: Optional[str] = Field(
+        None,
+        description=(
+            "Ed25519 private seed path, readable only by the observer process; "
+            "never configured in API or builder processes."
+        ),
+    )
+    B26_P2_HISTORY_WITNESS_GENESIS_HASH: Optional[str] = Field(
+        None,
+        description=(
+            "Pinned hash of the first signed checkpoint. When set, a journal "
+            "whose genesis differs is refused."
+        ),
+    )
+    B26_P2_HISTORY_WITNESS_HORIZON_SECONDS: int = Field(
+        1200,
+        description="Maximum age of the signed witness checkpoint for issuance.",
+    )
+    B26_P2_HISTORY_WITNESS_REQUIRED: bool = Field(
+        True,
+        description=(
+            "Fail closed unless a fresh, matching signed history-witness "
+            "checkpoint exists. Disabling is an explicit non-production choice."
+        ),
+    )
+
     # Celery (Postgres-only broker/result backend)
     CELERY_BROKER_URL: Optional[str] = Field(
         None,

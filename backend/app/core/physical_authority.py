@@ -25,7 +25,7 @@ WITH relations AS (
  SELECT 'relation' AS kind, relname::text AS identity,
  jsonb_build_object('owner',pg_get_userbyid(relowner),'rls',relrowsecurity,
  'force',relforcerowsecurity,'kind',relkind,'acl',
- (SELECT jsonb_agg(v ORDER BY v) FROM unnest(COALESCE(relacl,acldefault('r',relowner))) a,
+ (SELECT jsonb_agg(v ORDER BY v COLLATE "C") FROM unnest(COALESCE(relacl,acldefault('r',relowner))) a,
  LATERAL (SELECT a::text v) s),
  'view',CASE WHEN relkind='v' THEN pg_get_viewdef(oid,true) ELSE NULL END,
  'options',reloptions) AS definition FROM relations
@@ -58,7 +58,7 @@ WITH relations AS (
  UNION ALL
  SELECT 'function',p.proname||'('||pg_get_function_identity_arguments(p.oid)||')',
  jsonb_build_object('definition',pg_get_functiondef(p.oid),'owner',pg_get_userbyid(p.proowner),
- 'acl',(SELECT jsonb_agg(a::text ORDER BY a::text) FROM unnest(COALESCE(p.proacl,acldefault('f',p.proowner))) a))
+ 'acl',(SELECT jsonb_agg(a::text ORDER BY a::text COLLATE "C") FROM unnest(COALESCE(p.proacl,acldefault('f',p.proowner))) a))
  FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND
  (p.proname LIKE 'b27_%' OR p.proname LIKE 'b28_%' OR p.proname LIKE 'trust_tenant_policy_%'
  OR p.oid IN (SELECT tgfoid FROM pg_trigger WHERE tgrelid IN (SELECT oid FROM relations)))
@@ -66,11 +66,11 @@ WITH relations AS (
  SELECT 'role',rolname,
  jsonb_build_object('super',rolsuper,'bypassrls',rolbypassrls,'createrole',rolcreaterole,
  'createdb',rolcreatedb,'inherit',rolinherit,
- 'memberships',(SELECT jsonb_agg(pg_get_userbyid(roleid) ORDER BY pg_get_userbyid(roleid))
+ 'memberships',(SELECT jsonb_agg(pg_get_userbyid(roleid)::text ORDER BY pg_get_userbyid(roleid)::text COLLATE "C")
  FROM pg_auth_members WHERE member=pg_roles.oid))
  FROM pg_roles WHERE rolname LIKE 'app_%'
 )
-SELECT kind,identity,definition FROM objects ORDER BY kind,identity
+SELECT kind,identity,definition FROM objects ORDER BY kind COLLATE "C", identity COLLATE "C"
 """
 
 

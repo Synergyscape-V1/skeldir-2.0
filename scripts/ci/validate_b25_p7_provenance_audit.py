@@ -53,6 +53,13 @@ from app.trust.reason_codes import ReasonCode  # noqa: E402
 from app.trust.refusal import tagged_sha256, tenant_hash  # noqa: E402
 from app.trust.source_adapters import MatchVerdictSource  # noqa: E402
 
+# This lane proves P7 provenance/audit behavior with an inert session.
+# The XXII composition gate provisions a real signed journal and proves
+# the fail-closed witness paths; requiring one here tests fixture setup.
+from app.core.config import settings as _settings  # noqa: E402
+
+_settings.B26_P2_HISTORY_WITNESS_REQUIRED = False
+
 
 class B25P7ValidationError(RuntimeError):
     """Raised when P7 validation fails."""

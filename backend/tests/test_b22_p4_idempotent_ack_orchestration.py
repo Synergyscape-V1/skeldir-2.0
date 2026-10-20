@@ -327,14 +327,15 @@ async def test_b22_p4_ack_matrix_is_stable_for_success_duplicate_forged_malforme
 
     monkeypatch.setattr(webhooks_api, "_schedule_downstream_tasks", _capture_schedule_downstream_tasks)
 
+    creation_timestamp = datetime.now(timezone.utc).isoformat()
     valid_body = json.dumps(
         {
             "id": int(uuid4().int % 1_000_000),
             "total_price": "17.00",
             "currency": "USD",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": creation_timestamp,
             "financial_status": "paid",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": creation_timestamp,
         }
     ).encode()
     valid_signature = sign_shopify(valid_body, secrets["shopify_webhook_secret"])

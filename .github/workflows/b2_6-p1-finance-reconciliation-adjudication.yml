@@ -513,6 +513,20 @@ jobs:
             --dsn "$MIGRATION_DATABASE_URL" \
             --evidence-out artifacts/b26_p2/static/xxi-composition.json
 
+      # B2.6-P2 Corrective XXII: context-robust witness. The composition
+      # gate proves the out-of-database signed checkpoint refuses a
+      # coherent ledger rewrite and truncation even when the database
+      # observation is planted clean, plus future chronology refusals,
+      # strict Shopify creation equality, and source-to-money
+      # conservation on the live lane.
+      - name: Prove B2.6-P2 Corrective-XXII context-robust witness
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/validate_b26_p2_xxii_composition.py \
+            --dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/static/xxii-composition.json
+
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence

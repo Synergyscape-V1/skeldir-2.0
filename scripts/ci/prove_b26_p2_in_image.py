@@ -332,7 +332,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 image, "python", "/proof/assert_b26_p2_authority_universe.py",
                 "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202610180001",
+                "--migration-head", "202610180002",
                 "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
@@ -604,12 +604,13 @@ def main() -> int:
         details["in_image_equivalence"] = "PASS"
 
         # 5. Authority-universe assertion with image bytes.
-        # Prefer the newest (XXI) coverage law; fall back through
+        # Prefer the newest (XXII) coverage law; fall back through
         # predecessors for older lanes.
         import importlib.util as _ilu
 
         covered = None
         for _modname, _fname, _attr in (
+            ("b26_p2_xxii_coverage", "b26_p2_xxii_coverage.py", "XXII_COVERED_SURFACES"),
             ("b26_p2_xxi_coverage", "b26_p2_xxi_coverage.py", "XXI_COVERED_SURFACES"),
             ("b26_p2_xviii_coverage", "b26_p2_xviii_coverage.py", "XVIII_COVERED_SURFACES"),
             ("b26_p2_xiv_coverage", "b26_p2_xiv_coverage.py", "XIV_COVERED_SURFACES"),
@@ -642,7 +643,7 @@ def main() -> int:
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
               f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                   "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                   "--migration-head", "202610180001",
+                   "--migration-head", "202610180002",
                 "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

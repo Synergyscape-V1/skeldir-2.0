@@ -39,7 +39,6 @@ ALLOWLIST = {
         "text, text, integer, text",
     ),
 }
-RUNTIME_ROLES = ("app_worker", "app_user", "app_relay", "app_beat")
 
 WRITE_TOKENS = (
     "set delivery_state = 'conducted'",
@@ -269,12 +268,6 @@ def _check_live_writers(conn, violations: list[str], checks: dict[str, object]) 
             " WHERE n.nspname = 'public'"
         )
         rows = cur.fetchall()
-        cur.execute(
-            "SELECT oid, rolname FROM pg_roles"
-            " WHERE rolname = ANY(%s)",
-            (list(RUNTIME_ROLES),),
-        )
-        role_oids = {name: oid for oid, name in cur.fetchall()}
     checks["live_routines_scanned"] = len(rows)
     writers: list[str] = []
     for oid, name, args, src in rows:
@@ -506,7 +499,8 @@ def main() -> int:
                                         "202609300007",
                                         "202609300008",
                                         "202609300009",
-                                        "202610180001"):
+                                        "202610180001",
+                                        "202610180002"):
                             violations.append(
                                 "x_authority_unexpected_migration_head:"
                                 f"{head}"

@@ -46,6 +46,7 @@ EXPECTED_SIGN_ROUTES = {
     "backend/app/trust/signing.py",
     "backend/app/trust/export_artifact.py",
     "backend/app/trust/query_continuation.py",
+    "backend/app/trust/history_witness.py",
 }
 LOAD_BEARING_JOBS = {
     "b25-p13-e2e-trust-closure-core",
