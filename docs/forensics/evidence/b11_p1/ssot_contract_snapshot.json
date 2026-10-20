@@ -308,13 +308,13 @@
       "rotation_criticality": "none"
     },
     {
-      "aws_path_template": "/skeldir/{env}/secret/b26-p2/history-witness-journal-path",
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/history-witness-journal-path",
       "call_sites": [
         "backend/app/trust/builder.py",
         "backend/app/trust/history_witness.py",
         "backend/app/tasks/b26_p2_history.py"
       ],
-      "classification": "secret",
+      "classification": "config",
       "env_scopes": [
         "prod",
         "stage",
@@ -327,12 +327,12 @@
       "rotation_criticality": "none"
     },
     {
-      "aws_path_template": "/skeldir/{env}/secret/b26-p2/history-witness-private-key-path",
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/history-witness-private-key-path",
       "call_sites": [
         "backend/app/tasks/b26_p2_history.py",
         "backend/app/trust/history_witness.py"
       ],
-      "classification": "secret",
+      "classification": "config",
       "env_scopes": [
         "prod",
         "stage",

@@ -657,8 +657,8 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
     ),
     "B26_P2_HISTORY_WITNESS_JOURNAL_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_JOURNAL_PATH",
-        classification="secret",
-        aws_path_template="/skeldir/{env}/secret/b26-p2/history-witness-journal-path",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-journal-path",
         rotation_criticality="none",
         owner="backend-platform",
         call_sites=(
@@ -680,8 +680,8 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
     ),
     "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH",
-        classification="secret",
-        aws_path_template="/skeldir/{env}/secret/b26-p2/history-witness-private-key-path",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-private-key-path",
         rotation_criticality="high",
         owner="platform-security",
         call_sites=(
