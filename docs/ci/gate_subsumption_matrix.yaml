@@ -4942,3 +4942,42 @@
     disqualified money, history rewrites would stay silent, and the
     proof plane would substitute reimplementations for readers.
   decision: enforce
+- gate_id: b26-p2-xxii-composition
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/validate_b26_p2_xxii_composition.py
+  owning_phase: B2.6-P2
+  protected_invariant: Context-robust witness continuity across signed
+    checkpoints, observation and ingress chronology, Shopify creation
+    moments, and source-money conservation.
+  current_status: required
+  default_execution: true
+  candidate_action: enforce
+  subsuming_gate: ''
+  subsumption_evidence: New gate for XXII context robustness; no predecessor
+    gate observes out-of-database witness divergence, coherent chain rewrites,
+    truncation, chronology refusal, Shopify creation reversal, or source-money
+    continuation.
+  negative_control_preserved_by: python scripts/ci/validate_b26_p2_xxii_composition.py
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xxii_composition.py --help
+  risk_if_removed: A coherent owner rewrite with a planted clean observation
+    would issue, future instants would enter, and money not conserved from its
+    authenticated source would be signed.
+  decision: enforce
+- gate_id: b26-p2-xxii-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xxii_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XXII registry extends XXI coverage for the signed-witness
+    state readers, entry hashes, conservation reader, and chronology triggers.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XXII coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xxii_coverage import XXII_COVERED_SURFACES"
+  risk_if_removed: New XXII surfaces could stay untested silently.
+  decision: keep_utility

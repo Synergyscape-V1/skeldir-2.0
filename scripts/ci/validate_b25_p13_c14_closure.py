@@ -29,6 +29,7 @@ EXPECTED_PRIVATE_KEY_ROUTES = {
     "backend/app/trust/signing.py",
     "backend/app/trust/export_artifact.py",
     "backend/app/trust/query_continuation.py",
+    "backend/app/trust/history_witness.py",
 }
 # Corrective XVII removed the private key from the public API process. The
 # process-local capability entry point therefore has exactly one referencing

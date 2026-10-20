@@ -78,7 +78,7 @@ pytestmark = pytest.mark.skipif(
 
 ACTIVE = active_identity()
 PROBE_OWNER = "c9-positive-probe"
-DAY = datetime(2027, 2, 1, tzinfo=timezone.utc)
+DAY = datetime(2026, 2, 1, tzinfo=timezone.utc)
 CHANGE_AT = DAY + timedelta(days=19, hours=9)
 SETTLEMENT_DAYS = 20
 CHANNELS = 20

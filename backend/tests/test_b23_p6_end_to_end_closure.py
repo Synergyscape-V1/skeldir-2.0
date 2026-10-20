@@ -1344,7 +1344,7 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             reference=f"coverage-a-window-{uuid4().hex[:8]}",
             amount_minor=50000,
             currency="USD",
-            occurred_at=window_end + timedelta(seconds=1),
+            occurred_at=window_start - timedelta(seconds=1),
         )
         await insert_verified_webhook(
             tenant_id=tenant_a,

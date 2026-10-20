@@ -6824,3 +6824,59 @@
     the XXI coverage gate.
   subsumed_by: ''
   registry_action: utility
+- id: b26-p2-xxii-composition
+  path: scripts/ci/validate_b26_p2_xxii_composition.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: 'Context-robust witness continuity: an out-of-database
+    signed checkpoint refuses a coherent ledger rewrite, recomputed chain,
+    truncation, or owner-planted clean observation; future observations,
+    future ingress events, reversed Shopify creation moments, and ledger
+    money that is not the lawful continuation of its authenticated source
+    all refuse while component proofs stay green.'
+  command: python scripts/ci/validate_b26_p2_xxii_composition.py --dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xxii_composition.py --help
+  expected_failure_meaning: A planted clean observation hides a rewritten ledger,
+    truncation passes, future observation or ingress instants enter, Shopify
+    creation chronology is reversed, or source money is not conserved while
+    every component proof stays green.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xxii_composition.py --dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+- id: b26-p2-xxii-coverage-registry
+  path: scripts/ci/b26_p2_xxii_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: XXII registry extends XXI coverage for the signed-witness
+    state readers, entry hashes, conservation reader, and chronology triggers
+    (read-only, fail-closed EXECUTE surfaces).
+  command: python -c "from scripts.ci.b26_p2_xxii_coverage import XXII_COVERED_SURFACES; print(len(XXII_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xxii_coverage import XXII_COVERED_SURFACES"
+  expected_failure_meaning: XXII EXECUTE surfaces stay untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the XXII coverage gate.
+  subsumed_by: ''
+  registry_action: utility

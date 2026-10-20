@@ -43,7 +43,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 ACTIVE = active_identity()
-DAY = datetime(2026, 10, 5, tzinfo=timezone.utc)
+DAY = datetime(2025, 10, 5, tzinfo=timezone.utc)
 WINDOW_START = DAY
 WINDOW_END = DAY + timedelta(days=20)
 INSIDE = DAY + timedelta(hours=6)
