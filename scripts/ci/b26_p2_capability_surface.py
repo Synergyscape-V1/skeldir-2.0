@@ -807,6 +807,14 @@ KNOWN_P2_DEFINERS = frozenset(
         "b26_p2_read_history_entry_hash",
         "b26_p2_read_history_violations",
         "b26_p2_verify_source_money_conservation",
+        # Corrective XXIII: the append-only authority universe answers
+        # whether a source identity is still live for issuance readers,
+        # and the checkpoint surface serves mixed-checkpoint detection
+        # to the B2.3 worker. Both are read-only STABLE SECURITY
+        # DEFINER readers that mint and write nothing; their grants are
+        # surface-recorded in XXIII coverage.
+        "b26_p2_authority_universe",
+        "b26_p2_read_history_snapshot",
     }
 )
 
