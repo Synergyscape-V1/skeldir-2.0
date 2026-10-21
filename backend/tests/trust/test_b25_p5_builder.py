@@ -91,7 +91,14 @@ class FakeReadOnlySession:
         self.ledger_row = (
             ledger_row
             if ledger_row is not None
-            else {"n": 0, "tip": None}
+            else {
+                "n": 0,
+                "tip_seq": None,
+                "tip_hash": None,
+                "prefix_digest": None,
+                "violations": "",
+                "authority_universe": None,
+            }
         )
         self.statements: list[str] = []
         self.params: list[dict[str, object]] = []
@@ -117,6 +124,7 @@ class FakeReadOnlySession:
         if (
             "verdict_supersession_ledger" in text
             or "b26_p2_read_history_continuity" in text
+            or "b26_p2_read_history_snapshot" in text
         ):
             return _FakeResult(self.ledger_row)
         if (params or {}).get("tenant_id") is not None and str(
@@ -827,7 +835,14 @@ async def test_history_integrity_live_divergence_refuses_issuance() -> None:
             "observed_at": datetime.now(timezone.utc),
             "author": "app_worker",
         },
-        ledger_row={"n": 0, "tip": None},
+            ledger_row={
+                "n": 0,
+                "tip_seq": None,
+                "tip_hash": None,
+                "prefix_digest": None,
+                "violations": "",
+                "authority_universe": None,
+            },
     )
     result = await build_unsigned_trust_envelope(
         session, _request(tenant_id, verdict_id)

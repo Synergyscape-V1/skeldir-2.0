@@ -19,6 +19,7 @@ from app.revenue_verification import (
     register_b23_post_capture_event,
     seed_pending_match_verdict,
 )
+from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2
 from app.revenue_verification.extraction_registry import PersistedIngressExtractionInput
 from app.revenue_verification.state_transitions import (
     transition_stale_pending_to_unmatched,
@@ -157,6 +158,105 @@ async def _seed_attribution_event_for_match(
         )
         value = result.scalar_one()
         return value if isinstance(value, UUID) else UUID(str(value))
+
+
+def _insert_and_authenticate_ingress_sync(
+    *,
+    tenant_id: UUID,
+    ingress_id: UUID,
+    attribution_event_id: UUID,
+    event_reference: str,
+    commerce_reference: str,
+    amount_minor: int,
+    occurred_at: datetime,
+    idempotency_key: str,
+) -> None:
+    import psycopg2  # noqa: PLC0415
+
+    dsn = (os.environ.get("MIGRATION_DATABASE_URL") or "").strip()
+    if not dsn:
+        pytest.fail(
+            "B2.3-P3 correction authority proof requires MIGRATION_DATABASE_URL"
+        )
+    conn = psycopg2.connect(dsn)
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            cur.execute(
+                "INSERT INTO public.webhook_ingress_identities ("
+                " id, tenant_id, event_id, provider,"
+                " provider_native_event_reference,"
+                " provider_native_commerce_reference,"
+                " normalized_commerce_reference_kind,"
+                " normalized_commerce_reference_value, verified_amount_minor,"
+                " verified_amount_currency, event_timestamp, idempotency_key,"
+                " verified_commerce_ingress_state"
+                ") VALUES (%s, %s, %s, 'stripe', %s, %s,"
+                " 'order_reference', %s, %s, 'USD', %s, %s,"
+                " 'authenticity_verified')",
+                (
+                    str(ingress_id),
+                    str(tenant_id),
+                    str(attribution_event_id),
+                    event_reference,
+                    commerce_reference,
+                    commerce_reference,
+                    amount_minor,
+                    occurred_at,
+                    idempotency_key,
+                ),
+            )
+            apply_xix_family_gucs_psycopg2(cur, "stripe")
+            cur.execute(
+                "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
+                " %s, 'stripe', %s, %s, %s,"
+                " 'hmac-sha256-timestamped-hex', 'v1', NULL, NULL, FALSE,"
+                " NULL, NULL)",
+                (
+                    str(ingress_id),
+                    event_reference,
+                    "c" * 64,
+                    "d" * 64,
+                ),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+async def _seed_authenticated_correction_ingress(
+    *,
+    tenant_id: UUID,
+    event_reference: str,
+    commerce_reference: str,
+    amount_minor: int,
+    occurred_at: datetime,
+) -> UUID:
+    attribution_event_id = await _seed_attribution_event_for_match(
+        tenant_id=tenant_id,
+        commerce_reference=commerce_reference,
+        amount_minor=amount_minor,
+        occurred_at=occurred_at,
+    )
+    ingress_id = uuid4()
+    _insert_and_authenticate_ingress_sync(
+        tenant_id=tenant_id,
+        ingress_id=ingress_id,
+        attribution_event_id=attribution_event_id,
+        event_reference=event_reference,
+        commerce_reference=commerce_reference,
+        amount_minor=amount_minor,
+        occurred_at=occurred_at,
+        idempotency_key=f"b23-p3-correction-{uuid4()}",
+    )
+    return ingress_id
 
 
 async def _create_match(
@@ -571,6 +671,14 @@ async def test_b23_p3_gross_capture_corrections_drive_exception_lifecycle(
         occurred_at=now,
     )
 
+    flagged_reference = f"gross-flagged-{uuid4()}"
+    await _seed_authenticated_correction_ingress(
+        tenant_id=tenant_a,
+        event_reference=flagged_reference,
+        commerce_reference=f"pi-flagged-{uuid4()}",
+        amount_minor=9500,
+        occurred_at=now + timedelta(minutes=1),
+    )
     async with get_b23_session(tenant_a) as session:
         await register_b23_post_capture_event(
             session,
@@ -578,7 +686,7 @@ async def test_b23_p3_gross_capture_corrections_drive_exception_lifecycle(
                 tenant_id=tenant_a,
                 provider="stripe",
                 event_type="payment_capture",
-                provider_native_event_reference=f"gross-flagged-{uuid4()}",
+                provider_native_event_reference=flagged_reference,
                 provider_native_commerce_reference=f"pi-{uuid4()}",
                 currency_code="USD",
                 amount_minor=9500,
@@ -591,6 +699,14 @@ async def test_b23_p3_gross_capture_corrections_drive_exception_lifecycle(
     assert len(flagged) == 1
     assert flagged[0]["severity"] == "flagged"
 
+    alert_reference = f"gross-alert-{uuid4()}"
+    await _seed_authenticated_correction_ingress(
+        tenant_id=tenant_a,
+        event_reference=alert_reference,
+        commerce_reference=f"pi-alert-{uuid4()}",
+        amount_minor=8500,
+        occurred_at=now + timedelta(minutes=2),
+    )
     async with get_b23_session(tenant_a) as session:
         await register_b23_post_capture_event(
             session,
@@ -598,7 +714,7 @@ async def test_b23_p3_gross_capture_corrections_drive_exception_lifecycle(
                 tenant_id=tenant_a,
                 provider="stripe",
                 event_type="payment_capture",
-                provider_native_event_reference=f"gross-alert-{uuid4()}",
+                provider_native_event_reference=alert_reference,
                 provider_native_commerce_reference=f"pi-{uuid4()}",
                 currency_code="USD",
                 amount_minor=8500,
@@ -611,6 +727,14 @@ async def test_b23_p3_gross_capture_corrections_drive_exception_lifecycle(
     assert len(alert) == 1
     assert alert[0]["severity"] == "alert"
 
+    clean_reference = f"gross-clean-{uuid4()}"
+    await _seed_authenticated_correction_ingress(
+        tenant_id=tenant_a,
+        event_reference=clean_reference,
+        commerce_reference=f"pi-clean-{uuid4()}",
+        amount_minor=10000,
+        occurred_at=now + timedelta(minutes=3),
+    )
     async with get_b23_session(tenant_a) as session:
         await register_b23_post_capture_event(
             session,
@@ -618,7 +742,7 @@ async def test_b23_p3_gross_capture_corrections_drive_exception_lifecycle(
                 tenant_id=tenant_a,
                 provider="stripe",
                 event_type="payment_capture",
-                provider_native_event_reference=f"gross-clean-{uuid4()}",
+                provider_native_event_reference=clean_reference,
                 provider_native_commerce_reference=f"pi-{uuid4()}",
                 currency_code="USD",
                 amount_minor=10000,

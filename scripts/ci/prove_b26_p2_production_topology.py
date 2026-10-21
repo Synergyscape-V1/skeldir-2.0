@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """B2.6-P2 Corrective VI deployed-topology proof (Gates 1-33).
 
 Boots the EXACT compiled production topology and drives a REAL
@@ -1385,9 +1385,9 @@ def main() -> int:
         # result-telemetry transport admission, then Corrective XXII;
         # the 300009..300006 (XXI) and XX heads must remain ancestors
         # (linear ancestry, no forks).
-        if "202610180002" not in heads.stdout:
-            return _fail("migration_head_missing_corrective_xxii")
-        details["migration_head"] = "202610180002"
+        if "202610180003" not in heads.stdout:
+            return _fail("migration_head_missing_corrective_xxiii")
+        details["migration_head"] = "202610180003"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",

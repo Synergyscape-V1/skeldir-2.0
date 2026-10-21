@@ -1135,43 +1135,42 @@ async def read_history_integrity_status(
     # and continuity verdict independently through the owner-context
     # DEFINER reader, so a planted "clean" observation cannot hide a
     # truncated, broken, or privilege-widened ledger.
-    violation_result = await db_session.execute(
-        text("SELECT public.b26_p2_read_history_violations()")
-    )
-    scalar_reader = getattr(violation_result, "scalar", None)
-    if scalar_reader is not None:
-        live_violations = str(scalar_reader() or "").strip()
-        if live_violations:
-            return False, "history_integrity_violations_present"
-    # Live continuity is read through the owner-context DEFINER
-    # function: runtime roles hold no direct rights on the ledger
-    # (XXI least privilege), and a direct SELECT would fail closed
-    # with permission denied. The function exposes exactly the global
-    # (count, tip) the beat observation records, so tenant scoping can
-    # never skew the comparison.
+    #
+    # XXIII (HB-07): one statement, one snapshot. The witness state,
+    # prefix digest, violation verdict, and authority universe must
+    # describe the same instant; separate READ COMMITTED statements can
+    # interleave with a lawful append and manufacture a false divergence.
     live = (
         (
             await db_session.execute(
-                text("SELECT n, tip,"
-                     " public.b26_p2_read_history_prefix_digest()"
-                     " AS prefix_digest FROM"
-                     " public.b26_p2_read_history_continuity()")
+                text(
+                    "SELECT n, tip_seq, tip_hash, prefix_digest,"
+                    " violations, authority_universe FROM"
+                    " public.b26_p2_read_history_snapshot(NULL)"
+                )
             )
         )
         .mappings()
         .one()
     )
+    if str(live["violations"] or "").strip():
+        return False, "history_integrity_violations_present"
     if int(live["n"] or 0) != int(row["ledger_count"] or 0):
         return False, "history_integrity_live_count_diverged"
-    if (live["tip"] or None) != (row["ledger_tip"] or None):
+    if (live["tip_hash"] or None) != (row["ledger_tip"] or None):
         # Both NULL (empty ledger, empty observation) agrees; any
         # other mismatch refuses.
-        if not (live["tip"] is None and row["ledger_tip"] is None):
+        if not (live["tip_hash"] is None and row["ledger_tip"] is None):
             return False, "history_integrity_live_tip_diverged"
     witness_ok, witness_reason = _verify_signed_history_witness(
         ledger_count=int(live["n"] or 0),
-        ledger_tip_hash=live["tip"] or None,
+        ledger_tip_hash=live["tip_hash"] or None,
         ledger_prefix_digest=live.get("prefix_digest"),
+        authority_universe=(
+            str(live["authority_universe"])
+            if live.get("authority_universe") is not None
+            else None
+        ),
     )
     if not witness_ok:
         return False, witness_reason
@@ -1183,6 +1182,7 @@ def _verify_signed_history_witness(
     ledger_count: int,
     ledger_tip_hash: str | None,
     ledger_prefix_digest: str | None = None,
+    authority_universe: str | None = None,
 ) -> tuple[bool, str]:
     """Verify the out-of-database signed checkpoint against live state.
 
@@ -1191,17 +1191,22 @@ def _verify_signed_history_witness(
     held outside that principal's control and commits to the exact live
     count and tip. Missing, stale, malformed, future-dated, or divergent
     journals refuse issuance rather than degrading to ledger-only trust.
+
+    XXIII (HB-02/HB-03): the journal must be bound to this authority
+    universe, and a monotonic custody record must not sit above the
+    journal tip (journal rollback replay).
     """
     from app.core.config import settings  # noqa: PLC0415
     from app.trust.history_witness import (  # noqa: PLC0415
         HistoryWitnessError,
+        load_custody,
         verify_journal,
     )
 
     if not settings.B26_P2_HISTORY_WITNESS_REQUIRED:
         return True, ""
     try:
-        verify_journal(
+        journal = verify_journal(
             settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH,
             public_key_path=settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
             genesis_hash=settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH,
@@ -1210,7 +1215,22 @@ def _verify_signed_history_witness(
             expected_count=ledger_count,
             expected_tip_hash=ledger_tip_hash,
             expected_prefix_digest=ledger_prefix_digest,
+            expected_universe=authority_universe,
+            require_universe=True,
         )
+        custody = load_custody(
+            settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH
+        )
+        if custody is not None:
+            custody_count = int(custody["ledger_count"])
+            latest = journal.latest
+            if latest.ledger_count < custody_count:
+                raise HistoryWitnessError("witness_custody_rollback")
+            if (
+                latest.ledger_count == custody_count
+                and latest.checkpoint_hash != custody["checkpoint_hash"]
+            ):
+                raise HistoryWitnessError("witness_custody_fork")
     except HistoryWitnessError as exc:
         return False, f"history_integrity_witness_refused:{exc}"
     return True, ""

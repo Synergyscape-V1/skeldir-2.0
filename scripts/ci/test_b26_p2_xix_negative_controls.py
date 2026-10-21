@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """B2.6-P2 Corrective XIX relation-level negative-control battery.
 
 Directive XIX section 31: the mandatory proof must turn RED for every
@@ -530,8 +530,8 @@ def main() -> int:
             # 300009; 300008 joins the refused predecessors. C19
             # follow-up: the result-telemetry transport admission
             # advances the head to 202610180001; 300009 joins the
-            # refused predecessors. Corrective XXII advances the head
-            # to 202610180002; 202610180001 joins the refused set.
+            # refused predecessors. Corrective XXIII advances the head
+            # to 202610180003; 202610180001 joins the refused set.
             try:
                 assert_production_construction_authority(["202609300005"])
                 violations.append("xix_nc10_old_revision_served")
@@ -557,8 +557,8 @@ def main() -> int:
                 violations.append("xix_nc10_old_revision_served")
             except ConstructionAuthorityError:
                 checks["nc10_old_revision_red"] = True
-            assert_production_construction_authority(["202610180002"])
-            if migration_graph_head() != "202610180002":
+            assert_production_construction_authority(["202610180003"])
+            if migration_graph_head() != "202610180003":
                 violations.append("xix_nc10_head_mismatch")
             else:
                 checks["nc10_head_current"] = True

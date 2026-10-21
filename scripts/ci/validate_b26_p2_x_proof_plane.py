@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """B2.6-P2 Corrective X proof-plane self-falsification battery (PF-X).
 
 Corrective-X must explicitly attack its own assurance mechanisms. For
@@ -790,7 +790,7 @@ def main() -> int:
                                     "202609300008",
                                     "202609300009",
                                     "202610180001",
-                                    "202610180002"):
+                                    "202610180003"):
                         violations.append(
                             f"x_proof_plane_unexpected_head:{head}"
                         )
@@ -813,7 +813,7 @@ def main() -> int:
                           "202609300008",
                           "202609300009",
                           "202610180001",
-                          "202610180002"):
+                          "202610180003"):
                 battery: list[tuple[str, object]] = [
                     ("PF-X-01", lambda: _pf01_protected_adjudication(args.dsn)),
                     ("PF-X-02", _pf02_history_fail_closed),

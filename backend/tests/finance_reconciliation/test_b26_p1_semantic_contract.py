@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from decimal import Decimal
 
@@ -562,7 +562,7 @@ def test_b26_p1_migration_graph_is_alembic_native() -> None:
     assert set(graph) == native_revisions
     assert "202512151410" in graph
     assert "202511171000" not in graph
-    assert heads == set(script.get_heads()) == {"202610180002"}
+    assert heads == set(script.get_heads()) == {"202610180003"}
     assert "202609072001" in graph
     assert "202609170001" in graph
     assert "202609180001" in graph

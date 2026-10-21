@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """B2.6-P2 Corrective X independent contract oracle.
 
 Judges the single P2 semantic authority (the live SQL functions) against
@@ -327,7 +327,7 @@ def main() -> int:
                                 "202609300007", "202609300008",
                                 "202609300009",
                                 "202610180001",
-                                "202610180002",
+                                "202610180003",
                             ):
                                 violations.append(
                                     f"x_oracle_unexpected_migration_head:{head}"

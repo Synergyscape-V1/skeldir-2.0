@@ -1254,7 +1254,32 @@ async def _handle_ingestion(
             auth_consequence=auth_consequence,
         )
     except IngestionValidationError as txn_exc:
-        if "b26_p2_unsupported_currency_refused" not in str(txn_exc):
+        refusal = str(txn_exc)
+        if "b26_p2_ingress_relay_refused" in refusal:
+            logger.warning(
+                "b26_p2_ingress_authority_refused",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "source": source,
+                    "event_type": "ingestion",
+                    "correlation_id": get_request_correlation_id()
+                    or idempotency_key,
+                    "refusal": refusal,
+                },
+            )
+            return {
+                "status": "authority_refused",
+                "idempotency_key": idempotency_key,
+                "error": refusal,
+            }
+        if "b26_p2_ingress_relay_unreachable" in refusal or (
+            "b26_p2_ingress_relay_bad_response" in refusal
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=refusal,
+            ) from txn_exc
+        if "b26_p2_unsupported_currency_refused" not in refusal:
             raise
         dead = await _route_to_dlq_direct(
             tenant_id,
@@ -1911,20 +1936,48 @@ async def stripe_payment_intent_succeeded_v2(
     if click_id_for_resolution:
         event_data["click_id"] = click_id_for_resolution
 
-    result = await ingest_with_transaction(
-        tenant_id=tenant_info["tenant_id"],
-        event_data={**event_data, "idempotency_key": idempotency_key},
-        idempotency_key=idempotency_key,
-        source="stripe",
-        identity_payload=identity_payload or payload,
-        request_headers=request_headers,
-        auth_consequence=_build_provider_auth_consequence(
-            tenant_info=tenant_info,
-            provider="stripe",
-            provider_event_reference=str(provider_event_reference),
-            provider_topic=None,
-        ),
-    )
+    try:
+        result = await ingest_with_transaction(
+            tenant_id=tenant_info["tenant_id"],
+            event_data={**event_data, "idempotency_key": idempotency_key},
+            idempotency_key=idempotency_key,
+            source="stripe",
+            identity_payload=identity_payload or payload,
+            request_headers=request_headers,
+            auth_consequence=_build_provider_auth_consequence(
+                tenant_info=tenant_info,
+                provider="stripe",
+                provider_event_reference=str(provider_event_reference),
+                provider_topic=None,
+            ),
+        )
+    except IngestionValidationError as txn_exc:
+        refusal = str(txn_exc)
+        if "b26_p2_ingress_relay_refused" in refusal:
+            logger.warning(
+                "b26_p2_ingress_authority_refused",
+                extra={
+                    "tenant_id": str(tenant_info["tenant_id"]),
+                    "source": "stripe",
+                    "event_type": "ingestion",
+                    "correlation_id": get_request_correlation_id()
+                    or idempotency_key,
+                    "refusal": refusal,
+                },
+            )
+            return {
+                "status": "authority_refused",
+                "idempotency_key": idempotency_key,
+                "error": refusal,
+            }
+        if "b26_p2_ingress_relay_unreachable" in refusal or (
+            "b26_p2_ingress_relay_bad_response" in refusal
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=refusal,
+            ) from txn_exc
+        raise
 
     if result.status == "success":
         correlation_id = get_request_correlation_id() or idempotency_key

@@ -304,6 +304,15 @@ class Settings(BaseSettings):
             "checkpoint exists. Disabling is an explicit non-production choice."
         ),
     )
+    B26_P2_HISTORY_WITNESS_CUSTODY_PATH: str = Field(
+        "var/b26_p2/history_witness_custody.json",
+        description=(
+            "Monotonic latest-checkpoint commitment written by the observer "
+            "and read by the builder; replays an older journal prefix only by "
+            "advancing this lower bound. Must live on a volume the database "
+            "principal cannot write."
+        ),
+    )
 
     # Celery (Postgres-only broker/result backend)
     CELERY_BROKER_URL: Optional[str] = Field(
@@ -669,6 +678,19 @@ class Settings(BaseSettings):
                 "B2.3 worker demand exceeds the dedicated B2.3 DB pool budget "
                 f"({b23_worker_demand} > {b23_pool_capacity})"
             )
+        if str(self.ENVIRONMENT).strip().lower() in {"prod", "production"}:
+            # XXIII (HB-04): production may not run with the independent
+            # witness disabled or unpinned. The setting exists for local
+            # and CI lanes only; a production process must fail closed at
+            # import rather than issue ledger-only trust.
+            if not self.B26_P2_HISTORY_WITNESS_REQUIRED:
+                raise ValueError(
+                    "B26_P2_HISTORY_WITNESS_REQUIRED must be true in production"
+                )
+            if not (self.B26_P2_HISTORY_WITNESS_GENESIS_HASH or "").strip():
+                raise ValueError(
+                    "B26_P2_HISTORY_WITNESS_GENESIS_HASH must be pinned in production"
+                )
         return self
 
 

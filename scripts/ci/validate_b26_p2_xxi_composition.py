@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """B2.6-P2 Corrective XXI sovereign-release-continuity gate.
 
 H-XXI-01..14 (Directive XXI): version-compatible minting, positive
@@ -258,9 +258,9 @@ def _static_checks(violations: list[str], checks: dict) -> None:
                 / "construction_authority.py").read_text(encoding="utf-8")
     # Family-law v4 follow-up advances the construction contract to
     # the current head; F5 advances it to 300008; P1 to 300009; the
-    # C19 result-telemetry transport admission to 202610180001; XXII
-    # to 202610180002. A stale contract fails closed here.
-    if 'REQUIRED_SCHEMA_REVISION = "202610180002"' not in contract:
+    # C19 result-telemetry transport admission to 202610180001; XXIII
+    # to 202610180003. A stale contract fails closed here.
+    if 'REQUIRED_SCHEMA_REVISION = "202610180003"' not in contract:
         violations.append("xxi_comp_construction_contract_not_advanced")
     else:
         checks["construction_contract_at_xxi"] = True
@@ -493,14 +493,17 @@ def _live_checks(
             checks["demotion_data_holds"] = True
 
         # V4: observer + continuity clean; seq assigned on correction.
+        # The correction changes attributed money only: the verified
+        # amount stays bound to its authenticated ingress so XXIII
+        # source conservation remains true after the regime retires.
         verdict = _mkverdict(row, "xxi-v1", 100000)
         cur.execute(
             "UPDATE public.b23_match_verdicts"
-            " SET attributed_amount_minor=2,"
-            " canonical_expected_gross_amount_minor=2,"
-            " canonical_captured_gross_amount_minor=2,"
-            " verified_amount_minor=2,"
-            " canonical_net_verified_amount_minor=2 WHERE id=%s",
+            " SET attributed_amount_minor=99999,"
+            " canonical_expected_gross_amount_minor=99999,"
+            " discrepancy_amount_minor=1,"
+            " discrepancy_ratio_bps=0,"
+            " discrepancy_band='exact' WHERE id=%s",
             (verdict,),
         )
         cur.execute(
@@ -689,13 +692,13 @@ def _live_checks(
                                             tzinfo=timezone.utc),
                     )
                     return (adapter_auth, built.status,
-                            payload_status,
+                            payload_status, built.reason_code,
                             agg.connected_platform_revenue_minor)
             finally:
                 await engine.dispose()
 
-        adapter_auth, built_status, payload_status, connected = asyncio.run(
-            _real_reads())
+        (adapter_auth, built_status, payload_status, built_reason,
+         connected) = asyncio.run(_real_reads())
         if adapter_auth is not True:
             violations.append("xxi_comp_real_adapter_not_current")
         else:
@@ -703,7 +706,7 @@ def _live_checks(
         if built_status != "success" or payload_status != "matched":
             violations.append(
                 f"xxi_comp_real_builder_not_truth:{built_status}/"
-                f"{payload_status}")
+                f"{payload_status}/{built_reason}")
         else:
             checks["real_builder_issues_at_rest"] = True
         if connected != 100000:
@@ -804,7 +807,7 @@ def _live_checks(
         # With fresh continuity, the same retired source must degrade
         # on authority (success envelope, unavailable status) rather
         # than issuing verified truth.
-        (adapter_auth3, built_status3, payload_status3, _,
+        (adapter_auth3, built_status3, payload_status3, built_reason3,
          connected3) = asyncio.run(_real_reads_retired())
         if adapter_auth3 is not False or connected3 != 0:
             violations.append(
@@ -815,7 +818,7 @@ def _live_checks(
         else:
             violations.append(
                 "xxi_comp_retire_builder_truth:"
-                f"{built_status3}/{payload_status3}")
+                f"{built_status3}/{payload_status3}/{built_reason3}")
         if connected2 != 0:
             violations.append(
                 f"xxi_comp_retire_coverage_survives:{connected2}")
@@ -937,7 +940,7 @@ def _live_checks(
                 " public.b26_p2_verdict_supersession_ledger"
                 " WHERE verdict_id=%s ORDER BY seq DESC LIMIT 1",
                 (verdict,))
-            if tcur.fetchone()[0] != 2:
+            if tcur.fetchone()[0] != 100000:
                 violations.append("xxi_comp_rewrite_restore_failed")
             else:
                 checks["rewrite_exact_restore"] = True
@@ -1032,7 +1035,7 @@ def _live_checks(
                     f"xxi_comp_reupgrade_failed:{up.stderr[-200:]}")
             else:
                 cur.execute("SELECT version_num FROM alembic_version")
-                if cur.fetchone()[0] != "202610180002":
+                if cur.fetchone()[0] != "202610180003":
                     violations.append("xxi_comp_reupgrade_wrong_revision")
                 else:
                     checks["downgrade_reupgrade_converges"] = True
