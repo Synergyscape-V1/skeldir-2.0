@@ -1709,7 +1709,85 @@ def main() -> int:
             _assert_oracle_correspondence("paypal", raw_pp, rows_pp[0])
         except RuntimeError as exc:
             return _fail(str(exc))
-        parity["paypal"] = {"http": status_pp, "key": paypal_idem}
+        try:
+            paypal_event_id = str(json.loads(body_pp)["event_id"])
+        except (ValueError, KeyError) as exc:
+            return _fail(f"paypal_response_missing_event_id:{exc}:{body_pp[:200]}")
+        try:
+            paypal_dispatch = _dispatch_for_ingress(
+                tenant["tenant_id"], paypal_event_id
+            )
+        except RuntimeError as exc:
+            return _fail(f"paypal_dispatch_missing:{exc}")
+        try:
+            _wait_state(
+                "b23_match_task_dispatches",
+                "task",
+                paypal_dispatch["task_id"],
+                "conducted",
+                180,
+            )
+            _wait_state(
+                "b26_p2_execution_outbox",
+                "task",
+                paypal_dispatch["task_id"],
+                "conducted",
+                60,
+            )
+        except RuntimeError as exc:
+            return _fail(f"paypal_conduction_failed:{exc}")
+        paypal_receipt = _query(
+            "SELECT task_id, b23_processed_count, p2_scope_identity"
+            " FROM public.b26_p2_conduction_receipts WHERE task_id = %s",
+            (paypal_dispatch["task_id"],),
+        )
+        if (
+            not paypal_receipt
+            or int(paypal_receipt[0][1]) < 1
+            or len(str(paypal_receipt[0][2] or "")) != 64
+        ):
+            return _fail(f"paypal_conduction_receipt_missing:{paypal_dispatch}")
+        paypal_verdicts = _query(
+            """
+            SELECT
+                canonical_commerce_reference,
+                provider_native_commerce_reference,
+                status,
+                attributed_amount_minor,
+                verified_amount_minor,
+                currency_code
+            FROM public.b23_match_verdicts
+            WHERE tenant_id = %s
+              AND provider = 'paypal'
+              AND provider_native_event_reference = %s
+            """,
+            (tenant["tenant_id"], paypal_txn),
+        )
+        expected_paypal_canonical = paypal_txn.lower().replace("-", "_")
+        if len(paypal_verdicts) != 1:
+            return _fail(f"paypal_verdict_count:{len(paypal_verdicts)}:{paypal_txn}")
+        verdict_pp = paypal_verdicts[0]
+        if str(verdict_pp[0]) != expected_paypal_canonical:
+            return _fail(
+                f"paypal_canonical_mismatch:{verdict_pp[0]}:{expected_paypal_canonical}"
+            )
+        if str(verdict_pp[1]) != paypal_txn:
+            return _fail(f"paypal_native_reference_mismatch:{verdict_pp[1]}:{paypal_txn}")
+        if str(verdict_pp[2]) != "matched_provisional":
+            return _fail(f"paypal_verdict_status:{verdict_pp[2]}")
+        if int(verdict_pp[3]) != 5000 or int(verdict_pp[4]) != 5000:
+            return _fail(f"paypal_verdict_amounts:{verdict_pp[3]}:{verdict_pp[4]}")
+        if str(verdict_pp[5]) != "USD":
+            return _fail(f"paypal_verdict_currency:{verdict_pp[5]}")
+        parity["paypal"] = {
+            "http": status_pp,
+            "key": paypal_idem,
+            "event_id": paypal_event_id,
+            "dispatch_task_id": paypal_dispatch["task_id"],
+            "b23_processed_count": int(paypal_receipt[0][1]),
+            "verdict_canonical": str(verdict_pp[0]),
+            "verdict_status": str(verdict_pp[2]),
+        }
         _TOPO.start_api()
         _wait_http_ok(f"http://127.0.0.1:{_TOPO.api_port}/health/live", 120)
         _TOPO.start_auth_root()
