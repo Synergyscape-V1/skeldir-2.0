@@ -609,6 +609,11 @@ def upgrade() -> None:
         END $$;
         """
     )
+    # The trigger function executes as the table owner when the trigger
+    # fires; no runtime role needs direct EXECUTE. Leaving the default
+    # PUBLIC grant would make every runtime principal an apparent
+    # authority surface in topology capability coverage.
+    _revoke_execute("b26_p2_enforce_verdict_money_authority()")
     op.execute(
         "DROP TRIGGER IF EXISTS trg_b26_p2_verdict_money_authority"
         " ON public.b23_match_verdicts"

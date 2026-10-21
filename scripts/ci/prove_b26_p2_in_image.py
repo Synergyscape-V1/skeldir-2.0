@@ -604,12 +604,13 @@ def main() -> int:
         details["in_image_equivalence"] = "PASS"
 
         # 5. Authority-universe assertion with image bytes.
-        # Prefer the newest (XXII) coverage law; fall back through
+        # Prefer the newest (XXIII) coverage law; fall back through
         # predecessors for older lanes.
         import importlib.util as _ilu
 
         covered = None
         for _modname, _fname, _attr in (
+            ("b26_p2_xxiii_coverage", "b26_p2_xxiii_coverage.py", "XXIII_COVERED_SURFACES"),
             ("b26_p2_xxii_coverage", "b26_p2_xxii_coverage.py", "XXII_COVERED_SURFACES"),
             ("b26_p2_xxi_coverage", "b26_p2_xxi_coverage.py", "XXI_COVERED_SURFACES"),
             ("b26_p2_xviii_coverage", "b26_p2_xviii_coverage.py", "XVIII_COVERED_SURFACES"),

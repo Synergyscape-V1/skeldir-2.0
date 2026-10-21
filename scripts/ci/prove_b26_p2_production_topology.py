@@ -2888,6 +2888,7 @@ def main() -> int:
         # through predecessors for older lanes.
         _covered = None
         for _mod, _attr in (
+            ("scripts.ci.b26_p2_xxiii_coverage", "XXIII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xxii_coverage", "XXII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xxi_coverage", "XXI_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xviii_coverage", "XVIII_COVERED_SURFACES"),
