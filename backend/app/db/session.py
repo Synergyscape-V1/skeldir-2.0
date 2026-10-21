@@ -267,12 +267,24 @@ def _bind_rls_context_after_begin(
         return
 
     is_local = os.getenv(_MUTATION_FORCE_SESSION_SCOPED) != "1"
-    if tenant_id is not None:
+    if tenant_id is not None and user_id is not None:
+        connection.execute(
+            text(
+                "SELECT set_config('app.current_tenant_id', :tenant_id, :is_local), "
+                "set_config('app.current_user_id', :user_id, :is_local)"
+            ),
+            {
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "is_local": is_local,
+            },
+        )
+    elif tenant_id is not None:
         connection.execute(
             text("SELECT set_config('app.current_tenant_id', :tenant_id, :is_local)"),
             {"tenant_id": tenant_id, "is_local": is_local},
         )
-    if user_id is not None:
+    elif user_id is not None:
         connection.execute(
             text("SELECT set_config('app.current_user_id', :user_id, :is_local)"),
             {"user_id": user_id, "is_local": is_local},

@@ -11,6 +11,10 @@ from sqlalchemy import text
 
 from app.bayesian.dirty_marker import append_dirty_event
 from app.db.session import get_b23_session
+from app.revenue_verification.semantic_authority import (
+    CanonicalizationStatus,
+    resolve_canonical_match_key,
+)
 from app.revenue_verification.timing_constants import PROVISIONAL_MATCH_WINDOW
 
 
@@ -36,6 +40,91 @@ def _normalize_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+_CANDIDATE_SCOPE_SQL = """
+    wi.tenant_id = :tenant_id
+      AND wi.verified_commerce_ingress_state = 'authenticity_verified'
+      AND public.b26_p2_ingress_has_current_authority(wi.id)
+      AND wi.event_timestamp >= :window_start
+      AND wi.event_timestamp < :window_end
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.b23_match_verdicts existing
+          WHERE existing.tenant_id = wi.tenant_id
+            AND existing.webhook_ingress_identity_id = wi.id
+      )
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.b23_match_verdicts existing
+          WHERE existing.tenant_id = wi.tenant_id
+            AND existing.provider = wi.provider
+            AND existing.provider_native_event_reference = wi.provider_native_event_reference
+            AND existing.b26_p2_source_authority_state = 'current'
+      )
+"""
+
+_CANDIDATE_SELECT_SQL = f"""
+    SELECT
+        ranked.webhook_ingress_identity_id,
+        ranked.provider,
+        ranked.provider_native_commerce_reference,
+        ranked.normalized_commerce_reference_value,
+        ranked.event_timestamp
+    FROM (
+        SELECT
+            wi.id AS webhook_ingress_identity_id,
+            wi.provider,
+            wi.provider_native_commerce_reference,
+            wi.normalized_commerce_reference_value,
+            wi.event_timestamp,
+            ROW_NUMBER() OVER (
+                PARTITION BY wi.tenant_id, wi.provider,
+                             wi.provider_native_event_reference
+                ORDER BY wi.event_timestamp DESC, wi.id DESC
+            ) AS event_ref_rank
+        FROM public.webhook_ingress_identities wi
+        WHERE {_CANDIDATE_SCOPE_SQL}
+    ) AS ranked
+    WHERE ranked.event_ref_rank = 1
+    ORDER BY ranked.event_timestamp ASC, ranked.webhook_ingress_identity_id ASC
+    LIMIT :chunk_size
+"""
+
+
+async def _select_canonical_candidates(
+    session,
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    chunk_size: int,
+) -> tuple[list[str], list[str]]:
+    rows = (
+        await session.execute(
+            text(_CANDIDATE_SELECT_SQL),
+            {
+                "tenant_id": str(tenant_id),
+                "window_start": _normalize_utc(window_start),
+                "window_end": _normalize_utc(window_end),
+                "chunk_size": int(chunk_size),
+            },
+        )
+    ).all()
+    candidate_ids: list[str] = []
+    canonical_refs: list[str] = []
+    for row in rows:
+        resolution = resolve_canonical_match_key(
+            provider=row.provider,
+            normalized_commerce_reference=row.normalized_commerce_reference_value,
+            provider_native_commerce_reference=row.provider_native_commerce_reference,
+            strict_order_id=None,
+        )
+        if resolution.status is not CanonicalizationStatus.CANONICALIZED:
+            continue
+        candidate_ids.append(str(row.webhook_ingress_identity_id))
+        canonical_refs.append(str(resolution.canonical_reference))
+    return candidate_ids, canonical_refs
+
+
 async def _execute_b23_batch_chunk(
     *,
     tenant_id: UUID,
@@ -44,10 +133,26 @@ async def _execute_b23_batch_chunk(
     chunk_size: int,
 ) -> int:
     async with get_b23_session(tenant_id) as session:
+        candidate_ids, canonical_refs = await _select_canonical_candidates(
+            session,
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            chunk_size=chunk_size,
+        )
+        if not candidate_ids:
+            return 0
         result = await session.execute(
             text(
-                """
-                WITH candidate_webhooks AS MATERIALIZED (
+                f"""
+                WITH canonical_refs AS MATERIALIZED (
+                    SELECT *
+                    FROM unnest(
+                        CAST(:candidate_ids AS uuid[]),
+                        CAST(:canonical_refs AS text[])
+                    ) AS refs(webhook_ingress_identity_id, canonical_commerce_reference)
+                ),
+                candidate_webhooks AS MATERIALIZED (
                     -- XVIII (H-XVIII-R6/R10/R20): the candidate universe
                     -- is authority-normalized BEFORE the verdict upsert.
                     -- Only currently authoritative ingress (the central
@@ -67,7 +172,7 @@ async def _execute_b23_batch_chunk(
                             wi.provider,
                             wi.provider_native_event_reference,
                             wi.provider_native_commerce_reference,
-                            wi.normalized_commerce_reference_value AS canonical_commerce_reference,
+                            refs.canonical_commerce_reference,
                             wi.verified_amount_minor,
                             wi.verified_amount_currency,
                             wi.event_timestamp,
@@ -77,30 +182,10 @@ async def _execute_b23_batch_chunk(
                                 ORDER BY wi.event_timestamp DESC, wi.id DESC
                             ) AS event_ref_rank
                         FROM public.webhook_ingress_identities wi
-                        WHERE wi.tenant_id = :tenant_id
-                          AND wi.verified_commerce_ingress_state = 'authenticity_verified'
-                          AND public.b26_p2_ingress_has_current_authority(wi.id)
-                          AND wi.event_timestamp >= :window_start
-                          AND wi.event_timestamp < :window_end
-                          AND NOT EXISTS (
-                              SELECT 1
-                              FROM public.b23_match_verdicts existing
-                              WHERE existing.tenant_id = wi.tenant_id
-                                AND existing.webhook_ingress_identity_id = wi.id
-                          )
-                          -- XVIII (H-XVIII-R20): a stale (non-current)
-                          -- verdict never blocks its genuine redelivery:
-                          -- the upsert supersedes it deterministically
-                          -- (relink re-derivation), so exactly one
-                          -- consequence universe survives.
-                          AND NOT EXISTS (
-                              SELECT 1
-                              FROM public.b23_match_verdicts existing
-                              WHERE existing.tenant_id = wi.tenant_id
-                                AND existing.provider = wi.provider
-                                AND existing.provider_native_event_reference = wi.provider_native_event_reference
-                                AND existing.b26_p2_source_authority_state = 'current'
-                          )
+                        JOIN canonical_refs refs
+                          ON refs.webhook_ingress_identity_id = wi.id
+                        WHERE {_CANDIDATE_SCOPE_SQL}
+                          AND wi.id = ANY(CAST(:candidate_ids AS uuid[]))
                     ) AS ranked
                     WHERE ranked.event_ref_rank = 1
                     ORDER BY ranked.event_timestamp ASC, ranked.webhook_ingress_identity_id ASC
@@ -295,6 +380,8 @@ async def _execute_b23_batch_chunk(
                 "window_start": _normalize_utc(window_start),
                 "window_end": _normalize_utc(window_end),
                 "chunk_size": int(chunk_size),
+                "candidate_ids": candidate_ids,
+                "canonical_refs": canonical_refs,
                 "high_quality_window_seconds": B23_HIGH_QUALITY_MATCH_WINDOW_SECONDS,
                 "provisional_window_seconds": int(PROVISIONAL_MATCH_WINDOW.total_seconds()),
             },
