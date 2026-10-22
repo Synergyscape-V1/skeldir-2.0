@@ -298,24 +298,41 @@ def upgrade() -> None:
              LIMIT 1;
 
             IF _first.prior_source_ingress IS NULL THEN
-                violation := 'conservation_first_prior_source_missing';
-                RETURN NEXT;
-                RETURN;
-            END IF;
-
-            SELECT i.verified_amount_minor INTO _ingress_amount
-              FROM public.webhook_ingress_identities AS i
-             WHERE i.id = _first.prior_source_ingress
-               AND i.tenant_id = p_tenant_id;
-            IF NOT FOUND THEN
-                violation := 'conservation_source_unresolved';
-                RETURN NEXT;
-                RETURN;
-            END IF;
-            IF _first.prior_verified_amount_minor
-                   IS DISTINCT FROM _ingress_amount THEN
-                violation := 'conservation_first_prior_not_source';
-                RETURN NEXT;
+                -- A verdict may exist before its ingress link. Anchor
+                -- the first predecessor to the current authenticated
+                -- source instead of assuming the link transition was
+                -- amount-preserving; later corrections remain governed
+                -- by the chain and final source checks below.
+                SELECT i.verified_amount_minor INTO _ingress_amount
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE i.id = _ingress
+                   AND i.tenant_id = p_tenant_id;
+                IF NOT FOUND THEN
+                    violation := 'conservation_source_unresolved';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+                IF _first.prior_verified_amount_minor
+                       IS DISTINCT FROM _ingress_amount THEN
+                    violation := 'conservation_first_prior_not_source';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+            ELSE
+                SELECT i.verified_amount_minor INTO _ingress_amount
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE i.id = _first.prior_source_ingress
+                   AND i.tenant_id = p_tenant_id;
+                IF NOT FOUND THEN
+                    violation := 'conservation_source_unresolved';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+                IF _first.prior_verified_amount_minor
+                       IS DISTINCT FROM _ingress_amount THEN
+                    violation := 'conservation_first_prior_not_source';
+                    RETURN NEXT;
+                END IF;
             END IF;
 
             _prev := NULL;
@@ -684,7 +701,7 @@ def downgrade() -> None:
         "DROP FUNCTION IF EXISTS public.b26_p2_authority_universe()"
     )
     op.execute(
-        "DROP TABLE IF EXISTS public.b26_p2_authority_universe"
+        "DROP TABLE IF EXISTS public.b26_p2_authority_universe"  # CI:DESTRUCTIVE_OK - Downgrade rollback for XXIII-only authority universe
     )
     # Restore the XXII conservation function shape (NULL-skipping) so the
     # downgrade is a true inverse of the upgrade body.
