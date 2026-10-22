@@ -1475,6 +1475,22 @@ async def shopify_order_create(
             identity_payload=identity_payload,
             request_headers=request_headers,
         )
+    from app.webhooks.commerce_derivation import (  # noqa: PLC0415
+        CommerceDerivationError,
+        derive_commerce,
+    )
+
+    try:
+        derive_commerce("shopify", raw_body)
+    except CommerceDerivationError as exc:
+        return await _route_unsupported_event_family(
+            source="shopify",
+            raw_body=raw_body,
+            reason=str(exc),
+            tenant_id=tenant_info["tenant_id"],
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     event_data = {
         "event_type": "purchase",
         "event_timestamp": payload.created_at.isoformat(),
