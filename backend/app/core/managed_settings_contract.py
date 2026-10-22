@@ -716,6 +716,17 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         owner="backend-platform",
         call_sites=("backend/app/trust/builder.py",),
     ),
+    "B26_P2_HISTORY_WITNESS_CUSTODY_PATH": _contract(
+        key="B26_P2_HISTORY_WITNESS_CUSTODY_PATH",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-custody-path",
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=(
+            "backend/app/trust/builder.py",
+            "backend/app/tasks/b26_p2_history.py",
+        ),
+    ),
 }
 
 
