@@ -699,6 +699,7 @@ async def test_postgres_before_after_snapshot_only_access_log_changes(
 async def test_postgres_rate_limit_storm_is_atomic_and_exact() -> None:
     tenant_id = uuid4()
     agent_client_id = uuid4()
+    fixed_now = datetime(2026, 7, 20, 15, 0, 30, tzinfo=timezone.utc)
     migration_engine = create_async_engine(
         to_asyncpg_postgres_dsn(get_migration_database_url())
     )
@@ -765,6 +766,7 @@ async def test_postgres_rate_limit_storm_is_atomic_and_exact() -> None:
                     tenant_id=tenant_id,
                     agent_client_id=agent_client_id,
                     request_limit=10,
+                    at_time=fixed_now,
                 )
 
         results = await asyncio.wait_for(
