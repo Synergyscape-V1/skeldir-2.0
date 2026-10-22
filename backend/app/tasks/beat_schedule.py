@@ -11,7 +11,12 @@ from typing import Dict, Any
 
 from celery.schedules import crontab
 
-from app.core.queues import QUEUE_B26_P2_RELAY, QUEUE_BAYESIAN, QUEUE_BAYESIAN_PUBLISHER, QUEUE_B23_MATCH_ENGINE
+from app.core.queues import (
+    QUEUE_B26_P2_HISTORY,
+    QUEUE_B26_P2_RELAY,
+    QUEUE_BAYESIAN,
+    QUEUE_BAYESIAN_PUBLISHER,
+)
 
 
 def _refresh_interval_seconds() -> float:
@@ -193,14 +198,15 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
     # issuance degrades unless a fresh beat-authored clean observation
     # agrees with live state (bounded runtime recency); CI gates
     # deployment-time continuity against the committed anchor file.
-    # Executes on the B2.3 match-engine queue (proven operational).
+    # Executes on the dedicated witness-observer queue. The B2.3 worker
+    # does not hold the private key or the journal.
     schedule["b26-p2-history-observation"] = {
         "task": "app.tasks.b26_p2_history.observe_history_integrity",
         "schedule": 300.0,
         "options": {
             "expires": 600,
-            "queue": QUEUE_B23_MATCH_ENGINE,
-            "routing_key": f"{QUEUE_B23_MATCH_ENGINE}.task",
+            "queue": QUEUE_B26_P2_HISTORY,
+            "routing_key": f"{QUEUE_B26_P2_HISTORY}.task",
         },
     }
     if os.getenv("SKELDIR_B25_DISABLE_TRUST_ISSUANCE_RECONCILER_JOB") != "1":

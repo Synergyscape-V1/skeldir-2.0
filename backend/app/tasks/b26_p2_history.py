@@ -12,7 +12,7 @@ import logging
 from typing import Any, Dict
 
 from app.celery_app import celery_app
-from app.core.queues import QUEUE_B23_MATCH_ENGINE
+from app.core.queues import QUEUE_B26_P2_HISTORY
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
 @celery_app.task(
     bind=True,
     name=HISTORY_TASK_NAME,
-    routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+    routing_key=f"{QUEUE_B26_P2_HISTORY}.task",
     max_retries=3,
     default_retry_delay=60,
 )
