@@ -811,7 +811,10 @@ jobs:
 
   b21-p4-queue-isolation-performance-lock:
     name: B2.1-P4 Queue Isolation + Performance Semantics Lock
-    runs-on: ubuntu-latest
+    # Pinned: the 5.00 s SLA was calibrated on the 24.04 runner image. The
+    # ubuntu-latest rollover to 26.04 measures the same workload at ~5.34 s,
+    # above the unchanged threshold; the gate itself is not relaxed.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:15-alpine
