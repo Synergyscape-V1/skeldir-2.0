@@ -145,6 +145,51 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
+    # XXIII-2b. Chain appends follow insertion order. XX used
+    # (recorded_at, id) to find the predecessor, but recorded_at is the
+    # transaction timestamp and id is random: two corrections committed
+    # in one transaction -- or any concurrent pair whose timestamps tie
+    # -- both link to an arbitrary earlier row instead of to the row
+    # immediately before them in the sequence. The ledger then carries a
+    # fork, and the continuity reader below correctly refuses it. The
+    # sequence number is the append order the reader verifies, so it is
+    # also the only correct predecessor order.
+    # ------------------------------------------------------------------
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.b26_p2_chain_verdict_supersession()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path TO 'pg_catalog', 'public'
+        AS $$
+        DECLARE
+            _prev text;
+            _preimage text;
+        BEGIN
+            PERFORM pg_advisory_xact_lock(82173645, 300003);
+            SELECT l.entry_hash INTO _prev
+              FROM public.b26_p2_verdict_supersession_ledger AS l
+             ORDER BY l.seq DESC
+             LIMIT 1;
+            NEW.prev_entry_hash := _prev;
+            _preimage := COALESCE(NEW.verdict_id::text, '')
+                || '|' || COALESCE(NEW.prior_attributed_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.new_attributed_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.prior_verified_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.new_verified_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.prior_authority_state, 'NULL')
+                || '|' || COALESCE(NEW.new_authority_state, 'NULL')
+                || '|' || COALESCE(_prev, '');
+            NEW.entry_hash :=
+                encode(digest(_preimage, 'sha256'), 'hex');
+            RETURN NEW;
+        END $$;
+        """
+    )
+    _revoke_execute("b26_p2_chain_verdict_supersession()")
+
+    # ------------------------------------------------------------------
     # XXIII-3. Continuity is the hash chain, not sequence contiguity.
     # BIGSERIAL values are consumed by rolled-back transactions, so a gap
     # is not evidence of tampering (and must not poison the observer).
@@ -652,6 +697,42 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.b26_p2_chain_verdict_supersession()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path TO 'pg_catalog', 'public'
+        AS $$
+        DECLARE
+            _prev text;
+            _preimage text;
+        BEGIN
+            PERFORM pg_advisory_xact_lock(82173645, 300003);
+            SELECT l.entry_hash INTO _prev
+              FROM public.b26_p2_verdict_supersession_ledger AS l
+             ORDER BY l.recorded_at DESC, l.id DESC
+             LIMIT 1;
+            NEW.prev_entry_hash := _prev;
+            _preimage := COALESCE(NEW.verdict_id::text, '')
+                || '|' || COALESCE(NEW.prior_attributed_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.new_attributed_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.prior_verified_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.new_verified_amount_minor::text, 'NULL')
+                || '|' || COALESCE(NEW.prior_authority_state, 'NULL')
+                || '|' || COALESCE(NEW.new_authority_state, 'NULL')
+                || '|' || COALESCE(_prev, '');
+            NEW.entry_hash :=
+                encode(digest(_preimage, 'sha256'), 'hex');
+            RETURN NEW;
+        END $$;
+        """
+    )
+    op.execute(
+        "REVOKE ALL ON FUNCTION public.b26_p2_chain_verdict_supersession()"
+        " FROM PUBLIC"
+    )
     op.execute(
         """
         CREATE OR REPLACE FUNCTION public.b26_p2_verify_history_continuity()

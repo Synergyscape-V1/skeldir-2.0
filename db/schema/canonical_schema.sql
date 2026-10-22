@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict xnDU8Tbv6Y9OuZV7Rw8wPm5gbKvSwd0SuTFG1OkZtjnj5b5oym8gstn60YkoRQX
+\restrict hQkrKEKK0TDD7wIbQ2bxLUO8ucRP1pilRX2yVldJh4WTgr0JvUSKagmMj9MVrcf
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -3134,6 +3134,17 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
 
 
 --
+-- Name: b26_p2_authority_universe(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_authority_universe() RETURNS uuid
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$ SELECT universe FROM public.b26_p2_authority_universe
+              WHERE id = 1 $$;
+
+
+--
 -- Name: b26_p2_canonical_day_end(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3286,12 +3297,10 @@ CREATE FUNCTION public.b26_p2_chain_verdict_supersession() RETURNS trigger
             _prev text;
             _preimage text;
         BEGIN
-            -- Serialize chain appends within the transaction scope so
-            -- concurrent corrections cannot fork the chain.
             PERFORM pg_advisory_xact_lock(82173645, 300003);
             SELECT l.entry_hash INTO _prev
               FROM public.b26_p2_verdict_supersession_ledger AS l
-             ORDER BY l.recorded_at DESC, l.id DESC
+             ORDER BY l.seq DESC
              LIMIT 1;
             NEW.prev_entry_hash := _prev;
             _preimage := COALESCE(NEW.verdict_id::text, '')
@@ -4507,6 +4516,218 @@ CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
 
 
 --
+-- Name: b26_p2_enforce_verdict_money_authority(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+        DECLARE
+            _money_changed boolean;
+            _attribution_changed boolean;
+            _verified_changed boolean;
+            _net_changed boolean;
+            _attribution_amount integer;
+            _source_amount integer;
+            _source_ok boolean := false;
+            _net integer;
+            _owner oid;
+        BEGIN
+            IF session_user = 'postgres'
+               OR pg_catalog.pg_has_role(
+                      session_user, 'migration_owner', 'USAGE') THEN
+                RETURN NEW;
+            END IF;
+            SELECT relowner INTO _owner
+              FROM pg_catalog.pg_class
+             WHERE oid = TG_RELID;
+            IF _owner IS NOT NULL
+               AND pg_catalog.pg_has_role(session_user, _owner, 'USAGE') THEN
+                RETURN NEW;
+            END IF;
+            IF current_setting('transaction_isolation', true)
+               IS DISTINCT FROM 'read committed' THEN
+                RAISE EXCEPTION
+                    'b26_p2_verdict_money_snapshot_not_linearizable'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            IF TG_OP = 'UPDATE' THEN
+                _money_changed :=
+                    OLD.attributed_amount_minor
+                        IS DISTINCT FROM NEW.attributed_amount_minor
+                    OR OLD.verified_amount_minor
+                        IS DISTINCT FROM NEW.verified_amount_minor
+                    OR OLD.canonical_expected_gross_amount_minor
+                        IS DISTINCT FROM
+                           NEW.canonical_expected_gross_amount_minor
+                    OR OLD.canonical_captured_gross_amount_minor
+                        IS DISTINCT FROM
+                           NEW.canonical_captured_gross_amount_minor
+                    OR OLD.canonical_net_verified_amount_minor
+                        IS DISTINCT FROM
+                           NEW.canonical_net_verified_amount_minor;
+                _attribution_changed :=
+                    OLD.attributed_amount_minor
+                        IS DISTINCT FROM NEW.attributed_amount_minor
+                    OR OLD.canonical_expected_gross_amount_minor
+                        IS DISTINCT FROM
+                           NEW.canonical_expected_gross_amount_minor;
+                _verified_changed :=
+                    OLD.verified_amount_minor
+                        IS DISTINCT FROM NEW.verified_amount_minor
+                    OR OLD.canonical_captured_gross_amount_minor
+                        IS DISTINCT FROM
+                           NEW.canonical_captured_gross_amount_minor;
+                _net_changed :=
+                    OLD.canonical_net_verified_amount_minor
+                        IS DISTINCT FROM
+                           NEW.canonical_net_verified_amount_minor;
+            ELSE
+                _money_changed :=
+                    COALESCE(NEW.attributed_amount_minor, 0) <> 0
+                    OR COALESCE(NEW.canonical_expected_gross_amount_minor, 0)
+                        <> 0
+                    OR COALESCE(NEW.verified_amount_minor, 0) <> 0
+                    OR COALESCE(NEW.canonical_captured_gross_amount_minor, 0)
+                        <> 0
+                    OR COALESCE(NEW.canonical_net_verified_amount_minor, 0)
+                        <> 0;
+                _attribution_changed :=
+                    COALESCE(NEW.attributed_amount_minor, 0) <> 0
+                    OR COALESCE(NEW.canonical_expected_gross_amount_minor, 0)
+                        <> 0;
+                _verified_changed :=
+                    COALESCE(NEW.verified_amount_minor, 0) <> 0
+                    OR COALESCE(NEW.canonical_captured_gross_amount_minor, 0)
+                        <> 0;
+                _net_changed :=
+                    COALESCE(NEW.canonical_net_verified_amount_minor, 0) <> 0;
+            END IF;
+            IF NOT _money_changed THEN
+                RETURN NEW;
+            END IF;
+
+            IF NEW.canonical_captured_gross_amount_minor
+                   IS DISTINCT FROM NEW.verified_amount_minor THEN
+                RAISE EXCEPTION
+                    'b26_p2_verdict_money_authority_refused:'
+                    'captured_verified_diverged'
+                    USING ERRCODE = '42501';
+            END IF;
+
+            IF _attribution_changed THEN
+                IF NEW.attribution_event_id IS NULL THEN
+                    RAISE EXCEPTION
+                        'b26_p2_verdict_money_authority_refused:'
+                        'attribution_source_missing'
+                        USING ERRCODE = '42501';
+                END IF;
+                SELECT COALESCE(ae.conversion_value_cents,
+                                ae.revenue_cents, 0)
+                  INTO _attribution_amount
+                  FROM public.attribution_events AS ae
+                 WHERE ae.id = NEW.attribution_event_id
+                   AND ae.tenant_id = NEW.tenant_id;
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION
+                        'b26_p2_verdict_money_authority_refused:'
+                        'attribution_source_unresolved'
+                        USING ERRCODE = '42501';
+                END IF;
+                IF NEW.attributed_amount_minor
+                       IS DISTINCT FROM _attribution_amount
+                   OR NEW.canonical_expected_gross_amount_minor
+                       IS DISTINCT FROM _attribution_amount THEN
+                    RAISE EXCEPTION
+                        'b26_p2_verdict_money_authority_refused:'
+                        'attribution_source_diverged'
+                        USING ERRCODE = '42501';
+                END IF;
+            END IF;
+
+            IF _verified_changed THEN
+                IF NEW.webhook_ingress_identity_id IS NOT NULL THEN
+                    SELECT i.verified_amount_minor INTO _source_amount
+                      FROM public.webhook_ingress_identities AS i
+                     WHERE i.id = NEW.webhook_ingress_identity_id
+                       AND i.tenant_id = NEW.tenant_id;
+                    IF FOUND
+                       AND _source_amount
+                           IS NOT DISTINCT FROM NEW.verified_amount_minor
+                       AND public.b26_p2_ingress_has_current_authority(
+                               NEW.webhook_ingress_identity_id) THEN
+                        _source_ok := true;
+                    END IF;
+                END IF;
+                IF NOT _source_ok THEN
+                    SELECT true INTO _source_ok
+                      FROM public.b23_revenue_events AS e
+                      JOIN public.webhook_ingress_identities AS i
+                        ON i.tenant_id = e.tenant_id
+                       AND i.provider = e.provider
+                       AND i.provider_native_event_reference =
+                           e.provider_native_event_reference
+                     WHERE e.tenant_id = NEW.tenant_id
+                       AND e.match_verdict_id = NEW.id
+                       AND e.is_gross_capture_correction = true
+                       AND e.captured_amount_minor =
+                           NEW.canonical_captured_gross_amount_minor
+                       AND i.verified_amount_minor =
+                           NEW.canonical_captured_gross_amount_minor
+                       AND public.b26_p2_ingress_has_current_authority(
+                               i.id)
+                     LIMIT 1;
+                END IF;
+                IF NOT COALESCE(_source_ok, false) THEN
+                    RAISE EXCEPTION
+                        'b26_p2_verdict_money_authority_refused:'
+                        'verified_source_missing'
+                        USING ERRCODE = '42501';
+                END IF;
+            END IF;
+
+            IF _net_changed THEN
+                SELECT GREATEST(
+                           0::bigint,
+                           NEW.canonical_captured_gross_amount_minor::bigint
+                           + COALESCE(SUM(
+                               CASE
+                                   WHEN e.is_gross_capture_correction
+                                       THEN 0
+                                   WHEN e.event_type IN
+                                       ('partial_refund', 'full_refund')
+                                       THEN -COALESCE(
+                                           e.refund_amount_minor, 0)
+                                   WHEN e.event_type = 'chargeback_lost'
+                                       THEN -COALESCE(
+                                           e.chargeback_amount_minor, 0)
+                                   WHEN e.event_type = 'chargeback_won'
+                                       THEN COALESCE(
+                                           e.chargeback_amount_minor, 0)
+                                   WHEN e.event_type = 'reversal'
+                                       THEN COALESCE(
+                                           e.reversal_amount_minor, 0)
+                                   ELSE 0
+                               END), 0))
+                  INTO _net
+                  FROM public.b23_revenue_events AS e
+                 WHERE e.tenant_id = NEW.tenant_id
+                   AND e.match_verdict_id = NEW.id;
+                IF NEW.canonical_net_verified_amount_minor
+                       IS DISTINCT FROM _net THEN
+                    RAISE EXCEPTION
+                        'b26_p2_verdict_money_authority_refused:'
+                        'net_not_recomputed'
+                        USING ERRCODE = '42501';
+                END IF;
+            END IF;
+            RETURN NEW;
+        END $$;
+
+
+--
 -- Name: b26_p2_enforce_verdict_temporal_conservation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5584,6 +5805,29 @@ CREATE FUNCTION public.b26_p2_read_history_prefix_digest() RETURNS text
             'hex'
         )
           FROM public.b26_p2_verdict_supersession_ledger AS l
+        $$;
+
+
+--
+-- Name: b26_p2_read_history_snapshot(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.b26_p2_read_history_snapshot(p_prior_tip_seq bigint DEFAULT NULL::bigint) RETURNS TABLE(n bigint, tip_seq bigint, tip_hash text, prefix_digest text, violations text, authority_universe uuid, prior_tip_hash text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+            SELECT state.n,
+                   state.tip_seq,
+                   state.tip_hash,
+                   public.b26_p2_read_history_prefix_digest(),
+                   public.b26_p2_read_history_violations(),
+                   public.b26_p2_authority_universe(),
+                   CASE
+                       WHEN p_prior_tip_seq IS NULL THEN NULL
+                       ELSE public.b26_p2_read_history_entry_hash(
+                           p_prior_tip_seq)
+                   END
+              FROM public.b26_p2_read_history_witness_state() AS state
         $$;
 
 
@@ -6679,25 +6923,33 @@ CREATE FUNCTION public.b26_p2_verdict_has_current_authority(p_verdict uuid) RETU
 CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violation text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
-    AS $$
+    AS $_$
         BEGIN
             IF EXISTS (
                 SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
-                HAVING count(*) > 0
-                   AND max(l.seq) - min(l.seq) + 1 <> count(*)
-            ) THEN
-                violation := 'supersession_sequence_gap';
-                RETURN NEXT;
-            END IF;
-            IF EXISTS (
-                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
                  WHERE l.entry_hash IS NULL
+                    OR l.entry_hash !~ '^[0-9a-f]{64}$'
             ) THEN
                 violation := 'supersession_chain_unchained_row';
                 RETURN NEXT;
             END IF;
+            IF EXISTS (
+                WITH ordered AS (
+                    SELECT l.seq,
+                           l.prev_entry_hash,
+                           lag(l.entry_hash) OVER (ORDER BY l.seq) AS prior
+                      FROM public.b26_p2_verdict_supersession_ledger AS l
+                )
+                SELECT 1 FROM ordered
+                 WHERE (prior IS NULL AND prev_entry_hash IS NOT NULL)
+                    OR (prior IS NOT NULL
+                        AND prev_entry_hash IS DISTINCT FROM prior)
+            ) THEN
+                violation := 'supersession_chain_broken';
+                RETURN NEXT;
+            END IF;
             RETURN;
-        END $$;
+        END $_$;
 
 
 --
@@ -6886,18 +7138,54 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                AND l.verdict_id = p_verdict_id;
 
             IF _count = 0 THEN
-                IF _ingress IS NOT NULL THEN
-                    SELECT i.verified_amount_minor INTO _ingress_amount
-                      FROM public.webhook_ingress_identities AS i
-                     WHERE i.id = _ingress
-                       AND i.tenant_id = p_tenant_id;
-                    IF _ingress_amount IS NOT NULL
-                       AND _verified IS DISTINCT FROM _ingress_amount THEN
+                IF _ingress IS NULL THEN
+                    IF _verified IS DISTINCT FROM 0
+                       OR _attributed IS DISTINCT FROM 0 THEN
                         violation :=
-                            'conservation_initial_amount_not_source';
+                            'conservation_source_ingress_missing';
+                        RETURN NEXT;
+                    END IF;
+                    RETURN;
+                END IF;
+                SELECT i.verified_amount_minor INTO _ingress_amount
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE i.id = _ingress
+                   AND i.tenant_id = p_tenant_id;
+                IF NOT FOUND THEN
+                    violation := 'conservation_source_unresolved';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+                IF _verified IS DISTINCT FROM _ingress_amount THEN
+                    -- A gross-capture correction may bind a provider
+                    -- event whose authenticated ingress carries the new
+                    -- amount. Nothing else may diverge from the source.
+                    IF NOT EXISTS (
+                        SELECT 1
+                          FROM public.b23_revenue_events AS e
+                          JOIN public.webhook_ingress_identities AS i
+                            ON i.tenant_id = e.tenant_id
+                           AND i.provider = e.provider
+                           AND i.provider_native_event_reference =
+                               e.provider_native_event_reference
+                         WHERE e.tenant_id = p_tenant_id
+                           AND e.match_verdict_id = p_verdict_id
+                           AND e.is_gross_capture_correction = true
+                           AND e.captured_amount_minor = _verified
+                           AND i.verified_amount_minor = _verified
+                           AND public.b26_p2_ingress_has_current_authority(
+                                   i.id)
+                    ) THEN
+                        violation := 'conservation_source_amount_diverged';
                         RETURN NEXT;
                     END IF;
                 END IF;
+                RETURN;
+            END IF;
+
+            IF _ingress IS NULL THEN
+                violation := 'conservation_source_ingress_missing';
+                RETURN NEXT;
                 RETURN;
             END IF;
 
@@ -6908,28 +7196,40 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
              ORDER BY l.seq ASC
              LIMIT 1;
 
-            IF _first.prior_source_ingress IS NOT NULL THEN
-                SELECT i.verified_amount_minor INTO _ingress_amount
-                  FROM public.webhook_ingress_identities AS i
-                 WHERE i.id = _first.prior_source_ingress
-                   AND i.tenant_id = p_tenant_id;
-                IF _ingress_amount IS NOT NULL
-                   AND _first.prior_verified_amount_minor
-                       IS DISTINCT FROM _ingress_amount THEN
-                    violation :=
-                        'conservation_first_prior_not_source';
-                    RETURN NEXT;
-                END IF;
-            ELSIF _ingress IS NOT NULL THEN
+            IF _first.prior_source_ingress IS NULL THEN
+                -- A verdict may exist before its ingress link. Anchor
+                -- the first predecessor to the current authenticated
+                -- source instead of assuming the link transition was
+                -- amount-preserving; later corrections remain governed
+                -- by the chain and final source checks below.
                 SELECT i.verified_amount_minor INTO _ingress_amount
                   FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = p_tenant_id;
-                IF _ingress_amount IS NOT NULL
-                   AND _first.prior_verified_amount_minor
+                IF NOT FOUND THEN
+                    violation := 'conservation_source_unresolved';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+                IF _first.prior_verified_amount_minor
                        IS DISTINCT FROM _ingress_amount THEN
-                    violation :=
-                        'conservation_first_prior_not_source';
+                    violation := 'conservation_first_prior_not_source';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+            ELSE
+                SELECT i.verified_amount_minor INTO _ingress_amount
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE i.id = _first.prior_source_ingress
+                   AND i.tenant_id = p_tenant_id;
+                IF NOT FOUND THEN
+                    violation := 'conservation_source_unresolved';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+                IF _first.prior_verified_amount_minor
+                       IS DISTINCT FROM _ingress_amount THEN
+                    violation := 'conservation_first_prior_not_source';
                     RETURN NEXT;
                 END IF;
             END IF;
@@ -6961,6 +7261,36 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                OR _prev.new_source_ingress IS DISTINCT FROM _ingress THEN
                 violation := 'conservation_ledger_not_current';
                 RETURN NEXT;
+            END IF;
+
+            SELECT i.verified_amount_minor INTO _ingress_amount
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.id = _ingress
+               AND i.tenant_id = p_tenant_id;
+            IF NOT FOUND THEN
+                violation := 'conservation_source_unresolved';
+                RETURN NEXT;
+                RETURN;
+            END IF;
+            IF _verified IS DISTINCT FROM _ingress_amount THEN
+                IF NOT EXISTS (
+                    SELECT 1
+                      FROM public.b23_revenue_events AS e
+                      JOIN public.webhook_ingress_identities AS i
+                        ON i.tenant_id = e.tenant_id
+                       AND i.provider = e.provider
+                       AND i.provider_native_event_reference =
+                           e.provider_native_event_reference
+                     WHERE e.tenant_id = p_tenant_id
+                       AND e.match_verdict_id = p_verdict_id
+                       AND e.is_gross_capture_correction = true
+                       AND e.captured_amount_minor = _verified
+                       AND i.verified_amount_minor = _verified
+                       AND public.b26_p2_ingress_has_current_authority(i.id)
+                ) THEN
+                    violation := 'conservation_source_amount_diverged';
+                    RETURN NEXT;
+                END IF;
             END IF;
             RETURN;
         END $$;
@@ -11166,6 +11496,18 @@ CREATE TABLE public.b26_p2_auth_root_evidence (
 );
 
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b26_p2_authority_universe; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b26_p2_authority_universe (
+    id smallint DEFAULT 1 NOT NULL,
+    universe uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT b26_p2_authority_universe_id_check CHECK ((id = 1))
+);
 
 
 --
@@ -16481,6 +16823,14 @@ ALTER TABLE ONLY public.b24_source_window_feature_authority
 
 ALTER TABLE ONLY public.b24_worker_process_authority
     ADD CONSTRAINT b24_worker_process_authority_pkey PRIMARY KEY (generation_id, pid);
+
+
+--
+-- Name: b26_p2_authority_universe b26_p2_authority_universe_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.b26_p2_authority_universe
+    ADD CONSTRAINT b26_p2_authority_universe_pkey PRIMARY KEY (id);
 
 
 --
@@ -23186,6 +23536,13 @@ CREATE TRIGGER trg_b26_p2_verdict_authority_stamp BEFORE INSERT ON public.b23_ma
 
 
 --
+-- Name: b23_match_verdicts trg_b26_p2_verdict_money_authority; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b26_p2_verdict_money_authority BEFORE UPDATE OF attributed_amount_minor, verified_amount_minor, canonical_expected_gross_amount_minor, canonical_captured_gross_amount_minor, canonical_net_verified_amount_minor ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_verdict_money_authority();
+
+
+--
 -- Name: b23_match_verdicts trg_b26_p2_verdict_temporal_conservation; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -26471,5 +26828,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict xnDU8Tbv6Y9OuZV7Rw8wPm5gbKvSwd0SuTFG1OkZtjnj5b5oym8gstn60YkoRQX
+\unrestrict hQkrKEKK0TDD7wIbQ2bxLUO8ucRP1pilRX2yVldJh4WTgr0JvUSKagmMj9MVrcf
 

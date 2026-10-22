@@ -134,9 +134,9 @@ async def _seed_verdicts(
                     :tenant_id, 'stripe', :namespace || '-order-' || ordinal,
                     :namespace || '-event-' || ordinal,
                     :namespace || '-commerce-' || ordinal,
-                    'pending', 'high', 10000, 10000, 'USD',
+                    'pending', 'high', 0, 0, 'USD',
                     now(), now(), now(), now(),
-                    10000, 10000, 10000, 0, 0, 'exact'
+                    0, 0, 0, 0, 0, 'exact'
                 FROM generate_series(1, :row_count) AS ordinal
                 RETURNING id
                 """

@@ -2927,7 +2927,9 @@ jobs:
 
   b15-p7-ci-adjudication-closure:
     name: B1.5 P7 Technical Closure Harness, Browser E2E Truth, and Mental-Model Blocking Gate
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 has no browser build for ubuntu-26.04
+    # (ubuntu-latest rolled over and every install attempt failed).
+    runs-on: ubuntu-24.04
     # Pinned by contracts-internal/governance/b15_p7_ci_adjudication_closure.main.json:
     # B1.5-P7 contracts this ordering for audit closure, which outranks the
     # throughput argument for removing dataflow-free edges.
@@ -3851,7 +3853,9 @@ jobs:
 
   phase-gates:
     name: Phase Gates
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 has no browser build for ubuntu-26.04
+    # (ubuntu-latest rolled over and every install attempt failed).
+    runs-on: ubuntu-24.04
     needs: [validate-phase-manifest]
     services:
       postgres:
@@ -4015,7 +4019,9 @@ jobs:
 
   phase-chain:
     name: Phase Chain (B0.4 target)
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 has no browser build for ubuntu-26.04
+    # (ubuntu-latest rolled over and every install attempt failed).
+    runs-on: ubuntu-24.04
     needs: [validate-phase-manifest]
     services:
       postgres:
