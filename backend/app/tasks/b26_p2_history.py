@@ -12,7 +12,7 @@ import logging
 from typing import Any, Dict
 
 from app.celery_app import celery_app
-from app.core.queues import QUEUE_B23_MATCH_ENGINE
+from app.core.queues import QUEUE_B26_P2_HISTORY
 
 logger = logging.getLogger(__name__)
 
@@ -104,35 +104,31 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         if settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH:
             raise HistoryWitnessError("witness_genesis_journal_missing") from exc
         journal = None
+    previous_tip_seq: int | None = None
+    if journal is not None:
+        previous_tip_seq = journal.latest.ledger_tip_seq
     async with _engine.connect() as conn:
-        state = (
+        # XXIII (HB-07): one coherent snapshot for state, prefix digest,
+        # violations, authority universe, and the prior anchor entry.
+        snapshot = (
             (
                 await conn.execute(
                     text(
-                        "SELECT n, tip_seq, tip_hash FROM"
-                        " public.b26_p2_read_history_witness_state()"
-                    )
+                        "SELECT n, tip_seq, tip_hash, prefix_digest,"
+                        " violations, authority_universe, prior_tip_hash"
+                        " FROM public.b26_p2_read_history_snapshot(:prior)"
+                    ),
+                    {"prior": previous_tip_seq},
                 )
             )
             .mappings()
             .one()
         )
-        prefix_digest = await conn.scalar(
-            text("SELECT public.b26_p2_read_history_prefix_digest()")
-        )
-        raw_violations = await conn.scalar(
-            text("SELECT public.b26_p2_read_history_violations()")
-        )
-        previous_tip_hash: str | None = None
-        if journal is not None:
-            previous = journal.latest
-            if previous.ledger_tip_seq is not None:
-                previous_tip_hash = await conn.scalar(
-                    text(
-                        "SELECT public.b26_p2_read_history_entry_hash(:seq)"
-                    ),
-                    {"seq": int(previous.ledger_tip_seq)},
-                )
+        state = snapshot
+        prefix_digest = snapshot["prefix_digest"]
+        raw_violations = snapshot["violations"]
+        authority_universe = snapshot["authority_universe"]
+        previous_tip_hash: str | None = snapshot["prior_tip_hash"]
     violations = str(raw_violations or "").strip()
     if violations:
         raise HistoryWitnessError(
@@ -167,6 +163,14 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         ledger_tip_hash=state["tip_hash"],
         ledger_prefix_digest=prefix_digest,
         genesis_hash=settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH,
+        authority_universe=(
+            str(authority_universe) if authority_universe is not None else None
+        ),
+        prefix_anchor_seq=previous_tip_seq,
+        prefix_anchor_hash=(
+            journal.latest.ledger_tip_hash if journal is not None else None
+        ),
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
     )
     return {
         "ledger_count": checkpoint.ledger_count,
@@ -181,7 +185,7 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
 @celery_app.task(
     bind=True,
     name=HISTORY_TASK_NAME,
-    routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+    routing_key=f"{QUEUE_B26_P2_HISTORY}.task",
     max_retries=3,
     default_retry_delay=60,
 )

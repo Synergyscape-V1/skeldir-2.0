@@ -35,6 +35,13 @@ MIG_XXII = (
     / "007_skeldir_foundation"
     / "202610180002_b26_p2_corrective_xxii_context_robust_witness.py"
 )
+MIG_XXIII = (
+    REPO_ROOT
+    / "alembic"
+    / "versions"
+    / "007_skeldir_foundation"
+    / "202610180003_b26_p2_corrective_xxiii_witness_growth_authority.py"
+)
 CONTRACT = REPO_ROOT / "backend" / "app" / "core" / "construction_authority.py"
 BUILDER = REPO_ROOT / "backend" / "app" / "trust" / "builder.py"
 WITNESS = REPO_ROOT / "backend" / "app" / "trust" / "history_witness.py"
@@ -47,7 +54,7 @@ WORKFLOW = (
     / "b2_6-p1-finance-reconciliation-adjudication.yml"
 )
 
-HEAD = "202610180002"
+HEAD = "202610180003"
 
 
 def _read(path: Path, violations: list[str], tag: str) -> str:
@@ -60,6 +67,8 @@ def _read(path: Path, violations: list[str], tag: str) -> str:
 
 def _static_checks(violations: list[str], checks: dict) -> None:
     mig = _read(MIG_XXII, violations, "migration")
+    mig_next = _read(MIG_XXIII, violations, "migration_xxiii")
+    combined = mig + "\n" + mig_next
     contract = _read(CONTRACT, violations, "contract")
     builder = _read(BUILDER, violations, "builder")
     witness = _read(WITNESS, violations, "witness")
@@ -67,10 +76,14 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     coverage = _read(COVERAGE, violations, "coverage")
     workflow = _read(WORKFLOW, violations, "workflow")
 
-    if f'revision = "{HEAD}"' not in mig:
-        violations.append("xxii_comp_migration_head_missing")
+    if 'revision = "202610180002"' not in mig:
+        violations.append("xxii_comp_migration_revision_missing")
     if 'down_revision = "202610180001"' not in mig:
         violations.append("xxii_comp_migration_parent_missing")
+    if 'revision = "202610180003"' not in mig_next:
+        violations.append("xxii_comp_migration_head_missing")
+    if 'down_revision = "202610180002"' not in mig_next:
+        violations.append("xxii_comp_migration_head_parent_missing")
     if f'REQUIRED_SCHEMA_REVISION = "{HEAD}"' not in contract:
         violations.append("xxii_comp_contract_head_missing")
 
@@ -83,12 +96,19 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "observation_chronology": "b26_p2_enforce_observation_chronology",
         "ingress_chronology": "b26_p2_enforce_ingress_event_chronology",
         "lifecycle": "b26_p2_enforce_lifecycle_admission",
+        "authority_universe": "b26_p2_authority_universe",
+        "snapshot": "b26_p2_read_history_snapshot",
+        "growth_continuity": "b26_p2_verify_history_continuity",
+        "money_authority": "b26_p2_enforce_verdict_money_authority",
+        "money_trigger": "trg_b26_p2_verdict_money_authority",
+        "source_null_refusal": "conservation_source_ingress_missing",
+        "source_amount_refusal": "conservation_source_amount_diverged",
     }
     for name, token in required_sql.items():
-        if token not in mig:
+        if token not in combined:
             violations.append(f"xxii_comp_sql_missing:{name}")
     for role in ("app_user", "app_worker", "app_beat"):
-        if f'"{role}"' not in mig:
+        if f'"{role}"' not in combined:
             violations.append(f"xxii_comp_grant_missing:{role}")
     if "_revoke_execute(" not in mig:
         violations.append("xxii_comp_public_revoke_missing")
@@ -104,20 +124,27 @@ def _static_checks(violations: list[str], checks: dict) -> None:
 
     builder_tokens = {
         "witness_gate": "_verify_signed_history_witness",
-        "live_violations": "b26_p2_read_history_violations",
+        "snapshot": "b26_p2_read_history_snapshot",
         "conservation": "read_source_money_conservation_status",
-        "prefix_digest": "b26_p2_read_history_prefix_digest",
+        "universe": "authority_universe",
+        "custody": "load_custody",
     }
     for name, token in builder_tokens.items():
         if token not in builder:
             violations.append(f"xxii_comp_builder_missing:{name}")
-    for token in ("Ed25519", "witness_live_count_diverged", "witness_live_tip_diverged"):
+    for token in (
+        "Ed25519",
+        "witness_live_count_diverged",
+        "witness_live_tip_diverged",
+        "witness_live_prefix_diverged",
+        "witness_authority_universe_missing",
+        "witness_live_universe_diverged",
+        "witness_history_tip_not_advanced",
+    ):
         if token not in witness:
             violations.append(f"xxii_comp_witness_missing:{token}")
-    if "witness_live_prefix_diverged" not in witness:
-        violations.append("xxii_comp_witness_missing:prefix_divergence")
-    if "b26_p2_read_history_prefix_digest" not in observer:
-        violations.append("xxii_comp_observer_prefix_digest_missing")
+    if "b26_p2_read_history_snapshot" not in observer:
+        violations.append("xxii_comp_observer_snapshot_missing")
     if "witness_history_prefix_diverged" not in observer:
         violations.append("xxii_comp_observer_prefix_refusal_missing")
     for token in (
@@ -189,11 +216,21 @@ def _builder_status(cursor: object) -> tuple[bool, str]:
     return asyncio.run(read_history_integrity_status(_AsyncCompatSession(cursor)))
 
 
-def _live_state(cursor: object) -> tuple[int, int | None, str | None, str]:
-    cursor.execute("SELECT * FROM public.b26_p2_read_history_witness_state()")
-    n, tip_seq, tip_hash = cursor.fetchone()
-    cursor.execute("SELECT public.b26_p2_read_history_prefix_digest()")
-    return int(n), tip_seq, tip_hash, cursor.fetchone()[0]
+def _live_state(
+    cursor: object,
+) -> tuple[int, int | None, str | None, str, str | None]:
+    cursor.execute(
+        "SELECT n, tip_seq, tip_hash, prefix_digest, authority_universe"
+        " FROM public.b26_p2_read_history_snapshot(NULL)"
+    )
+    n, tip_seq, tip_hash, digest, universe = cursor.fetchone()
+    return (
+        int(n),
+        tip_seq,
+        tip_hash,
+        digest,
+        str(universe) if universe is not None else None,
+    )
 
 
 def _plant_observation(
@@ -230,7 +267,7 @@ def _coherent_rewrite_cell(
         journal = root / "journal.jsonl"
         private_path.write_text(private_seed, encoding="utf-8")
         public_path.write_text(public_key, encoding="utf-8")
-        _n, _seq, _tip, digest = _live_state(cursor)
+        _n, _seq, _tip, digest, universe = _live_state(cursor)
         append_checkpoint(
             journal,
             private_key_path=private_path,
@@ -238,6 +275,7 @@ def _coherent_rewrite_cell(
             ledger_tip_seq=ledger_tip_seq,
             ledger_tip_hash=ledger_tip_hash,
             ledger_prefix_digest=digest,
+            authority_universe=universe,
         )
         previous = (
             settings.B26_P2_HISTORY_WITNESS_REQUIRED,
@@ -277,7 +315,9 @@ def _coherent_rewrite_cell(
                 "ALTER TABLE public.b26_p2_verdict_supersession_ledger"
                 " ENABLE TRIGGER trg_b26_p2_xix_ledger_immutable"
             )
-            new_count, new_seq, new_tip, _new_digest = _live_state(cursor)
+            new_count, new_seq, new_tip, _new_digest, _new_universe = _live_state(
+                cursor
+            )
             cursor.execute(
                 "SELECT public.b26_p2_read_history_violations()"
             )
@@ -349,7 +389,7 @@ def _truncate_cell(
         journal = root / "journal.jsonl"
         private_path.write_text(private_seed, encoding="utf-8")
         public_path.write_text(public_key, encoding="utf-8")
-        _n, _seq, _tip, digest = _live_state(cursor)
+        _n, _seq, _tip, digest, universe = _live_state(cursor)
         append_checkpoint(
             journal,
             private_key_path=private_path,
@@ -357,6 +397,7 @@ def _truncate_cell(
             ledger_tip_seq=ledger_tip_seq,
             ledger_tip_hash=ledger_tip_hash,
             ledger_prefix_digest=digest,
+            authority_universe=universe,
         )
         previous = (
             settings.B26_P2_HISTORY_WITNESS_REQUIRED,
@@ -384,6 +425,224 @@ def _truncate_cell(
                 settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
                 settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH,
             ) = previous
+
+
+def _external_false_world_cell(
+    dsn: str, violations: list[str], checks: dict
+) -> None:
+    """Commit a coherent false financial world and require refusal.
+
+    HB-12: the validator must not mint its own state and then verify its
+    own mutation. It establishes an independently authenticated source
+    (1000 minor units), commits that source, then a second connection
+    commits a coherent 99,999 world with a matching supersession chain.
+    The unmodified downstream consumer must reject the consequence from
+    its independent source reference.
+    """
+    import psycopg2  # noqa: PLC0415
+
+    tenant = str(uuid.uuid4())
+    event = str(uuid.uuid4())
+    ingress = str(uuid.uuid4())
+    verdict = str(uuid.uuid4())
+    channel = "xxiii_fw_" + uuid.uuid4().hex[:8]
+    event_ref = "xxiii-fw-" + uuid.uuid4().hex
+    commerce_ref = "xxiii-fw-order-" + uuid.uuid4().hex
+    idempotency_key = "xxiii-fw-idem-" + uuid.uuid4().hex
+
+    def _seed(conn: object) -> None:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO public.tenants (id, name, api_key_hash,"
+            " notification_email) VALUES (%s,%s,%s,%s)",
+            (tenant, "xxiii-fw", uuid.uuid4().hex, "xxiii@example.invalid"),
+        )
+        cur.execute(
+            "INSERT INTO public.channel_taxonomy (code, family, is_paid,"
+            " display_name, state) VALUES (%s,'xxiii',true,'XXIII','active')"
+            " ON CONFLICT (code) DO NOTHING",
+            (channel,),
+        )
+        cur.execute("SELECT set_config('app.current_tenant_id', %s, false)", (tenant,))
+        cur.execute(
+            "INSERT INTO public.attribution_events (id, tenant_id,"
+            " occurred_at, correlation_id, session_id, revenue_cents,"
+            " raw_payload, idempotency_key, event_type, channel,"
+            " campaign_id, conversion_value_cents, currency,"
+            " event_timestamp, processed_at, processing_status)"
+            " VALUES (%s,%s,now(),%s,%s,1000,'{}'::jsonb,%s,'conversion',"
+            " %s,'c',1000,'USD',now(),now(),'processed')",
+            (
+                event,
+                tenant,
+                str(uuid.uuid4()),
+                str(uuid.uuid4()),
+                str(uuid.uuid4()),
+                channel,
+            ),
+        )
+        cur.execute(
+            "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
+            " event_id, provider, provider_native_event_reference,"
+            " provider_native_commerce_reference,"
+            " normalized_commerce_reference_kind,"
+            " normalized_commerce_reference_value, verified_amount_minor,"
+            " verified_amount_currency, event_timestamp, idempotency_key,"
+            " verified_commerce_ingress_state)"
+            " VALUES (%s,%s,%s,'stripe',%s,%s,'order_reference',%s,1000,"
+            " 'USD',now(),%s,'authenticity_verified')",
+            (
+                ingress,
+                tenant,
+                event,
+                event_ref,
+                commerce_ref,
+                commerce_ref,
+                idempotency_key,
+            ),
+        )
+        cur.execute(
+            "SELECT set_config('app.b26_p2_event_family',"
+            " 'payment_intent.succeeded', false)"
+        )
+        cur.execute(
+            "SELECT set_config('app.b26_p2_event_family_source',"
+            " 'body-signal:type', false)"
+        )
+        cur.execute(
+            "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
+            " %s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1',"
+            " NULL,NULL,FALSE,NULL,NULL)",
+            (
+                ingress,
+                event_ref,
+                "c" * 64,
+                "d" * 64,
+            ),
+        )
+        cur.execute(
+            "INSERT INTO public.b23_match_verdicts (id, tenant_id,"
+            " attribution_event_id, webhook_ingress_identity_id, provider,"
+            " canonical_commerce_reference, provider_native_event_reference,"
+            " provider_native_commerce_reference, status, match_quality,"
+            " attributed_amount_minor, verified_amount_minor, currency_code,"
+            " last_transition_at, canonical_expected_gross_amount_minor,"
+            " canonical_captured_gross_amount_minor,"
+            " canonical_net_verified_amount_minor, discrepancy_amount_minor,"
+            " discrepancy_ratio_bps, discrepancy_band)"
+            " VALUES (%s,%s,%s,%s,'stripe',%s,%s,%s,'matched_confirmed',"
+            " 'high',1000,1000,'USD',now(),1000,1000,1000,0,0,'exact')",
+            (
+                verdict,
+                tenant,
+                event,
+                ingress,
+                "xxiii-fw-" + uuid.uuid4().hex,
+                "xxiii-fw-" + uuid.uuid4().hex,
+                "xxiii-fw-" + uuid.uuid4().hex,
+            ),
+        )
+
+    seeded = False
+    try:
+        admin = psycopg2.connect(dsn)
+        admin.autocommit = False
+        _seed(admin)
+        admin.commit()
+        seeded = True
+
+        ref = psycopg2.connect(dsn)
+        ref.autocommit = False
+        with ref.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant,),
+            )
+            cur.execute(
+                "SELECT i.verified_amount_minor, i.b26_p2_provenance_status"
+                " FROM public.webhook_ingress_identities AS i"
+                " WHERE i.id=%s AND i.tenant_id=%s",
+                (ingress, tenant),
+            )
+            amount, state = cur.fetchone()
+            if amount != 1000 or state != "authenticated_known":
+                violations.append(
+                    "xxii_comp_false_world_source_not_independent"
+                )
+            cur.execute(
+                "UPDATE public.b23_match_verdicts"
+                " SET verified_amount_minor=99999,"
+                "     canonical_captured_gross_amount_minor=99999,"
+                "     canonical_net_verified_amount_minor=99999,"
+                "     discrepancy_amount_minor=98999,"
+                "     discrepancy_ratio_bps=989990,"
+                "     discrepancy_band='severe_gap'"
+                " WHERE tenant_id=%s AND id=%s",
+                (tenant, verdict),
+            )
+        ref.commit()
+
+        consumer = psycopg2.connect(dsn)
+        consumer.autocommit = False
+        with consumer.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant,),
+            )
+            cur.execute(
+                "SELECT violation FROM"
+                " public.b26_p2_verify_source_money_conservation(%s,%s)",
+                (tenant, verdict),
+            )
+            refused = [row[0] for row in cur.fetchall()]
+            if "conservation_source_amount_diverged" not in refused:
+                violations.append(
+                    "xxii_comp_false_world_not_refused:"
+                    + ";".join(refused or ["<none>"])
+                )
+        consumer.rollback()
+        consumer.close()
+        ref.close()
+        checks["live_external_false_world_refused"] = True
+    except Exception as exc:  # noqa: BLE001 - surface the failing cell
+        violations.append(
+            f"xxii_comp_false_world_failed:{type(exc).__name__}:{exc}"
+        )
+    finally:
+        if seeded:
+            # The ledger is a global hash chain. Deleting one tenant's rows
+            # breaks the predecessor link for every later append, so the cell
+            # deliberately leaves its lawful appends in place and asserts the
+            # chain is still clean.
+            try:
+                cleanup = psycopg2.connect(dsn)
+                cleanup.autocommit = True
+                with cleanup.cursor() as cur:
+                    cur.execute(
+                        "SELECT public.b26_p2_read_history_violations()"
+                    )
+                    raw_residual = cur.fetchone()[0] or ""
+                cleanup.close()
+                residual = [
+                    value for value in str(raw_residual).split(",") if value
+                ]
+                checks["live_external_false_world_chain_preserved"] = (
+                    not residual
+                )
+                if residual:
+                    violations.append(
+                        "xxii_comp_false_world_chain_polluted:"
+                        + ",".join(residual)
+                    )
+            except Exception as exc:  # noqa: BLE001 - surface the failing cell
+                violations.append(
+                    "xxii_comp_false_world_chain_unverified:"
+                    f"{type(exc).__name__}:{exc}"
+                )
+        try:
+            admin.close()  # type: ignore[name-defined]
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
@@ -617,7 +876,7 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
         if cur.fetchall() != []:
             violations.append("xxii_comp_conservation_chain_not_clean")
 
-        _count, _seq, _tip, _digest = _live_state(cur)
+        _count, _seq, _tip, _digest, _universe = _live_state(cur)
         _coherent_rewrite_cell(
             cur,
             ledger_count=_count,
@@ -705,7 +964,7 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
             violations.append("xxii_comp_prefix_digest_wrong")
         checks["live_prefix_digest"] = True
 
-        _count, _seq, _tip, _digest = _live_state(cur)
+        _count, _seq, _tip, _digest, _universe = _live_state(cur)
         _truncate_cell(
             cur,
             ledger_count=_count,
@@ -716,6 +975,7 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
         )
 
         conn.rollback()
+        _external_false_world_cell(dsn, violations, checks)
     except Exception as exc:  # noqa: BLE001 - surface the failing cell
         violations.append(f"xxii_comp_live_failed:{type(exc).__name__}:{exc}")
         try:

@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+import pytest_asyncio
 from tests.helpers.b26_p2_xix_family import apply_xix_family_gucs_psycopg2, apply_xix_family_gucs_sqlalchemy
 from sqlalchemy import event, text
 
@@ -40,6 +41,18 @@ def _db_skip_or_fail(message: str) -> None:
     if _require_authoritative_db_proofs():
         pytest.fail(message)
     pytest.skip(message)
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="module", autouse=True)
+async def _fresh_b23_engine_after_module():
+    """Dispose the pooled B2.3 engine at the end of this module.
+
+    The B2.3 pool is not a TESTING NullPool engine, so connections checked
+    out on this module's pytest-asyncio loop otherwise survive into the next
+    module and fail when its loop differs.
+    """
+    yield
+    await b23_engine.dispose()
 
 
 async def _assert_table_exists(table_name: str) -> None:
@@ -155,7 +168,7 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
                         CAST(:now_utc AS timestamptz) - (gs * interval '1 second'),
                         gen_random_uuid(),
                         10000 + gs,
-                        jsonb_build_object('order_id', 'b23-p4-order-' || gs::text),
+                        jsonb_build_object('order_id', 'b23_p4_order_' || gs::text),
                         'b23-p4-attribution-' || CAST(:tenant_id AS text) || '-' || gs::text,
                         'conversion',
                         'paid_search',
@@ -231,7 +244,7 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
                     id,
                     'stripe',
                     'b23-p4-webhook-' || (raw_payload ->> 'order_id'),
-                    'pi-' || (raw_payload ->> 'order_id'),
+                    'pi_' || (raw_payload ->> 'order_id'),
                     'order_id',
                     raw_payload ->> 'order_id',
                     conversion_value_cents,
@@ -725,3 +738,190 @@ def test_b23_p4_write_aware_index_strategy_is_not_bare_timestamp() -> None:
         "ON public.b23_webhook_ingestion_logs (\n                received_at"
         not in migration_text
     )
+
+
+async def _seed_paypal_canonical_candidate(tenant_id: UUID) -> tuple[datetime, datetime]:
+    from uuid import uuid4
+
+    from app.core.secrets import get_secret
+
+    event_id = uuid4()
+    ingress_id = uuid4()
+    event_ref = "paypal-canonical-event-1"
+    raw_reference = "PAY-ABC123"
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    window_start = now - timedelta(hours=1)
+    window_end = now + timedelta(hours=1)
+
+    async with b23_engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO public.channel_taxonomy (
+                    code, family, is_paid, display_name, is_active, state
+                )
+                VALUES ('paid_search', 'paid', true, 'Paid Search', true, 'active')
+                ON CONFLICT (code) DO NOTHING
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO public.attribution_events (
+                    id, tenant_id, occurred_at, session_id, revenue_cents,
+                    raw_payload, idempotency_key, event_type, channel,
+                    conversion_value_cents, currency, event_timestamp,
+                    processing_status
+                )
+                VALUES (
+                    :event_id, :tenant_id, :occurred_at, gen_random_uuid(),
+                    5000, jsonb_build_object('order_id', CAST(:raw_reference AS text)),
+                    :idempotency_key, 'conversion', 'paid_search', 5000, 'USD',
+                    :occurred_at, 'processed'
+                )
+                """
+            ),
+            {
+                "event_id": str(event_id),
+                "tenant_id": str(tenant_id),
+                "occurred_at": now,
+                "raw_reference": raw_reference,
+                "idempotency_key": f"paypal-canonical-attribution-{tenant_id}",
+            },
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO public.attribution_commerce_identities (
+                    tenant_id, attribution_event_id, provider,
+                    canonical_commerce_reference, source,
+                    first_observed_at, last_observed_at
+                )
+                VALUES (
+                    :tenant_id, :event_id, 'paypal', 'pay_abc123',
+                    'b23_paypal_canonical_test', :occurred_at, :occurred_at
+                )
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "event_id": str(event_id),
+                "occurred_at": now,
+            },
+        )
+
+    admin_dsn = (get_secret("MIGRATION_DATABASE_URL") or "").strip()
+    if not admin_dsn:
+        pytest.fail("MIGRATION_DATABASE_URL is required for the PayPal ingress fixture")
+
+    import psycopg2
+
+    admin = psycopg2.connect(admin_dsn)
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (str(tenant_id),),
+            )
+            cur.execute(
+                """
+                INSERT INTO public.webhook_ingress_identities (
+                    id, tenant_id, event_id, provider,
+                    provider_native_event_reference,
+                    provider_native_commerce_reference,
+                    normalized_commerce_reference_kind,
+                    normalized_commerce_reference_value,
+                    verified_amount_minor, verified_amount_currency,
+                    verified_amount_scale, event_timestamp, idempotency_key,
+                    verified_commerce_ingress_state, verified_at
+                )
+                VALUES (
+                    %s, %s, %s, 'paypal', %s, %s,
+                    'paypal_transaction_id', %s,
+                    5000, 'USD', 2, %s, %s,
+                    'authenticity_verified', %s
+                )
+                """,
+                (
+                    str(ingress_id),
+                    str(tenant_id),
+                    str(event_id),
+                    event_ref,
+                    raw_reference,
+                    raw_reference,
+                    now,
+                    f"paypal-canonical-idem-{tenant_id}",
+                    now,
+                ),
+            )
+            apply_xix_family_gucs_psycopg2(cur, "paypal")
+            cur.execute(
+                """
+                SELECT public.b26_p2_authenticate_ingress_atomic_v2(
+                    %s, 'paypal', %s, %s, %s,
+                    'hmac-sha256-timestamped-hex', 'v1',
+                    NULL, NULL, FALSE, NULL, NULL
+                )
+                """,
+                (str(ingress_id), event_ref, "a" * 64, "b" * 64),
+            )
+    finally:
+        admin.close()
+
+    return window_start, window_end
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_b23_p4_paypal_raw_ingress_matches_canonical_identity(
+    test_tenant_pair,
+) -> None:
+    await _assert_table_exists("b23_match_verdicts")
+    tenant_a, _ = test_tenant_pair
+    window_start, window_end = await _seed_paypal_canonical_candidate(tenant_a)
+
+    result = await execute_b23_batch_match_engine(
+        tenant_id=tenant_a,
+        window_start=window_start,
+        window_end=window_end,
+        chunk_size=B23_BATCH_MATCH_CHUNK_SIZE,
+        max_records=1,
+    )
+
+    assert result.processed_count == 1
+    assert result.chunk_count == 1
+
+    async with get_b23_session(tenant_a) as session:
+        verdict = (
+            await session.execute(
+                text(
+                    """
+                    SELECT
+                        canonical_commerce_reference,
+                        provider_native_commerce_reference,
+                        status,
+                        attributed_amount_minor,
+                        verified_amount_minor,
+                        currency_code
+                    FROM public.b23_match_verdicts
+                    WHERE tenant_id = :tenant_id
+                      AND provider = 'paypal'
+                      AND provider_native_event_reference = 'paypal-canonical-event-1'
+                    """
+                ),
+                {"tenant_id": str(tenant_a)},
+            )
+        ).mappings().one()
+
+    assert verdict["canonical_commerce_reference"] == "pay_abc123"
+    assert verdict["provider_native_commerce_reference"] == "PAY-ABC123"
+    assert verdict["status"] == "matched_provisional"
+    assert verdict["attributed_amount_minor"] == 5000
+    assert verdict["verified_amount_minor"] == 5000
+    assert verdict["currency_code"] == "USD"

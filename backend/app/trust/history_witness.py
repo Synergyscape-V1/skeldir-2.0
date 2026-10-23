@@ -20,6 +20,7 @@ import base64
 import json
 import os
 import tempfile
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -91,6 +92,7 @@ class HistoryCheckpoint:
     previous_checkpoint_hash: str | None
     checkpoint_hash: str
     key_id: str
+    authority_universe: str | None = None
 
 
 @dataclass(frozen=True)
@@ -156,6 +158,92 @@ def _signature_material(payload: Mapping[str, Any]) -> bytes:
     return _canonical(payload)
 
 
+def _normalize_universe(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        return str(uuid.UUID(str(value)))
+    except (TypeError, ValueError) as exc:
+        raise HistoryWitnessError("witness_authority_universe_invalid") from exc
+
+
+def _write_custody(
+    custody_path: str | os.PathLike[str] | None,
+    *,
+    ledger_count: int,
+    checkpoint_hash: str,
+    authority_universe: str | None,
+) -> None:
+    """Persist the latest commitment as a monotonic rollback lower bound.
+
+    The journal itself is append-only by convention; a principal that can
+    write the journal can replay an older, still-valid prefix. This custody
+    record is written after the journal fsync and never accepts a lower
+    count (or a different hash at the same count), so replaying an older
+    journal is detected by any verifier that has the custody file.
+    """
+    if custody_path is None:
+        return
+    path = Path(custody_path)
+    current = load_custody(path)
+    if current is not None:
+        current_count = int(current.get("ledger_count", -1))
+        if ledger_count < current_count:
+            raise HistoryWitnessError("witness_custody_rollback")
+        if ledger_count == current_count and (
+            current.get("checkpoint_hash") != checkpoint_hash
+        ):
+            raise HistoryWitnessError("witness_custody_fork")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "ledger_count": int(ledger_count),
+        "checkpoint_hash": checkpoint_hash,
+        "authority_universe": authority_universe,
+    }
+    fd, temporary = tempfile.mkstemp(
+        prefix=".history-witness-custody-", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def load_custody(
+    custody_path: str | os.PathLike[str] | None,
+) -> dict[str, Any] | None:
+    if custody_path is None:
+        return None
+    path = Path(custody_path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise HistoryWitnessError("witness_custody_unreadable") from exc
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise HistoryWitnessError("witness_custody_malformed") from exc
+    if not isinstance(payload, dict):
+        raise HistoryWitnessError("witness_custody_malformed")
+    count = payload.get("ledger_count")
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        raise HistoryWitnessError("witness_custody_malformed")
+    if not isinstance(payload.get("checkpoint_hash"), str):
+        raise HistoryWitnessError("witness_custody_malformed")
+    return payload
+
+
 def append_checkpoint(
     journal_path: str | os.PathLike[str],
     *,
@@ -167,10 +255,21 @@ def append_checkpoint(
     key_id: str = DEFAULT_KEY_ID,
     observed_at: datetime | None = None,
     genesis_hash: str | None = None,
+    authority_universe: str | None = None,
+    prefix_anchor_seq: int | None = None,
+    prefix_anchor_hash: str | None = None,
+    custody_path: str | os.PathLike[str] | None = None,
 ) -> HistoryCheckpoint:
-    """Verify the existing journal, then atomically append one checkpoint."""
+    """Verify the existing journal, then atomically append one checkpoint.
+
+    A lawful ledger grows: the new checkpoint must anchor the exact previous
+    tip (prefix_anchor_seq/hash) and strictly advance the tip sequence. The
+    checkpoint's live prefix digest must change. Re-observing the same count
+    still requires byte-identical history.
+    """
     journal = Path(journal_path)
     private_key = load_private_key(private_key_path)
+    normalized_universe = _normalize_universe(authority_universe)
     try:
         existing = verify_journal(
             journal,
@@ -187,15 +286,30 @@ def append_checkpoint(
     if previous is not None:
         if ledger_count < previous.ledger_count:
             raise HistoryWitnessError("witness_history_shrank")
+        if previous.authority_universe is not None and (
+            normalized_universe != previous.authority_universe
+        ):
+            raise HistoryWitnessError("witness_authority_universe_changed")
         if ledger_count == previous.ledger_count:
             if (ledger_tip_hash or None) != (previous.ledger_tip_hash or None):
                 raise HistoryWitnessError("witness_history_prefix_diverged")
-        if (ledger_tip_seq or None) != (previous.ledger_tip_seq or None):
-            raise HistoryWitnessError("witness_history_prefix_diverged")
-        if (ledger_prefix_digest or None) != (
-            previous.ledger_prefix_digest or None
-        ):
-            raise HistoryWitnessError("witness_history_prefix_diverged")
+            if (ledger_tip_seq or None) != (previous.ledger_tip_seq or None):
+                raise HistoryWitnessError("witness_history_prefix_diverged")
+            if (ledger_prefix_digest or None) != (
+                previous.ledger_prefix_digest or None
+            ):
+                raise HistoryWitnessError("witness_history_prefix_diverged")
+        else:
+            if (prefix_anchor_seq or None) != (previous.ledger_tip_seq or None):
+                raise HistoryWitnessError("witness_history_prefix_diverged")
+            if (prefix_anchor_hash or None) != (previous.ledger_tip_hash or None):
+                raise HistoryWitnessError("witness_history_prefix_diverged")
+            if (ledger_tip_seq or None) == (previous.ledger_tip_seq or None):
+                raise HistoryWitnessError("witness_history_tip_not_advanced")
+            if (ledger_prefix_digest or None) == (
+                previous.ledger_prefix_digest or None
+            ):
+                raise HistoryWitnessError("witness_history_prefix_not_advanced")
     moment = (observed_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     now = datetime.now(timezone.utc)
     if moment > now + timedelta(seconds=FUTURE_TOLERANCE_SECONDS):
@@ -214,6 +328,8 @@ def append_checkpoint(
             previous.checkpoint_hash if previous is not None else None
         ),
     }
+    if normalized_universe is not None:
+        payload["authority_universe"] = normalized_universe
     payload["checkpoint_hash"] = _checkpoint_hash(payload)
     signature = private_key.sign(_signature_material(payload))
     line = json.dumps(
@@ -247,7 +363,7 @@ def append_checkpoint(
         except OSError:
             pass
         raise
-    return HistoryCheckpoint(
+    return_checkpoint = HistoryCheckpoint(
         observed_at=moment,
         ledger_count=int(ledger_count),
         ledger_tip_seq=int(ledger_tip_seq) if ledger_tip_seq is not None else None,
@@ -256,7 +372,15 @@ def append_checkpoint(
         previous_checkpoint_hash=payload["previous_checkpoint_hash"],
         checkpoint_hash=payload["checkpoint_hash"],
         key_id=key_id,
+        authority_universe=normalized_universe,
     )
+    _write_custody(
+        custody_path,
+        ledger_count=return_checkpoint.ledger_count,
+        checkpoint_hash=return_checkpoint.checkpoint_hash,
+        authority_universe=normalized_universe,
+    )
+    return return_checkpoint
 
 
 def _iter_entries(journal_path: Path) -> Iterable[dict[str, Any]]:
@@ -292,6 +416,8 @@ def verify_journal(
     expected_tip_hash: str | None = None,
     expected_tip_seq: int | None = None,
     expected_prefix_digest: str | None = None,
+    expected_universe: str | None = None,
+    require_universe: bool = False,
     now: datetime | None = None,
 ) -> VerifiedJournal:
     """Verify the full signed journal, its chain, and optional live state."""
@@ -304,6 +430,7 @@ def verify_journal(
     checkpoints: list[HistoryCheckpoint] = []
     previous_hash: str | None = None
     previous_observed: datetime | None = None
+    journal_universe: str | None = None
     for entry in _iter_entries(path):
         payload = entry["payload"]
         signature_text = entry.get("signature")
@@ -342,6 +469,13 @@ def verify_journal(
             or not _is_sha256_hex(prefix_digest)
         ):
             raise HistoryWitnessError("witness_ledger_prefix_digest_invalid")
+        universe = payload.get("authority_universe")
+        if universe is not None:
+            universe = _normalize_universe(universe)
+            if journal_universe is None:
+                journal_universe = universe
+            elif journal_universe != universe:
+                raise HistoryWitnessError("witness_authority_universe_changed")
         if count == 0 and (tip_seq is not None or tip_hash is not None):
             raise HistoryWitnessError("witness_empty_ledger_with_tip")
         if count > 0 and (tip_seq is None or not tip_hash):
@@ -362,6 +496,13 @@ def verify_journal(
                 != (last.ledger_prefix_digest or None)
             ):
                 raise HistoryWitnessError("witness_history_prefix_diverged")
+            if count > last.ledger_count:
+                if (tip_seq or 0) <= (last.ledger_tip_seq or 0):
+                    raise HistoryWitnessError("witness_history_tip_not_advanced")
+                if (prefix_digest or None) == (last.ledger_prefix_digest or None):
+                    raise HistoryWitnessError(
+                        "witness_history_prefix_not_advanced"
+                    )
         key_id_value = payload.get("key_id") or ""
         checkpoint = HistoryCheckpoint(
             observed_at=observed_at,
@@ -372,6 +513,7 @@ def verify_journal(
             previous_checkpoint_hash=payload.get("previous_checkpoint_hash"),
             checkpoint_hash=computed_hash,
             key_id=key_id_value,
+            authority_universe=universe,
         )
         checkpoints.append(checkpoint)
         previous_hash = computed_hash
@@ -401,6 +543,12 @@ def verify_journal(
         latest.ledger_prefix_digest or None
     ) != (expected_prefix_digest or None):
         raise HistoryWitnessError("witness_live_prefix_diverged")
+    if require_universe and latest.authority_universe is None:
+        raise HistoryWitnessError("witness_authority_universe_missing")
+    if expected_universe is not None and (
+        latest.authority_universe or None
+    ) != (_normalize_universe(expected_universe) or None):
+        raise HistoryWitnessError("witness_live_universe_diverged")
     return VerifiedJournal(checkpoints=tuple(checkpoints))
 
 
@@ -411,6 +559,7 @@ __all__ = (
     "VerifiedJournal",
     "append_checkpoint",
     "generate_keypair",
+    "load_custody",
     "load_private_key",
     "load_public_key",
     "verify_journal",

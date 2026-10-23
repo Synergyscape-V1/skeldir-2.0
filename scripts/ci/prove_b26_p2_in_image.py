@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """B2.6-P2 Corrective VIII in-image proof (artifact closure, Gates 25/26).
 
 Builds the exact candidate production image from the candidate tree and
@@ -332,7 +332,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 image, "python", "/proof/assert_b26_p2_authority_universe.py",
                 "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202610180002",
+                "--migration-head", "202610180003",
                 "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
@@ -436,7 +436,7 @@ def main() -> int:
         # B2.6-P2 adjudicator loads every JSON under the evidence root and
         # rejects gateless documents; this cell is additive (no required
         # census entry collides with it) and is skipped by required-cell
-        # adjudication — merge gating for this job flows through the
+        # adjudication â€” merge gating for this job flows through the
         # aggregate `needs` dependency, not the capsule.
         "gate_id": "B26-P2-IN-IMAGE-PROOF",
         "candidate_sha": args.candidate_sha,
@@ -604,12 +604,13 @@ def main() -> int:
         details["in_image_equivalence"] = "PASS"
 
         # 5. Authority-universe assertion with image bytes.
-        # Prefer the newest (XXII) coverage law; fall back through
+        # Prefer the newest (XXIII) coverage law; fall back through
         # predecessors for older lanes.
         import importlib.util as _ilu
 
         covered = None
         for _modname, _fname, _attr in (
+            ("b26_p2_xxiii_coverage", "b26_p2_xxiii_coverage.py", "XXIII_COVERED_SURFACES"),
             ("b26_p2_xxii_coverage", "b26_p2_xxii_coverage.py", "XXII_COVERED_SURFACES"),
             ("b26_p2_xxi_coverage", "b26_p2_xxi_coverage.py", "XXI_COVERED_SURFACES"),
             ("b26_p2_xviii_coverage", "b26_p2_xviii_coverage.py", "XVIII_COVERED_SURFACES"),
@@ -643,7 +644,7 @@ def main() -> int:
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
               f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                   "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                   "--migration-head", "202610180002",
+                   "--migration-head", "202610180003",
                 "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

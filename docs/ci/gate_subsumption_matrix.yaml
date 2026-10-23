@@ -4981,3 +4981,21 @@
   local_reproduction_command: python -c "from scripts.ci.b26_p2_xxii_coverage import XXII_COVERED_SURFACES"
   risk_if_removed: New XXII surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-xxiii-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xxiii_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XXIII registry extends XXII coverage for the authority-universe
+    and coherent history-snapshot readers while the verdict money-authority trigger
+    function carries no runtime EXECUTE surface.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XXIII coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xxiii_coverage import XXIII_COVERED_SURFACES"
+  risk_if_removed: New XXIII surfaces could stay untested silently.
+  decision: keep_utility

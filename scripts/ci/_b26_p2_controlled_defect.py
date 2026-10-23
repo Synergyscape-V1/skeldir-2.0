@@ -428,11 +428,16 @@ def p2_rls_singleton_violation() -> None:
 
 
 def p2_worker_custody_remerge() -> None:
+    # XXIII added observer_b26_p2 with the same DSN pair, so anchor on the
+    # worker_b23 line itself rather than the now-ambiguous pair.
     _replace_once(
         PROCFILE,
+        "worker_b23: cd backend && SKELDIR_PROCESS_ROLE=worker_b23 "
         "DATABASE_URL=$B23_WORKER_DATABASE_URL "
-        "B23_WORKER_DATABASE_URL=$B23_WORKER_DATABASE_URL ",
-        "",
+        "B23_WORKER_DATABASE_URL=$B23_WORKER_DATABASE_URL "
+        "B26_P2_INGRESS_DATABASE_URL=",
+        "worker_b23: cd backend && SKELDIR_PROCESS_ROLE=worker_b23 "
+        "B26_P2_INGRESS_DATABASE_URL=",
         defect="p2_worker_custody_remerge",
     )
 

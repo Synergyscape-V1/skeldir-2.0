@@ -164,7 +164,14 @@ class FakeReadOnlySession:
         self.ledger_row = (
             ledger_row
             if ledger_row is not None
-            else {"n": 0, "tip": None}
+            else {
+                "n": 0,
+                "tip_seq": None,
+                "tip_hash": None,
+                "prefix_digest": None,
+                "violations": "",
+                "authority_universe": None,
+            }
         )
         self.statements: list[str] = []
         self.params: list[dict[str, object]] = []
@@ -195,6 +202,7 @@ class FakeReadOnlySession:
         if (
             "verdict_supersession_ledger" in text
             or "b26_p2_read_history_continuity" in text
+            or "b26_p2_read_history_snapshot" in text
         ):
             return _FakeResult(self.ledger_row)
         if str((params or {}).get("tenant_id")) != str(

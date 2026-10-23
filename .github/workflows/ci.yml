@@ -811,7 +811,8 @@ jobs:
 
   b21-p4-queue-isolation-performance-lock:
     name: B2.1-P4 Queue Isolation + Performance Semantics Lock
-    runs-on: ubuntu-latest
+    # Pinned: 5.00 s SLA calibrated on 24.04; 26.04 measures the same workload at ~5.34 s.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:15-alpine
@@ -2927,7 +2928,9 @@ jobs:
 
   b15-p7-ci-adjudication-closure:
     name: B1.5 P7 Technical Closure Harness, Browser E2E Truth, and Mental-Model Blocking Gate
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 has no browser build for ubuntu-26.04
+    # (ubuntu-latest rolled over and every install attempt failed).
+    runs-on: ubuntu-24.04
     # Pinned by contracts-internal/governance/b15_p7_ci_adjudication_closure.main.json:
     # B1.5-P7 contracts this ordering for audit closure, which outranks the
     # throughput argument for removing dataflow-free edges.
@@ -3851,7 +3854,9 @@ jobs:
 
   phase-gates:
     name: Phase Gates
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 has no browser build for ubuntu-26.04
+    # (ubuntu-latest rolled over and every install attempt failed).
+    runs-on: ubuntu-24.04
     needs: [validate-phase-manifest]
     services:
       postgres:
@@ -4015,7 +4020,9 @@ jobs:
 
   phase-chain:
     name: Phase Chain (B0.4 target)
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 has no browser build for ubuntu-26.04
+    # (ubuntu-latest rolled over and every install attempt failed).
+    runs-on: ubuntu-24.04
     needs: [validate-phase-manifest]
     services:
       postgres:

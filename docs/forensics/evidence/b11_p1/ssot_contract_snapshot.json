@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 80,
+  "keys_total": 81,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/attribution/deterministic-default-lookback-days",
@@ -269,6 +269,24 @@
         "local"
       ],
       "key": "B23_WORKER_PREFETCH_MULTIPLIER",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/history-witness-custody-path",
+      "call_sites": [
+        "backend/app/trust/builder.py",
+        "backend/app/tasks/b26_p2_history.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_HISTORY_WITNESS_CUSTODY_PATH",
       "owner": "backend-platform",
       "rotation_criticality": "none"
     },

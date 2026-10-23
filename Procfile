@@ -15,7 +15,7 @@
 
 # Core Services
 db: postgres -D $PGDATA -k $PGSOCKET -h localhost -p 5432
-web: cd backend && SKELDIR_PROCESS_ROLE=api B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= B26_P2_AUTH_ROOT_URL=http://localhost:8001 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+web: cd backend && SKELDIR_PROCESS_ROLE=api B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= B26_P2_AUTH_ROOT_URL=http://localhost:8001 B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH= B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH=/var/lib/b26_p2/history_witness_ed25519.pub B26_P2_HISTORY_WITNESS_JOURNAL_PATH=/var/lib/b26_p2/history_witness.jsonl B26_P2_HISTORY_WITNESS_CUSTODY_PATH=/var/lib/b26_p2/history_witness_custody.json B26_P2_HISTORY_WITNESS_GENESIS_HASH=$B26_P2_HISTORY_WITNESS_GENESIS_HASH B26_P2_HISTORY_WITNESS_REQUIRED=true uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 # B2.6-P2 Corrective XIII authentication trust root: the SOLE process
 # that may possess the authenticated-ingress persistence credential.
 # It holds the file-mounted credential (B26_P2_INGRESS_DATABASE_URL_FILE)
@@ -60,6 +60,12 @@ worker_bayesian_publisher: cd backend && SKELDIR_PROCESS_ROLE=worker_bayesian_pu
 # process so no in-process pool retains producer authority; an unset
 # variable fails closed at import (SKELDIR_B23_REQUIRE_WORKER_DSN).
 worker_b23: cd backend && SKELDIR_PROCESS_ROLE=worker_b23 DATABASE_URL=$B23_WORKER_DATABASE_URL B23_WORKER_DATABASE_URL=$B23_WORKER_DATABASE_URL B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= SKELDIR_B23_REQUIRE_WORKER_DSN=1 celery -A app.celery_app.celery_app worker --loglevel=info --queues=b23_match_engine --concurrency=${B23_WORKER_CONCURRENCY:-2} --prefetch-multiplier=1
+# The witness observer is the only process that holds the Ed25519 private
+# key and writes the signed journal/custody. It consumes the dedicated
+# history queue, so the B2.3 financial worker never receives the key or
+# journal mount. The key and custody volumes are observer-writable and
+# builder-readable; the B2.3 worker has neither.
+observer_b26_p2: cd backend && SKELDIR_PROCESS_ROLE=observer_b26_p2 DATABASE_URL=$B23_WORKER_DATABASE_URL B23_WORKER_DATABASE_URL=$B23_WORKER_DATABASE_URL B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= SKELDIR_B23_REQUIRE_WORKER_DSN=1 B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH=/run/secrets/b26_p2_history_witness_key B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH=/run/secrets/b26_p2_history_witness_pub B26_P2_HISTORY_WITNESS_JOURNAL_PATH=/var/lib/b26_p2/history_witness.jsonl B26_P2_HISTORY_WITNESS_CUSTODY_PATH=/var/lib/b26_p2/history_witness_custody.json B26_P2_HISTORY_WITNESS_GENESIS_HASH=$B26_P2_HISTORY_WITNESS_GENESIS_HASH B26_P2_HISTORY_WITNESS_REQUIRED=true celery -A app.celery_app.celery_app worker --loglevel=info --queues=b26_p2_history --concurrency=1 --prefetch-multiplier=1
 # B2.6-P2 Corrective III recovery process: sweeps pending execution intents
 # to the broker with stable task identity. Corrective V: runs under the
 # dedicated relay credential (B26_P2_RELAY_DATABASE_URL, login app_relay),

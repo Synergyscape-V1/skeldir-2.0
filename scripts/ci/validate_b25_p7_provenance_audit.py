@@ -270,7 +270,14 @@ class FakeTrustAuditSession:
         self.ledger_row = (
             ledger_row
             if ledger_row is not None
-            else {"n": 0, "tip": None}
+            else {
+                "n": 0,
+                "tip_seq": None,
+                "tip_hash": None,
+                "prefix_digest": None,
+                "violations": "",
+                "authority_universe": None,
+            }
         )
         self.statements: list[str] = []
         self.params: list[dict[str, object]] = []
@@ -293,6 +300,7 @@ class FakeTrustAuditSession:
         if (
             "verdict_supersession_ledger" in sql
             or "b26_p2_read_history_continuity" in sql
+            or "b26_p2_read_history_snapshot" in sql
         ):
             return _FakeResult(self.ledger_row)
         if "FROM public.b23_match_verdicts" in sql:

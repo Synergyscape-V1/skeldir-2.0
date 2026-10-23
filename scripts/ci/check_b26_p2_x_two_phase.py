@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """B2.6-P2 Corrective X two-phase change-law check.
 
 When a change modifies a load-bearing semantic contract or the
@@ -296,7 +296,7 @@ def main() -> int:
                         "202609300008",
                         "202609300009",
                         "202610180001",
-                        "202610180002",
+                        "202610180003",
                     ):
                         violations.append("x_two_phase_authority_pin_stale")
                 except (OSError, ValueError) as exc:
