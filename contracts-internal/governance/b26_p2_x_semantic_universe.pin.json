@@ -5,6 +5,9 @@
     "app.bayesian.dirty_marker",
     "app.bayesian.model_identity",
     "app.celery_app",
+    "app.confidence_projection.policy",
+    "app.confidence_projection.read_model",
+    "app.confidence_projection.sql_authority",
     "app.core",
     "app.core.clock",
     "app.core.config",
@@ -35,6 +38,10 @@
     "app.observability.multiprocess_shard_pruner",
     "app.privacy.output_redaction",
     "app.revenue_verification.batch_engine",
+    "app.revenue_verification.corrections",
+    "app.revenue_verification.extraction_registry",
+    "app.revenue_verification.failure_boundary",
+    "app.revenue_verification.match_engine_kernel",
     "app.revenue_verification.semantic_authority",
     "app.revenue_verification.state_transitions",
     "app.revenue_verification.timing_constants",
@@ -44,7 +51,10 @@
     "app.services.auth_revocation",
     "app.tasks.beat_schedule",
     "app.tasks.context",
-    "app.tasks.revenue_verification"
+    "app.tasks.revenue_verification",
+    "app.trust.source_adapters",
+    "app.trust.subject_authority",
+    "app.trust.witness_anchor"
   ],
   "b23_footprint": [
     "canonical_commerce_reference",
