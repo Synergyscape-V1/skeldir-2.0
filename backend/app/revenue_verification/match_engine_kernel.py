@@ -1094,6 +1094,13 @@ async def register_b23_post_capture_event(
         provider=post_capture_input.provider,
         provider_native_event_reference=post_capture_input.provider_native_event_reference,
     )
+    # XXIV (A7): the Trust builder takes this same transaction-scoped
+    # lock around source read, conservation and issuance. A correction
+    # therefore cannot commit between the builder's read and signature.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:namespace, :key)"),
+        {"namespace": 82173645, "key": 300003},
+    )
     if (
         post_capture_input.event_type
         not in B23_POST_CAPTURE_HANDLER_REGISTRY[post_capture_input.provider]

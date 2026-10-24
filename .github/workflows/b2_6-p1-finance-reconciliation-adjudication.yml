@@ -527,6 +527,62 @@ jobs:
             --dsn "$MIGRATION_DATABASE_URL" \
             --evidence-out artifacts/b26_p2/static/xxii-composition.json
 
+      # B2.6-P2 Corrective XXIV (B4): a persisted 76,000/80,000 cohort
+      # resolves through the canonical coverage consumer to exactly
+      # 95.00 percent, with the 4,000 leg visible and EUR refused.
+      - name: Prove B2.6-P2 Corrective-XXIV persisted scope cohort
+        env:
+          DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/prove_b26_p2_xxiv_scope_cohort.py \
+            --admin-dsn "$MIGRATION_DATABASE_URL" \
+            --evidence-out artifacts/b26_p2/xxiv/scope-cohort.json
+
+      # B2.6-P2 Corrective XXIV (A2/B10): three provider-authenticated
+      # gross-capture corrections conduct through the shipping B2.3
+      # worker task, the real observer advances the signed journal after
+      # each cycle, and source-money conservation stays clean.
+      - name: Prove B2.6-P2 Corrective-XXIV natural correction progress
+        env:
+          DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b26_p1_consequence
+          B23_WORKER_DATABASE_URL: postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b26_p1_consequence
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/prove_b26_p2_xxiv_natural_correction.py \
+            --admin-dsn "$MIGRATION_DATABASE_URL" \
+            --cycles 3 \
+            --evidence-out artifacts/b26_p2/xxiv/natural-correction.json
+
+      - name: Prove B2.6-P2 XXIV rollback authority conservation
+        run: |
+          python scripts/ci/prove_b26_p2_xxiv_rollback_authority.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --database skeldir_b26_p2_xxiv_rollback \
+            --evidence-out artifacts/b26_p2/xxiv/rollback-authority.json
+
+      - name: Prove B2.6-P2 XXIV issuance/correction lock
+        env:
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python scripts/ci/prove_b26_p2_xxiv_issuance_lock.py \
+            --admin-dsn "$MIGRATION_DATABASE_URL" \
+            --runtime-dsn postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence \
+            --worker-dsn postgresql://app_worker:app_worker@127.0.0.1:5432/skeldir_b26_p1_consequence \
+            --evidence-out artifacts/b26_p2/xxiv/issuance-lock.json
+
+      - name: Prove B2.6-P2 XXIV correction and disposition surface
+        env:
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python -m pytest backend/tests/test_b26_p2_xxiv_correction_surface.py -q
+
+      - name: Prove B2.6-P2 XXIV signed provider lifecycle refusals
+        env:
+          DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence
+        run: |
+          python -m pytest backend/tests/test_b26_p2_xxiv_provider_lifecycle_api.py -q
+
       - name: Prove Corrective-V consequence cells (V-1 through V-7)
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b26_p1_consequence

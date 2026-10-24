@@ -446,6 +446,11 @@ def _derive_stripe(payload: Mapping[str, Any]) -> SovereignCommerce:
             "stripe data wrapper outside contract is refused"
         )
     commerce_id = _require_nonblank(obj.get("id"), field="stripe payment intent id")
+    terminal = terminal_lifecycle_refusal("stripe", payload)
+    if terminal is not None:
+        raise CommerceDerivationError(
+            f"stripe terminal lifecycle is not monetary authority: {terminal!r}"
+        )
     raw_amount = obj.get("amount")
     if raw_amount is None or isinstance(raw_amount, bool):
         raise CommerceDerivationError("stripe amount is required")
@@ -533,6 +538,11 @@ def _derive_paypal(payload: Mapping[str, Any]) -> SovereignCommerce:
             "paypal resource envelopes are out of contract"
         )
     txn_id = _require_nonblank(payload.get("id"), field="paypal transaction id")
+    terminal = terminal_lifecycle_refusal("paypal", payload)
+    if terminal is not None:
+        raise CommerceDerivationError(
+            f"paypal terminal lifecycle is not monetary authority: {terminal!r}"
+        )
     amount = payload.get("amount")
     if not isinstance(amount, Mapping):
         raise CommerceDerivationError("paypal amount object is required")
@@ -614,6 +624,39 @@ def _normalize_family_token(value: Any) -> str | None:
     return token or None
 
 
+def terminal_lifecycle_refusal(
+    provider: str, payload: Mapping[str, Any]
+) -> str | None:
+    """Return the observed terminal lifecycle token, if any.
+
+    XXIV (A9/B2): the event-family signal is necessary but never
+    sufficient. A provider payload can carry a supported family name and
+    still describe a terminal/non-monetary object (Stripe
+    ``data.object.status=failed``, PayPal ``state=denied``). Every
+    lifecycle token outside the governed monetary state is refused, not
+    coerced into verified money. Absent tokens remain governed by the
+    family signal so historical flat contract shapes stay admissible.
+    """
+    if provider == "stripe":
+        candidates: list[Any] = [payload.get("status")]
+        data = payload.get("data")
+        if isinstance(data, Mapping):
+            obj = data.get("object")
+            if isinstance(obj, Mapping):
+                candidates.append(obj.get("status"))
+        for raw in candidates:
+            token = _normalize_family_token(raw)
+            if token is not None and token != "succeeded":
+                return token
+        return None
+    if provider == "paypal":
+        for key in ("state", "status"):
+            token = _normalize_family_token(payload.get(key))
+            if token is not None and token != "completed":
+                return token
+    return None
+
+
 def _derive_family_and_source(
     provider: str, raw_body: bytes, topic: Any = None
 ) -> tuple[str, str]:
@@ -631,6 +674,12 @@ def _derive_family_and_source(
     if not isinstance(raw_body, (bytes, bytearray)) or not bytes(raw_body):
         raise CommerceDerivationError("raw provider body is required")
     payload = _parse_json_object(bytes(raw_body))
+    terminal = terminal_lifecycle_refusal(normalized, payload)
+    if terminal is not None:
+        raise CommerceDerivationError(
+            f"{normalized} terminal lifecycle is not monetary authority:"
+            f" {terminal!r}"
+        )
     canonical = CANONICAL_EVENT_FAMILY_BY_PROVIDER[normalized]
     aliases = _FAMILY_ALIASES_BY_PROVIDER[normalized]
     if normalized == "shopify":

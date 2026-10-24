@@ -103,6 +103,10 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "money_trigger": "trg_b26_p2_verdict_money_authority",
         "source_null_refusal": "conservation_source_ingress_missing",
         "source_amount_refusal": "conservation_source_amount_diverged",
+        "source_authority_refusal": "conservation_source_authority_unresolved",
+        "source_event_amount_refusal": (
+            "conservation_source_event_amount_diverged"
+        ),
     }
     for name, token in required_sql.items():
         if token not in combined:
@@ -121,6 +125,14 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         violations.append("xxii_comp_lifecycle_equality_missing")
     if "abs(extract(epoch FROM" not in mig.split("def downgrade", 1)[-1]:
         violations.append("xxii_comp_downgrade_lifecycle_not_restored")
+    downgrade_tail = mig_next.split("def downgrade", 1)[-1]
+    if "DROP TABLE IF EXISTS public.b26_p2_authority_universe" in downgrade_tail:
+        violations.append("xxii_comp_downgrade_drops_authority_universe")
+    if (
+        "DROP FUNCTION IF EXISTS public.b26_p2_authority_universe()"
+        in downgrade_tail
+    ):
+        violations.append("xxii_comp_downgrade_drops_authority_universe_reader")
 
     builder_tokens = {
         "witness_gate": "_verify_signed_history_witness",
@@ -128,6 +140,9 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "conservation": "read_source_money_conservation_status",
         "universe": "authority_universe",
         "custody": "load_custody",
+        "compiled_anchor": "COMPILED_PUBLIC_KEY_SHA256",
+        "heartbeat": "B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH",
+        "issuance_lock": "pg_advisory_xact_lock",
     }
     for name, token in builder_tokens.items():
         if token not in builder:
@@ -140,6 +155,9 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         "witness_authority_universe_missing",
         "witness_live_universe_diverged",
         "witness_history_tip_not_advanced",
+        "witness_heartbeat_diverged",
+        "witness_source_evidence_diverged_without_ledger",
+        "witness_custody_missing",
     ):
         if token not in witness:
             violations.append(f"xxii_comp_witness_missing:{token}")
@@ -147,6 +165,8 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         violations.append("xxii_comp_observer_snapshot_missing")
     if "witness_history_prefix_diverged" not in observer:
         violations.append("xxii_comp_observer_prefix_refusal_missing")
+    if "B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH" not in observer:
+        violations.append("xxii_comp_observer_heartbeat_missing")
     for token in (
         "app_worker:EXECUTE:b26_p2_read_history_prefix_digest",
         "app_beat:EXECUTE:b26_p2_read_history_prefix_digest",
@@ -570,6 +590,28 @@ def _external_false_world_cell(
                     "xxii_comp_false_world_source_not_independent"
                 )
             cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " DISABLE TRIGGER trg_b26_p2_ingress_sovereign_custody"
+            )
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " DISABLE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability"
+            )
+            cur.execute(
+                "UPDATE public.webhook_ingress_identities"
+                " SET verified_amount_minor=99999"
+                " WHERE tenant_id=%s AND id=%s",
+                (tenant, ingress),
+            )
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " ENABLE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability"
+            )
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " ENABLE TRIGGER trg_b26_p2_ingress_sovereign_custody"
+            )
+            cur.execute(
                 "UPDATE public.b23_match_verdicts"
                 " SET verified_amount_minor=99999,"
                 "     canonical_captured_gross_amount_minor=99999,"
@@ -595,7 +637,7 @@ def _external_false_world_cell(
                 (tenant, verdict),
             )
             refused = [row[0] for row in cur.fetchall()]
-            if "conservation_source_amount_diverged" not in refused:
+            if "conservation_source_event_amount_diverged" not in refused:
                 violations.append(
                     "xxii_comp_false_world_not_refused:"
                     + ";".join(refused or ["<none>"])
@@ -804,6 +846,8 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
         checks["live_future_refusals"] = True
 
         ingress = str(uuid.uuid4())
+        event_ref = str(uuid.uuid4())
+        commerce_ref = str(uuid.uuid4())
         cur.execute(
             "INSERT INTO public.webhook_ingress_identities (id, tenant_id,"
             " event_id, provider, provider_native_event_reference,"
@@ -818,10 +862,29 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
                 ingress,
                 tenant,
                 event,
+                event_ref,
+                commerce_ref,
+                commerce_ref,
                 str(uuid.uuid4()),
-                str(uuid.uuid4()),
-                str(uuid.uuid4()),
-                str(uuid.uuid4()),
+            ),
+        )
+        cur.execute(
+            "SELECT set_config('app.b26_p2_event_family',"
+            " 'payment_intent.succeeded', false)"
+        )
+        cur.execute(
+            "SELECT set_config('app.b26_p2_event_family_source',"
+            " 'body-signal:type', false)"
+        )
+        cur.execute(
+            "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
+            " %s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1',"
+            " NULL,NULL,FALSE,NULL,NULL)",
+            (
+                ingress,
+                event_ref,
+                "c" * 64,
+                "d" * 64,
             ),
         )
         verdict = str(uuid.uuid4())

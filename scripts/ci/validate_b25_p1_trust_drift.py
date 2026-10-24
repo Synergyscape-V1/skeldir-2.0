@@ -53,6 +53,8 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/app/trust/reason_truth_matrix.py",
     "backend/app/trust/refusal.py",
     "backend/app/trust/history_witness.py",
+    # B2.6-P2 Corrective XXIV: compiled historical anchor constants.
+    "backend/app/trust/witness_anchor.py",
     "backend/app/trust/schema_versions.py",
     "backend/app/trust/schema_verification.py",
     "backend/app/trust/key_registry.py",
