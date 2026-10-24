@@ -7117,6 +7117,9 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             _prev record;
             _first record;
             _ingress_amount integer;
+            _ingress_currency char(3);
+            _event_amount integer;
+            _event_currency char(3);
             _count bigint;
         BEGIN
             SELECT v.webhook_ingress_identity_id,
@@ -7130,6 +7133,46 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                 violation := 'conservation_verdict_missing';
                 RETURN NEXT;
                 RETURN;
+            END IF;
+
+            -- XXIV (A6): agreement between the verdict and the ingress
+            -- is not source authority when both are rewritable. The
+            -- ingress must still hold current P2 authority, and the
+            -- independently written attribution event must carry the
+            -- same amount and currency as the ingress envelope.
+            IF _ingress IS NOT NULL THEN
+                IF NOT public.b26_p2_ingress_has_current_authority(_ingress)
+                THEN
+                    violation := 'conservation_source_authority_unresolved';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+                SELECT i.verified_amount_minor,
+                       i.verified_amount_currency,
+                       e.revenue_cents,
+                       e.currency
+                  INTO _ingress_amount, _ingress_currency,
+                       _event_amount, _event_currency
+                  FROM public.webhook_ingress_identities AS i
+                  JOIN public.attribution_events AS e
+                    ON e.id = i.event_id
+                   AND e.tenant_id = i.tenant_id
+                 WHERE i.id = _ingress
+                   AND i.tenant_id = p_tenant_id;
+                IF NOT FOUND THEN
+                    violation := 'conservation_source_unresolved';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+                IF _event_amount IS DISTINCT FROM _ingress_amount
+                   OR upper(_event_currency)
+                        IS DISTINCT FROM upper(_ingress_currency)
+                THEN
+                    violation :=
+                        'conservation_source_event_amount_diverged';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
             END IF;
 
             SELECT count(*) INTO _count
