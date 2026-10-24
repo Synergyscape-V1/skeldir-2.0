@@ -883,6 +883,29 @@ async def test_p2ciii_worker_cannot_mint_dispatch_authority() -> None:
         conn.close()
 
 
+async def test_p2civ_worker_reads_conservation_without_money_authorship() -> None:
+    """XXIV A10: the worker's conservation grant is a read-only surface."""
+    import psycopg2
+
+    admin_dsn = _admin_dsn()
+    worker_dsn = admin_dsn.replace(
+        "migration_owner:migration_owner", "app_worker:app_worker"
+    )
+    conn = psycopg2.connect(worker_dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT violation FROM"
+                " public.b26_p2_verify_source_money_conservation(%s, %s)",
+                (str(uuid.uuid4()), str(uuid.uuid4())),
+            )
+            violations = [str(row[0]) for row in cur.fetchall()]
+    finally:
+        conn.close()
+    assert violations == ["conservation_verdict_missing"]
+
+
 async def test_p2ciii_forged_task_causes_zero_b23_consequence() -> None:
     """Missing authority refuses BEFORE B2.3 with zero verdict writes."""
     import psycopg2

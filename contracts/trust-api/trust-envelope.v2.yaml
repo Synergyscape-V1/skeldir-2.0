@@ -196,6 +196,7 @@ properties:
     - policy_engine_not_available
     - money_amount_exceeds_json_safe_integer
     - money_source_not_authoritative
+    - source_changed_during_issuance
     - deterministic_evidence_unavailable
     - provider_text_quarantined
     - null

@@ -164,6 +164,24 @@ def _docker(*args: str) -> subprocess.CompletedProcess[str]:
     return _run(["docker", *args], cwd=REPO_ROOT)
 
 
+def _witness_build_args() -> list[str]:
+    """Bind the compiled historical anchor into the exact image.
+
+    XXIV (A1): production refuses to issue when the anchor is absent. The
+    build lane supplies the independently governed public-key fingerprint
+    and genesis through these environment variables.
+    """
+    args: list[str] = []
+    for env_name in (
+        "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_SHA256",
+        "B26_P2_HISTORY_WITNESS_GENESIS_HASH",
+    ):
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            args.extend(["--build-arg", f"{env_name}={value}"])
+    return args
+
+
 def _container_env(name: str, key: str) -> str:
     proc = _docker("exec", name, "printenv", key)
     return proc.stdout.strip()
@@ -350,7 +368,15 @@ class _Topology:
     def build_image(self) -> str:
         if self.args.no_build:
             return self.image
-        proc = _docker("build", "-f", "backend/Dockerfile", "-t", self.image, ".")
+        proc = _docker(
+            "build",
+            "-f",
+            "backend/Dockerfile",
+            "-t",
+            self.image,
+            *_witness_build_args(),
+            ".",
+        )
         if proc.returncode != 0:
             raise RuntimeError(f"image_build_failed:{proc.stderr[-2000:]}")
         proc = _docker("image", "inspect", self.image, "--format", "{{.Id}}")
@@ -2966,6 +2992,7 @@ def main() -> int:
         # through predecessors for older lanes.
         _covered = None
         for _mod, _attr in (
+            ("scripts.ci.b26_p2_xxiv_coverage", "XXIV_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xxiii_coverage", "XXIII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xxii_coverage", "XXII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xxi_coverage", "XXI_COVERED_SURFACES"),

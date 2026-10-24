@@ -12,7 +12,7 @@ import logging
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from collections.abc import Callable
 from types import MappingProxyType
@@ -455,6 +455,15 @@ def _unsupported_event_family_reason(
     this hint can only refuse, never confer.
     """
     supported_hints = _SUPPORTED_EVENT_FAMILY_HINTS[provider]
+
+    if provider in {"stripe", "paypal"}:
+        from app.webhooks.commerce_derivation import (  # noqa: PLC0415
+            terminal_lifecycle_refusal,
+        )
+
+        terminal = terminal_lifecycle_refusal(provider, payload)
+        if terminal is not None:
+            return f"terminal-lifecycle={terminal}"
 
     if provider == "shopify":
         observed_topic = _normalize_event_family_hint(
@@ -1180,6 +1189,73 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
     )
 
 
+_INGRESS_FUTURE_TOLERANCE_SECONDS = 300
+
+
+def _ingress_clock_refusal(event_timestamp: datetime) -> str | None:
+    """Return the governed refusal for an implausible provider instant.
+
+    XXIV (A9/B7): the database trigger already refuses future instants,
+    but only after the relay has started persistence, which surfaces as
+    an ungoverned HTTP 500. The relay must reach the same verdict before
+    any write and route the arrival to durable DLQ. Stale arrivals are
+    also outside the governed financial horizon: they must not
+    persist as authenticated money with no possible consequence.
+    """
+    moment = (
+        event_timestamp.astimezone(timezone.utc)
+        if event_timestamp.tzinfo is not None
+        else event_timestamp.replace(tzinfo=timezone.utc)
+    )
+    now = datetime.now(timezone.utc)
+    if moment > now + timedelta(seconds=_INGRESS_FUTURE_TOLERANCE_SECONDS):
+        return "event_timestamp_future_refused"
+    horizon = timedelta(
+        days=int(settings.ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS)
+    )
+    if moment < now - horizon:
+        return "event_timestamp_outside_governed_horizon"
+    return None
+
+
+async def _route_governed_ingress_refusal(
+    *,
+    tenant_id,
+    source: str,
+    reason: str,
+    idempotency_key: str,
+    raw_body: bytes,
+    identity_payload: dict[str, Any] | None,
+    request_headers: dict[str, str] | None,
+):
+    set_business_correlation_id(idempotency_key)
+    correlation_uuid = str(_make_correlation_uuid(idempotency_key))
+    dead = await _route_to_dlq_direct(
+        tenant_id,
+        source,
+        correlation_uuid,
+        {
+            "event_type": "purchase",
+            "vendor": source,
+            "idempotency_key": idempotency_key,
+            "correlation_id": correlation_uuid,
+            "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
+            "raw_body_bytes": len(raw_body),
+            "refusal": reason,
+        },
+        reason,
+        error_type="validation_error",
+        identity_payload=identity_payload
+        or {"raw_body_sha256": hashlib.sha256(raw_body).hexdigest()},
+        request_headers=request_headers,
+    )
+    return {
+        "status": "dlq_routed",
+        "dead_event_id": str(dead.id) if dead is not None else None,
+        "error": reason,
+    }
+
+
 async def _route_to_dlq_direct(
     tenant_id,
     source: str,
@@ -1279,7 +1355,10 @@ async def _handle_ingestion(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=refusal,
             ) from txn_exc
-        if "b26_p2_unsupported_currency_refused" not in refusal:
+        if (
+            "b26_p2_unsupported_currency_refused" not in refusal
+            and "b26_p2_ingress_event_future_refused" not in refusal
+        ):
             raise
         dead = await _route_to_dlq_direct(
             tenant_id,
@@ -1290,7 +1369,9 @@ async def _handle_ingestion(
                 "idempotency_key": idempotency_key,
                 "identity_payload": identity_payload,
             },
-            f"unsupported_currency_excluded:{txn_exc}",
+            f"unsupported_currency_excluded:{txn_exc}"
+            if "b26_p2_unsupported_currency_refused" in refusal
+            else "event_timestamp_future_refused",
             error_type="validation_error",
             identity_payload=identity_payload,
             request_headers=request_headers,
@@ -1491,6 +1572,27 @@ async def shopify_order_create(
             identity_payload=identity_payload,
             request_headers=request_headers,
         )
+    clock_refusal = _ingress_clock_refusal(payload.created_at)
+    if clock_refusal is not None:
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="shopify",
+            reason=clock_refusal,
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if verified_amount_currency != "USD":
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="shopify",
+            reason=f"unsupported_currency_excluded:{verified_amount_currency}",
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     event_data = {
         "event_type": "purchase",
         "event_timestamp": payload.created_at.isoformat(),
@@ -1657,6 +1759,27 @@ async def stripe_payment_intent_succeeded(
     verified_amount_minor = int(payload.amount)
     verified_amount_currency = payload.currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
+    clock_refusal = _ingress_clock_refusal(ts)
+    if clock_refusal is not None:
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            reason=clock_refusal,
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if verified_amount_currency != "USD":
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            reason=f"unsupported_currency_excluded:{verified_amount_currency}",
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
@@ -1920,6 +2043,27 @@ async def stripe_payment_intent_succeeded_v2(
     verified_amount_minor = int(amount_cents)
     verified_amount_currency = currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
+    clock_refusal = _ingress_clock_refusal(ts)
+    if clock_refusal is not None:
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            reason=clock_refusal,
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload or payload,
+            request_headers=request_headers,
+        )
+    if verified_amount_currency != "USD":
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            reason=f"unsupported_currency_excluded:{verified_amount_currency}",
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload or payload,
+            request_headers=request_headers,
+        )
     verification_decision_time = _resolve_verified_at(tenant_info)
     provider_event_reference = _resolution_token(event_id) or pi_id
     event_data = {
@@ -1969,6 +2113,23 @@ async def stripe_payment_intent_succeeded_v2(
         )
     except IngestionValidationError as txn_exc:
         refusal = str(txn_exc)
+        if (
+            "b26_p2_unsupported_currency_refused" in refusal
+            or "b26_p2_ingress_event_future_refused" in refusal
+        ):
+            return await _route_governed_ingress_refusal(
+                tenant_id=tenant_info["tenant_id"],
+                source="stripe",
+                reason=(
+                    f"unsupported_currency_excluded:{refusal}"
+                    if "b26_p2_unsupported_currency_refused" in refusal
+                    else "event_timestamp_future_refused"
+                ),
+                idempotency_key=idempotency_key,
+                raw_body=raw_body,
+                identity_payload=identity_payload or payload,
+                request_headers=request_headers,
+            )
         if "b26_p2_ingress_relay_refused" in refusal:
             logger.warning(
                 "b26_p2_ingress_authority_refused",
@@ -2167,6 +2328,27 @@ async def paypal_sale_completed(
             request_headers=request_headers,
         )
     verified_amount_minor = parsed_minor
+    clock_refusal = _ingress_clock_refusal(ts)
+    if clock_refusal is not None:
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="paypal",
+            reason=clock_refusal,
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if verified_amount_currency != "USD":
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="paypal",
+            reason=f"unsupported_currency_excluded:{verified_amount_currency}",
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
@@ -2327,6 +2509,27 @@ async def woocommerce_order_completed(
             request_headers=request_headers,
         )
     verified_amount_minor = parsed_minor
+    clock_refusal = _ingress_clock_refusal(ts)
+    if clock_refusal is not None:
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="woocommerce",
+            reason=clock_refusal,
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if verified_amount_currency != "USD":
+        return await _route_governed_ingress_refusal(
+            tenant_id=tenant_info["tenant_id"],
+            source="woocommerce",
+            reason=f"unsupported_currency_excluded:{verified_amount_currency}",
+            idempotency_key=idempotency_key,
+            raw_body=raw_body,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),

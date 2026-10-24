@@ -6907,3 +6907,134 @@
     the XXIII coverage gate.
   subsumed_by: ''
   registry_action: utility
+
+- id: b26-p2-xxiv-coverage-registry
+  path: scripts/ci/b26_p2_xxiv_coverage.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: XXIV registry extends XXIII coverage for the B2.3 worker's
+    read-only source-money conservation surface while every other conservation
+    and money-authority path remains fail-closed.
+  command: python -c "from scripts.ci.b26_p2_xxiv_coverage import XXIV_COVERED_SURFACES; print(len(XXIV_COVERED_SURFACES))"
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: ''
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xxiv_coverage import XXIV_COVERED_SURFACES"
+  expected_failure_meaning: A new XXIV EXECUTE surface stays untested while coverage
+    claims closure.
+  first_diagnostic_command: python scripts/ci/b26_p2_capability_surface.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: Utility-only; the in-image and topology proofs import it for
+    the XXIV coverage gate.
+  subsumed_by: ''
+  registry_action: utility
+
+- id: prove-b26-p2-xxiv-scope-cohort
+  path: scripts/ci/prove_b26_p2_xxiv_scope_cohort.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: One persisted cohort resolves through the canonical coverage
+    consumer to exactly 95.00 percent; the excluded leg is visible and a non-USD
+    currency is refused rather than silently dropped.
+  command: python scripts/ci/prove_b26_p2_xxiv_scope_cohort.py --admin-dsn $MIGRATION_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxiv_scope_cohort.py --help
+  expected_failure_meaning: The persisted numerator, denominator, coverage ratio,
+    excluded leg, or currency refusal diverges from the sovereign scope law.
+  first_diagnostic_command: python scripts/ci/prove_b26_p2_xxiv_scope_cohort.py --admin-dsn $MIGRATION_DATABASE_URL
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: prove-b26-p2-xxiv-natural-correction
+  path: scripts/ci/prove_b26_p2_xxiv_natural_correction.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: Three provider-authenticated gross-capture corrections conduct
+    through the shipping B2.3 worker task while the real observer advances the signed
+    journal and source-money conservation stays clean.
+  command: python scripts/ci/prove_b26_p2_xxiv_natural_correction.py --admin-dsn $MIGRATION_DATABASE_URL --cycles 3
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxiv_natural_correction.py --help
+  expected_failure_meaning: A correction stops conducting through the worker, the
+    observer does not advance the signed journal, or conservation reports a violation.
+  first_diagnostic_command: python scripts/ci/prove_b26_p2_xxiv_natural_correction.py --admin-dsn $MIGRATION_DATABASE_URL --cycles 3
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: prove-b26-p2-xxiv-rollback-authority
+  path: scripts/ci/prove_b26_p2_xxiv_rollback_authority.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: A data-carrying supported rollback and re-upgrade preserve
+    the authority universe, the signed history checkpoint remains verifiable at
+    every revision, and re-upgrade does not mint a new universe.
+  command: python scripts/ci/prove_b26_p2_xxiv_rollback_authority.py --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres --database skeldir_b26_p2_xxiv_rollback
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxiv_rollback_authority.py --help
+  expected_failure_meaning: Downgrade or re-upgrade mints a different universe, drops
+    the retained table, or invalidates the signed history checkpoint.
+  first_diagnostic_command: python scripts/ci/prove_b26_p2_xxiv_rollback_authority.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: prove-b26-p2-xxiv-issuance-lock
+  path: scripts/ci/prove_b26_p2_xxiv_issuance_lock.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: A committed correction cannot land between the Trust builder's
+    source read and signature; the builder blocks on the shared advisory lock,
+    re-reads the source, and refuses source_changed_during_issuance.
+  command: python scripts/ci/prove_b26_p2_xxiv_issuance_lock.py --admin-dsn $MIGRATION_DATABASE_URL --runtime-dsn $DATABASE_URL --worker-dsn $B23_WORKER_DATABASE_URL
+  workflow_references:
+  - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  workflow_job_name: B2.6-P1 Static Semantic Authority
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxiv_issuance_lock.py --help
+  expected_failure_meaning: The builder does not serialize against corrections, does
+    not re-read the source, or signs a stale source snapshot.
+  first_diagnostic_command: python scripts/ci/prove_b26_p2_xxiv_issuance_lock.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: required-merge-blocking
+  ci_visibility: required_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce

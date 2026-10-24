@@ -118,3 +118,63 @@ class B23ExceptionListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     exceptions: list[B23ExceptionRecordResponse]
+
+
+class B23P2CandidateClassificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_raw: str
+    currency_raw: str
+    event_time: datetime
+    window_start: datetime
+    window_end: datetime
+    scope_policy_version: str
+    source_reference: str | None = None
+    source_verified_gross_amount_minor: int | None = Field(
+        default=None, ge=0
+    )
+
+
+class B23P2CandidateClassificationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    disposition: Literal[
+        "SUPPORTED_AND_IN_SCOPE",
+        "SUPPORTED_BUT_UNRESOLVED",
+        "EXPLICITLY_EXCLUDED",
+        "INVALID_OR_REFUSED",
+    ]
+    reason: str
+    provider: str
+    rail: str
+    currency_code: str
+    window_start: datetime
+    window_end: datetime
+    scope_policy_version: str
+    source_verified_gross_amount_minor: int | None
+
+
+class B23PostCaptureCorrectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["stripe", "paypal", "shopify", "woocommerce"]
+    event_type: Literal[
+        "payment_capture",
+        "partial_refund",
+        "full_refund",
+        "chargeback_opened",
+        "chargeback_won",
+        "chargeback_lost",
+        "reversal",
+    ]
+    provider_native_event_reference: str = Field(min_length=1)
+    is_gross_capture_correction: bool = False
+
+
+class B23PostCaptureCorrectionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["accepted", "applied", "unresolved"]
+    match_verdict_id: UUID
+    revenue_event_written: bool
+    net_verified_amount_minor: int = Field(ge=0)

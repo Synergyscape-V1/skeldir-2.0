@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """B1.1-P1 single source of truth for managed settings and secrets."""
+
+from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from typing import Literal
@@ -715,6 +715,17 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="none",
         owner="backend-platform",
         call_sites=("backend/app/trust/builder.py",),
+    ),
+    "B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH": _contract(
+        key="B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/b26-p2/history-witness-heartbeat-path",
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=(
+            "backend/app/trust/builder.py",
+            "backend/app/tasks/b26_p2_history.py",
+        ),
     ),
     "B26_P2_HISTORY_WITNESS_CUSTODY_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_CUSTODY_PATH",
