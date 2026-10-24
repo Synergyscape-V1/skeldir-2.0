@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 81,
+  "keys_total": 82,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/attribution/deterministic-default-lookback-days",
@@ -307,6 +307,24 @@
       "key": "B26_P2_HISTORY_WITNESS_GENESIS_HASH",
       "owner": "backend-platform",
       "rotation_criticality": "high"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/history-witness-heartbeat-path",
+      "call_sites": [
+        "backend/app/trust/builder.py",
+        "backend/app/tasks/b26_p2_history.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
     },
     {
       "aws_path_template": "/skeldir/{env}/config/b26-p2/history-witness-horizon-seconds",
