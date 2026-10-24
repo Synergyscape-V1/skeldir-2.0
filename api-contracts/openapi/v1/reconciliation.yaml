@@ -245,6 +245,99 @@ paths:
         '404':
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
 
+  /api/reconciliation/match-verdicts/{verdict_id}/corrections:
+    post:
+      summary: Register a governed B2.3 post-capture correction
+      description: >-
+        Conducts a provider-authenticated post-capture correction through the
+        shipping B2.3 kernel. The amount, currency and commerce reference are
+        taken from the named authenticated ingress identity, never from the
+        request body, so the caller cannot invent financial authority.
+      operationId: createB23PostCaptureCorrection
+      tags:
+        - Reconciliation
+      security:
+        - accessBearerAuth: ["manager"]
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: verdict_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/B23PostCaptureCorrectionRequest'
+      responses:
+        '200':
+          description: Correction applied or governedly unresolved
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/B23PostCaptureCorrectionResponse'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '409':
+          description: Correction source authority is unavailable or unresolved
+          content:
+            application/problem+json:
+              schema:
+                $ref: './_common/base.yaml#/components/schemas/ProblemDetails'
+        '422':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+
+  /api/reconciliation/candidates/classify:
+    post:
+      summary: Classify one P2 scope candidate
+      description: >-
+        Returns exactly one canonical P2 disposition. Malformed input is a
+        governed INVALID_OR_REFUSED receipt, never an authenticated financial
+        row. The endpoint is read-only and performs no financial write.
+      operationId: classifyB23P2Candidate
+      tags:
+        - Reconciliation
+      security:
+        - accessBearerAuth: ["viewer"]
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/B23P2CandidateClassificationRequest'
+      responses:
+        '200':
+          description: Canonical P2 classification receipt
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/B23P2CandidateClassificationResponse'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+
   /api/reconciliation/exceptions:
     get:
       summary: List B2.3 exception records
@@ -666,6 +759,134 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/B23ExceptionRecordResponse'
+
+    B23P2CandidateClassificationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - provider_raw
+        - currency_raw
+        - event_time
+        - window_start
+        - window_end
+        - scope_policy_version
+      properties:
+        provider_raw:
+          type: string
+        currency_raw:
+          type: string
+        event_time:
+          type: string
+          format: date-time
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+        scope_policy_version:
+          type: string
+        source_reference:
+          type:
+            - string
+            - 'null'
+        source_verified_gross_amount_minor:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+
+    B23P2CandidateClassificationResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - disposition
+        - reason
+        - provider
+        - rail
+        - currency_code
+        - window_start
+        - window_end
+        - scope_policy_version
+        - source_verified_gross_amount_minor
+      properties:
+        disposition:
+          type: string
+          enum:
+            - SUPPORTED_AND_IN_SCOPE
+            - SUPPORTED_BUT_UNRESOLVED
+            - EXPLICITLY_EXCLUDED
+            - INVALID_OR_REFUSED
+        reason:
+          type: string
+        provider:
+          type: string
+        rail:
+          type: string
+        currency_code:
+          type: string
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+        scope_policy_version:
+          type: string
+        source_verified_gross_amount_minor:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+
+    B23PostCaptureCorrectionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - provider
+        - event_type
+        - provider_native_event_reference
+      properties:
+        provider:
+          type: string
+          enum: [stripe, paypal, shopify, woocommerce]
+        event_type:
+          type: string
+          enum:
+            - payment_capture
+            - partial_refund
+            - full_refund
+            - chargeback_opened
+            - chargeback_won
+            - chargeback_lost
+            - reversal
+        provider_native_event_reference:
+          type: string
+          minLength: 1
+        is_gross_capture_correction:
+          type: boolean
+          default: false
+
+    B23PostCaptureCorrectionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - match_verdict_id
+        - revenue_event_written
+        - net_verified_amount_minor
+      properties:
+        status:
+          type: string
+          enum: [accepted, applied, unresolved]
+        match_verdict_id:
+          type: string
+          format: uuid
+        revenue_event_written:
+          type: boolean
+        net_verified_amount_minor:
+          type: integer
+          minimum: 0
 
   securitySchemes:
     accessBearerAuth:

@@ -230,12 +230,12 @@ paths:
                 properties: *ref_1
         '500':
           description: Internal server error
-          headers: &ref_27
+          headers: &ref_35
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_28
+          content: &ref_36
             application/problem+json:
               schema:
                 type: object
@@ -614,6 +614,256 @@ paths:
           description: Resource not found
           headers: *ref_10
           content: *ref_11
+  /api/reconciliation/match-verdicts/{verdict_id}/corrections:
+    post:
+      summary: Register a governed B2.3 post-capture correction
+      description: Conducts a provider-authenticated post-capture correction through the shipping B2.3 kernel. The amount, currency and commerce reference are taken from the named authenticated ingress identity, never from the request body, so the caller cannot invent financial authority.
+      operationId: createB23PostCaptureCorrection
+      tags:
+        - Reconciliation
+      security:
+        - accessBearerAuth:
+            - manager
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: verdict_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: &ref_31
+                - provider
+                - event_type
+                - provider_native_event_reference
+              properties: &ref_32
+                provider:
+                  type: string
+                  enum:
+                    - stripe
+                    - paypal
+                    - shopify
+                    - woocommerce
+                event_type:
+                  type: string
+                  enum:
+                    - payment_capture
+                    - partial_refund
+                    - full_refund
+                    - chargeback_opened
+                    - chargeback_won
+                    - chargeback_lost
+                    - reversal
+                provider_native_event_reference:
+                  type: string
+                  minLength: 1
+                is_gross_capture_correction:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Correction applied or governedly unresolved
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: &ref_33
+                  - status
+                  - match_verdict_id
+                  - revenue_event_written
+                  - net_verified_amount_minor
+                properties: &ref_34
+                  status:
+                    type: string
+                    enum:
+                      - accepted
+                      - applied
+                      - unresolved
+                  match_verdict_id:
+                    type: string
+                    format: uuid
+                  revenue_event_written:
+                    type: boolean
+                  net_verified_amount_minor:
+                    type: integer
+                    minimum: 0
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_6
+          content: *ref_7
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_8
+          content: *ref_9
+        '404':
+          description: Resource not found
+          headers: *ref_10
+          content: *ref_11
+        '409':
+          description: Correction source authority is unavailable or unresolved
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+        '422':
+          description: Bad Request - validation failed
+          headers: &ref_37
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_38
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+  /api/reconciliation/candidates/classify:
+    post:
+      summary: Classify one P2 scope candidate
+      description: Returns exactly one canonical P2 disposition. Malformed input is a governed INVALID_OR_REFUSED receipt, never an authenticated financial row. The endpoint is read-only and performs no financial write.
+      operationId: classifyB23P2Candidate
+      tags:
+        - Reconciliation
+      security:
+        - accessBearerAuth:
+            - viewer
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: &ref_27
+                - provider_raw
+                - currency_raw
+                - event_time
+                - window_start
+                - window_end
+                - scope_policy_version
+              properties: &ref_28
+                provider_raw:
+                  type: string
+                currency_raw:
+                  type: string
+                event_time:
+                  type: string
+                  format: date-time
+                window_start:
+                  type: string
+                  format: date-time
+                window_end:
+                  type: string
+                  format: date-time
+                scope_policy_version:
+                  type: string
+                source_reference:
+                  type:
+                    - string
+                    - 'null'
+                source_verified_gross_amount_minor:
+                  type:
+                    - integer
+                    - 'null'
+                  minimum: 0
+      responses:
+        '200':
+          description: Canonical P2 classification receipt
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: &ref_29
+                  - disposition
+                  - reason
+                  - provider
+                  - rail
+                  - currency_code
+                  - window_start
+                  - window_end
+                  - scope_policy_version
+                  - source_verified_gross_amount_minor
+                properties: &ref_30
+                  disposition:
+                    type: string
+                    enum:
+                      - SUPPORTED_AND_IN_SCOPE
+                      - SUPPORTED_BUT_UNRESOLVED
+                      - EXPLICITLY_EXCLUDED
+                      - INVALID_OR_REFUSED
+                  reason:
+                    type: string
+                  provider:
+                    type: string
+                  rail:
+                    type: string
+                  currency_code:
+                    type: string
+                  window_start:
+                    type: string
+                    format: date-time
+                  window_end:
+                    type: string
+                    format: date-time
+                  scope_policy_version:
+                    type: string
+                  source_verified_gross_amount_minor:
+                    type:
+                      - integer
+                      - 'null'
+                    minimum: 0
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_6
+          content: *ref_7
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_8
+          content: *ref_9
   /api/reconciliation/exceptions:
     get:
       summary: List B2.3 exception records
@@ -876,6 +1126,26 @@ components:
       additionalProperties: false
       required: *ref_25
       properties: *ref_26
+    B23P2CandidateClassificationRequest:
+      type: object
+      additionalProperties: false
+      required: *ref_27
+      properties: *ref_28
+    B23P2CandidateClassificationResponse:
+      type: object
+      additionalProperties: false
+      required: *ref_29
+      properties: *ref_30
+    B23PostCaptureCorrectionRequest:
+      type: object
+      additionalProperties: false
+      required: *ref_31
+      properties: *ref_32
+    B23PostCaptureCorrectionResponse:
+      type: object
+      additionalProperties: false
+      required: *ref_33
+      properties: *ref_34
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -916,9 +1186,13 @@ components:
       content: *ref_9
     ServerError:
       description: Internal server error
-      headers: *ref_27
-      content: *ref_28
+      headers: *ref_35
+      content: *ref_36
     NotFoundError:
       description: Resource not found
       headers: *ref_10
       content: *ref_11
+    ValidationError:
+      description: Bad Request - validation failed
+      headers: *ref_37
+      content: *ref_38

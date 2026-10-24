@@ -1200,16 +1200,40 @@ def _verify_signed_history_witness(
     from app.trust.history_witness import (  # noqa: PLC0415
         HistoryWitnessError,
         load_custody,
+        load_public_key,
+        public_key_fingerprint,
         verify_journal,
+    )
+    from app.trust.witness_anchor import (  # noqa: PLC0415
+        COMPILED_GENESIS_HASH,
+        COMPILED_PUBLIC_KEY_SHA256,
     )
 
     if not settings.B26_P2_HISTORY_WITNESS_REQUIRED:
         return True, ""
     try:
+        genesis_hash = settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH
+        if settings.ENVIRONMENT == "production":
+            if not COMPILED_GENESIS_HASH or not COMPILED_PUBLIC_KEY_SHA256:
+                raise HistoryWitnessError(
+                    "witness_compiled_anchor_missing"
+                )
+            if genesis_hash != COMPILED_GENESIS_HASH:
+                raise HistoryWitnessError(
+                    "witness_compiled_genesis_mismatch"
+                )
+            public_key = load_public_key(
+                settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH
+            )
+            if public_key_fingerprint(public_key) != COMPILED_PUBLIC_KEY_SHA256:
+                raise HistoryWitnessError(
+                    "witness_compiled_public_key_mismatch"
+                )
+            genesis_hash = COMPILED_GENESIS_HASH
         journal = verify_journal(
             settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH,
             public_key_path=settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
-            genesis_hash=settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH,
+            genesis_hash=genesis_hash,
             require_freshness=True,
             freshness_seconds=settings.B26_P2_HISTORY_WITNESS_HORIZON_SECONDS,
             expected_count=ledger_count,
@@ -1217,11 +1241,15 @@ def _verify_signed_history_witness(
             expected_prefix_digest=ledger_prefix_digest,
             expected_universe=authority_universe,
             require_universe=True,
+            heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
         )
         custody = load_custody(
             settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH
         )
-        if custody is not None:
+        if custody is None:
+            if settings.ENVIRONMENT == "production":
+                raise HistoryWitnessError("witness_custody_missing")
+        else:
             custody_count = int(custody["ledger_count"])
             latest = journal.latest
             if latest.ledger_count < custody_count:
@@ -1255,6 +1283,14 @@ async def read_source_money_conservation_status(
     if scalars is None:
         return True, ""
     violations = [str(v) for v in scalars().all() if str(v).strip()]
+    # A lawful regime retirement makes every ingress non-current. The
+    # conservation oracle reports that as a distinct violation, but the
+    # envelope still exists: the source reader and the qualified status
+    # fields below publish ``unavailable`` rather than verified truth.
+    # Every other conservation violation (amount/currency divergence,
+    # missing source, discontinuous ledger) remains a hard refusal.
+    if violations == ["conservation_source_authority_unresolved"]:
+        return True, ""
     if violations:
         return False, "source_money_conservation_unverifiable:" + violations[0]
     return True, ""
@@ -1287,6 +1323,45 @@ def _loaded_llm_modules(before: set[str], after: set[str]) -> tuple[str, ...]:
         )
     )
     return forbidden
+
+
+_ISSUANCE_LOCK_NAMESPACE = 82173645
+_ISSUANCE_LOCK_KEY = 300003
+
+
+async def _acquire_issuance_lock(db_session: AsyncSession) -> bool:
+    """Serialize match-correction writes against Trust issuance.
+
+    XXIV (A7): source read, conservation, witness verification and
+    envelope construction must describe one committed world. The
+    correction path takes the same transaction-scoped advisory lock, so
+    a newer correction cannot commit between the builder's source read
+    and its signature. Test doubles without a connection are not locked;
+    production paths always are.
+    """
+    connection_factory = getattr(db_session, "connection", None)
+    if connection_factory is None:
+        return False
+    connection = await connection_factory()
+    await connection.execute(
+        text("SELECT pg_advisory_xact_lock(:namespace, :key)"),
+        {"namespace": _ISSUANCE_LOCK_NAMESPACE, "key": _ISSUANCE_LOCK_KEY},
+    )
+    return True
+
+
+def _source_evidence_tuple(
+    source: MatchVerdictSource,
+) -> tuple[object, ...]:
+    return (
+        source.status,
+        source.canonical_net_verified_amount_minor,
+        source.currency_code,
+        source.last_transition_at,
+        source.updated_at,
+        source.ingress_authority_state,
+        source.ingress_has_current_authority,
+    )
 
 
 async def build_unsigned_trust_envelope(
@@ -1336,6 +1411,10 @@ async def build_unsigned_trust_envelope(
             authority_witness=None,
         )
 
+    issuance_locked = False
+    if request.subject_type == "match_verdict":
+        issuance_locked = await _acquire_issuance_lock(db_session)
+
     if source is not None:
         expected_ref = f"urn:skeldir:match_verdict:{source.id}"
         if isinstance(source, ConfidenceProjectionSource):
@@ -1381,6 +1460,33 @@ async def build_unsigned_trust_envelope(
             read_only_observation=_read_only_observation(llm_modules=()),
             authority_witness=None,
         )
+
+    if issuance_locked and isinstance(source, MatchVerdictSource):
+        refreshed = await read_match_verdict_source(
+            db_session,
+            tenant_id=request.tenant_id,
+            subject_ref=request.subject_ref,
+        )
+        if refreshed is None or _source_evidence_tuple(
+            refreshed
+        ) != _source_evidence_tuple(source):
+            refusal = build_error_envelope(
+                tenant_id=request.tenant_id,
+                reason_code="source_changed_during_issuance",
+                created_at=created_at,
+                audience_id=audience_id,
+            )
+            return TrustEnvelopeBuildResult(
+                status="refused",
+                unsigned_payload=None,
+                refusal_payload=refusal,
+                reason_code="source_changed_during_issuance",
+                field_source_decisions=decisions,
+                money_authority_decision=None,
+                read_only_observation=_read_only_observation(llm_modules=()),
+                authority_witness=None,
+            )
+        source = refreshed
 
     if isinstance(source, ConfidenceProjectionSource):
         if payload_runner is None:

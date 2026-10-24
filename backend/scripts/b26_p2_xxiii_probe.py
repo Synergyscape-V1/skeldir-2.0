@@ -272,7 +272,7 @@ def _live_witness_state() -> dict[str, object]:
     }
 
 
-def _checkpoint_kwargs() -> dict[str, object]:
+def _checkpoint_kwargs(journal_path: Path) -> dict[str, object]:
     import inspect
 
     from app.trust.history_witness import append_checkpoint
@@ -281,6 +281,10 @@ def _checkpoint_kwargs() -> dict[str, object]:
     kwargs: dict[str, object] = {}
     if "authority_universe" in params:
         kwargs["authority_universe"] = _universe()
+    if "custody_path" in params:
+        kwargs["custody_path"] = journal_path.parent / "custody.json"
+    if "heartbeat_path" in params:
+        kwargs["heartbeat_path"] = journal_path.parent / "heartbeat.json"
     return kwargs
 
 
@@ -322,7 +326,7 @@ def _ensure_witness(private_key_path: Path, journal_path: Path) -> dict[str, obj
         ledger_tip_seq=live["ledger_tip_seq"],
         ledger_tip_hash=live["ledger_tip_hash"],
         ledger_prefix_digest=live["ledger_prefix_digest"],
-        **_checkpoint_kwargs(),
+        **_checkpoint_kwargs(journal_path),
     )
     return {
         "genesis_hash": checkpoint.checkpoint_hash,

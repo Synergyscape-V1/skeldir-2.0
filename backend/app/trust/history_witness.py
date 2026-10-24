@@ -17,6 +17,7 @@ identity, never by the database principal.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import tempfile
@@ -27,12 +28,14 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
 
 WITNESS_VERSION = 1
+HEARTBEAT_VERSION = 1
 SIGNATURE_PREFIX = "ed25519:"
 DEFAULT_KEY_ID = "kid:b26-p2-history-witness-v1"
 FUTURE_TOLERANCE_SECONDS = 120
@@ -64,10 +67,26 @@ def _checkpoint_hash(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(_canonical(material)).hexdigest()
 
 
+def _heartbeat_hash(payload: Mapping[str, Any]) -> str:
+    import hashlib
+
+    material = {key: value for key, value in payload.items() if key != "heartbeat_hash"}
+    return hashlib.sha256(_canonical(material)).hexdigest()
+
+
 def _is_sha256_hex(value: str) -> bool:
     if len(value) != 64:
         return False
     return all(char in "0123456789abcdef" for char in value.lower())
+
+
+def public_key_fingerprint(public_key: Ed25519PublicKey) -> str:
+    """SHA-256 of the raw Ed25519 public key bytes."""
+    raw = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _parse_instant(value: Any) -> datetime:
@@ -93,6 +112,7 @@ class HistoryCheckpoint:
     checkpoint_hash: str
     key_id: str
     authority_universe: str | None = None
+    source_evidence_digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -244,6 +264,91 @@ def load_custody(
     return payload
 
 
+def _write_heartbeat(
+    heartbeat_path: str | os.PathLike[str] | None,
+    *,
+    private_key: Ed25519PrivateKey,
+    observed_at: datetime,
+    latest: HistoryCheckpoint,
+) -> None:
+    """Publish a signed freshness observation without appending history.
+
+    XXIV (A8): an unchanged ledger must be refreshable. A heartbeat
+    commits to the exact latest checkpoint and carries a fresh signed
+    instant; it is never a new historical checkpoint and never changes
+    the journal chain.
+    """
+    if heartbeat_path is None:
+        return
+    payload: dict[str, Any] = {
+        "version": HEARTBEAT_VERSION,
+        "key_id": latest.key_id,
+        "observed_at": observed_at.isoformat().replace("+00:00", "Z"),
+        "ledger_count": latest.ledger_count,
+        "ledger_tip_seq": latest.ledger_tip_seq,
+        "ledger_tip_hash": latest.ledger_tip_hash,
+        "ledger_prefix_digest": latest.ledger_prefix_digest,
+        "checkpoint_hash": latest.checkpoint_hash,
+        "source_evidence_digest": latest.source_evidence_digest,
+    }
+    if latest.authority_universe is not None:
+        payload["authority_universe"] = latest.authority_universe
+    payload["heartbeat_hash"] = _heartbeat_hash(payload)
+    signature = private_key.sign(_signature_material(payload))
+    line = json.dumps(
+        {
+            "payload": payload,
+            "signature": f"{SIGNATURE_PREFIX}{_b64url_encode(signature)}",
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    path = Path(heartbeat_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(
+        prefix=".history-witness-heartbeat-", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(line.encode("utf-8"))
+            handle.write(b"\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def _restore_journal(journal: Path, previous_bytes: bytes) -> None:
+    if not previous_bytes:
+        try:
+            journal.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    fd, temporary = tempfile.mkstemp(
+        prefix=".history-witness-restore-", dir=str(journal.parent)
+    )
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(previous_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, journal)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
 def append_checkpoint(
     journal_path: str | os.PathLike[str],
     *,
@@ -259,17 +364,28 @@ def append_checkpoint(
     prefix_anchor_seq: int | None = None,
     prefix_anchor_hash: str | None = None,
     custody_path: str | os.PathLike[str] | None = None,
+    heartbeat_path: str | os.PathLike[str] | None = None,
+    source_evidence_digest: str | None = None,
 ) -> HistoryCheckpoint:
-    """Verify the existing journal, then atomically append one checkpoint.
+    """Verify the existing journal, then atomically publish one observation.
 
     A lawful ledger grows: the new checkpoint must anchor the exact previous
     tip (prefix_anchor_seq/hash) and strictly advance the tip sequence. The
     checkpoint's live prefix digest must change. Re-observing the same count
-    still requires byte-identical history.
+    requires byte-identical history and publishes a signed heartbeat instead
+    of appending a duplicate checkpoint.
+
+    XXIV (A3/A8): custody is preflighted before any journal byte changes.
+    If the custody write fails after a journal append, the prior journal
+    bytes are restored, so refusal and durable state cannot diverge.
     """
     journal = Path(journal_path)
     private_key = load_private_key(private_key_path)
     normalized_universe = _normalize_universe(authority_universe)
+    if source_evidence_digest is not None and not _is_sha256_hex(
+        source_evidence_digest
+    ):
+        raise HistoryWitnessError("witness_source_evidence_digest_invalid")
     try:
         existing = verify_journal(
             journal,
@@ -283,6 +399,18 @@ def append_checkpoint(
         if str(exc) not in {"witness_journal_missing", "witness_journal_empty"}:
             raise
         previous = None
+    custody = load_custody(custody_path)
+    if previous is not None and custody_path is not None and custody is None:
+        raise HistoryWitnessError("witness_custody_missing")
+    if custody is not None and previous is not None:
+        custody_count = int(custody["ledger_count"])
+        if custody_count > previous.ledger_count:
+            raise HistoryWitnessError("witness_custody_rollback")
+        if (
+            custody_count == previous.ledger_count
+            and custody.get("checkpoint_hash") != previous.checkpoint_hash
+        ):
+            raise HistoryWitnessError("witness_custody_fork")
     if previous is not None:
         if ledger_count < previous.ledger_count:
             raise HistoryWitnessError("witness_history_shrank")
@@ -299,6 +427,12 @@ def append_checkpoint(
                 previous.ledger_prefix_digest or None
             ):
                 raise HistoryWitnessError("witness_history_prefix_diverged")
+            if (source_evidence_digest or None) != (
+                previous.source_evidence_digest or None
+            ):
+                raise HistoryWitnessError(
+                    "witness_source_evidence_diverged_without_ledger"
+                )
         else:
             if (prefix_anchor_seq or None) != (previous.ledger_tip_seq or None):
                 raise HistoryWitnessError("witness_history_prefix_diverged")
@@ -316,6 +450,33 @@ def append_checkpoint(
         raise HistoryWitnessError("witness_observation_future")
     if previous is not None and moment < previous.observed_at:
         raise HistoryWitnessError("witness_observation_out_of_order")
+    if previous is not None and ledger_count == previous.ledger_count:
+        # An unchanged ledger is a freshness observation, not history.
+        if custody is not None and int(custody["ledger_count"]) < ledger_count:
+            _write_custody(
+                custody_path,
+                ledger_count=previous.ledger_count,
+                checkpoint_hash=previous.checkpoint_hash,
+                authority_universe=previous.authority_universe,
+            )
+        _write_heartbeat(
+            heartbeat_path,
+            private_key=private_key,
+            observed_at=moment,
+            latest=previous,
+        )
+        return HistoryCheckpoint(
+            observed_at=moment,
+            ledger_count=previous.ledger_count,
+            ledger_tip_seq=previous.ledger_tip_seq,
+            ledger_tip_hash=previous.ledger_tip_hash,
+            ledger_prefix_digest=previous.ledger_prefix_digest,
+            previous_checkpoint_hash=previous.previous_checkpoint_hash,
+            checkpoint_hash=previous.checkpoint_hash,
+            key_id=previous.key_id,
+            authority_universe=previous.authority_universe,
+            source_evidence_digest=previous.source_evidence_digest,
+        )
     payload: dict[str, Any] = {
         "version": WITNESS_VERSION,
         "key_id": key_id,
@@ -330,7 +491,12 @@ def append_checkpoint(
     }
     if normalized_universe is not None:
         payload["authority_universe"] = normalized_universe
+    if source_evidence_digest is not None:
+        payload["source_evidence_digest"] = source_evidence_digest
     payload["checkpoint_hash"] = _checkpoint_hash(payload)
+    if custody is not None and int(custody["ledger_count"]) == int(ledger_count):
+        if custody.get("checkpoint_hash") != payload["checkpoint_hash"]:
+            raise HistoryWitnessError("witness_custody_fork")
     signature = private_key.sign(_signature_material(payload))
     line = json.dumps(
         {
@@ -373,13 +539,23 @@ def append_checkpoint(
         checkpoint_hash=payload["checkpoint_hash"],
         key_id=key_id,
         authority_universe=normalized_universe,
+        source_evidence_digest=source_evidence_digest,
     )
-    _write_custody(
-        custody_path,
-        ledger_count=return_checkpoint.ledger_count,
-        checkpoint_hash=return_checkpoint.checkpoint_hash,
-        authority_universe=normalized_universe,
-    )
+    try:
+        _write_custody(
+            custody_path,
+            ledger_count=return_checkpoint.ledger_count,
+            checkpoint_hash=return_checkpoint.checkpoint_hash,
+            authority_universe=normalized_universe,
+        )
+    except Exception:
+        try:
+            _restore_journal(journal, existing_bytes)
+        except Exception as restore_exc:
+            raise HistoryWitnessError(
+                "witness_journal_restore_failed"
+            ) from restore_exc
+        raise
     return return_checkpoint
 
 
@@ -404,6 +580,48 @@ def _iter_entries(journal_path: Path) -> Iterable[dict[str, Any]]:
         yield entry
 
 
+def _load_heartbeat(
+    heartbeat_path: str | os.PathLike[str] | None,
+    key: Ed25519PublicKey,
+) -> dict[str, Any] | None:
+    if heartbeat_path is None:
+        return None
+    path = Path(heartbeat_path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise HistoryWitnessError("witness_heartbeat_unreadable") from exc
+    try:
+        entry = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise HistoryWitnessError("witness_heartbeat_malformed") from exc
+    if not isinstance(entry, dict) or not isinstance(entry.get("payload"), dict):
+        raise HistoryWitnessError("witness_heartbeat_malformed")
+    payload = entry["payload"]
+    signature_text = entry.get("signature")
+    if not isinstance(signature_text, str) or not signature_text.startswith(
+        SIGNATURE_PREFIX
+    ):
+        raise HistoryWitnessError("witness_heartbeat_signature_missing")
+    try:
+        signature = _b64url_decode(signature_text.removeprefix(SIGNATURE_PREFIX))
+    except Exception as exc:
+        raise HistoryWitnessError("witness_heartbeat_signature_malformed") from exc
+    try:
+        key.verify(signature, _signature_material(payload))
+    except InvalidSignature as exc:
+        raise HistoryWitnessError("witness_heartbeat_signature_invalid") from exc
+    if payload.get("version") != HEARTBEAT_VERSION:
+        raise HistoryWitnessError("witness_heartbeat_version_unsupported")
+    if payload.get("heartbeat_hash") != _heartbeat_hash(payload):
+        raise HistoryWitnessError("witness_heartbeat_hash_invalid")
+    if not isinstance(payload.get("checkpoint_hash"), str):
+        raise HistoryWitnessError("witness_heartbeat_malformed")
+    return payload
+
+
 def verify_journal(
     journal_path: str | os.PathLike[str],
     *,
@@ -418,9 +636,18 @@ def verify_journal(
     expected_prefix_digest: str | None = None,
     expected_universe: str | None = None,
     require_universe: bool = False,
+    expected_source_evidence_digest: str | None = None,
+    require_source_evidence: bool = False,
+    heartbeat_path: str | os.PathLike[str] | None = None,
     now: datetime | None = None,
 ) -> VerifiedJournal:
-    """Verify the full signed journal, its chain, and optional live state."""
+    """Verify the full signed journal, its chain, and optional live state.
+
+    XXIV (A7/A8): a heartbeat may carry freshness for an unchanged ledger,
+    but only when it is signed, bound to the exact latest checkpoint, and
+    at least as new as that checkpoint. A malformed or diverging heartbeat
+    fails closed rather than being ignored.
+    """
     path = Path(journal_path)
     key = public_key or (
         load_public_key(public_key_path) if public_key_path is not None else None
@@ -476,6 +703,13 @@ def verify_journal(
                 journal_universe = universe
             elif journal_universe != universe:
                 raise HistoryWitnessError("witness_authority_universe_changed")
+        source_evidence_digest = payload.get("source_evidence_digest")
+        if source_evidence_digest is not None and not _is_sha256_hex(
+            source_evidence_digest
+        ):
+            raise HistoryWitnessError(
+                "witness_source_evidence_digest_invalid"
+            )
         if count == 0 and (tip_seq is not None or tip_hash is not None):
             raise HistoryWitnessError("witness_empty_ledger_with_tip")
         if count > 0 and (tip_seq is None or not tip_hash):
@@ -496,6 +730,12 @@ def verify_journal(
                 != (last.ledger_prefix_digest or None)
             ):
                 raise HistoryWitnessError("witness_history_prefix_diverged")
+            if count == last.ledger_count and (
+                source_evidence_digest or None
+            ) != (last.source_evidence_digest or None):
+                raise HistoryWitnessError(
+                    "witness_source_evidence_diverged_without_ledger"
+                )
             if count > last.ledger_count:
                 if (tip_seq or 0) <= (last.ledger_tip_seq or 0):
                     raise HistoryWitnessError("witness_history_tip_not_advanced")
@@ -514,6 +754,7 @@ def verify_journal(
             checkpoint_hash=computed_hash,
             key_id=key_id_value,
             authority_universe=universe,
+            source_evidence_digest=source_evidence_digest,
         )
         checkpoints.append(checkpoint)
         previous_hash = computed_hash
@@ -525,10 +766,43 @@ def verify_journal(
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     if latest.observed_at > current + timedelta(seconds=FUTURE_TOLERANCE_SECONDS):
         raise HistoryWitnessError("witness_observation_future")
+    heartbeat = _load_heartbeat(heartbeat_path, key)
+    observed_for_freshness = latest.observed_at
+    if heartbeat is not None:
+        if heartbeat.get("checkpoint_hash") != latest.checkpoint_hash:
+            raise HistoryWitnessError("witness_heartbeat_diverged")
+        if (
+            heartbeat.get("ledger_count") != latest.ledger_count
+            or (heartbeat.get("ledger_tip_seq") or None)
+            != (latest.ledger_tip_seq or None)
+            or (heartbeat.get("ledger_tip_hash") or None)
+            != (latest.ledger_tip_hash or None)
+            or (heartbeat.get("ledger_prefix_digest") or None)
+            != (latest.ledger_prefix_digest or None)
+            or (heartbeat.get("authority_universe") or None)
+            != (latest.authority_universe or None)
+            or (heartbeat.get("source_evidence_digest") or None)
+            != (latest.source_evidence_digest or None)
+        ):
+            raise HistoryWitnessError("witness_heartbeat_diverged")
+        heartbeat_observed = _parse_instant(heartbeat.get("observed_at"))
+        if heartbeat_observed < latest.observed_at:
+            raise HistoryWitnessError("witness_heartbeat_out_of_order")
+        if heartbeat_observed > current + timedelta(
+            seconds=FUTURE_TOLERANCE_SECONDS
+        ):
+            raise HistoryWitnessError("witness_observation_future")
+        observed_for_freshness = heartbeat_observed
     if require_freshness and (
-        current - latest.observed_at
+        current - observed_for_freshness
     ).total_seconds() > freshness_seconds:
         raise HistoryWitnessError("witness_checkpoint_stale")
+    if require_source_evidence and latest.source_evidence_digest is None:
+        raise HistoryWitnessError("witness_source_evidence_missing")
+    if expected_source_evidence_digest is not None and (
+        latest.source_evidence_digest or None
+    ) != (expected_source_evidence_digest or None):
+        raise HistoryWitnessError("witness_source_evidence_diverged")
     if expected_count is not None and latest.ledger_count != int(expected_count):
         raise HistoryWitnessError("witness_live_count_diverged")
     if expected_tip_hash is not None and (latest.ledger_tip_hash or None) != (
@@ -562,5 +836,6 @@ __all__ = (
     "load_custody",
     "load_private_key",
     "load_public_key",
+    "public_key_fingerprint",
     "verify_journal",
 )

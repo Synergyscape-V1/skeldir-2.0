@@ -304,6 +304,13 @@ class Settings(BaseSettings):
             "checkpoint exists. Disabling is an explicit non-production choice."
         ),
     )
+    B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH: str = Field(
+        "var/b26_p2/history_witness_heartbeat.json",
+        description=(
+            "Signed freshness observation for an unchanged witness ledger. "
+            "Never a historical checkpoint; only an observation instant."
+        ),
+    )
     B26_P2_HISTORY_WITNESS_CUSTODY_PATH: str = Field(
         "var/b26_p2/history_witness_custody.json",
         description=(
@@ -690,6 +697,22 @@ class Settings(BaseSettings):
             if not (self.B26_P2_HISTORY_WITNESS_GENESIS_HASH or "").strip():
                 raise ValueError(
                     "B26_P2_HISTORY_WITNESS_GENESIS_HASH must be pinned in production"
+                )
+            from app.trust.witness_anchor import (  # noqa: PLC0415
+                COMPILED_GENESIS_HASH,
+                COMPILED_PUBLIC_KEY_SHA256,
+            )
+
+            if not COMPILED_GENESIS_HASH or not COMPILED_PUBLIC_KEY_SHA256:
+                raise ValueError(
+                    "history witness compiled anchor missing from production image"
+                )
+            if (
+                self.B26_P2_HISTORY_WITNESS_GENESIS_HASH
+                != COMPILED_GENESIS_HASH
+            ):
+                raise ValueError(
+                    "history witness genesis does not match compiled anchor"
                 )
         return self
 
