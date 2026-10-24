@@ -1199,7 +1199,7 @@ def _ingress_clock_refusal(event_timestamp: datetime) -> str | None:
     but only after the relay has started persistence, which surfaces as
     an ungoverned HTTP 500. The relay must reach the same verdict before
     any write and route the arrival to durable DLQ. Stale arrivals are
-    also outside the governed reconciliation horizon: they must not
+    also outside the governed financial horizon: they must not
     persist as authenticated money with no possible consequence.
     """
     moment = (
@@ -1214,7 +1214,7 @@ def _ingress_clock_refusal(event_timestamp: datetime) -> str | None:
         days=int(settings.ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS)
     )
     if moment < now - horizon:
-        return "event_timestamp_outside_reconciliation_horizon"
+        return "event_timestamp_outside_governed_horizon"
     return None
 
 
