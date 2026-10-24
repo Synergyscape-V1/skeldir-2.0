@@ -53,7 +53,8 @@
         "mutable_workflow_subject_rejected",
         "money_amount_exceeds_json_safe_integer",
         "validation_failed",
-        "history_integrity_unverifiable"
+        "history_integrity_unverifiable",
+        "source_changed_during_issuance"
       ]
     },
     "envelopeStatus": {

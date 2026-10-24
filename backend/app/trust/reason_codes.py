@@ -49,6 +49,7 @@ class ReasonCode(StrEnum):
     MONEY_AMOUNT_EXCEEDS_JSON_SAFE_INTEGER = "money_amount_exceeds_json_safe_integer"
     VALIDATION_FAILED = "validation_failed"
     HISTORY_INTEGRITY_UNVERIFIABLE = "history_integrity_unverifiable"
+    SOURCE_CHANGED_DURING_ISSUANCE = "source_changed_during_issuance"
 
 
 REQUIRED_P6_REASON_CODES: frozenset[str] = frozenset(
@@ -92,6 +93,7 @@ FALLBACK_REASON_CODES: frozenset[str] = frozenset(
         ReasonCode.BENCHMARK_UNAVAILABLE,
         ReasonCode.MONEY_SOURCE_NOT_AUTHORITATIVE,
         ReasonCode.MONEY_AMOUNT_EXCEEDS_JSON_SAFE_INTEGER,
+        ReasonCode.SOURCE_CHANGED_DURING_ISSUANCE,
         ReasonCode.DETERMINISTIC_EVIDENCE_UNAVAILABLE,
         ReasonCode.PROVIDER_TEXT_QUARANTINED,
         ReasonCode.POLICY_DENIED,
@@ -333,6 +335,16 @@ REASON_CODE_REGISTRY: dict[ReasonCode, ReasonCodeDefinition] = {
         forbidden_fields=MONEY_FIELDS,
         fallback_applied="required",
         fallback_reason=ReasonCode.MONEY_SOURCE_NOT_AUTHORITATIVE,
+    ),
+    ReasonCode.SOURCE_CHANGED_DURING_ISSUANCE: _definition(
+        ReasonCode.SOURCE_CHANGED_DURING_ISSUANCE,
+        source_predicate=(
+            "issuer_lock_reveals_newer_committed_financial_source_state"
+        ),
+        envelope_status="refused",
+        forbidden_fields=MONEY_FIELDS,
+        fallback_applied="required",
+        fallback_reason=ReasonCode.SOURCE_CHANGED_DURING_ISSUANCE,
     ),
     ReasonCode.PROVIDER_TEXT_QUARANTINED: _definition(
         ReasonCode.PROVIDER_TEXT_QUARANTINED,

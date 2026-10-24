@@ -267,6 +267,18 @@ def _docker(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", *args], capture_output=True, text=True)
 
 
+def _witness_build_args() -> list[str]:
+    args: list[str] = []
+    for env_name in (
+        "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_SHA256",
+        "B26_P2_HISTORY_WITNESS_GENESIS_HASH",
+    ):
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            args.extend(["--build-arg", f"{env_name}={value}"])
+    return args
+
+
 def _fail(details: dict, message: str) -> int:
     details["status"] = "FAIL"
     details["failure"] = message
@@ -466,7 +478,15 @@ def main() -> int:
 
     try:
         if not args.no_build:
-            proc = _docker("build", "-f", "backend/Dockerfile", "-t", args.image_tag, ".")
+            proc = _docker(
+                "build",
+                "-f",
+                "backend/Dockerfile",
+                "-t",
+                args.image_tag,
+                *_witness_build_args(),
+                ".",
+            )
             if proc.returncode != 0:
                 return _fail(details, f"image_build_failed:{proc.stderr[-1500:]}")
         proc = _docker("image", "inspect", args.image_tag, "--format", "{{.Id}}")
@@ -610,6 +630,7 @@ def main() -> int:
 
         covered = None
         for _modname, _fname, _attr in (
+            ("b26_p2_xxiv_coverage", "b26_p2_xxiv_coverage.py", "XXIV_COVERED_SURFACES"),
             ("b26_p2_xxiii_coverage", "b26_p2_xxiii_coverage.py", "XXIII_COVERED_SURFACES"),
             ("b26_p2_xxii_coverage", "b26_p2_xxii_coverage.py", "XXII_COVERED_SURFACES"),
             ("b26_p2_xxi_coverage", "b26_p2_xxi_coverage.py", "XXI_COVERED_SURFACES"),

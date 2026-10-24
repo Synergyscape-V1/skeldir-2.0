@@ -4999,3 +4999,98 @@
   local_reproduction_command: python -c "from scripts.ci.b26_p2_xxiii_coverage import XXIII_COVERED_SURFACES"
   risk_if_removed: New XXIII surfaces could stay untested silently.
   decision: keep_utility
+- gate_id: b26-p2-xxiv-coverage-registry
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: ''
+  script: scripts/ci/b26_p2_xxiv_coverage.py
+  owning_phase: B2.6-P2
+  protected_invariant: XXIV registry extends XXIII coverage for the B2.3 worker's
+    read-only source-money conservation surface while every other conservation and
+    money-authority path remains fail-closed.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: The required in-image and topology proofs import this registry
+    for the XXIV coverage gate.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_in_image.py
+  local_reproduction_command: python -c "from scripts.ci.b26_p2_xxiv_coverage import XXIV_COVERED_SURFACES"
+  risk_if_removed: New XXIV EXECUTE surfaces could stay untested silently.
+  decision: keep_utility
+- gate_id: prove-b26-p2-xxiv-scope-cohort
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/prove_b26_p2_xxiv_scope_cohort.py
+  owning_phase: B2.6-P2
+  protected_invariant: One persisted cohort resolves through the canonical coverage
+    consumer to exactly 95.00 percent with the excluded leg visible and non-USD
+    currency refused.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: No other required gate executes the persisted 76,000/80,000
+    cohort through the real coverage consumer and asserts the excluded leg plus
+    the EUR refusal.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_xxiv_scope_cohort.py --help
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxiv_scope_cohort.py --help
+  risk_if_removed: Coverage could report a plausible ratio while silently dropping
+    the excluded leg or admitting an unsupported currency.
+  decision: keep_required
+- gate_id: prove-b26-p2-xxiv-natural-correction
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/prove_b26_p2_xxiv_natural_correction.py
+  owning_phase: B2.6-P2
+  protected_invariant: Three provider-authenticated corrections conduct through the
+    shipping worker, the observer advances the signed journal, and conservation
+    remains clean.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: Direct-kernel correction tests do not prove the shipping
+    API/task path or the natural observer advance across successive corrections.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_xxiv_natural_correction.py --help
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxiv_natural_correction.py --help
+  risk_if_removed: Correction could remain a synthetic kernel call while the product
+    path never invokes it.
+  decision: keep_required
+- gate_id: prove-b26-p2-xxiv-rollback-authority
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/prove_b26_p2_xxiv_rollback_authority.py
+  owning_phase: B2.6-P2
+  protected_invariant: Supported data-carrying rollback and re-upgrade preserve the
+    authority universe and signed history without minting a new universe.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: Migration ancestry checks do not prove that a populated universe
+    and signed checkpoint survive the downgrade and re-upgrade.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_xxiv_rollback_authority.py --help
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxiv_rollback_authority.py --help
+  risk_if_removed: A supported rollback could orphan historical signed authority while
+    every schema-only gate stays green.
+  decision: keep_required
+- gate_id: prove-b26-p2-xxiv-issuance-lock
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: B2.6-P1 Static Semantic Authority
+  script: scripts/ci/prove_b26_p2_xxiv_issuance_lock.py
+  owning_phase: B2.6-P2
+  protected_invariant: A committed source correction cannot land between the builder's
+    source read and signature; the builder blocks on the shared advisory lock and
+    refuses source_changed_during_issuance.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: A unit-level mocked source-change test does not prove the
+    real advisory lock serializes a real committed correction against the real
+    builder.
+  negative_control_preserved_by: python scripts/ci/prove_b26_p2_xxiv_issuance_lock.py --help
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxiv_issuance_lock.py --help
+  risk_if_removed: A concurrent correction could commit after the builder reads the
+    source and before it signs, producing a stale authoritative envelope.
+  decision: keep_required

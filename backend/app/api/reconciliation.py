@@ -13,6 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.problem_details import problem_details_response
 from app.db.deps import get_db_session
+from app.finance_reconciliation.scope_authority import (
+    ScopeAuthorityError,
+    normalize_provider,
+)
 from app.security.auth import AuthContext, get_auth_context
 
 router = APIRouter()
@@ -34,18 +38,6 @@ _PLATFORM_NAME_BY_KEY = {
     "paypal": "PayPal",
 }
 
-_SOURCE_ALIASES = {
-    "meta": {"meta", "facebook"},
-    "google": {"google", "google_ads"},
-    "tiktok": {"tiktok", "tik_tok"},
-    "linkedin": {"linkedin"},
-    "shopify": {"shopify"},
-    "woocommerce": {"woocommerce", "woo", "woo_commerce"},
-    "stripe": {"stripe"},
-    "paypal": {"paypal"},
-}
-
-
 class SyncRequest(BaseModel):
     platforms: list[str] = Field(default_factory=list)
     full_sync: bool = False
@@ -60,10 +52,24 @@ def _normalize_source(value: str | None) -> str:
 
 
 def _map_source_to_platform_key(source: str) -> str | None:
-    for key, aliases in _SOURCE_ALIASES.items():
-        if source in aliases:
-            return key
-    return None
+    """Resolve a source through the single P2 provider authority.
+
+    XXIV (B4): this endpoint previously carried its own alias map
+    (including ``woo``/``woo_commerce``) while P2 used exact canonical
+    membership, so the same identifier had two meanings. The map is gone;
+    an identifier is supported here exactly when the sovereign P2
+    normalizer supports it.
+    """
+    token = (source or "").strip().lower()
+    try:
+        key = normalize_provider(token)
+    except ScopeAuthorityError:
+        # Non-P2 marketing platforms are display labels, not financial
+        # provider identities. They retain exact-name display only; no
+        # alias (including ``woo``) is promoted.
+        non_p2 = {"meta", "google", "tiktok", "linkedin"}
+        return token if token in non_p2 else None
+    return key if key in _PLATFORM_NAME_BY_KEY else None
 
 
 def _connection_status_for_count(count: int) -> str:
@@ -215,7 +221,7 @@ async def get_platform_reconciliation_status(
         }
 
     tenant_id = auth_context.tenant_id
-    aliases = _SOURCE_ALIASES.get(key, {key})
+    aliases = {key}
     rows = await _aggregate_revenue_by_source(db_session, tenant_id)
     events_processed = 0
     verified_total_cents = 0

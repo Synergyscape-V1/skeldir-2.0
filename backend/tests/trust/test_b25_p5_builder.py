@@ -31,6 +31,7 @@ from app.trust.provenance import REQUIRED_P7_PROVENANCE_SOURCE_CLASSES
 from app.trust.refusal import tagged_sha256
 from app.trust.source_adapters import (
     ConfidenceProjectionSource,
+    MatchVerdictSource,
     iter_field_source_decisions,
 )
 
@@ -849,3 +850,76 @@ async def test_history_integrity_live_divergence_refuses_issuance() -> None:
     )
     assert result.status == "refused"
     assert result.reason_code == "history_integrity_unverifiable"
+
+class _LockingSession(FakeReadOnlySession):
+    def __init__(self, row: dict[str, object]) -> None:
+        super().__init__(row)
+        self.lock_calls = 0
+
+    async def connection(self) -> object:
+        session = self
+
+        class _Connection:
+            async def execute(self, *_args, **_kwargs):
+                session.lock_calls += 1
+                return _FakeResult(None)
+
+        return _Connection()
+
+
+def _source_from_row(row: dict[str, object]) -> MatchVerdictSource:
+    return MatchVerdictSource(
+        id=row["id"],
+        tenant_id=row["tenant_id"],
+        webhook_ingress_identity_id=row["webhook_ingress_identity_id"],
+        provider=row["provider"],
+        canonical_commerce_reference=row["canonical_commerce_reference"],
+        provider_native_event_reference=row["provider_native_event_reference"],
+        provider_native_commerce_reference=row[
+            "provider_native_commerce_reference"
+        ],
+        status=row["status"],
+        match_quality=row["match_quality"],
+        canonical_net_verified_amount_minor=row[
+            "canonical_net_verified_amount_minor"
+        ],
+        currency_code=row["currency_code"],
+        last_transition_at=row["last_transition_at"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        event_family_law_version=row["event_family_law_version"],
+        event_family_law_current=row["event_family_law_current"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_builder_refuses_source_changed_during_issuance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """XXIV (A7): a newer committed correction cannot be signed stale."""
+    from app.trust import builder as builder_module  # noqa: PLC0415
+
+    tenant_id = uuid4()
+    verdict_id = uuid4()
+    first_row = _row(
+        tenant_id=tenant_id, verdict_id=verdict_id, amount_minor=12345
+    )
+    second_row = _row(
+        tenant_id=tenant_id, verdict_id=verdict_id, amount_minor=99999
+    )
+    session = _LockingSession(first_row)
+
+    async def _changed_source(*_args, **_kwargs) -> MatchVerdictSource:
+        return _source_from_row(second_row)
+
+    monkeypatch.setattr(
+        builder_module, "read_match_verdict_source", _changed_source
+    )
+    result = await build_unsigned_trust_envelope(
+        session,
+        _request(tenant_id, verdict_id),
+        source=_source_from_row(first_row),
+    )
+    assert session.lock_calls == 1
+    assert result.status == "refused"
+    assert result.reason_code == "source_changed_during_issuance"

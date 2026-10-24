@@ -380,3 +380,89 @@ async def _record_receipt_and_mark_conducted(
         await _conduction.mark_conducted_via_gate(
             session, broker_task_id=broker_task_id
         )
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.revenue_verification.register_b23_post_capture_correction",
+    routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+    max_retries=2,
+    default_retry_delay=30,
+)
+def register_b23_post_capture_correction_task(
+    self,
+    tenant_id: str,
+    verdict_id: str,
+    provider: str,
+    event_type: str,
+    provider_native_event_reference: str,
+    is_gross_capture_correction: bool = False,
+    correlation_id: str | None = None,
+) -> Dict[str, Any]:
+    """Conduct one provider-authenticated correction on the B2.3 worker.
+
+    XXIV (A2/B10): the API is not an authority writer. It validates the
+    caller's evidence for a governed response and enqueues this task; the
+    worker re-resolves the same authenticated ingress inside the B2.3
+    transaction before calling the correction kernel.
+    """
+    from app.revenue_verification.corrections import (  # noqa: PLC0415
+        CorrectionEvidenceError,
+        conduct_correction,
+        resolve_correction_evidence,
+    )
+
+    correlation_id = correlation_id or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    tenant_uuid = UUID(tenant_id)
+    verdict_uuid = UUID(verdict_id)
+
+    async def _run() -> Dict[str, Any]:
+        async with get_b23_session(tenant_uuid) as session:
+            evidence = await resolve_correction_evidence(
+                session,
+                tenant_id=tenant_uuid,
+                verdict_id=verdict_uuid,
+                provider=provider,
+                event_type=event_type,
+                provider_native_event_reference=(
+                    provider_native_event_reference
+                ),
+                is_gross_capture_correction=is_gross_capture_correction,
+            )
+            applied, net_verified_amount = await conduct_correction(
+                session,
+                tenant_id=tenant_uuid,
+                verdict_id=verdict_uuid,
+                evidence=evidence,
+            )
+            return {
+                "status": "applied" if applied else "unresolved",
+                "tenant_id": tenant_id,
+                "match_verdict_id": verdict_id,
+                "revenue_event_written": bool(applied),
+                "net_verified_amount_minor": net_verified_amount,
+                "correlation_id": correlation_id,
+            }
+
+    try:
+        return run_in_worker_loop(_run())
+    except CorrectionEvidenceError as exc:
+        logger.warning(
+            "b23_post_capture_correction_unresolved",
+            extra={
+                "tenant_id": tenant_id,
+                "match_verdict_id": verdict_id,
+                "reason": exc.reason,
+                "correlation_id": correlation_id,
+            },
+        )
+        return {
+            "status": "unresolved",
+            "tenant_id": tenant_id,
+            "match_verdict_id": verdict_id,
+            "revenue_event_written": False,
+            "net_verified_amount_minor": 0,
+            "reason": exc.reason,
+            "correlation_id": correlation_id,
+        }

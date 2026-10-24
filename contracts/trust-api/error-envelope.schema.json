@@ -59,7 +59,8 @@
         "money_source_not_authoritative",
         "money_amount_exceeds_json_safe_integer",
         "validation_failed",
-        "history_integrity_unverifiable"
+        "history_integrity_unverifiable",
+        "source_changed_during_issuance"
       ]
     },
     "reason_code": {
@@ -97,7 +98,8 @@
         "money_source_not_authoritative",
         "money_amount_exceeds_json_safe_integer",
         "validation_failed",
-        "history_integrity_unverifiable"
+        "history_integrity_unverifiable",
+        "source_changed_during_issuance"
       ]
     },
     "tenant_id_hash": {

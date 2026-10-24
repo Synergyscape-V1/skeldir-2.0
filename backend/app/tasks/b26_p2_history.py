@@ -171,6 +171,7 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
             journal.latest.ledger_tip_hash if journal is not None else None
         ),
         custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
     )
     return {
         "ledger_count": checkpoint.ledger_count,

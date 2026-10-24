@@ -263,6 +263,9 @@ def upgrade() -> None:
             _prev record;
             _first record;
             _ingress_amount integer;
+            _ingress_currency char(3);
+            _event_amount integer;
+            _event_currency char(3);
             _count bigint;
         BEGIN
             SELECT v.webhook_ingress_identity_id,
@@ -276,6 +279,46 @@ def upgrade() -> None:
                 violation := 'conservation_verdict_missing';
                 RETURN NEXT;
                 RETURN;
+            END IF;
+
+            -- XXIV (A6): agreement between the verdict and the ingress
+            -- is not source authority when both are rewritable. The
+            -- ingress must still hold current P2 authority, and the
+            -- independently written attribution event must carry the
+            -- same amount and currency as the ingress envelope.
+            IF _ingress IS NOT NULL THEN
+                IF NOT public.b26_p2_ingress_has_current_authority(_ingress)
+                THEN
+                    violation := 'conservation_source_authority_unresolved';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+                SELECT i.verified_amount_minor,
+                       i.verified_amount_currency,
+                       e.revenue_cents,
+                       e.currency
+                  INTO _ingress_amount, _ingress_currency,
+                       _event_amount, _event_currency
+                  FROM public.webhook_ingress_identities AS i
+                  JOIN public.attribution_events AS e
+                    ON e.id = i.event_id
+                   AND e.tenant_id = i.tenant_id
+                 WHERE i.id = _ingress
+                   AND i.tenant_id = p_tenant_id;
+                IF NOT FOUND THEN
+                    violation := 'conservation_source_unresolved';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
+                IF _event_amount IS DISTINCT FROM _ingress_amount
+                   OR upper(_event_currency)
+                        IS DISTINCT FROM upper(_ingress_currency)
+                THEN
+                    violation :=
+                        'conservation_source_event_amount_diverged';
+                    RETURN NEXT;
+                    RETURN;
+                END IF;
             END IF;
 
             SELECT count(*) INTO _count
@@ -447,7 +490,7 @@ def upgrade() -> None:
     )
     _grant_execute(
         "b26_p2_verify_source_money_conservation(uuid, uuid)",
-        ("app_user", "app_trust_issuer"),
+        ("app_user", "app_worker", "app_trust_issuer"),
     )
 
     # ------------------------------------------------------------------
@@ -778,11 +821,18 @@ def downgrade() -> None:
         "DROP FUNCTION IF EXISTS"
         " public.b26_p2_read_history_snapshot(bigint)"
     )
+    # XXIV (A11/B11): the authority universe is historical authority, not
+    # feature-local schema. A supported downgrade must not mint a new
+    # universe on re-upgrade: the signed witness journal remains bound to
+    # the original universe across rollback. Both the table and its
+    # DEFINER reader are therefore retained deliberately; upgrade() uses
+    # IF NOT EXISTS / ON CONFLICT and is idempotent over this state.
     op.execute(
-        "DROP FUNCTION IF EXISTS public.b26_p2_authority_universe()"
+        "REVOKE ALL ON FUNCTION public.b26_p2_authority_universe()"
+        " FROM PUBLIC"
     )
     op.execute(
-        "DROP TABLE IF EXISTS public.b26_p2_authority_universe"  # CI:DESTRUCTIVE_OK - Downgrade rollback for XXIII-only authority universe
+        "REVOKE ALL ON TABLE public.b26_p2_authority_universe FROM PUBLIC"
     )
     # Restore the XXII conservation function shape (NULL-skipping) so the
     # downgrade is a true inverse of the upgrade body.
