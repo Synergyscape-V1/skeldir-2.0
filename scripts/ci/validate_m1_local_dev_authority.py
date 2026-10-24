@@ -794,6 +794,30 @@ ALLOWED_M1_PATH_PREFIXES = [
     # trust-root auth_ingress service carries no B28 DSNs (untrusted).
     # Same exemption shape; every prohibition retained unchanged.
     "scripts/ci/assert_b25_p14_custody_manifest.py",
+    # --- B2.6-P2 Corrective XXIV authority and lifecycle closure ---
+    # Shipping correction caller, compiled witness anchor, issuance
+    # serialization, provider lifecycle refusal, sovereign normalization,
+    # rollback conservation, and the XXIV proof instruments. The
+    # discarded-path prohibitions above remain active; the content scan
+    # still applies beneath these paths.
+    "alembic/versions/007_skeldir_foundation/202610180003_b26_p2_corrective_xxiii_witness_growth_authority.py",
+    "api-contracts/dist/openapi/v1/reconciliation.bundled.yaml",
+    "backend/app/api/reconciliation.py",
+    "backend/app/api/revenue_verification.py",
+    "backend/app/core/config.py",
+    "backend/app/core/managed_settings_contract.py",
+    "backend/app/revenue_verification/corrections.py",
+    "backend/app/revenue_verification/match_engine_kernel.py",
+    "backend/app/schemas/revenue_verification.py",
+    "backend/app/tasks/b26_p2_history.py",
+    "backend/scripts/b26_p2_xxiii_probe.py",
+    "scripts/ci/b26_p2_xxiv_coverage.py",
+    "scripts/ci/prove_b26_p2_xxiv_issuance_lock.py",
+    "scripts/ci/prove_b26_p2_xxiv_natural_correction.py",
+    "scripts/ci/prove_b26_p2_xxiv_rollback_authority.py",
+    "scripts/ci/prove_b26_p2_xxiv_scope_cohort.py",
+    "scripts/ci/validate_b26_p2_xxi_composition.py",
+    "scripts/ci/validate_b26_p2_xxii_composition.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [
