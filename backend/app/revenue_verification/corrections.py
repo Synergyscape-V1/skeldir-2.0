@@ -79,9 +79,7 @@ async def resolve_correction_evidence(
         await session.execute(
             text(
                 """
-                SELECT provider_native_commerce_reference,
-                       verified_amount_minor, verified_amount_currency,
-                       event_timestamp
+                SELECT *
                   FROM webhook_ingress_identities
                  WHERE tenant_id = :tenant_id
                    AND provider = :provider
@@ -148,18 +146,14 @@ async def conduct_correction(
             ),
         ),
     )
-    net_verified_amount = int(
-        (
-            await session.execute(
-                text(
-                    """
-                    SELECT canonical_net_verified_amount_minor
-                      FROM b23_match_verdicts
-                     WHERE tenant_id = :tenant_id AND id = :verdict_id
-                    """
-                ),
-                {"tenant_id": str(tenant_id), "verdict_id": str(verdict_id)},
-            )
-        ).scalar_one()
+    from app.trust.source_adapters import read_match_verdict_source
+
+    source = await read_match_verdict_source(
+        session,
+        tenant_id=tenant_id,
+        subject_ref=f"urn:skeldir:match_verdict:{verdict_id}",
+    )
+    net_verified_amount = (
+        int(source.canonical_net_verified_amount_minor) if source else 0
     )
     return applied, net_verified_amount

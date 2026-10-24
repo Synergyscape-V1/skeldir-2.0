@@ -29,7 +29,10 @@ from app.schemas.revenue_verification import (
     B23PostCaptureCorrectionResponse,
 )
 from app.security.auth import AuthContext, get_auth_context
-from app.trust.source_adapters import resolve_event_family_law_cohort
+from app.trust.source_adapters import (
+    read_match_verdict_source,
+    resolve_event_family_law_cohort,
+)
 
 
 router = APIRouter()
@@ -391,23 +394,15 @@ async def create_b23_post_capture_correction(
         }:
             status_code = 422
         raise HTTPException(status_code=status_code, detail=exc.reason) from exc
-    net_verified_amount = int(
-        (
-            await db_session.execute(
-                text(
-                    """
-                    SELECT canonical_net_verified_amount_minor
-                      FROM b23_match_verdicts
-                     WHERE tenant_id = :tenant_id AND id = :verdict_id
-                    """
-                ),
-                {
-                    "tenant_id": str(auth_context.tenant_id),
-                    "verdict_id": str(verdict_id),
-                },
-            )
-        ).scalar_one()
+    source = await read_match_verdict_source(
+        db_session,
+        tenant_id=auth_context.tenant_id,
+        subject_ref=f"urn:skeldir:match_verdict:{verdict_id}",
     )
+    if source is None:
+        raise HTTPException(status_code=404, detail="correction_verdict_missing")
+    net_verified_amount = int(source.canonical_net_verified_amount_minor)
+
     from app.tasks.revenue_verification import (  # noqa: PLC0415
         register_b23_post_capture_correction_task,
     )

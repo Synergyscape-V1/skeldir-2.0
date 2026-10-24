@@ -137,6 +137,18 @@ async def test_correction_route_enqueues_worker_with_authenticated_evidence(
         "resolve_correction_evidence",
         _fake_evidence,
     )
+
+    class _FakeSource:
+        canonical_net_verified_amount_minor = 1000
+
+    async def _fake_source(*_args, **_kwargs) -> _FakeSource:
+        return _FakeSource()
+
+    monkeypatch.setattr(
+        revenue_verification,
+        "read_match_verdict_source",
+        _fake_source,
+    )
     monkeypatch.setattr(
         revenue_tasks.register_b23_post_capture_correction_task,
         "apply_async",
