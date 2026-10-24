@@ -58,6 +58,7 @@ async def _tenant() -> tuple[str, str]:
     )
     conn = await asyncpg.connect(get_database_url())
     try:
+        # RAW_SQL_ALLOWLIST: signed lifecycle test tenant seed
         await conn.execute(
             """
             INSERT INTO tenants (id, api_key_hash, name, notification_email,

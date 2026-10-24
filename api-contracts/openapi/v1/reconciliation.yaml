@@ -285,6 +285,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/B23PostCaptureCorrectionResponse'
+              example:
+                status: accepted
+                match_verdict_id: 11111111-1111-4111-8111-111111111111
+                revenue_event_written: false
+                net_verified_amount_minor: 1200
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
@@ -333,6 +338,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/B23P2CandidateClassificationResponse'
+              example:
+                disposition: SUPPORTED_AND_IN_SCOPE
+                reason: supported_and_in_scope
+                provider: stripe
+                rail: stripe
+                currency_code: USD
+                window_start: '2026-05-01T00:00:00Z'
+                window_end: '2026-05-02T00:00:00Z'
+                scope_policy_version: b2.6-p2-scope-policy-v2
+                source_verified_gross_amount_minor: 1200
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
