@@ -819,6 +819,8 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xxi_composition.py",
     "scripts/ci/validate_b26_p2_xxii_composition.py",
     "docs/forensics/evidence/b11_p1/ssot_contract_snapshot.json",
+    "contracts-internal/governance/b26_p2_authority_universe.pin.json",
+    "contracts-internal/governance/b26_p2_x_semantic_universe.pin.json",
 ]
 
 PROHIBITED_PATH_PATTERNS = [
