@@ -3584,7 +3584,8 @@ def f_b1b2_refund_adjustment(args: argparse.Namespace) -> int:
         and int(attestation_count) == 1
         and int(current_capture_count) == 1
         and tampered is not None
-        and tampered.get("source_authority_state") == "source_attestation_unverifiable"
+        and tampered.get("source_authority_state")
+        in {"source_attestation_unverifiable", "historically_unverifiable"}
         and tampered_trust_status == 404
         and restored is not None
         and restored.get("source_authority_state") == "current"
