@@ -142,7 +142,6 @@ def main() -> int:
     # Signed production Trust route on the same recovered cohort. The
     # dependency override supplies the app_user DB principal; machine-token
     # authentication is a separate boundary and is not claimed here.
-    from fastapi import FastAPI, Header, Request
     from httpx import ASGITransport, AsyncClient
     from sqlalchemy import text as sql_text
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
