@@ -291,6 +291,25 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
                     f"ord-{reference}",
                 ),
             )
+            cur.execute(
+                "INSERT INTO public.b23_revenue_events"
+                " (tenant_id, match_verdict_id, provider,"
+                " provider_native_event_reference,"
+                " provider_native_commerce_reference,"
+                " canonical_commerce_reference, event_type, currency_code,"
+                " event_occurred_at, captured_amount_minor, net_effect_sign,"
+                " is_gross_capture_correction)"
+                " VALUES (%s, %s, 'stripe', %s, %s, %s, 'payment_capture',"
+                " 'USD', %s, 1000, 1, false)",
+                (
+                    str(tenant),
+                    str(verdict),
+                    f"evt-{reference}",
+                    f"ord-{reference}",
+                    f"ord-{reference}",
+                    TENANT_DAY,
+                ),
+            )
     finally:
         conn.close()
     return {
@@ -388,6 +407,49 @@ def _read_status(database: str, tenant: str, verdict: str) -> dict[str, object]:
     return asyncio.run(read())
 
 
+def _project_confidence(database: str, tenant: str) -> dict[str, object]:
+    from datetime import timedelta
+
+    from sqlalchemy import text as sql_text
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    from app.bayesian.api_projection import project_b24_confidence
+
+    async def read() -> list:
+        engine = create_async_engine(
+            "postgresql+asyncpg://app_user:app_user@"
+            + _host_port(database)
+            + "/"
+            + database
+        )
+        try:
+            async with AsyncSession(engine) as session:
+                await session.execute(
+                    sql_text(
+                        "SELECT set_config('app.current_tenant_id', :tenant, false)"
+                    ),
+                    {"tenant": tenant},
+                )
+                return await project_b24_confidence(
+                    session,
+                    tenant_id=uuid.UUID(tenant),
+                    source_window_start=TENANT_DAY,
+                    source_window_end=TENANT_DAY + timedelta(days=1),
+                    source_snapshot_hash="b8-legacy-projection-probe",
+                )
+        finally:
+            await engine.dispose()
+
+    projections = asyncio.run(read())
+    return {
+        "count": len(projections),
+        "deterministic_revenue_minor": [
+            item.deterministic.deterministic_revenue_minor
+            for item in projections
+        ],
+    }
+
+
 def _host_port(database: str) -> str:
     admin = os.environ["B8_ADMIN_DSN"]
     rest = admin.split("://", 1)[1].rsplit("@", 1)[1]
@@ -411,6 +473,7 @@ def _verify_generation(
     _migrate(admin, database, HEAD, provision=False)
     after = _snapshot(admin, database)
     reader = _read_status(database, world["tenant_id"], world["verdict_id"])
+    projection = _project_confidence(database, world["tenant_id"])
     sweep_result = _sweep(database, os.environ["B8_PUBLIC_KEY_PATH"])
     checks = {
         "row_preserved": (
@@ -444,12 +507,14 @@ def _verify_generation(
         ),
         "not_current_money": after["verdict"][6]
         not in {"current", "xxv_attested"},
+        "confidence_projection_absent": projection["count"] == 0,
     }
     return {
         "generation": generation,
         "before": before,
         "after": after,
         "reader": reader,
+        "confidence_projection": projection,
         "sweep": {
             "status": "PASS" if not sweep_result["unverifiable"] else "FAIL",
             "census": sweep_result["census"],

@@ -18,6 +18,7 @@ from app.bayesian.confidence_metadata import (
     ProjectionAuditMetadata,
 )
 from app.bayesian.confidence_policy import classify_confidence
+from app.bayesian.diagnostics import DEFAULT_P7_DIAGNOSTIC_POLICY
 
 
 DEFAULT_PROJECTION_MODEL_TYPE = "bayesian_attribution_confidence"
@@ -108,7 +109,7 @@ def build_b24_confidence_projection_query() -> TextClause:
                 fit.diagnostic_failure_reason,
                 fit.diagnostic_policy_version,
                 fit.interval_policy_version,
-                fit.hdi_probability,
+                CAST(:hdi_probability AS double precision) AS hdi_probability,
                 fit.artifact_ref,
                 fit.artifact_hash
             FROM public.bayesian_model_fits fit
@@ -252,6 +253,7 @@ async def project_b24_confidence(
             "source_snapshot_hash": source_snapshot_hash,
             "model_type": model_type,
             "model_version": model_version,
+            "hdi_probability": DEFAULT_P7_DIAGNOSTIC_POLICY.hdi_probability,
         },
     )
     return build_projection_models(
