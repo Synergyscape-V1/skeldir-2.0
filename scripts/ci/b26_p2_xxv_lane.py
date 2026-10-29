@@ -782,7 +782,7 @@ def start_signer(state: dict) -> None:
     )
 
 
-def start_auth(state: dict) -> None:
+def start_auth(state: dict, *, extra: dict[str, str] | None = None) -> None:
     docker("rm", "-f", AUTH)
     docker_ok("volume", "create", SOURCE_EVIDENCE_VOL)
     ingress_vol = f"{PREFIX}-ingress"
@@ -811,6 +811,7 @@ def start_auth(state: dict) -> None:
         **witness_env(state, private=False),
         **attestation_env(state, signer=True),
     }
+    env.update(extra or {})
     docker_ok(
         "run", "-d", "--name", AUTH, "--network", NETWORK,
         "--network-alias", AUTH, "--restart", "unless-stopped",

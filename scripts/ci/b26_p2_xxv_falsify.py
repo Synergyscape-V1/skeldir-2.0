@@ -53,6 +53,10 @@ from b26_p2_xxv_lane import (  # noqa: E402
     volume_list,
     volume_put,
     volume_rm,
+    start_api,
+    start_auth,
+    wait_http,
+    AUTH_PORT,
 )
 
 EVIDENCE_DIR = LANE_ROOT / "evidence"
@@ -5595,6 +5599,172 @@ def f_hb06_lawful_amendment(args: argparse.Namespace) -> int:
     return 0 if record["signed_consumer_serves_amended"] else 1
 
 
+def f_b1b2_paypal_local_ca(args: argparse.Namespace) -> int:
+    """B1/B2: a provider-shaped PayPal signature through the real verifier.
+
+    The directive permits a local CA when production verification policy is
+    unchanged. The test-only override is enabled in the API process, the
+    certificate URL stays in the PayPal namespace, and the signed payload is
+    verified by the shipped RSA-SHA256 verifier before the auth root writes
+    source authority. This is a physical verifier test, not external PayPal
+    connectivity.
+    """
+    import zlib
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
+    from cryptography.x509.oid import NameOID
+
+    state = load_state()
+    tenant = state["tenant_a"]
+    paypal_id = f"PAY-XXV-{uuid.uuid4().hex[:16].upper()}"
+    cert_url = "https://api.paypal.com/v1/notifications/certs/CERT-XXV-LOCAL-TEST"
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = datetime.now(timezone.utc)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "api.paypal.com")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(hours=1))
+        .sign(key, hashes.SHA256())
+    )
+    cert_pem = cert.public_bytes(serialization.Encoding.PEM).decode()
+    body = json.dumps(
+        {
+            "id": paypal_id,
+            "event_type": "payment.sale.completed",
+            "amount": {"total": "77.77", "currency": "USD"},
+            "create_time": now.isoformat().replace("+00:00", "Z"),
+        },
+        separators=(",", ":"),
+    ).encode()
+    transmission_id = f"xxv-{uuid.uuid4()}"
+    transmission_time = now.isoformat().replace("+00:00", "Z")
+    canonical = (
+        f"{transmission_id}|{transmission_time}|{tenant['paypal_secret']}|"
+        f"{zlib.crc32(body) & 0xFFFFFFFF}"
+    ).encode()
+    signature = base64.b64encode(
+        key.sign(canonical, padding.PKCS1v15(), hashes.SHA256())
+    ).decode()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Skeldir-Tenant-Key": tenant["tenant_key"],
+        "X-Correlation-ID": str(uuid.uuid4()),
+        "X-Idempotency-Key": str(uuid.uuid4()),
+        "PayPal-Transmission-Id": transmission_id,
+        "PayPal-Transmission-Time": transmission_time,
+        "PayPal-Transmission-Sig": signature,
+        "PayPal-Webhook-Id": tenant["paypal_secret"],
+        "PayPal-Auth-Algo": "SHA256withRSA",
+        "PayPal-Cert-Url": cert_url,
+    }
+    test_env = {
+        "TESTING": "1",
+        "SKELDIR_PAYPAL_TEST_CERT_URL": cert_url,
+        "SKELDIR_PAYPAL_TEST_CERT_PEM": cert_pem,
+    }
+    try:
+        start_auth(state, extra=test_env)
+        wait_http(f"http://127.0.0.1:{AUTH_PORT}/health/live", 240)
+        start_api(state, extra=test_env)
+        wait_http(f"http://127.0.0.1:{API_PORT}/health/live", 240)
+        status, text = http(
+            "POST",
+            f"http://127.0.0.1:{API_PORT}/api/webhooks/paypal/sale_completed",
+            body=body,
+            headers=headers,
+        )
+        verdict = wait_verdict(tenant["tenant_id"], paypal_id, timeout_s=180)
+        # The test-only verifier override is not part of the customer trust
+        # configuration. Restore the production process before observing the
+        # downstream readers, then let the finally block confirm it again.
+        start_auth(state)
+        wait_http(f"http://127.0.0.1:{AUTH_PORT}/health/live", 240)
+        start_api(state)
+        wait_http(f"http://127.0.0.1:{API_PORT}/health/live", 240)
+        attestation = sql(
+            "SELECT count(*) FROM public.b26_p2_source_money_attestation"
+            " WHERE tenant_id=%s AND webhook_ingress_identity_id=("
+            "  SELECT id FROM public.webhook_ingress_identities"
+            "   WHERE tenant_id=%s AND provider_native_event_reference=%s)",
+            (tenant["tenant_id"], tenant["tenant_id"], paypal_id),
+        )[0][0]
+        recon_status, recon = (
+            read_reconciliation(state, tenant, verdict["verdict_id"])
+            if verdict is not None
+            else (0, "no_verdict")
+        )
+        trust_status, trust = (0, "no_verdict")
+        for _attempt in range(8):
+            if verdict is None:
+                break
+            trust_status, trust = read_trust(tenant, verdict["verdict_id"])
+            if trust_status == 200:
+                break
+            time.sleep(2)
+        record = {
+            "property": (
+                "B1/B2 PayPal physical verifier: a local-CA signed sale passes"
+                " the shipped RSA-SHA256 envelope verifier and becomes attested"
+            ),
+            "tenant_id": tenant["tenant_id"],
+            "paypal_id": paypal_id,
+            "cert_url": cert_url,
+            "cert_sha256": hashlib.sha256(cert_pem.encode()).hexdigest(),
+            "http": {"status": status, "body": text[:500]},
+            "verdict": verdict,
+            "source_attestation_count": int(attestation),
+            "reconciliation": {
+                "status": recon_status,
+                "source_money_attestation_status": (
+                    recon.get("source_money_attestation_status")
+                    if isinstance(recon, dict)
+                    else None
+                ),
+                "verified_amount_minor": (
+                    recon.get("canonical_net_verified_amount_minor")
+                    if isinstance(recon, dict)
+                    else None
+                ),
+            },
+            "trust": {
+                "status": trust_status,
+                "verified_revenue_minor": (
+                    trust.get("verified_revenue_minor")
+                    if isinstance(trust, dict)
+                    else None
+                ),
+            },
+            "limit_of_inference": (
+                "Local CA physical verifier test only; external PayPal"
+                " connectivity and PayPal-hosted certificate retrieval are not"
+                " established."
+            ),
+        }
+        write_evidence("xxv-b1b2-paypal-local-ca", record)
+        return 0 if (
+            status == 200
+            and verdict is not None
+            and int(attestation) == 1
+            and recon_status == 200
+            and record["reconciliation"]["source_money_attestation_status"]
+            == "xxv_attested"
+            and trust_status == 200
+            and record["trust"]["verified_revenue_minor"] == 7777
+        ) else 1
+    finally:
+        start_auth(state)
+        wait_http(f"http://127.0.0.1:{AUTH_PORT}/health/live", 240)
+        start_api(state)
+        wait_http(f"http://127.0.0.1:{API_PORT}/health/live", 240)
+
+
 COMMANDS = {
     "clean": f_clean,
     "a2b10-natural-corrections": f_a2b10_natural_corrections,
@@ -5621,6 +5791,7 @@ COMMANDS = {
     "b1b2-adjustment-exactness": f_b1b2_adjustment_exactness,
     "b1b2-shopify-refund-adjustment": f_b1b2_shopify_refund_adjustment,
     "b1b2-woocommerce-multi-refund": f_b1b2_woocommerce_multi_refund,
+    "b1b2-paypal-local-ca": f_b1b2_paypal_local_ca,
     "hb14-consumer": f_hb14_consumer,
     "hb15-receipt": f_hb15_receipt,
 }
