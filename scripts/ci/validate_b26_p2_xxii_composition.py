@@ -955,7 +955,11 @@ def _xxv_attestation_sweep_cell(dsn: str, violations: list[str], checks: dict) -
     )
 
     try:
-        result = sweep(dsn, public_key_path=default_public_key_path())
+        result = sweep(
+            dsn,
+            public_key_path=default_public_key_path(),
+            check_source_evidence=False,
+        )
     except Exception as exc:  # noqa: BLE001 - an unrunnable oracle is a failure
         violations.append(f"xxv_attestation_sweep_unrunnable:{type(exc).__name__}:{exc}")
         return
@@ -1401,7 +1405,6 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
         _live_conduction_completeness_cell(dsn, violations, checks)
         _external_false_world_cell(dsn, violations, checks)
         _xxv_attestation_sweep_cell(dsn, violations, checks)
-        _source_evidence_cell(dsn, violations, checks)
     except Exception as exc:  # noqa: BLE001 - surface the failing cell
         violations.append(f"xxii_comp_live_failed:{type(exc).__name__}:{exc}")
         try:
@@ -1488,6 +1491,7 @@ def main() -> int:
     checks: dict = {}
     _static_checks(violations, checks)
     if args.dsn is not None:
+        _source_evidence_cell(args.dsn, violations, checks)
         _live_checks(args.dsn, violations, checks)
     status = "PASS" if not violations else "FAIL"
     print(f"B26_P2_XXII_COMPOSITION_{status}")

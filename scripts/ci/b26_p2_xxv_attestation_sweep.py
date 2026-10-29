@@ -109,7 +109,12 @@ SELECT v.id::text AS verdict_id,
 """
 
 
-def sweep(dsn: str, *, public_key_path: str) -> dict:
+def sweep(
+    dsn: str,
+    *,
+    public_key_path: str,
+    check_source_evidence: bool = True,
+) -> dict:
     """Return the per-status census and every unverifiable row."""
     import psycopg2  # noqa: PLC0415
 
@@ -383,7 +388,11 @@ def sweep(dsn: str, *, public_key_path: str) -> dict:
         "census": census,
         "unverifiable": unverifiable,
         "public_key_path": public_key_path,
-        "source_evidence": _source_evidence_check(dsn),
+        "source_evidence": (
+            _source_evidence_check(dsn)
+            if check_source_evidence
+            else {"status": "SKIPPED:caller_prechecked"}
+        ),
     }
 
 

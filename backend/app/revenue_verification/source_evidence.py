@@ -271,9 +271,11 @@ async def source_evidence_snapshots(
     tenants = [str(row[0]) for row in result.all()]
     snapshots: dict[str, dict[str, Any]] = {}
     for tenant in sorted(tenants):
-        snapshots[tenant] = await source_evidence_snapshot(
+        snapshot = await source_evidence_snapshot(
             session, tenant_id=tenant
         )
+        if int(snapshot["count"]) > 0:
+            snapshots[tenant] = snapshot
     return snapshots
 
 

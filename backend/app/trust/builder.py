@@ -1166,7 +1166,7 @@ async def read_history_integrity_status(
         await db_session.execute(
             text("SELECT current_setting('app.current_tenant_id', true)")
         )
-    ).scalar_one_or_none()
+    ).scalar()
     if not tenant_value:
         return False, "history_integrity_tenant_missing"
     import os  # noqa: PLC0415
@@ -1199,7 +1199,7 @@ async def read_history_integrity_status(
         ),
         tenant_source_evidence_digest=(
             {str(tenant_value): str(evidence["digest"])}
-            if evidence is not None
+            if evidence is not None and int(evidence["count"]) > 0
             else None
         ),
     )
