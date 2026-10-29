@@ -134,6 +134,16 @@ def upgrade() -> None:
             role,
         )
 
+    # The independent history observer computes the source-completeness
+    # manifest from its read-only worker session. It needs the same
+    # authenticated-consequence row the source reader evaluates; this is a
+    # read grant only, not a write or authority grant.
+    _grant(
+        "GRANT SELECT ON TABLE"
+        " public.b26_p2_provider_auth_consequence TO app_worker",
+        "app_worker",
+    )
+
     # ------------------------------------------------------------------
     # XXV-2a. Classify every row that existed before this upgrade as
     # historical. There is still no watermark or movable epoch: the

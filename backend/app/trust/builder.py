@@ -1162,6 +1162,23 @@ async def read_history_integrity_status(
         .mappings()
         .one()
     )
+    tenant_value = (
+        await db_session.execute(
+            text("SELECT current_setting('app.current_tenant_id', true)")
+        )
+    ).scalar_one_or_none()
+    if not tenant_value:
+        return False, "history_integrity_tenant_missing"
+    import os  # noqa: PLC0415
+
+    evidence = None
+    if os.getenv("B26_P2_SOURCE_EVIDENCE_REQUIRED", "").strip().lower() == "true":
+        from app.revenue_verification.source_evidence import (  # noqa: PLC0415
+            source_evidence_snapshot,
+        )
+        evidence = await source_evidence_snapshot(
+            db_session, tenant_id=str(tenant_value)
+        )
     if str(live["violations"] or "").strip():
         return False, "history_integrity_violations_present"
     if int(live["n"] or 0) != int(row["ledger_count"] or 0):
@@ -1178,6 +1195,11 @@ async def read_history_integrity_status(
         authority_universe=(
             str(live["authority_universe"])
             if live.get("authority_universe") is not None
+            else None
+        ),
+        tenant_source_evidence_digest=(
+            {str(tenant_value): str(evidence["digest"])}
+            if evidence is not None
             else None
         ),
     )
@@ -1208,6 +1230,7 @@ def _verify_signed_history_witness(
     ledger_tip_hash: str | None,
     ledger_prefix_digest: str | None = None,
     authority_universe: str | None = None,
+    tenant_source_evidence_digest: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
     """Verify the out-of-database signed checkpoint against live state.
 
@@ -1282,6 +1305,8 @@ def _verify_signed_history_witness(
             expected_prefix_digest=ledger_prefix_digest,
             expected_universe=authority_universe,
             require_universe=True,
+            expected_source_evidence_by_tenant=tenant_source_evidence_digest,
+            require_source_evidence=(tenant_source_evidence_digest is not None),
             heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
         )
         custody = load_custody(
@@ -1533,6 +1558,36 @@ async def build_unsigned_trust_envelope(
                 authority_witness=None,
             )
         source = refreshed
+
+    import os  # noqa: PLC0415
+
+    if (
+        os.getenv("B26_P2_SOURCE_EVIDENCE_REQUIRED", "").strip().lower()
+        == "true"
+    ):
+        # The production confidence reader is a Trust subject, not the
+        # internal project_b24_confidence helper. It must carry the same
+        # complete-source witness as a match verdict.
+        history_ok, history_reason = await read_history_integrity_status(
+            db_session
+        )
+        if not history_ok:
+            refusal = build_error_envelope(
+                tenant_id=request.tenant_id,
+                reason_code="history_integrity_unverifiable",
+                created_at=created_at,
+                audience_id=audience_id,
+            )
+            return TrustEnvelopeBuildResult(
+                status="refused",
+                unsigned_payload=None,
+                refusal_payload=refusal,
+                reason_code="history_integrity_unverifiable",
+                field_source_decisions=decisions,
+                money_authority_decision=None,
+                read_only_observation=_read_only_observation(llm_modules=()),
+                authority_witness=None,
+            )
 
     if isinstance(source, ConfidenceProjectionSource):
         if payload_runner is None:

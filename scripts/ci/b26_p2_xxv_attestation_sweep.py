@@ -383,6 +383,7 @@ def sweep(dsn: str, *, public_key_path: str) -> dict:
         "census": census,
         "unverifiable": unverifiable,
         "public_key_path": public_key_path,
+        "source_evidence": _source_evidence_check(dsn),
     }
 
 
@@ -391,6 +392,58 @@ def default_public_key_path() -> str:
         "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH",
         "var/b26_p2/source_attestation_ed25519.pub",
     )
+
+
+def _source_evidence_check(dsn: str) -> dict:
+    """Compare the live complete manifest with the signed witness, if configured."""
+    import asyncio  # noqa: PLC0415
+    import os  # noqa: PLC0415
+
+    journal_path = os.getenv("B26_P2_HISTORY_WITNESS_JOURNAL_PATH", "").strip()
+    public_key_path = os.getenv(
+        "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH", ""
+    ).strip()
+    if not journal_path or not public_key_path:
+        return {"status": "SKIPPED:no_witness_env"}
+    from sqlalchemy.ext.asyncio import (  # noqa: PLC0415
+        AsyncSession,
+        create_async_engine,
+    )
+
+    from app.revenue_verification.source_evidence import (  # noqa: PLC0415
+        source_evidence_snapshots,
+    )
+    from app.trust.history_witness import (  # noqa: PLC0415
+        load_public_key,
+        verify_journal,
+    )
+
+    async def _snapshots():
+        engine = create_async_engine(
+            dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
+        )
+        try:
+            async with AsyncSession(engine) as session:
+                return await source_evidence_snapshots(session)
+        finally:
+            await engine.dispose()
+
+    snapshots = asyncio.run(_snapshots())
+    journal = verify_journal(
+        journal_path,
+        public_key=load_public_key(public_key_path),
+        require_freshness=False,
+    )
+    latest = journal.latest
+    if latest.source_evidence_by_tenant is None:
+        return {"status": "FAIL:source_evidence_missing"}
+    expected = {
+        tenant: str(snapshot["digest"])
+        for tenant, snapshot in snapshots.items()
+    }
+    if expected != dict(latest.source_evidence_by_tenant):
+        return {"status": "FAIL:source_evidence_diverged"}
+    return {"status": "PASS"}
 
 
 def main() -> int:
@@ -403,7 +456,13 @@ def main() -> int:
     result = sweep(
         args.dsn, public_key_path=args.public_key_path or default_public_key_path()
     )
-    status = "PASS" if not result["unverifiable"] else "FAIL"
+    source_status = str(result.get("source_evidence", {}).get("status", ""))
+    status = (
+        "PASS"
+        if not result["unverifiable"]
+        and (source_status == "PASS" or source_status.startswith("SKIPPED:"))
+        else "FAIL"
+    )
     record = {"gate_id": GATE_ID, "status": status, **result}
     if args.evidence_out:
         out = Path(args.evidence_out)

@@ -962,6 +962,12 @@ def _xxv_attestation_sweep_cell(dsn: str, violations: list[str], checks: dict) -
     checks["live_xxv_attestation_sweep"] = True
     checks["live_xxv_attestation_census"] = result["census"]
     checks["live_xxv_verdicts_examined"] = result["verdicts_examined"]
+    source_status = str(
+        result.get("source_evidence", {}).get("status", "")
+    )
+    if source_status.startswith("FAIL:"):
+        checks["live_xxv_attestation_sweep"] = False
+        violations.append(f"xxv_source_evidence:{source_status}")
     if result["unverifiable"]:
         checks["live_xxv_attestation_sweep"] = False
         for row in result["unverifiable"][:10]:
@@ -1395,6 +1401,7 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
         _live_conduction_completeness_cell(dsn, violations, checks)
         _external_false_world_cell(dsn, violations, checks)
         _xxv_attestation_sweep_cell(dsn, violations, checks)
+        _source_evidence_cell(dsn, violations, checks)
     except Exception as exc:  # noqa: BLE001 - surface the failing cell
         violations.append(f"xxii_comp_live_failed:{type(exc).__name__}:{exc}")
         try:
@@ -1403,6 +1410,73 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
             pass
     finally:
         conn.close()
+
+
+def _source_evidence_cell(
+    dsn: str, violations: list[str], checks: dict
+) -> None:
+    """Compare the live complete lifecycle manifest to the signed witness.
+
+    The per-fact attestation sweep proves each present fact; this cell proves
+    the set is the set the independent observer signed. It is deliberately
+    separate so a present-but-forged fact and a missing-but-signed fact both
+    fail the same governing proof.
+    """
+    import os  # noqa: PLC0415
+
+    journal_path = os.getenv("B26_P2_HISTORY_WITNESS_JOURNAL_PATH", "").strip()
+    public_key_path = os.getenv(
+        "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH", ""
+    ).strip()
+    if not journal_path or not public_key_path:
+        checks["live_source_evidence"] = "SKIPPED:no_witness_env"
+        return
+    try:
+        from sqlalchemy.ext.asyncio import (  # noqa: PLC0415
+            AsyncSession,
+            create_async_engine,
+        )
+
+        from app.revenue_verification.source_evidence import (  # noqa: PLC0415
+            source_evidence_snapshots,
+        )
+        from app.trust.history_witness import (  # noqa: PLC0415
+            load_public_key,
+            verify_journal,
+        )
+
+        async def _snapshots():
+            engine = create_async_engine(
+                dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
+            )
+            try:
+                async with AsyncSession(engine) as session:
+                    return await source_evidence_snapshots(session)
+            finally:
+                await engine.dispose()
+
+        snapshots = asyncio.run(_snapshots())
+        journal = verify_journal(
+            journal_path,
+            public_key=load_public_key(public_key_path),
+            require_freshness=False,
+        )
+        latest = journal.latest
+        if latest.source_evidence_by_tenant is None:
+            violations.append("xxii_comp_source_evidence_missing")
+            return
+        expected = {
+            tenant: str(snapshot["digest"])
+            for tenant, snapshot in snapshots.items()
+        }
+        if expected != dict(latest.source_evidence_by_tenant):
+            violations.append("xxii_comp_source_evidence_diverged")
+            return
+        checks["live_source_evidence"] = True
+    except Exception as exc:  # noqa: BLE001 - surface the failing cell
+        violations.append(
+            f"xxii_comp_source_evidence_failed:{type(exc).__name__}:{exc}"
+        )
 
 
 def main() -> int:

@@ -83,6 +83,10 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         load_private_key,
         verify_journal,
     )
+    from app.revenue_verification.source_evidence import (  # noqa: PLC0415
+        global_source_evidence_digest,
+        source_evidence_snapshots,
+    )
 
     private_key_path = settings.B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH
     if not private_key_path:
@@ -129,6 +133,17 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         raw_violations = snapshot["violations"]
         authority_universe = snapshot["authority_universe"]
         previous_tip_hash: str | None = snapshot["prior_tip_hash"]
+    from sqlalchemy.ext.asyncio import AsyncSession  # noqa: PLC0415
+
+    async with AsyncSession(_engine) as evidence_session:
+        snapshots = await source_evidence_snapshots(evidence_session)
+    source_by_tenant = {
+        tenant: str(snapshot["digest"])
+        for tenant, snapshot in snapshots.items()
+    }
+    source_count = sum(int(snapshot["count"]) for snapshot in snapshots.values())
+    source_global = global_source_evidence_digest(snapshots)
+
     violations = str(raw_violations or "").strip()
     if violations:
         raise HistoryWitnessError(
@@ -172,6 +187,9 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         ),
         custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
         heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
+        source_evidence_digest=source_global,
+        source_evidence_by_tenant=source_by_tenant,
+        source_evidence_count=source_count,
     )
     return {
         "ledger_count": checkpoint.ledger_count,

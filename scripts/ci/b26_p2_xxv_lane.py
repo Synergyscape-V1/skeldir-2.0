@@ -560,6 +560,7 @@ def attestation_env(state: dict, *, signer: bool) -> dict[str, str]:
     """XXV: every process verifies; only the auth root signs."""
     return {
         "B26_P2_SOURCE_ATTESTATION_REQUIRED": "true",
+        "B26_P2_SOURCE_EVIDENCE_REQUIRED": "true",
         "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH": (
             "/var/lib/b26_p2/source_attestation_ed25519.pub"
         ),
