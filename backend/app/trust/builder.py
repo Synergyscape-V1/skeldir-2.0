@@ -1177,11 +1177,19 @@ async def read_history_integrity_status(
         db_session, AsyncSession
     ):
         from app.revenue_verification.source_evidence import (  # noqa: PLC0415
+            SourceEvidenceError,
             source_evidence_snapshot,
         )
-        evidence = await source_evidence_snapshot(
-            db_session, tenant_id=str(tenant_value)
-        )
+        try:
+            evidence = await source_evidence_snapshot(
+                db_session, tenant_id=str(tenant_value)
+            )
+        except SourceEvidenceError as exc:
+            return (
+                False,
+                "history_integrity_source_evidence_unverifiable:"
+                + str(exc),
+            )
     if str(live["violations"] or "").strip():
         return False, "history_integrity_violations_present"
     if int(live["n"] or 0) != int(row["ledger_count"] or 0):
