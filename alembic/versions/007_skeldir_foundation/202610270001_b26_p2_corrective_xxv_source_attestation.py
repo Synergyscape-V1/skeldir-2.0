@@ -146,8 +146,18 @@ def upgrade() -> None:
     #
     # Demotion is written on the ingress so the existing authority
     # derivation and its guard remain the single law; the verdict state is
-    # then recomputed, never asserted by this migration.
+    # then recomputed, never asserted by this migration. RLS is disabled
+    # only for this owner-run classification and restored immediately: the
+    # tenant GUC is intentionally empty during a migration, and the policy's
+    # empty-cast would otherwise fail even on an empty table.
     # ------------------------------------------------------------------
+    op.execute(
+        "ALTER TABLE public.webhook_ingress_identities"
+        " DISABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.b23_match_verdicts DISABLE ROW LEVEL SECURITY"
+    )
     op.execute(
         """
         DO $$
@@ -178,6 +188,20 @@ def upgrade() -> None:
                )
          WHERE v.b26_p2_source_authority_state = 'current'
         """
+    )
+    op.execute(
+        "ALTER TABLE public.webhook_ingress_identities"
+        " ENABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.webhook_ingress_identities"
+        " FORCE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.b23_match_verdicts ENABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.b23_match_verdicts FORCE ROW LEVEL SECURITY"
     )
 
     # ------------------------------------------------------------------
