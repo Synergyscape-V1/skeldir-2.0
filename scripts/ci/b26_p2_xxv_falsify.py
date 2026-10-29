@@ -42,6 +42,7 @@ from b26_p2_xxv_lane import (  # noqa: E402
     PREFIX,
     REPO_ROOT,
     WITNESS_VOL,
+    SOURCE_EVIDENCE_VOL,
     WORKER_B23,
     docker,
     load_state,
@@ -409,6 +410,66 @@ def composition_proof() -> dict:
         "printed_verdict": verdict,
         "stdout_tail": proc.stdout[-4000:],
         "stderr_tail": proc.stderr[-1500:],
+    }
+
+
+def composition_proof_with_source_evidence() -> dict:
+    """Run the mandatory proof with the signed source-fact universe mounted.
+
+    The ordinary host helper skips the source-evidence cell when no witness
+    environment is present. This variant copies the real witness and source
+    journals out of their volumes and makes the proof judge the same financial
+    universe the readers see. A committed source fact missing from the database
+    must therefore turn the proof RED.
+    """
+    proof_dir = LANE_ROOT / "proof-source-evidence"
+    proof_dir.mkdir(parents=True, exist_ok=True)
+    witness_journal = volume_get(WITNESS_VOL, "history_witness.jsonl")
+    witness_public = volume_get(WITNESS_VOL, "history_witness_ed25519.pub")
+    source_journal = volume_get(SOURCE_EVIDENCE_VOL, "source_evidence.jsonl")
+    (proof_dir / "history_witness.jsonl").write_bytes(witness_journal)
+    (proof_dir / "history_witness_ed25519.pub").write_bytes(witness_public)
+    (proof_dir / "source_evidence.jsonl").write_bytes(source_journal)
+    env = dict(os.environ)
+    env["ENVIRONMENT"] = "ci"
+    env["DATABASE_URL"] = (
+        "postgresql+asyncpg://app_user:app_user@"
+        f"127.0.0.1:{PG_PORT}/{DB_NAME}"
+    )
+    env["MIGRATION_DATABASE_URL"] = (
+        f"postgresql://postgres:postgres@127.0.0.1:{PG_PORT}/{DB_NAME}"
+    )
+    env["B26_P2_HISTORY_WITNESS_JOURNAL_PATH"] = str(
+        proof_dir / "history_witness.jsonl"
+    )
+    env["B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH"] = str(
+        proof_dir / "history_witness_ed25519.pub"
+    )
+    env["B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH"] = str(
+        proof_dir / "source_evidence.jsonl"
+    )
+    env["B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH"] = str(
+        LANE_ROOT / "source_attestation_ed25519.pub"
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/ci/validate_b26_p2_xxii_composition.py"),
+            "--dsn",
+            f"postgresql://postgres:postgres@127.0.0.1:{PG_PORT}/{DB_NAME}",
+        ],
+        text=True,
+        capture_output=True,
+        cwd=str(REPO_ROOT),
+        env=env,
+    )
+    verdict = "PASS" if "B26_P2_XXII_COMPOSITION_PASS" in proc.stdout else "FAIL"
+    return {
+        "command": "scripts/ci/validate_b26_p2_xxii_composition.py --dsn <lane> (source evidence mounted)",
+        "returncode": proc.returncode,
+        "printed_verdict": verdict,
+        "stdout_tail": proc.stdout[-5000:],
+        "stderr_tail": proc.stderr[-2000:],
     }
 
 

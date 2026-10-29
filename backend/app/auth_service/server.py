@@ -28,6 +28,7 @@ provenance=authenticated_known AND witness) and never P3-eligible.
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -38,6 +39,28 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 
 app = FastAPI(title="Skeldir B2.6-P2 Authentication Trust Root (XIII)")
+
+
+def _source_attestation_key_path() -> str | None:
+    from app.core.config import settings  # noqa: PLC0415
+
+    return settings.B26_P2_SOURCE_ATTESTATION_PRIVATE_KEY_PATH
+
+
+@contextlib.asynccontextmanager
+async def _ingress_session_with_source_outcomes(
+    tenant_id: UUID, private_key_path: str | None
+):
+    """Commit the DB transaction before writing its signed outcome receipt."""
+
+    from app.db.session import get_ingress_session  # noqa: PLC0415
+    from app.revenue_verification.source_evidence_journal import (  # noqa: PLC0415
+        source_fact_outcome_transaction,
+    )
+
+    async with source_fact_outcome_transaction(private_key_path):
+        async with get_ingress_session(tenant_id=tenant_id) as session:
+            yield session
 
 
 #: Last construction revision verified at startup (None = never verified).
@@ -419,7 +442,6 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
     from app.db.session import (  # noqa: PLC0415
         _ingress_boundary,
         assert_api_ingress_isolation,
-        get_ingress_session,
     )
     from app.webhooks.commerce_derivation import (  # noqa: PLC0415
         CommerceDerivationError,
@@ -562,8 +584,8 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         )
     ingress_id = uuid4()
 
-    async with _ingress_boundary(), get_ingress_session(
-        tenant_id=tenant_uuid
+    async with _ingress_boundary(), _ingress_session_with_source_outcomes(
+        tenant_uuid, _source_attestation_key_path()
     ) as session:
         # ADD2-F5: per-request construction check. Boot verification
         # cannot cover a database swapped under a live process; minting
@@ -1013,7 +1035,6 @@ async def authenticate_adjustment(
     from app.db.session import (  # noqa: PLC0415
         _ingress_boundary,
         assert_api_ingress_isolation,
-        get_ingress_session,
     )
     from app.webhooks.commerce_derivation import (  # noqa: PLC0415
         CommerceDerivationError,
@@ -1065,8 +1086,8 @@ async def authenticate_adjustment(
     sig_sha = hashlib.sha256(
         body.signature_header.encode("utf-8")
     ).hexdigest().lower()
-    async with _ingress_boundary(), get_ingress_session(
-        tenant_id=tenant_uuid
+    async with _ingress_boundary(), _ingress_session_with_source_outcomes(
+        tenant_uuid, _source_attestation_key_path()
     ) as session:
         from app.core.construction_authority import (  # noqa: PLC0415
             assert_production_construction_authority as _assert_construction,

@@ -124,6 +124,7 @@ class HistoryCheckpoint:
     source_evidence_manifest_by_tenant: (
         Mapping[str, Mapping[str, tuple[str, ...]]] | None
     ) = None
+    source_evidence_failures_by_tenant: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -206,6 +207,7 @@ def _write_custody(
     authority_universe: str | None,
     source_evidence_digest: str | None = None,
     source_evidence_count: int | None = None,
+    source_evidence_failures_by_tenant: Mapping[str, str] | None = None,
 ) -> None:
     """Persist the latest commitment as a monotonic rollback lower bound.
 
@@ -235,7 +237,7 @@ def _write_custody(
             elif (
                 source_evidence_count is None
                 or int(source_evidence_count) <= int(current_source_count)
-            ):
+            ) and not source_evidence_failures_by_tenant:
                 raise HistoryWitnessError("witness_custody_fork")
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -319,6 +321,9 @@ def _write_heartbeat(
         "source_evidence_count": latest.source_evidence_count,
         "source_evidence_manifest_by_tenant": (
             latest.source_evidence_manifest_by_tenant
+        ),
+        "source_evidence_failures_by_tenant": (
+            latest.source_evidence_failures_by_tenant
         ),
     }
     if latest.authority_universe is not None:
@@ -435,6 +440,7 @@ def _append_checkpoint_unlocked(
     source_evidence_manifest_by_tenant: (
         Mapping[str, Mapping[str, Iterable[str]]] | None
     ) = None,
+    source_evidence_failures_by_tenant: Mapping[str, str] | None = None,
 ) -> HistoryCheckpoint:
     """Verify the existing journal, then atomically publish one observation.
 
@@ -494,6 +500,27 @@ def _append_checkpoint_unlocked(
             or source_evidence_count < 0
         ):
             raise HistoryWitnessError("witness_source_evidence_count_invalid")
+    normalized_failures: dict[str, str] | None = None
+    if source_evidence_failures_by_tenant is not None:
+        if not isinstance(source_evidence_failures_by_tenant, Mapping):
+            raise HistoryWitnessError(
+                "witness_source_evidence_failures_invalid"
+            )
+        normalized_failures = {}
+        for tenant, reason_digest in source_evidence_failures_by_tenant.items():
+            if not isinstance(reason_digest, str) or not _is_sha256_hex(
+                reason_digest
+            ):
+                raise HistoryWitnessError(
+                    "witness_source_evidence_failure_digest_invalid"
+                )
+            try:
+                tenant_key = str(uuid.UUID(str(tenant)))
+            except (TypeError, ValueError) as exc:
+                raise HistoryWitnessError(
+                    "witness_source_evidence_tenant_invalid"
+                ) from exc
+            normalized_failures[tenant_key] = reason_digest.lower()
     normalized_manifest: dict[str, dict[str, tuple[str, ...]]] | None = None
     if source_evidence_manifest_by_tenant is not None:
         if not isinstance(source_evidence_manifest_by_tenant, Mapping):
@@ -552,6 +579,11 @@ def _append_checkpoint_unlocked(
             and custody.get("checkpoint_hash") != previous.checkpoint_hash
         ):
             raise HistoryWitnessError("witness_custody_fork")
+    failure_map_changed = previous is None or normalized_failures != (
+        dict(previous.source_evidence_failures_by_tenant)
+        if previous.source_evidence_failures_by_tenant is not None
+        else None
+    )
     if previous is not None:
         if ledger_count < previous.ledger_count:
             raise HistoryWitnessError("witness_history_shrank")
@@ -579,7 +611,7 @@ def _append_checkpoint_unlocked(
                     or source_evidence_count is None
                     or int(source_evidence_count)
                     <= int(previous.source_evidence_count)
-                ):
+                ) and not failure_map_changed:
                     raise HistoryWitnessError(
                         "witness_source_evidence_diverged_without_ledger"
                     )
@@ -600,6 +632,7 @@ def _append_checkpoint_unlocked(
                 and source_evidence_count is not None
                 and int(source_evidence_count)
                 < int(previous.source_evidence_count)
+                and not failure_map_changed
             ):
                 raise HistoryWitnessError("witness_source_evidence_shrank")
             if (prefix_anchor_seq or None) != (previous.ledger_tip_seq or None):
@@ -622,6 +655,8 @@ def _append_checkpoint_unlocked(
         ):
             current_manifest = normalized_manifest.get(str(tenant))
             if current_manifest is None:
+                if normalized_failures and str(tenant) in normalized_failures:
+                    continue
                 raise HistoryWitnessError(
                     "witness_source_evidence_tenant_missing"
                 )
@@ -696,6 +731,9 @@ def _append_checkpoint_unlocked(
             source_evidence_manifest_by_tenant=(
                 previous.source_evidence_manifest_by_tenant
             ),
+            source_evidence_failures_by_tenant=(
+                previous.source_evidence_failures_by_tenant
+            ),
         )
     payload: dict[str, Any] = {
         "version": WITNESS_VERSION,
@@ -721,6 +759,8 @@ def _append_checkpoint_unlocked(
         payload["source_evidence_manifest_by_tenant"] = (
             normalized_manifest
         )
+    if normalized_failures is not None:
+        payload["source_evidence_failures_by_tenant"] = normalized_failures
     payload["checkpoint_hash"] = _checkpoint_hash(payload)
     if custody is not None and int(custody["ledger_count"]) == int(ledger_count):
         if custody.get("checkpoint_hash") != payload["checkpoint_hash"]:
@@ -779,6 +819,7 @@ def _append_checkpoint_unlocked(
         source_evidence_by_tenant=normalized_source_by_tenant,
         source_evidence_count=source_evidence_count,
         source_evidence_manifest_by_tenant=normalized_manifest,
+        source_evidence_failures_by_tenant=normalized_failures,
     )
     try:
         _write_custody(
@@ -788,6 +829,7 @@ def _append_checkpoint_unlocked(
             authority_universe=normalized_universe,
             source_evidence_digest=source_evidence_digest,
             source_evidence_count=source_evidence_count,
+            source_evidence_failures_by_tenant=normalized_failures,
         )
     except Exception:
         try:
@@ -1011,6 +1053,30 @@ def verify_journal(
             raise HistoryWitnessError(
                 "witness_source_evidence_count_invalid"
             )
+        raw_failures = payload.get("source_evidence_failures_by_tenant")
+        source_evidence_failures_by_tenant: dict[str, str] | None = None
+        if raw_failures is not None:
+            if not isinstance(raw_failures, dict):
+                raise HistoryWitnessError(
+                    "witness_source_evidence_failures_invalid"
+                )
+            source_evidence_failures_by_tenant = {}
+            for tenant, reason_digest in raw_failures.items():
+                if not isinstance(reason_digest, str) or not _is_sha256_hex(
+                    reason_digest
+                ):
+                    raise HistoryWitnessError(
+                        "witness_source_evidence_failure_digest_invalid"
+                    )
+                try:
+                    tenant_key = str(uuid.UUID(str(tenant)))
+                except (TypeError, ValueError) as exc:
+                    raise HistoryWitnessError(
+                        "witness_source_evidence_tenant_invalid"
+                    ) from exc
+                source_evidence_failures_by_tenant[tenant_key] = (
+                    reason_digest.lower()
+                )
         raw_manifest = payload.get("source_evidence_manifest_by_tenant")
         source_evidence_manifest_by_tenant: (
             dict[str, dict[str, tuple[str, ...]]] | None
@@ -1058,6 +1124,14 @@ def verify_journal(
             raise HistoryWitnessError("witness_chain_broken")
         if checkpoints:
             last = checkpoints[-1]
+            failure_map_changed = (
+                source_evidence_failures_by_tenant
+                != (
+                    dict(last.source_evidence_failures_by_tenant)
+                    if last.source_evidence_failures_by_tenant is not None
+                    else None
+                )
+            )
             if count < last.ledger_count:
                 raise HistoryWitnessError("witness_history_shrank")
             if count == last.ledger_count and (
@@ -1075,7 +1149,7 @@ def verify_journal(
                     or source_evidence_count is None
                     or int(source_evidence_count)
                     <= int(last.source_evidence_count)
-                ):
+                ) and not failure_map_changed:
                     raise HistoryWitnessError(
                         "witness_source_evidence_diverged_without_ledger"
                     )
@@ -1084,6 +1158,7 @@ def verify_journal(
                 and last.source_evidence_count is not None
                 and int(source_evidence_count)
                 < int(last.source_evidence_count)
+                and not failure_map_changed
             ):
                 raise HistoryWitnessError("witness_source_evidence_shrank")
             if (
@@ -1100,6 +1175,12 @@ def verify_journal(
                         source_evidence_manifest_by_tenant.get(str(tenant))
                     )
                     if current_manifest is None:
+                        if (
+                            source_evidence_failures_by_tenant
+                            and str(tenant)
+                            in source_evidence_failures_by_tenant
+                        ):
+                            continue
                         raise HistoryWitnessError(
                             "witness_source_evidence_tenant_missing"
                         )
@@ -1141,6 +1222,9 @@ def verify_journal(
             source_evidence_manifest_by_tenant=(
                 source_evidence_manifest_by_tenant
             ),
+            source_evidence_failures_by_tenant=(
+                source_evidence_failures_by_tenant
+            ),
         )
         checkpoints.append(checkpoint)
         previous_hash = computed_hash
@@ -1178,6 +1262,12 @@ def verify_journal(
             )
             != _canonical(
                 latest.source_evidence_manifest_by_tenant or {}
+            )
+            or _canonical(
+                heartbeat.get("source_evidence_failures_by_tenant") or {}
+            )
+            != _canonical(
+                latest.source_evidence_failures_by_tenant or {}
             )
         ):
             raise HistoryWitnessError("witness_heartbeat_diverged")

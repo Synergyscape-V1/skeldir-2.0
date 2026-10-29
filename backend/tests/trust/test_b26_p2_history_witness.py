@@ -351,6 +351,8 @@ def test_same_count_retry_does_not_fork_custody(tmp_path: Path) -> None:
         ledger_tip_hash="2" * 64,
         ledger_prefix_digest="b" * 64,
         authority_universe=UNIVERSE,
+        prefix_anchor_seq=1,
+        prefix_anchor_hash="1" * 64,
         custody_path=custody,
         heartbeat_path=heartbeat,
     )
@@ -787,6 +789,74 @@ def test_xxv_missing_custody_refuses_outside_production(
     )
     assert accepted is False
     assert reason.endswith("witness_custody_missing")
+
+
+def test_tenant_failure_is_committed_without_erasing_healthy_progress(
+    tmp_path: Path,
+) -> None:
+    """A failed tenant is named in the signed checkpoint; healthy facts stay."""
+
+    from app.revenue_verification.source_evidence import (
+        global_source_evidence_digest,
+    )
+
+    private_path, _public_path = _witness_files(tmp_path)
+    journal = tmp_path / "journal.jsonl"
+    custody = tmp_path / "custody.json"
+    tenant_a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    tenant_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=1,
+        ledger_tip_seq=1,
+        ledger_tip_hash="1" * 64,
+        ledger_prefix_digest="a" * 64,
+        authority_universe=UNIVERSE,
+        custody_path=custody,
+        source_evidence_digest=global_source_evidence_digest(
+            {tenant_a: {"digest": "c" * 64, "count": 1}}
+        ),
+        source_evidence_by_tenant={tenant_a: "c" * 64},
+        source_evidence_count=1,
+        source_evidence_manifest_by_tenant={
+            tenant_a: {"facts": ("a" * 64,), "states": ("1" * 64,)}
+        },
+    )
+    second_map = {tenant_b: "e" * 64}
+    checkpoint = append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=2,
+        ledger_tip_seq=2,
+        ledger_tip_hash="2" * 64,
+        ledger_prefix_digest="b" * 64,
+        authority_universe=UNIVERSE,
+        prefix_anchor_seq=1,
+        prefix_anchor_hash="1" * 64,
+        custody_path=custody,
+        source_evidence_digest=global_source_evidence_digest(
+            {tenant_b: {"digest": "e" * 64, "count": 1}}
+        ),
+        source_evidence_by_tenant=second_map,
+        source_evidence_count=1,
+        source_evidence_manifest_by_tenant={
+            tenant_b: {"facts": ("b" * 64,), "states": ()}
+        },
+        source_evidence_failures_by_tenant={tenant_a: "f" * 64},
+    )
+
+    assert checkpoint.source_evidence_failures_by_tenant == {tenant_a: "f" * 64}
+    verified = verify_journal(
+        journal,
+        public_key_path=None,
+        public_key=load_public_key(
+            tmp_path / "witness.ed25519.pub"
+        ),
+    )
+    assert verified.latest.source_evidence_failures_by_tenant == {
+        tenant_a: "f" * 64
+    }
 
 
 def test_source_manifest_preserves_prior_facts_across_tenants(

@@ -935,6 +935,45 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     # The envelope is about this fit, and about a source state that is current.
     assert str(dispatch["fit_id"]) in envelope["subject_ref"], envelope
 
+    # B5 data isolation: the confidence subject is tenant-scoped. A foreign
+    # tenant's app_user session must not resolve this fit, while the owning
+    # tenant still resolves it. This is the confidence-reader boundary, not
+    # the planner-failure containment control.
+    from app.trust.source_adapters import read_confidence_projection_source
+
+    subject_ref = f"urn:skeldir:confidence_projection:{dispatch['fit_id']}"
+    foreign_tenant = uuid.uuid4()
+    isolation_engine = create_async_engine(api_database_url)
+
+    async def isolation_read(tenant: uuid.UUID):
+        async with AsyncSession(isolation_engine) as session:
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :t, false)"),
+                {"t": str(tenant)},
+            )
+            return await read_confidence_projection_source(
+                session, tenant_id=tenant, subject_ref=subject_ref
+            )
+
+    isolation_loop = asyncio.new_event_loop()
+    try:
+        foreign_source = isolation_loop.run_until_complete(
+            isolation_read(foreign_tenant)
+        )
+        own_source = isolation_loop.run_until_complete(
+            isolation_read(tenant_id)
+        )
+        isolation_loop.run_until_complete(isolation_engine.dispose())
+    finally:
+        isolation_loop.close()
+
+    assert foreign_source is None, (
+        "a foreign tenant resolved another tenant's confidence projection"
+    )
+    assert own_source is not None, (
+        "the owning tenant could not resolve its own confidence projection"
+    )
+
 
 def test_c9_the_inference_policies_are_authorised_to_operate_together() -> None:
     """F-11's replacement: the compatibility authority that did not exist.

@@ -374,18 +374,30 @@ async def write_source_attestation(
         },
     )
     from app.revenue_verification.source_evidence_journal import (
+        SourceFactJournalError,
         append_source_fact,
     )
 
-    append_source_fact(
-        fact_kind="source_money",
-        fact_id=str(statement["webhook_ingress_identity_id"]),
-        tenant_id=str(statement["tenant_id"]),
-        verdict_id="",
-        statement=statement,
-        signature=signature,
-        key_sha256=key_sha256,
-    )
+    transaction_id = (
+        await session.execute(text("SELECT pg_current_xact_id()::text"))
+    ).scalar_one_or_none()
+    if transaction_id is None:
+        raise SourceAttestationError(
+            "attestation_transaction_identity_missing"
+        )
+    try:
+        append_source_fact(
+            fact_kind="source_money",
+            fact_id=str(statement["webhook_ingress_identity_id"]),
+            tenant_id=str(statement["tenant_id"]),
+            verdict_id="",
+            statement=statement,
+            signature=signature,
+            key_sha256=key_sha256,
+            database_transaction_id=str(transaction_id),
+        )
+    except SourceFactJournalError as exc:
+        raise SourceAttestationError(str(exc)) from exc
     return {
         "webhook_ingress_identity_id": statement["webhook_ingress_identity_id"],
         "signature": signature,
@@ -608,6 +620,33 @@ async def read_verdict_source_attestation_status(
         statement.get("authority_universe") or ""
     ) != str(current_universe):
         return _unverifiable("attestation_authority_universe_mismatch")
+
+    from app.revenue_verification.source_evidence import (  # noqa: PLC0415
+        SourceEvidenceError,
+        source_fact_currentness,
+    )
+
+    if settings.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH:
+        try:
+            currentness = await source_fact_currentness(
+                session, tenant_id=tenant_id
+            )
+        except SourceEvidenceError as exc:
+            return _unverifiable(f"source_fact_currentness_{exc}")
+        current_key = (
+            str(row["ingress_provider"] or "").lower()
+            + "\x1f"
+            + str(row["ingress_commerce_reference"] or "")
+        )
+        current_source = (currentness.get("current_sources") or {}).get(
+            current_key
+        )
+        if current_source is None:
+            return _unverifiable("source_currentness_unresolved")
+        if current_source.get("status") != "current":
+            return _unverifiable("source_currentness_ambiguous")
+        if str(current_source.get("ingress_id")) != str(row["ingress_id"]):
+            return _unverifiable("verdict_source_not_current")
 
     adjustment_rows = (
         (
@@ -916,18 +955,30 @@ async def write_adjustment_attestation(
         },
     )
     from app.revenue_verification.source_evidence_journal import (
+        SourceFactJournalError,
         append_source_fact,
     )
 
-    append_source_fact(
-        fact_kind="adjustment",
-        fact_id=str(statement["adjustment_evidence_id"]),
-        tenant_id=str(statement["tenant_id"]),
-        verdict_id=str(statement["verdict_id"]),
-        statement=statement,
-        signature=signature,
-        key_sha256=key_sha256,
-    )
+    transaction_id = (
+        await session.execute(text("SELECT pg_current_xact_id()::text"))
+    ).scalar_one_or_none()
+    if transaction_id is None:
+        raise SourceAttestationError(
+            "attestation_transaction_identity_missing"
+        )
+    try:
+        append_source_fact(
+            fact_kind="adjustment",
+            fact_id=str(statement["adjustment_evidence_id"]),
+            tenant_id=str(statement["tenant_id"]),
+            verdict_id=str(statement["verdict_id"]),
+            statement=statement,
+            signature=signature,
+            key_sha256=key_sha256,
+            database_transaction_id=str(transaction_id),
+        )
+    except SourceFactJournalError as exc:
+        raise SourceAttestationError(str(exc)) from exc
     return {
         "adjustment_evidence_id": statement["adjustment_evidence_id"],
         "signature": signature,

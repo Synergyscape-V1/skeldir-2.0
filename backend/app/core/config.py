@@ -350,6 +350,14 @@ class Settings(BaseSettings):
             "non-production choice and production refuses to start with it off."
         ),
     )
+    B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH: Optional[str] = Field(
+        None,
+        description=(
+            "Append-only authentication-root journal of signed source and "
+            "adjustment facts. Required in production so completeness can be "
+            "adjudicated against facts the database principal cannot create."
+        ),
+    )
 
     # Celery (Postgres-only broker/result backend)
     CELERY_BROKER_URL: Optional[str] = Field(
@@ -761,6 +769,10 @@ class Settings(BaseSettings):
             if not self.B26_P2_SOURCE_ATTESTATION_REQUIRED:
                 raise ValueError(
                     "B26_P2_SOURCE_ATTESTATION_REQUIRED must be true in production"
+                )
+            if not (self.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH or "").strip():
+                raise ValueError(
+                    "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH must be set in production"
                 )
             if not COMPILED_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256:
                 raise ValueError(

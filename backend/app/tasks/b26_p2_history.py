@@ -8,6 +8,7 @@ deployment-time continuity against the committed anchor file.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any, Dict
 
@@ -85,7 +86,7 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
     )
     from app.revenue_verification.source_evidence import (  # noqa: PLC0415
         global_source_evidence_digest,
-        source_evidence_snapshots,
+        source_evidence_snapshots_with_failures,
     )
 
     private_key_path = settings.B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH
@@ -136,7 +137,9 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
     from sqlalchemy.ext.asyncio import AsyncSession  # noqa: PLC0415
 
     async with AsyncSession(_engine) as evidence_session:
-        snapshots = await source_evidence_snapshots(evidence_session)
+        snapshots, source_failures = await source_evidence_snapshots_with_failures(
+            evidence_session
+        )
     source_by_tenant = {
         tenant: str(snapshot["digest"])
         for tenant, snapshot in snapshots.items()
@@ -149,6 +152,10 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
             "states": tuple(snapshot["states"]),
         }
         for tenant, snapshot in snapshots.items()
+    }
+    source_failure_digests = {
+        tenant: hashlib.sha256(reason.encode("utf-8")).hexdigest()
+        for tenant, reason in source_failures.items()
     }
 
     violations = str(raw_violations or "").strip()
@@ -198,6 +205,7 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         source_evidence_by_tenant=source_by_tenant,
         source_evidence_count=source_count,
         source_evidence_manifest_by_tenant=source_manifest,
+        source_evidence_failures_by_tenant=source_failure_digests,
     )
     return {
         "ledger_count": checkpoint.ledger_count,
@@ -206,6 +214,7 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         "ledger_prefix_digest": checkpoint.ledger_prefix_digest,
         "checkpoint_hash": checkpoint.checkpoint_hash,
         "observed_at": checkpoint.observed_at.isoformat(),
+        "source_evidence_failures": source_failures,
     }
 
 

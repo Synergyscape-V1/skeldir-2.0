@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -349,50 +349,174 @@ async def source_evidence_snapshot(
         ],
     }
     from app.revenue_verification.source_evidence_journal import (
-        load_source_facts,
+        SourceFactJournalError,
+        resolve_source_facts,
     )
 
-    journal = load_source_facts()
+    try:
+        journal = await resolve_source_facts(
+            session, public_key_path=key_path
+        )
+    except SourceFactJournalError as exc:
+        raise SourceEvidenceError(str(exc)) from exc
     if journal is None:
         if valid_sources or valid_adjustments:
             raise SourceEvidenceError("source_fact_journal_missing")
     else:
-        for ingress_id, row in valid_sources.items():
-            record = journal.get(("source_money", ingress_id))
-            if record is None:
+        source_attestation_by_id = {
+            str(row["webhook_ingress_identity_id"]): row
+            for row in raw["source_attestation"]
+        }
+        adjustment_attestation_by_id = {
+            str(row["adjustment_evidence_id"]): row
+            for row in raw["adjustment_attestation"]
+        }
+        for key, record in {
+            **journal.committed,
+            **journal.legacy,
+        }.items():
+            kind, fact_id = key
+            if str(record.get("tenant_id")) != tenant:
+                continue
+            if kind == "source_money":
+                ingress = ingress_by_id.get(fact_id)
+                attestation = source_attestation_by_id.get(fact_id)
+                if ingress is None or attestation is None:
+                    raise SourceEvidenceError(
+                        f"source_fact_journal_source_absent:{fact_id}"
+                    )
+                if (
+                    fact_id not in valid_sources
+                    or record.get("statement") != dict(attestation["statement"])
+                    or record.get("signature") != attestation["signature"]
+                ):
+                    raise SourceEvidenceError(
+                        f"source_fact_journal_source_unverified:{fact_id}"
+                    )
+            elif kind == "adjustment":
+                evidence = evidence_by_id.get(fact_id)
+                attestation = adjustment_attestation_by_id.get(fact_id)
+                if evidence is None or attestation is None:
+                    raise SourceEvidenceError(
+                        f"source_fact_journal_adjustment_absent:{fact_id}"
+                    )
+                if (
+                    fact_id not in valid_adjustments
+                    or record.get("statement") != dict(attestation["statement"])
+                    or record.get("signature") != attestation["signature"]
+                ):
+                    raise SourceEvidenceError(
+                        f"source_fact_journal_adjustment_unverified:{fact_id}"
+                    )
+        for ingress_id in valid_sources:
+            key = ("source_money", ingress_id)
+            if key in journal.committed or key in journal.legacy:
+                continue
+            if key in journal.aborted:
                 raise SourceEvidenceError(
-                    f"source_fact_journal_source_missing:{ingress_id}"
+                    f"source_fact_journal_source_not_committed:{ingress_id}"
                 )
-            if (
-                record.get("statement") != dict(row["statement"])
-                or record.get("signature") != row["signature"]
-            ):
+            if key in journal.in_progress:
                 raise SourceEvidenceError(
-                    f"source_fact_journal_source_mismatch:{ingress_id}"
+                    f"source_fact_journal_source_in_progress:{ingress_id}"
                 )
-        for evidence_id, row in valid_adjustments.items():
-            record = journal.get(("adjustment", evidence_id))
-            if record is None:
+            if key in journal.unknown:
                 raise SourceEvidenceError(
-                    f"source_fact_journal_adjustment_missing:{evidence_id}"
+                    f"source_fact_journal_source_transaction_unknown:{ingress_id}"
                 )
-            if (
-                record.get("statement") != dict(row["statement"])
-                or record.get("signature") != row["signature"]
-            ):
+            raise SourceEvidenceError(
+                f"source_fact_journal_source_missing:{ingress_id}"
+            )
+        for evidence_id in valid_adjustments:
+            key = ("adjustment", evidence_id)
+            if key in journal.committed or key in journal.legacy:
+                continue
+            if key in journal.aborted:
                 raise SourceEvidenceError(
-                    f"source_fact_journal_adjustment_mismatch:{evidence_id}"
+                    f"source_fact_journal_adjustment_not_committed:{evidence_id}"
                 )
-        for (kind, fact_id), record in journal.items():
-            if (
-                str(record.get("tenant_id")) == tenant
-                and kind == "adjustment"
-                and str(record.get("verdict_id")) in attested_verdicts
-                and fact_id not in valid_adjustments
-            ):
+            if key in journal.in_progress:
                 raise SourceEvidenceError(
-                    f"source_fact_journal_adjustment_absent:{fact_id}"
+                    f"source_fact_journal_adjustment_in_progress:{evidence_id}"
                 )
+            if key in journal.unknown:
+                raise SourceEvidenceError(
+                    "source_fact_journal_adjustment_transaction_unknown:"
+                    f"{evidence_id}"
+                )
+            raise SourceEvidenceError(
+                f"source_fact_journal_adjustment_missing:{evidence_id}"
+            )
+
+    current_sources: dict[str, dict[str, Any]] = {}
+    sources_by_commerce: dict[str, list[dict[str, Any]]] = {}
+    for row in valid_sources.values():
+        statement = (
+            row["statement"]
+            if isinstance(row["statement"], dict)
+            else json.loads(str(row["statement"]))
+        )
+        try:
+            event_instant = datetime.fromisoformat(
+                str(statement["event_timestamp"]).replace("Z", "+00:00")
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SourceEvidenceError(
+                "source_fact_event_timestamp_invalid"
+            ) from exc
+        if event_instant.tzinfo is None:
+            raise SourceEvidenceError("source_fact_event_timestamp_timezone_required")
+        key = (
+            str(statement.get("provider") or "").lower()
+            + "\x1f"
+            + str(statement.get("provider_native_commerce_reference") or "")
+        )
+        sources_by_commerce.setdefault(key, []).append(
+            {
+                "ingress_id": str(row["webhook_ingress_identity_id"]),
+                "amount_minor": int(statement["verified_amount_minor"]),
+                "event_timestamp": event_instant.astimezone(timezone.utc),
+            }
+        )
+    for key, candidates in sources_by_commerce.items():
+        latest_instant = max(item["event_timestamp"] for item in candidates)
+        latest = [
+            item for item in candidates if item["event_timestamp"] == latest_instant
+        ]
+        if len({item["ingress_id"] for item in latest}) != 1:
+            current_sources[key] = {
+                "status": "ambiguous",
+                "event_timestamp": latest_instant.isoformat(),
+            }
+            continue
+        current_sources[key] = {
+            "status": "current",
+            "ingress_id": latest[0]["ingress_id"],
+            "amount_minor": latest[0]["amount_minor"],
+            "event_timestamp": latest_instant.isoformat(),
+        }
+
+    for verdict in attested_verdicts.values():
+        current_key = (
+            str(verdict.get("provider") or "").lower()
+            + "\x1f"
+            + str(verdict.get("provider_native_commerce_reference") or "")
+        )
+        current_source = current_sources.get(current_key)
+        if current_source is None:
+            raise SourceEvidenceError(
+                f"verdict_source_currentness_unresolved:{verdict['id']}"
+            )
+        if current_source.get("status") != "current":
+            raise SourceEvidenceError(
+                f"verdict_source_currentness_ambiguous:{verdict['id']}"
+            )
+        if str(current_source.get("ingress_id")) != str(
+            verdict["webhook_ingress_identity_id"]
+        ):
+            raise SourceEvidenceError(
+                f"verdict_source_not_current:{verdict['id']}"
+            )
 
     fact_hashes = sorted(
         hashlib.sha256(
@@ -439,23 +563,49 @@ async def source_evidence_snapshot(
         "count": len(fact_hashes),
         "facts": fact_hashes,
         "states": state_hashes,
+        "current_sources": current_sources,
     }
+
+
+async def source_evidence_snapshots_with_failures(
+    session: AsyncSession,
+) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    """Return healthy manifests and contain tenant-local completeness failures.
+
+    A committed fact missing in one tenant is a failure of that tenant, not a
+    reason to stop witnessing every other tenant. The failure is returned to
+    the observer so it is recorded, never silently converted into an empty
+    tenant manifest.
+    """
+
+    result = await session.execute(text("SELECT id::text FROM public.tenants"))
+    tenants = [str(row[0]) for row in result.all()]
+    snapshots: dict[str, dict[str, Any]] = {}
+    failures: dict[str, str] = {}
+    for tenant in sorted(tenants):
+        try:
+            snapshot = await source_evidence_snapshot(
+                session, tenant_id=tenant
+            )
+        except SourceEvidenceError as exc:
+            failures[tenant] = str(exc)
+            continue
+        if int(snapshot["count"]) > 0:
+            snapshots[tenant] = snapshot
+    return snapshots, failures
 
 
 async def source_evidence_snapshots(
     session: AsyncSession,
 ) -> dict[str, dict[str, Any]]:
-    """Return one manifest per tenant, for the independent observer."""
+    """Return one manifest per tenant, refusing if any tenant is incomplete."""
 
-    result = await session.execute(text("SELECT id::text FROM public.tenants"))
-    tenants = [str(row[0]) for row in result.all()]
-    snapshots: dict[str, dict[str, Any]] = {}
-    for tenant in sorted(tenants):
-        snapshot = await source_evidence_snapshot(
-            session, tenant_id=tenant
+    snapshots, failures = await source_evidence_snapshots_with_failures(session)
+    if failures:
+        detail = ",".join(
+            f"{tenant}:{reason}" for tenant, reason in sorted(failures.items())
         )
-        if int(snapshot["count"]) > 0:
-            snapshots[tenant] = snapshot
+        raise SourceEvidenceError(f"source_evidence_tenant_failures:{detail}")
     return snapshots
 
 
@@ -472,6 +622,19 @@ def global_source_evidence_digest(
         },
     }
     return hashlib.sha256(_canonical(material).encode("utf-8")).hexdigest()
+
+
+async def source_fact_currentness(
+    session: AsyncSession, *, tenant_id: UUID | str
+) -> dict[str, Any]:
+    """Require the tenant's complete journal fact set to be present now.
+
+    Called by the authoritative readers, not only by the periodic observer.
+    A committed source or adjustment fact whose row disappeared is a refusal
+    even when every surviving signature is individually valid.
+    """
+
+    return await source_evidence_snapshot(session, tenant_id=tenant_id)
 
 
 async def source_evidence_is_attested(

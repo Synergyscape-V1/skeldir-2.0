@@ -738,6 +738,21 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/tasks/b26_p2_history.py",
         ),
     ),
+    "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH": _contract(
+        key="B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH",
+        classification="config",
+        aws_path_template=(
+            "/skeldir/{env}/config/b26-p2/source-evidence-journal-path"
+        ),
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=(
+            "backend/app/revenue_verification/source_evidence_journal.py",
+            "backend/app/revenue_verification/source_evidence.py",
+            "backend/app/revenue_verification/source_attestation.py",
+            "backend/app/tasks/b26_p2_history.py",
+        ),
+    ),
 }
 
 
