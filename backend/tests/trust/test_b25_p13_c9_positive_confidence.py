@@ -58,9 +58,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, Request
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.api import trust_api, trust_keys
 from app.bayesian.model_identity import active_identity
@@ -833,6 +834,28 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     app.include_router(trust_api.router, prefix="/api")
     app.include_router(trust_keys.router, prefix="/api")
     assert not app.dependency_overrides
+
+    # The worker and the public Trust API are distinct production principals.
+    # The fit path must run as app_worker; the API path must run as app_user.
+    # A single-DSN test would either deny the worker its registration function
+    # or deny the API the trust tables. Exercise both real boundaries here.
+    api_database_url = os.getenv("B25_API_DATABASE_URL") or get_database_url().replace(
+        "app_worker", "app_user"
+    )
+    api_engine = create_async_engine(api_database_url)
+
+    async def app_user_session(request: Request, x_tenant_id: uuid.UUID = Header(
+        alias="X-Tenant-ID"
+    )):
+        async with AsyncSession(api_engine) as session:
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :t, false)"),
+                {"t": str(x_tenant_id)},
+            )
+            request.state.db_session = session
+            yield session
+
+    app.dependency_overrides[trust_api.get_machine_db_session] = app_user_session
 
     async def query() -> tuple[dict, dict]:
         async with AsyncClient(
