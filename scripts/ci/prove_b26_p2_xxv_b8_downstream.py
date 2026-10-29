@@ -13,6 +13,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from fastapi import FastAPI, Header, Request
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
@@ -61,6 +63,7 @@ def main() -> int:
         f"postgresql://postgres:postgres@127.0.0.1:55471/{DATABASE}"
     )
     os.environ["ENVIRONMENT"] = "ci"
+    os.environ["TESTING"] = "1"
     os.environ["B26_P2_SOURCE_ATTESTATION_REQUIRED"] = "true"
     os.environ["B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH"] = source_public
     os.environ["B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH"] = source_journal
