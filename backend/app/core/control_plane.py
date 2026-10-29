@@ -1,7 +1,8 @@
-from __future__ import annotations
-
 """B11-P1 runtime resolver for environment-namespaced config/secret retrieval."""
 
+from __future__ import annotations
+
+import base64
 import json
 import os
 import subprocess
@@ -11,6 +12,7 @@ from app.core.managed_settings_contract import (
     ALLOWED_SECRET_ENVS,
     MANAGED_SETTINGS_CONTRACT,
     ManagedSettingContract,
+    process_role_allows,
 )
 
 _ENV_ALIAS_MAP: dict[str, str] = {
@@ -76,6 +78,42 @@ def resolve_aws_path_for_key(*, key: str, canonical_env: str) -> str:
 
 def _fetch_value_from_aws(contract: ManagedSettingContract, path: str) -> str:
     region = os.getenv("AWS_REGION", "us-east-2")
+    client_mode = os.getenv("SKELDIR_CONTROL_PLANE_CLIENT", "auto").strip().lower()
+    if client_mode in {"auto", "boto3"}:
+        try:
+            import boto3  # noqa: PLC0415
+            from botocore.exceptions import ClientError  # noqa: PLC0415
+        except ImportError as exc:
+            if client_mode == "boto3":
+                raise RuntimeError(
+                    "boto3 control-plane client is not installed"
+                ) from exc
+        else:
+            try:
+                if contract.classification == "secret":
+                    response = boto3.client(
+                        "secretsmanager", region_name=region
+                    ).get_secret_value(SecretId=path)
+                    value = response.get("SecretString")
+                    if value is None and response.get("SecretBinary") is not None:
+                        value = base64.b64decode(
+                            response["SecretBinary"]
+                        ).decode("utf-8")
+                    if value is None:
+                        raise RuntimeError(
+                            f"AWS secret {path} has no string or binary value"
+                        )
+                    return str(value)
+                response = boto3.client(
+                    "ssm", region_name=region
+                ).get_parameter(Name=path, WithDecryption=True)
+                return str(response["Parameter"]["Value"])
+            except ClientError as exc:
+                error = exc.response.get("Error", {})
+                raise RuntimeError(
+                    f"AWS read failed for {path}: "
+                    f"{error.get('Code', 'client_error')}"
+                ) from exc
 
     if contract.classification == "secret":
         cmd = [
@@ -126,7 +164,10 @@ def preload_environment_from_control_plane() -> None:
         return
 
     canonical_env = resolve_control_plane_env(os.getenv("ENVIRONMENT"))
+    process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
     for key, contract in MANAGED_SETTINGS_CONTRACT.items():
+        if not process_role_allows(process_role, key):
+            continue
         if os.getenv(key):
             continue
         path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
@@ -138,8 +179,11 @@ def hydrate_settings_from_control_plane(settings_obj: Any) -> None:
         return
 
     canonical_env = resolve_control_plane_env(getattr(settings_obj, "ENVIRONMENT", None))
+    process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
 
     for key, contract in MANAGED_SETTINGS_CONTRACT.items():
+        if not process_role_allows(process_role, key):
+            continue
         current_value = getattr(settings_obj, key, None)
         if current_value is not None:
             continue

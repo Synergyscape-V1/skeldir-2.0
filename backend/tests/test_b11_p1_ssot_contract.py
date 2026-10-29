@@ -4,7 +4,10 @@ import pytest
 
 from app.core.control_plane import resolve_aws_path_for_key, resolve_control_plane_env
 from app.core.managed_settings_guard import assert_contract_covers_keys
-from app.core.managed_settings_contract import MANAGED_SETTINGS_CONTRACT
+from app.core.managed_settings_contract import (
+    MANAGED_SETTINGS_CONTRACT,
+    process_role_allows,
+)
 
 
 def test_control_plane_env_is_fail_closed() -> None:
@@ -28,3 +31,12 @@ def test_all_paths_resolve_with_canonical_prefix() -> None:
         path = resolve_aws_path_for_key(key=key, canonical_env="ci")
         assert path.startswith("/skeldir/ci/")
         assert "/secret/" in path or "/config/" in path
+
+
+def test_process_roles_scope_migration_authority() -> None:
+    assert not process_role_allows("trust_signer", "MIGRATION_DATABASE_URL")
+    assert not process_role_allows("auth_ingress", "MIGRATION_DATABASE_URL")
+    assert not process_role_allows("api", "MIGRATION_DATABASE_URL")
+    assert process_role_allows("migration", "MIGRATION_DATABASE_URL")
+    assert process_role_allows("api", "DATABASE_URL")
+    assert not process_role_allows("trust_signer", "UNKNOWN_SETTING")

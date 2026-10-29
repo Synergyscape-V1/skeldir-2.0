@@ -539,6 +539,7 @@ def lane_env(role: str, *, cp_volume: str, extra: dict[str, str]) -> list[str]:
         "LOG_LEVEL": "INFO",
         "SKELDIR_PROCESS_ROLE": role,
         "SKELDIR_CONTROL_PLANE_ENABLED": "1",
+        "SKELDIR_CONTROL_PLANE_CLIENT": "cli",
         "AWS_REGION": "us-east-2",
         "PATH": "/run/skeldir-cp:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
         "PROMETHEUS_MULTIPROC_DIR": "/tmp",
@@ -750,14 +751,11 @@ def start_signer(state: dict) -> None:
     cp = write_control_plane("trust_signer", state)
     dsn = f"postgresql+asyncpg://app_trust_signer:app_trust_signer@pg:5432/{DB_NAME}"
     transport = role_dsn("app_celery_transport", host="pg", port=5432)
-    # XXV-F-CP2: the signer's own custody law (assert_signer_process_custody)
-    # refuses any process that can see MIGRATION_DATABASE_URL, while the
-    # shipped control-plane client resolves that key for every process in the
-    # environment scope. The two cannot both hold, so the lane runs the signer
-    # with the control plane not applied -- the same workaround both
-    # independent audits had to adopt. Recorded as a finding, not a fix.
+    # XXV-F-CP2: the control plane is process-scoped. The signer role is not
+    # allowed to resolve MIGRATION_DATABASE_URL, so the signer boots with the
+    # control plane enabled and its custody law holds without a workaround.
     env = {
-        "SKELDIR_CONTROL_PLANE_ENABLED": "0",
+        "SKELDIR_CONTROL_PLANE_ENABLED": "1",
         "DATABASE_URL": dsn,
         "TRUST_SIGNER_DATABASE_URL": dsn,
         "CELERY_BROKER_URL": f"sqla+{transport}",

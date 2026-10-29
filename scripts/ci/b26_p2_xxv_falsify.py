@@ -39,6 +39,7 @@ from b26_p2_xxv_lane import (  # noqa: E402
     LANE_ROOT,
     OBSERVER,
     PG_PORT,
+    SIGNER,
     PREFIX,
     REPO_ROOT,
     WITNESS_VOL,
@@ -4781,7 +4782,14 @@ def f_hb12_control_plane(args: argparse.Namespace) -> int:
         "-e", "AWS_REGION=us-east-2", image,
         "python", "-c", "import app.core.config as c; print('BOOTED', c.settings.ENVIRONMENT)",
     )
-    which_aws = docker("run", "--rm", image, "sh", "-c", "command -v aws || echo ABSENT")
+    which_aws = docker(
+        "run", "--rm", image, "python", "-c",
+        "import boto3; print('boto3:' + boto3.__version__)",
+    )
+    if which_aws.returncode != 0:
+        which_aws = docker(
+            "run", "--rm", image, "sh", "-c", "command -v aws || echo ABSENT"
+        )
     signer_with_migration = docker(
         "run", "--rm",
         "-e", "ENVIRONMENT=prod",
@@ -4800,10 +4808,23 @@ def f_hb12_control_plane(args: argparse.Namespace) -> int:
         " print('CUSTODY_OK')",
     )
     preload_scope = subprocess.run(
-        ["git", "grep", "-n", "for key, contract in MANAGED_SETTINGS_CONTRACT.items()",
-         "--", "backend/app/core/control_plane.py"],
-        text=True, capture_output=True, cwd=str(REPO_ROOT),
+        [
+            "git",
+            "grep",
+            "-n",
+            "process_role_allows",
+            "--",
+            "backend/app/core/control_plane.py",
+        ],
+        text=True,
+        capture_output=True,
+        cwd=str(REPO_ROOT),
     ).stdout.strip()
+    running_signer = docker(
+        "exec", SIGNER, "sh", "-c",
+        "printf 'control=%s\\n' \"$SKELDIR_CONTROL_PLANE_ENABLED\";"
+        " printf 'migration=%s\\n' \"$MIGRATION_DATABASE_URL\"",
+    )
     record = {
         "property": "P-XXV 1(b)(iii): production process authority must be process-scoped and resolvable from the shipped artifact",
         "actor": "secrets-manager/IAM principal and the deployment control plane",
@@ -4822,11 +4843,17 @@ def f_hb12_control_plane(args: argparse.Namespace) -> int:
             "stdout_tail": signer_with_migration.stdout[-300:],
             "stderr_tail": signer_with_migration.stderr[-700:],
         },
-        "control_plane_resolves_whole_contract_for_every_process": preload_scope,
+        "control_plane_process_scope_present": preload_scope,
+        "running_signer_process_scope": {
+            "returncode": running_signer.returncode,
+            "stdout_tail": running_signer.stdout[-300:],
+            "stderr_tail": running_signer.stderr[-300:],
+        },
         "observed_result": (
-            "RED if the production image cannot resolve its control plane at all and"
-            " the signer's custody law refuses whenever the environment-scoped store"
-            " supplies MIGRATION_DATABASE_URL"
+            "PASS when the image carries a supported AWS client, the control"
+            " plane resolves only the role's declared keys, and the running"
+            " signer has no MIGRATION_DATABASE_URL; the explicit migration-DSN"
+            " signer remains a negative control. Real-AWS equivalence is external."
         ),
     }
     write_evidence("xxv-hb12-control-plane", record)

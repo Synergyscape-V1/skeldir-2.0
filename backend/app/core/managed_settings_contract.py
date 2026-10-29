@@ -20,6 +20,7 @@ class ManagedSettingContract:
     rotation_criticality: RotationCriticality
     owner: str
     call_sites: tuple[str, ...]
+    process_roles: tuple[str, ...] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -34,6 +35,7 @@ def _contract(
     owner: str,
     call_sites: tuple[str, ...],
     env_scopes: tuple[str, ...] = ALLOWED_SECRET_ENVS,
+    process_roles: tuple[str, ...] | None = None,
 ) -> ManagedSettingContract:
     return ManagedSettingContract(
         key=key,
@@ -43,6 +45,7 @@ def _contract(
         rotation_criticality=rotation_criticality,
         owner=owner,
         call_sites=call_sites,
+        process_roles=process_roles,
     )
 
 
@@ -63,6 +66,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="critical",
         owner="platform-security",
         call_sites=("alembic/env.py", "scripts/run_alembic.ps1"),
+        process_roles=("migration",),
     ),
     "DATABASE_POOL_SIZE": _contract(
         key="DATABASE_POOL_SIZE",
@@ -754,6 +758,17 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         ),
     ),
 }
+
+
+def process_role_allows(role: str, key: str) -> bool:
+    """Return whether one process role may resolve a managed setting."""
+
+    contract = MANAGED_SETTINGS_CONTRACT.get(key)
+    if contract is None:
+        return False
+    if contract.process_roles is None:
+        return True
+    return role in contract.process_roles
 
 
 def get_managed_setting_contract(key: str) -> ManagedSettingContract:
