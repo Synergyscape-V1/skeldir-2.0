@@ -25,10 +25,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import os
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -149,6 +153,38 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
     ingress = uuid.uuid4()
     verdict = uuid.uuid4()
     reference = f"b8-{generation.lower()}-{uuid.uuid4().hex[:12]}"
+    event_reference = f"evt-{reference}"
+    commerce_reference = f"ord-{reference}"
+    provider_secret = f"whsec_b8_{tenant.hex[:8]}"
+    event_created = int(TENANT_DAY.timestamp())
+    raw_body = json.dumps(
+        {
+            "id": event_reference,
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "id": commerce_reference,
+                    "amount": 1000,
+                    "currency": "usd",
+                    "created": event_created,
+                }
+            },
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    signature_ts = int(time.time())
+    signature_header = (
+        f"t={signature_ts},v1="
+        + hmac.new(
+            provider_secret.encode(),
+            f"{signature_ts}.".encode() + raw_body,
+            hashlib.sha256,
+        ).hexdigest()
+    )
+    body_sha = hashlib.sha256(raw_body).hexdigest()
+    signature_sha = hashlib.sha256(
+        signature_header.encode("utf-8")
+    ).hexdigest()
 
     conn = psycopg2.connect(_dsn(admin, database))
     conn.autocommit = True
@@ -211,9 +247,9 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
                     str(ingress),
                     str(tenant),
                     str(event),
-                    f"evt-{reference}",
-                    f"ord-{reference}",
-                    f"ord-{reference}",
+                    event_reference,
+                    commerce_reference,
+                    commerce_reference,
                     TENANT_DAY,
                     f"b8-ingress:{reference}",
                 ),
@@ -250,8 +286,8 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
                         str(ingress),
                         "stripe",
                         f"evt-{reference}",
-                        "a" * 64,
-                        "b" * 64,
+                        body_sha,
+                        signature_sha,
                     ),
                 )
         finally:
@@ -286,9 +322,9 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
                     str(tenant),
                     str(event),
                     str(ingress),
-                    f"ord-{reference}",
-                    f"evt-{reference}",
-                    f"ord-{reference}",
+                    commerce_reference,
+                    event_reference,
+                    commerce_reference,
                 ),
             )
             cur.execute(
@@ -304,9 +340,9 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
                 (
                     str(tenant),
                     str(verdict),
-                    f"evt-{reference}",
-                    f"ord-{reference}",
-                    f"ord-{reference}",
+                    event_reference,
+                    commerce_reference,
+                    commerce_reference,
                     TENANT_DAY,
                 ),
             )
@@ -318,6 +354,18 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
         "ingress_id": str(ingress),
         "verdict_id": str(verdict),
         "reference": reference,
+        "provider_secret": provider_secret,
+        "provider_input": {
+            "provider": "stripe",
+            "body": raw_body.decode("utf-8"),
+            "signature_header": signature_header,
+            "body_sha256": body_sha,
+            "signature_sha256": signature_sha,
+            "event_reference": event_reference,
+            "commerce_reference": commerce_reference,
+            "amount_minor": 1000,
+            "currency": "USD",
+        },
     }
 
 
@@ -475,7 +523,23 @@ def _verify_generation(
     reader = _read_status(database, world["tenant_id"], world["verdict_id"])
     projection = _project_confidence(database, world["tenant_id"])
     sweep_result = _sweep(database, os.environ["B8_PUBLIC_KEY_PATH"])
+    provider_input = world["provider_input"]
+    from app.webhooks.commerce_derivation import derive_commerce  # noqa: PLC0415
+    from app.webhooks.signatures import verify_stripe_signature  # noqa: PLC0415
+
+    provider_body = provider_input["body"].encode("utf-8")
+    signed_input_replayable = verify_stripe_signature(
+        provider_body,
+        world["provider_secret"],
+        provider_input["signature_header"],
+    )
+    derived = derive_commerce("stripe", provider_body)
     checks = {
+        "signed_input_replayable": (
+            signed_input_replayable
+            and int(derived.verified_amount_minor) == 1000
+            and derived.verified_amount_currency.upper() == "USD"
+        ),
         "row_preserved": (
             after["verdict"] is not None
             and after["verdict"][0] == world["verdict_id"]
@@ -511,6 +575,11 @@ def _verify_generation(
     }
     return {
         "generation": generation,
+        "provider_input": {
+            key: value
+            for key, value in provider_input.items()
+            if key != "provider_secret"
+        },
         "before": before,
         "after": after,
         "reader": reader,
@@ -566,7 +635,10 @@ def main() -> int:
         "limitation": (
             "The predecessor cohorts are persisted legacy-schema rows;"
             " VII has no atomic transition and XX's transition is used only"
-            " to authenticate the ingress. Provider replay is not claimed."
+            " to authenticate the ingress. Provider inputs are genuine signed"
+            " Stripe bytes retained in this evidence and XX digests are real."
+            " The proof still demonstrates preservation/refusal, not a provider"
+            " replay into a new current lineage; that remains open."
         ),
     }
     out = Path(args.evidence_out)
