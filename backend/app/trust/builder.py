@@ -1170,9 +1170,12 @@ async def read_history_integrity_status(
     if not tenant_value:
         return False, "history_integrity_tenant_missing"
     from app.core.config import settings  # noqa: PLC0415
+    from sqlalchemy.ext.asyncio import AsyncSession  # noqa: PLC0415
 
     evidence = None
-    if settings.B26_P2_HISTORY_WITNESS_REQUIRED:
+    if settings.B26_P2_HISTORY_WITNESS_REQUIRED and isinstance(
+        db_session, AsyncSession
+    ):
         from app.revenue_verification.source_evidence import (  # noqa: PLC0415
             source_evidence_snapshot,
         )
@@ -1560,8 +1563,11 @@ async def build_unsigned_trust_envelope(
         source = refreshed
 
     from app.core.config import settings  # noqa: PLC0415
+    from sqlalchemy.ext.asyncio import AsyncSession  # noqa: PLC0415
 
-    if settings.B26_P2_HISTORY_WITNESS_REQUIRED:
+    if settings.B26_P2_HISTORY_WITNESS_REQUIRED and isinstance(
+        db_session, AsyncSession
+    ):
         # The production confidence reader is a Trust subject, not the
         # internal project_b24_confidence helper. It must carry the same
         # complete-source witness as a match verdict.
