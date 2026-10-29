@@ -68,6 +68,7 @@ OBSERVER = f"{PREFIX}-observer"
 SIGNER = f"{PREFIX}-signer"
 WITNESS_VOL = f"{PREFIX}-witness"
 SECRETS_VOL = f"{PREFIX}-secrets"
+SOURCE_EVIDENCE_VOL = f"{PREFIX}-source-evidence"
 DB_NAME = os.environ.get("B26_P2_XXV_DB", "skeldir_xxv")
 BOOTSTRAP_IMAGE = f"{PREFIX}-bootstrap:latest"
 FINAL_IMAGE = f"{PREFIX}-final:latest"
@@ -560,6 +561,7 @@ def attestation_env(state: dict, *, signer: bool) -> dict[str, str]:
     """XXV: every process verifies; only the auth root signs."""
     return {
         "B26_P2_SOURCE_ATTESTATION_REQUIRED": "true",
+        "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH": "/var/lib/b26_p2_source/source_evidence.jsonl",
         "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH": (
             "/var/lib/b26_p2/source_attestation_ed25519.pub"
         ),
@@ -782,6 +784,7 @@ def start_signer(state: dict) -> None:
 
 def start_auth(state: dict) -> None:
     docker("rm", "-f", AUTH)
+    docker_ok("volume", "create", SOURCE_EVIDENCE_VOL)
     ingress_vol = f"{PREFIX}-ingress"
     docker("volume", "rm", "-f", ingress_vol)
     docker_ok("volume", "create", ingress_vol)
@@ -815,6 +818,7 @@ def start_auth(state: dict) -> None:
         *lane_env("auth_ingress", cp_volume=cp, extra=env),
         "-v", f"{ingress_vol}:/run/secrets:ro",
         "-v", f"{WITNESS_VOL}:/var/lib/b26_p2:ro",
+        "-v", f"{SOURCE_EVIDENCE_VOL}:/var/lib/b26_p2_source",
         state["final_image_tag"],
         "uvicorn", "app.auth_service.server:app", "--host", "0.0.0.0",
         "--port", "8001", "--workers", "1",
@@ -848,6 +852,7 @@ def start_api(state: dict, *, extra: dict[str, str] | None = None) -> None:
         *lane_env("api", cp_volume=cp, extra=env),
         "-v", f"{state['tls_volume']}:/run/skeldir-tls:ro",
         "-v", f"{WITNESS_VOL}:/var/lib/b26_p2:ro",
+        "-v", f"{SOURCE_EVIDENCE_VOL}:/var/lib/b26_p2_source:ro",
         state["final_image_tag"],
         "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000",
         "--workers", "1",
@@ -913,6 +918,7 @@ def start_observer(state: dict) -> None:
         "--restart", "unless-stopped",
         *lane_env("observer_b26_p2", cp_volume=cp, extra=env),
         "-v", f"{WITNESS_VOL}:/var/lib/b26_p2",
+        "-v", f"{SOURCE_EVIDENCE_VOL}:/var/lib/b26_p2_source:ro",
         "-v", f"{SECRETS_VOL}:/run/secrets:ro",
         state["final_image_tag"],
         "celery", "-A", "app.celery_app", "worker", "--loglevel=INFO",
@@ -1228,6 +1234,7 @@ def cmd_down(args: argparse.Namespace) -> int:
     for vol in (
         WITNESS_VOL,
         SECRETS_VOL,
+        SOURCE_EVIDENCE_VOL,
         f"{PREFIX}-tls",
         f"{PREFIX}-ingress",
         *[

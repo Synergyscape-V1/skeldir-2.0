@@ -373,6 +373,19 @@ async def write_source_attestation(
             "key_sha256": key_sha256,
         },
     )
+    from app.revenue_verification.source_evidence_journal import (
+        append_source_fact,
+    )
+
+    append_source_fact(
+        fact_kind="source_money",
+        fact_id=str(statement["webhook_ingress_identity_id"]),
+        tenant_id=str(statement["tenant_id"]),
+        verdict_id="",
+        statement=statement,
+        signature=signature,
+        key_sha256=key_sha256,
+    )
     return {
         "webhook_ingress_identity_id": statement["webhook_ingress_identity_id"],
         "signature": signature,
@@ -901,6 +914,19 @@ async def write_adjustment_attestation(
             "key_id": key_id,
             "key_sha256": key_sha256,
         },
+    )
+    from app.revenue_verification.source_evidence_journal import (
+        append_source_fact,
+    )
+
+    append_source_fact(
+        fact_kind="adjustment",
+        fact_id=str(statement["adjustment_evidence_id"]),
+        tenant_id=str(statement["tenant_id"]),
+        verdict_id=str(statement["verdict_id"]),
+        statement=statement,
+        signature=signature,
+        key_sha256=key_sha256,
     )
     return {
         "adjustment_evidence_id": statement["adjustment_evidence_id"],

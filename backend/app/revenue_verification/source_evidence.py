@@ -348,6 +348,52 @@ async def source_evidence_snapshot(
             if str(row["match_verdict_id"]) in attested_verdicts
         ],
     }
+    from app.revenue_verification.source_evidence_journal import (
+        load_source_facts,
+    )
+
+    journal = load_source_facts()
+    if journal is None:
+        if valid_sources or valid_adjustments:
+            raise SourceEvidenceError("source_fact_journal_missing")
+    else:
+        for ingress_id, row in valid_sources.items():
+            record = journal.get(("source_money", ingress_id))
+            if record is None:
+                raise SourceEvidenceError(
+                    f"source_fact_journal_source_missing:{ingress_id}"
+                )
+            if (
+                record.get("statement") != dict(row["statement"])
+                or record.get("signature") != row["signature"]
+            ):
+                raise SourceEvidenceError(
+                    f"source_fact_journal_source_mismatch:{ingress_id}"
+                )
+        for evidence_id, row in valid_adjustments.items():
+            record = journal.get(("adjustment", evidence_id))
+            if record is None:
+                raise SourceEvidenceError(
+                    f"source_fact_journal_adjustment_missing:{evidence_id}"
+                )
+            if (
+                record.get("statement") != dict(row["statement"])
+                or record.get("signature") != row["signature"]
+            ):
+                raise SourceEvidenceError(
+                    f"source_fact_journal_adjustment_mismatch:{evidence_id}"
+                )
+        for (kind, fact_id), record in journal.items():
+            if (
+                str(record.get("tenant_id")) == tenant
+                and kind == "adjustment"
+                and str(record.get("verdict_id")) in attested_verdicts
+                and fact_id not in valid_adjustments
+            ):
+                raise SourceEvidenceError(
+                    f"source_fact_journal_adjustment_absent:{fact_id}"
+                )
+
     fact_hashes = sorted(
         hashlib.sha256(
             _canonical({"kind": kind, "row": row}).encode("utf-8")
