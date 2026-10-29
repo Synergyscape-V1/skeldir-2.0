@@ -724,7 +724,15 @@ def _append_checkpoint_unlocked(
     payload["checkpoint_hash"] = _checkpoint_hash(payload)
     if custody is not None and int(custody["ledger_count"]) == int(ledger_count):
         if custody.get("checkpoint_hash") != payload["checkpoint_hash"]:
-            raise HistoryWitnessError("witness_custody_fork")
+            current_source_count = custody.get("source_evidence_count")
+            if current_source_count is None:
+                if source_evidence_count is None:
+                    raise HistoryWitnessError("witness_custody_fork")
+            elif (
+                source_evidence_count is None
+                or int(source_evidence_count) <= int(current_source_count)
+            ):
+                raise HistoryWitnessError("witness_custody_fork")
     signature = private_key.sign(_signature_material(payload))
     line = json.dumps(
         {
