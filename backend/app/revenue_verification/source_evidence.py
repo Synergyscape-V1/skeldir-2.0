@@ -69,7 +69,6 @@ _TABLES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "verified_commerce_ingress_state",
             "b26_p2_provenance_status",
             "b26_p2_semantic_regime",
-            "b26_p2_demotion_reason",
         ),
     ),
     (
