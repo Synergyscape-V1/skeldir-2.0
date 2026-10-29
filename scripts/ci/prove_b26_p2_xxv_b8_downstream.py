@@ -248,6 +248,55 @@ def main() -> int:
     signed_money = (
         signed_envelope.get("verified_revenue_minor") if signed_envelope else None
     )
+
+    # Coverage is the remaining downstream surface. It is read from the same
+    # recovered tenant/window through the canonical coverage authority.
+    from datetime import timedelta  # noqa: PLC0415
+
+    from app.finance_reconciliation.coverage_authority import (  # noqa: PLC0415
+        resolve_canonical_coverage,
+    )
+
+    coverage_engine = create_async_engine(
+        f"postgresql+asyncpg://app_user:app_user@127.0.0.1:55471/{DATABASE}"
+    )
+
+    async def coverage_read():
+        async with AsyncSession(coverage_engine) as session:
+            await session.execute(
+                sql_text("SELECT set_config('app.current_tenant_id', :t, false)"),
+                {"t": tenant},
+            )
+            return await resolve_canonical_coverage(
+                session,
+                tenant_id=uuid.UUID(tenant),
+                window_start=datetime(2026, 2, 1, tzinfo=timezone.utc),
+                window_end=datetime(2026, 2, 1, tzinfo=timezone.utc)
+                + timedelta(days=1),
+                supported_platforms=None,
+                currency_code="USD",
+            )
+
+    coverage = asyncio.run(coverage_read())
+    asyncio.run(coverage_engine.dispose())
+    coverage_result = coverage.result
+    coverage_payload = {
+        "numerator_matched_webhook_revenue_minor": (
+            coverage_result.numerator_matched_webhook_revenue_minor
+        ),
+        "denominator_connected_platform_revenue_minor": (
+            coverage_result.denominator_connected_platform_revenue_minor
+        ),
+        "coverage_percent": str(coverage_result.coverage_percent),
+        "zero_denominator": coverage_result.zero_denominator,
+        "unverifiable_historical_revenue_minor": (
+            coverage.aggregate.unverifiable_historical_revenue_minor
+        ),
+        "unverifiable_attestation_revenue_minor": (
+            coverage.aggregate.unverifiable_attestation_revenue_minor
+        ),
+        "producer": coverage.producer,
+    }
     record = {
         "database": DATABASE,
         "tenant_id": tenant,
@@ -273,6 +322,7 @@ def main() -> int:
         "confidence_status": (payload.get("confidence_metadata") or {}).get(
             "confidence_status"
         ),
+        "coverage": coverage_payload,
         "signed_query": {
             "http_status": signed_response.status_code,
             "envelope_count": len(envelopes),
@@ -294,6 +344,8 @@ def main() -> int:
             and str(getattr(signed_verified, "verification_status", signed_verified))
             in {"valid", "verified"},
             "signed_money_1000": signed_money == 1000,
+            "coverage_money_1000": coverage_result.numerator_matched_webhook_revenue_minor
+            == 1000,
         },
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
