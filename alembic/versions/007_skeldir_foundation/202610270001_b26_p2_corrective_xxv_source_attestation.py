@@ -135,7 +135,53 @@ def upgrade() -> None:
         )
 
     # ------------------------------------------------------------------
-    # XXV-2. There is deliberately NO watermark table.
+    # XXV-2a. Classify every row that existed before this upgrade as
+    # historical. There is still no watermark or movable epoch: the
+    # classification is the migration's own one-time boundary, applied to
+    # all existing source rows before any attestation can exist. Without
+    # this, a real XX ingress authenticated by app_ingress retained
+    # ``source_authority_state = current`` while having no attestation,
+    # and the mandatory sweep correctly rejected that pre-XXV current claim
+    # as its first data-carrying XX generation was replayed.
+    #
+    # Demotion is written on the ingress so the existing authority
+    # derivation and its guard remain the single law; the verdict state is
+    # then recomputed, never asserted by this migration.
+    # ------------------------------------------------------------------
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'webhook_ingress_identities'
+                   AND column_name = 'b26_p2_demotion_reason'
+            ) THEN
+                EXECUTE $sql$
+                    UPDATE public.webhook_ingress_identities
+                       SET b26_p2_demotion_reason =
+                           'pre_xxv_source_money_unattestable'
+                     WHERE b26_p2_demotion_reason IS NULL
+                       AND b26_p2_provenance_status = 'authenticated_known'
+                $sql$;
+            END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        """
+        UPDATE public.b23_match_verdicts AS v
+           SET b26_p2_source_authority_state =
+               public.b26_p2_derive_verdict_authority(
+                   v.webhook_ingress_identity_id
+               )
+         WHERE v.b26_p2_source_authority_state = 'current'
+        """
+    )
+
+    # ------------------------------------------------------------------
+    # XXV-2b. There is deliberately NO watermark table.
     #
     # An earlier revision of this migration created
     # ``public.b26_p2_source_attestation_authority`` holding an
