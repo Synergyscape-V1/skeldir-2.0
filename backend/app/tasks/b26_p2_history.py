@@ -143,6 +143,13 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
     }
     source_count = sum(int(snapshot["count"]) for snapshot in snapshots.values())
     source_global = global_source_evidence_digest(snapshots)
+    source_manifest = {
+        tenant: {
+            "facts": tuple(snapshot["facts"]),
+            "states": tuple(snapshot["states"]),
+        }
+        for tenant, snapshot in snapshots.items()
+    }
 
     violations = str(raw_violations or "").strip()
     if violations:
@@ -190,6 +197,7 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         source_evidence_digest=source_global,
         source_evidence_by_tenant=source_by_tenant,
         source_evidence_count=source_count,
+        source_evidence_manifest_by_tenant=source_manifest,
     )
     return {
         "ledger_count": checkpoint.ledger_count,

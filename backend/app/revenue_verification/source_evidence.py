@@ -23,6 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 SOURCE_EVIDENCE_VERSION = "b26-p2-source-evidence-v1"
 
+
+class SourceEvidenceError(RuntimeError):
+    """The complete lifecycle manifest cannot be established."""
+
 _TABLES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "verdicts",
@@ -181,20 +185,84 @@ async def _read_table(
     return [dict(row) for row in result.mappings().all()]
 
 
+def _statement_matches_source(
+    statement: Mapping[str, Any], ingress: Mapping[str, Any]
+) -> bool:
+    expected = {
+        "tenant_id": ingress["tenant_id"],
+        "webhook_ingress_identity_id": ingress["id"],
+        "provider": ingress["provider"],
+        "provider_native_event_reference": ingress[
+            "provider_native_event_reference"
+        ],
+        "provider_native_commerce_reference": ingress[
+            "provider_native_commerce_reference"
+        ],
+        "normalized_commerce_reference_kind": ingress[
+            "normalized_commerce_reference_kind"
+        ],
+        "normalized_commerce_reference_value": ingress[
+            "normalized_commerce_reference_value"
+        ],
+        "verified_amount_minor": ingress["verified_amount_minor"],
+        "verified_amount_currency": str(
+            ingress["verified_amount_currency"]
+        ).upper(),
+        "verified_amount_scale": ingress["verified_amount_scale"],
+    }
+    for key, value in expected.items():
+        actual = statement.get(key)
+        if key == "verified_amount_currency":
+            actual = str(actual or "").upper()
+        if str(actual) != str(value):
+            return False
+    return True
+
+
+def _statement_matches_adjustment(
+    statement: Mapping[str, Any], evidence: Mapping[str, Any]
+) -> bool:
+    expected = {
+        "tenant_id": evidence["tenant_id"],
+        "adjustment_evidence_id": evidence["id"],
+        "verdict_id": evidence["verdict_id"],
+        "provider": evidence["provider"],
+        "event_type": evidence["event_type"],
+        "provider_native_event_reference": evidence[
+            "provider_native_event_reference"
+        ],
+        "provider_native_commerce_reference": evidence[
+            "provider_native_commerce_reference"
+        ],
+        "verified_amount_minor": evidence["amount_minor"],
+        "verified_amount_currency": str(evidence["currency_code"]).upper(),
+    }
+    for key, value in expected.items():
+        actual = statement.get(key)
+        if key == "verified_amount_currency":
+            actual = str(actual or "").upper()
+        if str(actual) != str(value):
+            return False
+    return True
+
+
 async def source_evidence_snapshot(
     session: AsyncSession, *, tenant_id: UUID | str
 ) -> dict[str, Any]:
-    """Return the tenant's root-attested financial manifest and row count.
+    """Return the tenant's root-attested lifecycle manifest.
 
-    Unattested historical/current fixtures are outside the authority this
-    manifest governs; readers already refuse them. Facts inside the manifest
-    must have a valid authentication-root signature on the capture and on
-    every adjustment. A deletion or rollback therefore changes the selected
-    set even when the remaining rows are individually valid.
+    Facts are immutable rows (ingress, source attestations, adjustments,
+    adjustment attestations and revenue events). The verdict state is a
+    separate mutable commitment. The observer requires every previously
+    witnessed fact to remain present, and every state change to be
+    accompanied by a new fact in the same tenant.
     """
 
-    from app.revenue_verification.source_attestation import (
-        read_verdict_source_attestation_status,
+    from app.core.config import settings  # noqa: PLC0415
+    from app.revenue_verification.source_attestation import (  # noqa: PLC0415
+        SourceAttestationError,
+        verify_adjustment_signature,
+        verify_signature,
     )
 
     tenant = str(tenant_id)
@@ -206,44 +274,73 @@ async def source_evidence_snapshot(
     for label, table, columns in _TABLES:
         raw[label] = await _read_table(session, table, columns, tenant)
 
-    attested_verdicts: set[str] = set()
-    for row in raw["verdicts"]:
-        if str(row.get("b26_p2_source_authority_state") or "") != "current":
-            continue
-        status = await read_verdict_source_attestation_status(
-            session, tenant_id=tenant, verdict_id=row["id"]
-        )
-        if status.status == "xxv_attested":
-            attested_verdicts.add(str(row["id"]))
+    key_path = settings.B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH
+    if not key_path:
+        raise SourceEvidenceError("source_evidence_public_key_missing")
 
-    verdicts = [
-        row for row in raw["verdicts"] if str(row["id"]) in attested_verdicts
-    ]
-    ingress_ids = {
-        str(row["webhook_ingress_identity_id"])
-        for row in verdicts
-        if row["webhook_ingress_identity_id"] is not None
+    ingress_by_id = {str(row["id"]): row for row in raw["ingress"]}
+    valid_sources: dict[str, dict[str, Any]] = {}
+    for row in raw["source_attestation"]:
+        ingress = ingress_by_id.get(str(row["webhook_ingress_identity_id"]))
+        if ingress is None or not _statement_matches_source(
+            row["statement"], ingress
+        ):
+            continue
+        try:
+            verify_signature(
+                row["statement"],
+                row["signature"],
+                public_key_path=key_path,
+            )
+        except SourceAttestationError:
+            continue
+        valid_sources[str(row["webhook_ingress_identity_id"])] = row
+
+    evidence_by_id = {
+        str(row["id"]): row for row in raw["adjustment_evidence"]
     }
+    valid_adjustments: dict[str, dict[str, Any]] = {}
+    for row in raw["adjustment_attestation"]:
+        evidence = evidence_by_id.get(str(row["adjustment_evidence_id"]))
+        if evidence is None or not _statement_matches_adjustment(
+            row["statement"], evidence
+        ):
+            continue
+        try:
+            verify_adjustment_signature(
+                row["statement"],
+                row["signature"],
+                public_key_path=key_path,
+            )
+        except SourceAttestationError:
+            continue
+        valid_adjustments[str(row["adjustment_evidence_id"])] = row
+
+    attested_ingress = set(valid_sources)
+    attested_verdicts: dict[str, dict[str, Any]] = {}
+    for row in raw["verdicts"]:
+        ingress_id = row.get("webhook_ingress_identity_id")
+        if ingress_id is not None and str(ingress_id) in attested_ingress:
+            attested_verdicts[str(row["id"])] = row
+
     adjustments = [
         row
         for row in raw["adjustment_evidence"]
-        if str(row["verdict_id"]) in attested_verdicts
+        if str(row["id"]) in valid_adjustments
+        and str(row["verdict_id"]) in attested_verdicts
     ]
     adjustment_ids = {str(row["id"]) for row in adjustments}
-    facts = {
-        "verdicts": verdicts,
+    facts: dict[str, list[dict[str, Any]]] = {
         "ingress": [
-            row for row in raw["ingress"] if str(row["id"]) in ingress_ids
+            row for row in raw["ingress"] if str(row["id"]) in attested_ingress
         ],
         "source_attestation": [
-            row
-            for row in raw["source_attestation"]
-            if str(row["webhook_ingress_identity_id"]) in ingress_ids
+            row for row in raw["source_attestation"]
+            if str(row["webhook_ingress_identity_id"]) in attested_ingress
         ],
         "adjustment_evidence": adjustments,
         "adjustment_attestation": [
-            row
-            for row in raw["adjustment_attestation"]
+            row for row in raw["adjustment_attestation"]
             if str(row["adjustment_evidence_id"]) in adjustment_ids
         ],
         "revenue_events": [
@@ -252,14 +349,52 @@ async def source_evidence_snapshot(
             if str(row["match_verdict_id"]) in attested_verdicts
         ],
     }
-    count = sum(len(rows) for rows in facts.values())
+    fact_hashes = sorted(
+        hashlib.sha256(
+            _canonical({"kind": kind, "row": row}).encode("utf-8")
+        ).hexdigest()
+        for kind, rows in facts.items()
+        for row in rows
+    )
+    state_hashes = sorted(
+        hashlib.sha256(
+            _canonical(
+                {
+                    "kind": "verdict_state",
+                    "row": {
+                        "id": row["id"],
+                        "webhook_ingress_identity_id": row[
+                            "webhook_ingress_identity_id"
+                        ],
+                        "canonical_net_verified_amount_minor": row[
+                            "canonical_net_verified_amount_minor"
+                        ],
+                        "canonical_captured_gross_amount_minor": row[
+                            "canonical_captured_gross_amount_minor"
+                        ],
+                        "currency_code": row["currency_code"],
+                        "b26_p2_source_authority_state": row[
+                            "b26_p2_source_authority_state"
+                        ],
+                    },
+                }
+            ).encode("utf-8")
+        ).hexdigest()
+        for row in attested_verdicts.values()
+    )
     payload = {
         "version": SOURCE_EVIDENCE_VERSION,
         "tenant_id": tenant,
-        "facts": facts,
+        "facts": fact_hashes,
+        "states": state_hashes,
     }
     digest = hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
-    return {"digest": digest, "count": count}
+    return {
+        "digest": digest,
+        "count": len(fact_hashes),
+        "facts": fact_hashes,
+        "states": state_hashes,
+    }
 
 
 async def source_evidence_snapshots(

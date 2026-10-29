@@ -1169,10 +1169,10 @@ async def read_history_integrity_status(
     ).scalar()
     if not tenant_value:
         return False, "history_integrity_tenant_missing"
-    import os  # noqa: PLC0415
+    from app.core.config import settings  # noqa: PLC0415
 
     evidence = None
-    if os.getenv("B26_P2_SOURCE_EVIDENCE_REQUIRED", "").strip().lower() == "true":
+    if settings.B26_P2_HISTORY_WITNESS_REQUIRED:
         from app.revenue_verification.source_evidence import (  # noqa: PLC0415
             source_evidence_snapshot,
         )
@@ -1559,12 +1559,9 @@ async def build_unsigned_trust_envelope(
             )
         source = refreshed
 
-    import os  # noqa: PLC0415
+    from app.core.config import settings  # noqa: PLC0415
 
-    if (
-        os.getenv("B26_P2_SOURCE_EVIDENCE_REQUIRED", "").strip().lower()
-        == "true"
-    ):
+    if settings.B26_P2_HISTORY_WITNESS_REQUIRED:
         # The production confidence reader is a Trust subject, not the
         # internal project_b24_confidence helper. It must carry the same
         # complete-source witness as a match verdict.

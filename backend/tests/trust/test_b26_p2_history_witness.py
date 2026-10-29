@@ -787,3 +787,72 @@ def test_xxv_missing_custody_refuses_outside_production(
     )
     assert accepted is False
     assert reason.endswith("witness_custody_missing")
+
+
+def test_source_manifest_preserves_prior_facts_across_tenants(
+    tmp_path: Path,
+) -> None:
+    from app.revenue_verification.source_evidence import (
+        global_source_evidence_digest,
+    )
+
+    private_path, _public_path = _witness_files(tmp_path)
+    journal = tmp_path / "journal.jsonl"
+    custody = tmp_path / "custody.json"
+    tenant_a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    tenant_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    fact_a = "a" * 64
+    fact_b = "b" * 64
+    state_a = "1" * 64
+    first_map = {tenant_a: "c" * 64}
+    append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=1,
+        ledger_tip_seq=1,
+        ledger_tip_hash="1" * 64,
+        ledger_prefix_digest="a" * 64,
+        authority_universe=UNIVERSE,
+        custody_path=custody,
+        source_evidence_digest=global_source_evidence_digest(
+            {
+                tenant_a: {"digest": "c" * 64, "count": 1},
+            }
+        ),
+        source_evidence_by_tenant=first_map,
+        source_evidence_count=1,
+        source_evidence_manifest_by_tenant={
+            tenant_a: {"facts": (fact_a,), "states": (state_a,)}
+        },
+    )
+    second_map = {
+        tenant_a: "d" * 64,
+        tenant_b: "e" * 64,
+    }
+    with pytest.raises(
+        HistoryWitnessError,
+        match="witness_source_evidence_fact_missing",
+    ):
+        append_checkpoint(
+            journal,
+            private_key_path=private_path,
+            ledger_count=1,
+            ledger_tip_seq=1,
+            ledger_tip_hash="1" * 64,
+            ledger_prefix_digest="a" * 64,
+            authority_universe=UNIVERSE,
+            custody_path=custody,
+            source_evidence_digest=global_source_evidence_digest(
+                {
+                    tenant_a: {"digest": "d" * 64, "count": 0},
+                    tenant_b: {"digest": "e" * 64, "count": 2},
+                }
+            ),
+            source_evidence_by_tenant=second_map,
+            source_evidence_count=2,
+            source_evidence_manifest_by_tenant={
+                tenant_a: {"facts": (), "states": ()},
+                tenant_b: {"facts": (fact_b,), "states": ()},
+            },
+        )
+

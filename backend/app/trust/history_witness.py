@@ -121,6 +121,9 @@ class HistoryCheckpoint:
     source_evidence_digest: str | None = None
     source_evidence_by_tenant: Mapping[str, str] | None = None
     source_evidence_count: int | None = None
+    source_evidence_manifest_by_tenant: (
+        Mapping[str, Mapping[str, tuple[str, ...]]] | None
+    ) = None
 
 
 @dataclass(frozen=True)
@@ -314,6 +317,9 @@ def _write_heartbeat(
         "source_evidence_digest": latest.source_evidence_digest,
         "source_evidence_by_tenant": latest.source_evidence_by_tenant,
         "source_evidence_count": latest.source_evidence_count,
+        "source_evidence_manifest_by_tenant": (
+            latest.source_evidence_manifest_by_tenant
+        ),
     }
     if latest.authority_universe is not None:
         payload["authority_universe"] = latest.authority_universe
@@ -426,6 +432,9 @@ def _append_checkpoint_unlocked(
     source_evidence_digest: str | None = None,
     source_evidence_by_tenant: Mapping[str, str] | None = None,
     source_evidence_count: int | None = None,
+    source_evidence_manifest_by_tenant: (
+        Mapping[str, Mapping[str, Iterable[str]]] | None
+    ) = None,
 ) -> HistoryCheckpoint:
     """Verify the existing journal, then atomically publish one observation.
 
@@ -485,6 +494,39 @@ def _append_checkpoint_unlocked(
             or source_evidence_count < 0
         ):
             raise HistoryWitnessError("witness_source_evidence_count_invalid")
+    normalized_manifest: dict[str, dict[str, tuple[str, ...]]] | None = None
+    if source_evidence_manifest_by_tenant is not None:
+        if not isinstance(source_evidence_manifest_by_tenant, Mapping):
+            raise HistoryWitnessError("witness_source_evidence_manifest_invalid")
+        normalized_manifest = {}
+        for tenant, manifest in source_evidence_manifest_by_tenant.items():
+            if not isinstance(manifest, Mapping):
+                raise HistoryWitnessError(
+                    "witness_source_evidence_manifest_invalid"
+                )
+            try:
+                tenant_key = str(uuid.UUID(str(tenant)))
+            except (TypeError, ValueError) as exc:
+                raise HistoryWitnessError(
+                    "witness_source_evidence_tenant_invalid"
+                ) from exc
+            facts = manifest.get("facts")
+            states = manifest.get("states")
+            if not isinstance(facts, (list, tuple)) or not isinstance(
+                states, (list, tuple)
+            ):
+                raise HistoryWitnessError(
+                    "witness_source_evidence_manifest_invalid"
+                )
+            for value in (*facts, *states):
+                if not isinstance(value, str) or not _is_sha256_hex(value):
+                    raise HistoryWitnessError(
+                        "witness_source_evidence_fact_invalid"
+                    )
+            normalized_manifest[tenant_key] = {
+                "facts": tuple(sorted(str(value) for value in facts)),
+                "states": tuple(sorted(str(value) for value in states)),
+            }
     try:
         existing = verify_journal(
             journal,
@@ -570,6 +612,33 @@ def _append_checkpoint_unlocked(
                 previous.ledger_prefix_digest or None
             ):
                 raise HistoryWitnessError("witness_history_prefix_not_advanced")
+    if previous is not None and previous.source_evidence_manifest_by_tenant is not None:
+        if normalized_manifest is None:
+            raise HistoryWitnessError(
+                "witness_source_evidence_manifest_missing"
+            )
+        for tenant, previous_manifest in (
+            previous.source_evidence_manifest_by_tenant.items()
+        ):
+            current_manifest = normalized_manifest.get(str(tenant))
+            if current_manifest is None:
+                raise HistoryWitnessError(
+                    "witness_source_evidence_tenant_missing"
+                )
+            previous_facts = set(previous_manifest.get("facts", ()))
+            current_facts = set(current_manifest["facts"])
+            if not previous_facts.issubset(current_facts):
+                raise HistoryWitnessError(
+                    "witness_source_evidence_fact_missing"
+                )
+            if (
+                set(previous_manifest.get("states", ()))
+                != set(current_manifest["states"])
+                and not (current_facts - previous_facts)
+            ):
+                raise HistoryWitnessError(
+                    "witness_source_evidence_state_changed_without_fact"
+                )
     moment = (observed_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     now = datetime.now(timezone.utc)
     if moment > now + timedelta(seconds=FUTURE_TOLERANCE_SECONDS):
@@ -624,6 +693,9 @@ def _append_checkpoint_unlocked(
             source_evidence_digest=previous.source_evidence_digest,
             source_evidence_by_tenant=previous.source_evidence_by_tenant,
             source_evidence_count=previous.source_evidence_count,
+            source_evidence_manifest_by_tenant=(
+                previous.source_evidence_manifest_by_tenant
+            ),
         )
     payload: dict[str, Any] = {
         "version": WITNESS_VERSION,
@@ -645,6 +717,10 @@ def _append_checkpoint_unlocked(
         payload["source_evidence_by_tenant"] = normalized_source_by_tenant
     if source_evidence_count is not None:
         payload["source_evidence_count"] = source_evidence_count
+    if normalized_manifest is not None:
+        payload["source_evidence_manifest_by_tenant"] = (
+            normalized_manifest
+        )
     payload["checkpoint_hash"] = _checkpoint_hash(payload)
     if custody is not None and int(custody["ledger_count"]) == int(ledger_count):
         if custody.get("checkpoint_hash") != payload["checkpoint_hash"]:
@@ -694,6 +770,7 @@ def _append_checkpoint_unlocked(
         source_evidence_digest=source_evidence_digest,
         source_evidence_by_tenant=normalized_source_by_tenant,
         source_evidence_count=source_evidence_count,
+        source_evidence_manifest_by_tenant=normalized_manifest,
     )
     try:
         _write_custody(
@@ -926,6 +1003,42 @@ def verify_journal(
             raise HistoryWitnessError(
                 "witness_source_evidence_count_invalid"
             )
+        raw_manifest = payload.get("source_evidence_manifest_by_tenant")
+        source_evidence_manifest_by_tenant: (
+            dict[str, dict[str, tuple[str, ...]]] | None
+        ) = None
+        if raw_manifest is not None:
+            if not isinstance(raw_manifest, dict):
+                raise HistoryWitnessError(
+                    "witness_source_evidence_manifest_invalid"
+                )
+            source_evidence_manifest_by_tenant = {}
+            for tenant, manifest in raw_manifest.items():
+                if not isinstance(manifest, dict):
+                    raise HistoryWitnessError(
+                        "witness_source_evidence_manifest_invalid"
+                    )
+                try:
+                    tenant_key = str(uuid.UUID(str(tenant)))
+                except (TypeError, ValueError) as exc:
+                    raise HistoryWitnessError(
+                        "witness_source_evidence_tenant_invalid"
+                    ) from exc
+                facts = manifest.get("facts")
+                states = manifest.get("states")
+                if not isinstance(facts, list) or not isinstance(states, list):
+                    raise HistoryWitnessError(
+                        "witness_source_evidence_manifest_invalid"
+                    )
+                for value in (*facts, *states):
+                    if not isinstance(value, str) or not _is_sha256_hex(value):
+                        raise HistoryWitnessError(
+                            "witness_source_evidence_fact_invalid"
+                        )
+                source_evidence_manifest_by_tenant[tenant_key] = {
+                    "facts": tuple(sorted(facts)),
+                    "states": tuple(sorted(states)),
+                }
         if count == 0 and (tip_seq is not None or tip_hash is not None):
             raise HistoryWitnessError("witness_empty_ledger_with_tip")
         if count > 0 and (tip_seq is None or not tip_hash):
@@ -965,6 +1078,37 @@ def verify_journal(
                 < int(last.source_evidence_count)
             ):
                 raise HistoryWitnessError("witness_source_evidence_shrank")
+            if (
+                last.source_evidence_manifest_by_tenant is not None
+            ):
+                if source_evidence_manifest_by_tenant is None:
+                    raise HistoryWitnessError(
+                        "witness_source_evidence_manifest_missing"
+                    )
+                for tenant, previous_manifest in (
+                    last.source_evidence_manifest_by_tenant.items()
+                ):
+                    current_manifest = (
+                        source_evidence_manifest_by_tenant.get(str(tenant))
+                    )
+                    if current_manifest is None:
+                        raise HistoryWitnessError(
+                            "witness_source_evidence_tenant_missing"
+                        )
+                    previous_facts = set(previous_manifest.get("facts", ()))
+                    current_facts = set(current_manifest["facts"])
+                    if not previous_facts.issubset(current_facts):
+                        raise HistoryWitnessError(
+                            "witness_source_evidence_fact_missing"
+                        )
+                    if (
+                        set(previous_manifest.get("states", ()))
+                        != set(current_manifest["states"])
+                        and not (current_facts - previous_facts)
+                    ):
+                        raise HistoryWitnessError(
+                            "witness_source_evidence_state_changed_without_fact"
+                        )
             if count > last.ledger_count:
                 if (tip_seq or 0) <= (last.ledger_tip_seq or 0):
                     raise HistoryWitnessError("witness_history_tip_not_advanced")
@@ -986,6 +1130,9 @@ def verify_journal(
             source_evidence_digest=source_evidence_digest,
             source_evidence_by_tenant=source_evidence_by_tenant,
             source_evidence_count=source_evidence_count,
+            source_evidence_manifest_by_tenant=(
+                source_evidence_manifest_by_tenant
+            ),
         )
         checkpoints.append(checkpoint)
         previous_hash = computed_hash
@@ -1018,6 +1165,12 @@ def verify_journal(
             != (latest.source_evidence_by_tenant or None)
             or (heartbeat.get("source_evidence_count") or None)
             != (latest.source_evidence_count or None)
+            or _canonical(
+                heartbeat.get("source_evidence_manifest_by_tenant") or {}
+            )
+            != _canonical(
+                latest.source_evidence_manifest_by_tenant or {}
+            )
         ):
             raise HistoryWitnessError("witness_heartbeat_diverged")
         heartbeat_observed = _parse_instant(heartbeat.get("observed_at"))
