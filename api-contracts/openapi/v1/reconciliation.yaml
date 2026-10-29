@@ -348,6 +348,9 @@ paths:
                 window_end: '2026-05-02T00:00:00Z'
                 scope_policy_version: b2.6-p2-scope-policy-v2
                 source_verified_gross_amount_minor: 1200
+                authority_scope: structural_candidate_only
+                live_financial_authority: false
+                live_authority_checked: false
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
@@ -459,6 +462,124 @@ paths:
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '404':
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
+
+  /api/reconciliation/coverage:
+    get:
+      summary: Get canonical verification coverage for a window
+      description: |
+        Resolves the canonical 95.00% verification-coverage authority through
+        the sovereign scope-only resolver and returns the integer legs, the
+        independently re-derived percentage, and the non-authoritative
+        historical leg. The response is tenant-scoped and carries an ETag
+        over the exact body.
+      operationId: getVerificationCoverage
+      tags:
+        - Reconciliation
+      security:
+        - accessBearerAuth: ["viewer"]
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: window_start
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: window_end
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: currency_code
+          in: query
+          required: false
+          schema:
+            type: string
+            default: USD
+            minLength: 3
+            maxLength: 3
+      responses:
+        '200':
+          description: Canonical verification coverage
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - tenant_id
+                  - currency_code
+                  - window_start
+                  - window_end
+                  - numerator_matched_webhook_revenue_minor
+                  - denominator_connected_platform_revenue_minor
+                  - coverage_percent
+                  - zero_denominator
+                  - unverifiable_historical_revenue_minor
+                  - supported_platforms
+                  - producer
+                properties:
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  currency_code:
+                    type: string
+                  window_start:
+                    type: string
+                    format: date-time
+                  window_end:
+                    type: string
+                    format: date-time
+                  numerator_matched_webhook_revenue_minor:
+                    type: integer
+                  denominator_connected_platform_revenue_minor:
+                    type: integer
+                  coverage_percent:
+                    type: string
+                    pattern: '^[0-9]+\.[0-9]{2}$'
+                  zero_denominator:
+                    type: boolean
+                  unverifiable_historical_revenue_minor:
+                    type: integer
+                  supported_platforms:
+                    type: array
+                    items:
+                      type: string
+                  producer:
+                    type: string
+                  generated_at:
+                    type: string
+                    format: date-time
+              example:
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                currency_code: USD
+                window_start: '2026-10-01T00:00:00Z'
+                window_end: '2026-11-01T00:00:00Z'
+                numerator_matched_webhook_revenue_minor: 76000
+                denominator_connected_platform_revenue_minor: 80000
+                coverage_percent: '95.00'
+                zero_denominator: false
+                unverifiable_historical_revenue_minor: 0
+                supported_platforms: [paypal, shopify, stripe, woocommerce]
+                producer: app.revenue_verification.verification_coverage.fetch_verification_coverage_aggregate+app.revenue_verification.verification_coverage.VERIFICATION_COVERAGE.compute
+                generated_at: '2026-10-27T22:00:00Z'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '422':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '500':
+          $ref: './_common/base.yaml#/components/responses/ServerError'
 
 components:
   schemas:
@@ -698,6 +819,41 @@ components:
             supersedes the establishing law (the verdict must not read as
             current-law verified meaning); null when the law does not govern
             the provider.'
+        source_money_attestation_status:
+          type:
+            - string
+            - 'null'
+          description: 'XXV: whether this verdict money is justified by a
+            sovereign source attestation signed by the authentication root
+            and verified against the fingerprint compiled into the running
+            image. xxv_attested means the provider amount is independently
+            justified; unverifiable:<reason> means an attestation was
+            expected and does not justify the money being reported, in which
+            case source_authority_state is source_attestation_unverifiable
+            and the figure must not be consumed as current money. The absence
+            of an attestation is never a grant: a source authenticated before
+            XXV enforcement cannot be retro-attested and is reported as
+            unverifiable, not as current money.'
+        source_money_attestation_reason:
+          type:
+            - string
+            - 'null'
+          description: 'XXV: the governed reason token behind
+            source_money_attestation_status.'
+        history_integrity_status:
+          type:
+            - string
+            - 'null'
+          description: 'XXV reader-boundary unity: verified when the live
+            ledger and signed witness agree; unverifiable when the signed
+            Trust path would refuse the same money for missing, stale,
+            violated, or divergent history.'
+        history_integrity_reason:
+          type:
+            - string
+            - 'null'
+          description: 'The governed history-integrity refusal reason, if
+            unverifiable.'
 
     B23ExceptionRecordResponse:
       type: object
@@ -824,6 +980,9 @@ components:
         - window_end
         - scope_policy_version
         - source_verified_gross_amount_minor
+        - authority_scope
+        - live_financial_authority
+        - live_authority_checked
       properties:
         disposition:
           type: string
@@ -853,6 +1012,13 @@ components:
             - integer
             - 'null'
           minimum: 0
+        authority_scope:
+          type: string
+          enum: [structural_candidate_only]
+        live_financial_authority:
+          type: boolean
+        live_authority_checked:
+          type: boolean
 
     B23PostCaptureCorrectionRequest:
       type: object

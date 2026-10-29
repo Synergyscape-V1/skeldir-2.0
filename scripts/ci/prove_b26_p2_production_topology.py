@@ -1411,9 +1411,9 @@ def main() -> int:
         # result-telemetry transport admission, then Corrective XXII;
         # the 300009..300006 (XXI) and XX heads must remain ancestors
         # (linear ancestry, no forks).
-        if "202610180003" not in heads.stdout:
+        if "202610280001" not in heads.stdout:
             return _fail("migration_head_missing_corrective_xxiii")
-        details["migration_head"] = "202610180003"
+        details["migration_head"] = "202610280001"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",
@@ -2992,6 +2992,7 @@ def main() -> int:
         # through predecessors for older lanes.
         _covered = None
         for _mod, _attr in (
+            ("scripts.ci.b26_p2_xxv_coverage", "XXV_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xxiv_coverage", "XXIV_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xxiii_coverage", "XXIII_COVERED_SURFACES"),
             ("scripts.ci.b26_p2_xxii_coverage", "XXII_COVERED_SURFACES"),

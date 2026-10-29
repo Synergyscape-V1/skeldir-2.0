@@ -578,7 +578,10 @@ def _refresh_verification_ring_from_source_of_truth() -> tuple[JwtKeyRing, str]:
     value = _read_secret_source_of_truth_value("AUTH_JWT_PUBLIC_KEY_RING")
     if value is None:
         env_name = (_read_setting("ENVIRONMENT") or "").lower()
-        if env_name in {"local", "dev", "ci", "test"}:
+        # XXV (HB-01 sibling sweep): "test" is not a canonical environment --
+        # resolve_control_plane_env maps it to "ci"/"local" -- so the member
+        # was dead. The reachable canonical members are unchanged.
+        if env_name in {"local", "dev", "ci"}:
             value = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
     if value is None:
         raise RuntimeError("required secret missing: AUTH_JWT_PUBLIC_KEY_RING")
@@ -717,7 +720,10 @@ def get_jwt_validation_config() -> JwtValidationConfig:
     public_ring = _read_setting("AUTH_JWT_PUBLIC_KEY_RING")
     if public_ring is None:
         env_name = (_read_setting("ENVIRONMENT") or "").lower()
-        if env_name in {"local", "dev", "ci", "test"}:
+        # XXV (HB-01 sibling sweep): "test" is not a canonical environment --
+        # resolve_control_plane_env maps it to "ci"/"local" -- so the member
+        # was dead. The reachable canonical members are unchanged.
+        if env_name in {"local", "dev", "ci"}:
             public_ring = _read_setting("AUTH_JWT_SECRET")
     return JwtValidationConfig(
         public_key_ring=public_ring,

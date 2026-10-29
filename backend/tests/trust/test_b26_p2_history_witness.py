@@ -72,6 +72,8 @@ def test_witness_gate_admits_matching_live_state(
         ledger_tip_hash="b" * 64,
         ledger_prefix_digest=digest,
         authority_universe=UNIVERSE,
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
     )
 
     assert _verify_signed_history_witness(
@@ -585,9 +587,17 @@ def _production_anchor_fixture(
         ledger_tip_hash=None,
         ledger_prefix_digest=digest,
         authority_universe=UNIVERSE,
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
     )
     fingerprint = public_key_fingerprint(load_public_key(public_path))
-    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    # XXV (HB-01): the fixture used to set ENVIRONMENT="production" -- a value
+    # resolve_control_plane_env never produces, because it canonicalises that
+    # alias to "prod" before Settings stores it. So these cells proved the
+    # anchor guard worked only in a state no deployment can be in, while the
+    # guard was unreachable in every real process. The fixture now uses the
+    # canonical value, and the guard itself no longer depends on it.
+    monkeypatch.setattr(settings, "ENVIRONMENT", "prod")
     return journal, public_path, checkpoint, fingerprint
 
 
@@ -678,10 +688,101 @@ def test_production_missing_custody_refuses(
         "B26_P2_HISTORY_WITNESS_GENESIS_HASH",
         checkpoint.checkpoint_hash,
     )
+    # XXV: the fixture now publishes custody with the checkpoint (a lawful
+    # observer always does), so the custody record has to be REMOVED to
+    # exercise the loss this cell governs -- which is exactly the capability
+    # both independent audits used.
+    Path(settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH).unlink()
     accepted, reason = _verify_signed_history_witness(
         ledger_count=0,
         ledger_tip_hash=None,
         ledger_prefix_digest=hashlib.sha256(b"").hexdigest(),
+        authority_universe=UNIVERSE,
+    )
+    assert accepted is False
+    assert reason.endswith("witness_custody_missing")
+
+
+def test_xxv_compiled_anchor_mismatch_refuses_outside_production(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """XXV (HB-01/A1): the anchor comparison is not behind an environment.
+
+    Both XXIV audits replaced the entire witness verification root and kept
+    receiving signed envelopes, because the comparison sat behind
+    ``settings.ENVIRONMENT == "production"`` -- unreachable after
+    canonicalisation. The comparison now fires wherever the image carries an
+    anchor, which this cell asserts in a NON-production environment: if the
+    guard were still environment-gated, the mismatch below would be ignored.
+    """
+    private_path, public_path = _witness_files(tmp_path)
+    journal = _enable(monkeypatch, tmp_path, public=public_path)
+    digest = hashlib.sha256(b"").hexdigest()
+    append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=0,
+        ledger_tip_seq=None,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
+        authority_universe=UNIVERSE,
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
+    )
+    monkeypatch.setattr(settings, "ENVIRONMENT", "ci")
+    monkeypatch.setattr(witness_anchor, "COMPILED_PUBLIC_KEY_SHA256", "f" * 64)
+    monkeypatch.setattr(
+        witness_anchor,
+        "COMPILED_GENESIS_HASH",
+        settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH or "e" * 64,
+    )
+    accepted, reason = _verify_signed_history_witness(
+        ledger_count=0,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
+        authority_universe=UNIVERSE,
+    )
+    assert accepted is False
+    assert "witness_compiled_" in reason
+
+
+def test_xxv_missing_custody_refuses_outside_production(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """XXV (HB-02/A5): custody loss refuses everywhere, not only in "production".
+
+    Nicholas deleted the custody record on a production-configured deployment
+    and received HTTP 200 with a signed envelope for a subject that had never
+    been issued; Trey reproduced it. The refusal was written, but behind the
+    same unreachable environment literal.
+    """
+    private_path, public_path = _witness_files(tmp_path)
+    journal = _enable(monkeypatch, tmp_path, public=public_path)
+    digest = hashlib.sha256(b"").hexdigest()
+    append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=0,
+        ledger_tip_seq=None,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
+        authority_universe=UNIVERSE,
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
+    )
+    monkeypatch.setattr(settings, "ENVIRONMENT", "ci")
+    assert _verify_signed_history_witness(
+        ledger_count=0,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
+        authority_universe=UNIVERSE,
+    ) == (True, "")
+
+    Path(settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH).unlink()
+    accepted, reason = _verify_signed_history_witness(
+        ledger_count=0,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
         authority_universe=UNIVERSE,
     )
     assert accepted is False

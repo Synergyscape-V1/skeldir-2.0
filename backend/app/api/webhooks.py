@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from collections.abc import Callable
 from types import MappingProxyType
-from uuid import UUID, uuid5, NAMESPACE_URL
+from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
@@ -967,6 +967,31 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
                                 SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
                                  WHERE c.webhook_ingress_identity_id = i.id
                           )
+                          -- XXV-2 (A2/B10): a provider amendment (a later
+                          -- authenticated event over the same commerce
+                          -- identity) is a source for the shipping correction
+                          -- surface, not a second capture. It must not create
+                          -- its own B2.3 dispatch: the correction task relinks
+                          -- the existing verdict to it. The first authenticated
+                          -- row has no earlier authenticated sibling and
+                          -- remains dispatchable.
+                          AND NOT EXISTS (
+                                SELECT 1
+                                  FROM public.webhook_ingress_identities AS prior
+                                 WHERE prior.tenant_id = i.tenant_id
+                                   AND prior.provider = i.provider
+                                   AND prior.normalized_commerce_reference_kind
+                                       IS NOT DISTINCT FROM
+                                       i.normalized_commerce_reference_kind
+                                   AND prior.normalized_commerce_reference_value
+                                       IS NOT DISTINCT FROM
+                                       i.normalized_commerce_reference_value
+                                   AND prior.b26_p2_provenance_status =
+                                       'authenticated_known'
+                                   AND prior.id <> i.id
+                                   AND (prior.created_at, prior.id)
+                                       < (i.created_at, i.id)
+                          )
                         """
                     ),
                     {"tenant_id": str(tenant_id), "event_id": event_id},
@@ -1331,7 +1356,10 @@ async def _handle_ingestion(
         )
     except IngestionValidationError as txn_exc:
         refusal = str(txn_exc)
-        if "b26_p2_ingress_relay_refused" in refusal:
+        if (
+            "b26_p2_ingress_relay_refused" in refusal
+            or "b26_p2_ingress_authority_refused" in refusal
+        ):
             logger.warning(
                 "b26_p2_ingress_authority_refused",
                 extra={
@@ -1355,6 +1383,26 @@ async def _handle_ingestion(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=refusal,
             ) from txn_exc
+        if "b26_p2_handoff_binding_refused" in refusal:
+            dead = await _route_to_dlq_direct(
+                tenant_id,
+                source,
+                get_request_correlation_id() or idempotency_key,
+                {
+                    "event_data": event_data,
+                    "idempotency_key": idempotency_key,
+                    "identity_payload": identity_payload,
+                },
+                f"handoff_binding_refused:{refusal}"[:500],
+                error_type="validation_error",
+                identity_payload=identity_payload,
+                request_headers=request_headers,
+            )
+            return {
+                "status": "dlq_routed",
+                "dead_event_id": str(dead.id) if dead else None,
+                "error": "b26_p2_handoff_binding_refused",
+            }
         if (
             "b26_p2_unsupported_currency_refused" not in refusal
             and "b26_p2_ingress_event_future_refused" not in refusal
@@ -1631,6 +1679,192 @@ async def shopify_order_create(
                 provider="shopify", request_headers=request_headers
             ),
         ),
+    )
+
+
+async def _conduct_adjustment_events(
+    *,
+    tenant_info: dict[str, Any],
+    provider: str,
+    x_idempotency_key: str | None,
+) -> WebhookResponse:
+    """Authenticate every completed effect in one provider notification.
+
+    A WooCommerce order snapshot can carry several unseen refunds and a Stripe
+    charge.refunded snapshot can carry a cumulative refunds collection. The
+    authentication root verifies the original signed bytes once per selected
+    refund identity; each effect is persisted and enqueued separately. No
+    effect is selected by "latest" and silently dropped.
+    """
+    import base64  # noqa: PLC0415
+
+    import httpx  # noqa: PLC0415
+
+    from app.webhooks.commerce_derivation import (  # noqa: PLC0415
+        adjustment_event_references,
+    )
+
+    envelope = tenant_info.get("relay_envelope") or {}
+    raw_body_b64 = str(envelope.get("raw_body_b64") or "")
+    signature_header = str(envelope.get("signature_header") or "")
+    api_key = str(envelope.get("api_key") or "")
+    if not raw_body_b64 or not signature_header or not api_key:
+        raise HTTPException(status_code=500, detail="adjustment relay envelope missing")
+    try:
+        raw_body = base64.b64decode(raw_body_b64, validate=True)
+        references = adjustment_event_references(provider, raw_body)
+    except Exception:  # noqa: BLE001
+        references = []
+    if not references:
+        references = [None]
+    root_url = os.getenv("B26_P2_AUTH_ROOT_URL", "").strip().rstrip("/")
+    if not root_url:
+        raise HTTPException(status_code=503, detail="authentication root unavailable")
+    adjustments: list[dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for reference in references:
+                payload = {
+                    "api_key": api_key,
+                    "provider": provider,
+                    "raw_body_b64": raw_body_b64,
+                    "signature_header": signature_header,
+                }
+                if reference is not None:
+                    payload["provider_event_reference"] = reference
+                response = await client.post(
+                    root_url + "/v1/authenticate-adjustment", json=payload
+                )
+                if response.status_code != 200:
+                    detail = "adjustment_authentication_refused"
+                    try:
+                        parsed = response.json()
+                        detail = str(parsed.get("detail") or detail)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    raise HTTPException(status_code=409, detail=detail)
+                try:
+                    adjustments.append(response.json())
+                except Exception as exc:  # noqa: BLE001
+                    raise HTTPException(
+                        status_code=502, detail="adjustment response invalid"
+                    ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503, detail="authentication root unavailable"
+        ) from exc
+    if not adjustments:
+        raise HTTPException(status_code=409, detail="no completed adjustment")
+    try:
+        from app.tasks.revenue_verification import (  # noqa: PLC0415
+            register_b23_post_capture_correction_task,
+        )
+
+        for adjustment in adjustments:
+            register_b23_post_capture_correction_task.apply_async(
+                args=[
+                    str(tenant_info["tenant_id"]),
+                    str(adjustment["verdict_id"]),
+                    provider,
+                    str(adjustment["event_type"]),
+                    str(adjustment["provider_native_event_reference"]),
+                    False,
+                    str(uuid4()),
+                ],
+                queue=QUEUE_B23_MATCH_ENGINE,
+                routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("adjustment_enqueue_failed")
+        raise HTTPException(
+            status_code=503,
+            detail=f"adjustment queue unavailable:{type(exc).__name__}",
+        ) from exc
+    return WebhookResponse(
+        status="success",
+        event_id=str(adjustments[0]["adjustment_evidence_id"]),
+        idempotency_key=(
+            x_idempotency_key
+            or str(adjustments[0]["provider_native_event_reference"])
+        ),
+    )
+
+
+@router.post(
+    "/webhooks/stripe/charge_refunded",
+    response_model=WebhookResponse,
+    responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
+    include_in_schema=False,
+)
+async def stripe_charge_refunded(
+    request: Request,
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+    tenant_info=Depends(stripe_webhook_auth),
+):
+    """Authenticate a Stripe refund adjustment and conduct each completed effect."""
+    return await _conduct_adjustment_events(
+        tenant_info=tenant_info,
+        provider="stripe",
+        x_idempotency_key=x_idempotency_key,
+    )
+
+
+@router.post(
+    "/webhooks/shopify/refunds_create",
+    response_model=WebhookResponse,
+    responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
+    include_in_schema=False,
+)
+async def shopify_refund(
+    request: Request,
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+    tenant_info=Depends(shopify_webhook_auth),
+):
+    """Authenticate a Shopify refund adjustment and conduct it."""
+    return await _conduct_adjustment_events(
+        tenant_info=tenant_info,
+        provider="shopify",
+        x_idempotency_key=x_idempotency_key,
+    )
+
+
+@router.post(
+    "/webhooks/woocommerce/order_refunded",
+    response_model=WebhookResponse,
+    responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
+    include_in_schema=False,
+)
+async def woocommerce_order_refunded(
+    request: Request,
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+    tenant_info=Depends(woocommerce_webhook_auth),
+):
+    """Authenticate every completed WooCommerce refund in an order snapshot."""
+    return await _conduct_adjustment_events(
+        tenant_info=tenant_info,
+        provider="woocommerce",
+        x_idempotency_key=x_idempotency_key,
+    )
+
+
+@router.post(
+    "/webhooks/paypal/payment_capture_refunded",
+    response_model=WebhookResponse,
+    responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
+    include_in_schema=False,
+)
+async def paypal_payment_capture_refunded(
+    request: Request,
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+    tenant_info=Depends(paypal_webhook_auth),
+):
+    """Authenticate every completed WooCommerce refund in an order snapshot."""
+    return await _conduct_adjustment_events(
+        tenant_info=tenant_info,
+        provider="woocommerce",
+        x_idempotency_key=x_idempotency_key,
     )
 
 
@@ -2130,7 +2364,10 @@ async def stripe_payment_intent_succeeded_v2(
                 identity_payload=identity_payload or payload,
                 request_headers=request_headers,
             )
-        if "b26_p2_ingress_relay_refused" in refusal:
+        if (
+            "b26_p2_ingress_relay_refused" in refusal
+            or "b26_p2_ingress_authority_refused" in refusal
+        ):
             logger.warning(
                 "b26_p2_ingress_authority_refused",
                 extra={
@@ -2147,6 +2384,16 @@ async def stripe_payment_intent_succeeded_v2(
                 "idempotency_key": idempotency_key,
                 "error": refusal,
             }
+        if "b26_p2_handoff_binding_refused" in refusal:
+            return await _route_authenticated_malformed_payload(
+                tenant_id=tenant_info["tenant_id"],
+                source="stripe",
+                idempotency_key=idempotency_key,
+                error_message=f"handoff_binding_refused:{refusal}"[:500],
+                vendor_payload=identity_payload or payload,
+                identity_payload=identity_payload or payload,
+                request_headers=request_headers,
+            )
         if "b26_p2_ingress_relay_unreachable" in refusal or (
             "b26_p2_ingress_relay_bad_response" in refusal
         ):

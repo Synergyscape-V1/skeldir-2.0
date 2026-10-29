@@ -17,11 +17,17 @@ identity, never by the database principal.
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import json
 import os
 import tempfile
 import uuid
+
+try:
+    import fcntl
+except ImportError:  # Windows host tests; the deployed observer is Linux.
+    fcntl = None  # type: ignore[assignment]
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -349,7 +355,41 @@ def _restore_journal(journal: Path, previous_bytes: bytes) -> None:
         raise
 
 
+@contextlib.contextmanager
+def witness_lock(journal_path: str | os.PathLike[str]):
+    """Serialize journal readers/writers across observer processes.
+
+    The observer worker and the beat-scheduled task can overlap, and the
+    re-drive path can start a second observer process. The journal is a
+    single append-only chain; two processes that both read the same prior
+    tip and append would fork it. The lock file lives on the same witness
+    volume and is held across the read-verify-append sequence. On a Windows
+    host (unit tests only) fcntl is unavailable and the lock is a no-op; the
+    deployed observer is Linux.
+    """
+    journal = Path(journal_path)
+    lock_path = journal.with_name(journal.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a+", encoding="utf-8") as handle:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def append_checkpoint(
+    journal_path: str | os.PathLike[str],
+    **kwargs: Any,
+) -> HistoryCheckpoint:
+    """Publish one observation while holding the cross-process lock."""
+    with witness_lock(journal_path):
+        return _append_checkpoint_unlocked(journal_path, **kwargs)
+
+
+def _append_checkpoint_unlocked(
     journal_path: str | os.PathLike[str],
     *,
     private_key_path: str | os.PathLike[str],
@@ -556,6 +596,21 @@ def append_checkpoint(
                 "witness_journal_restore_failed"
             ) from restore_exc
         raise
+    # XXV (A3/HB-08): publish the freshness observation for a GROWTH append
+    # too, not only for an unchanged ledger. Previously the heartbeat was
+    # written on the unchanged-ledger path alone, so every lawful history
+    # advance left the signed consumer refusing with
+    # ``history_integrity_unverifiable`` until the next observer cycle wrote a
+    # heartbeat -- an availability hole in the positive obligation, and a
+    # window in which a consumer cannot tell a legitimate correction from a
+    # broken one. The checkpoint this heartbeat names is the one that was just
+    # appended, so it asserts nothing that is not already signed.
+    _write_heartbeat(
+        heartbeat_path,
+        private_key=private_key,
+        observed_at=moment,
+        latest=return_checkpoint,
+    )
     return return_checkpoint
 
 

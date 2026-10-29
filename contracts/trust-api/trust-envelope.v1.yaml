@@ -296,10 +296,6 @@ allOf:
       - required:
         - deterministic_verification_status
       - required:
-        - verified_revenue_minor
-      - required:
-        - currency
-      - required:
         - discrepancy_class
       - required:
         - attribution_model
@@ -307,6 +303,28 @@ allOf:
         - model_assumption
       - required:
         - causal_status
+# B2.6-P2 Corrective XXV (B6/B9/B12). A signed match_verdict envelope that
+# carries no monetary figure is not a financial result: both independent XXIV
+# audits obtained a valid signature over an envelope in which the strings of
+# the amount did not occur at all, so a machine consumer had to fall back on
+# an unsigned API to learn what money had been certified. The amount and its
+# currency are therefore governed, required fields of every non-degraded
+# match_verdict envelope, bound to the same authoritative source as the
+# status. A degraded or unavailable envelope still carries no money (the
+# truth_type rule below), because there is no certified figure to carry.
+- if:
+    properties:
+      subject_type:
+        const: match_verdict
+      fallback_applied:
+        const: false
+    required:
+    - subject_type
+    - fallback_applied
+  then:
+    required:
+    - verified_revenue_minor
+    - currency
 - if:
     properties:
       subject_type:

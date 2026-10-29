@@ -116,6 +116,16 @@ class B23PostCaptureInput(BaseModel):
     canonical_commerce_reference: str | None = None
     failure_reason: str | None = None
     is_gross_capture_correction: bool = False
+    # XXV-2 (A2/B10): the authenticated ingress row the corrected amount comes
+    # from. A gross-capture correction relinks the verdict to it, so the money
+    # the verdict carries is the money that row's sovereign attestation covers.
+    # Without the relink the verdict would hold the amended figure while
+    # pointing at the superseded source, and every XXV reader would correctly
+    # report it as unsupported.
+    source_webhook_ingress_identity_id: UUID | None = None
+    # XXV post-capture adjustments: the signed adjustment evidence row that
+    # authorizes this non-capture revenue event.
+    adjustment_evidence_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -420,11 +430,119 @@ async def _require_current_ingress_authority(
         )
 
 
+async def _is_lawful_superseding_amendment_source(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    verdict_provider: str,
+    verdict_native_commerce_reference: str | None,
+    verdict_canonical_commerce_reference: str | None,
+    old_ingress_id: UUID | None,
+    new_ingress_id: UUID | None,
+) -> bool:
+    """True when ``new_ingress_id`` is the current amendment of ``old``.
+
+    XXV-2 (A2/B10): the provider's second authenticated event over one
+    commerce identity supersedes the first source and demotes its ingress row.
+    The correction kernel must then be allowed to relink the verdict to that
+    amending row, but only under the provider's own amendment conditions and
+    only when the old row was demoted by an amendment -- never when it was
+    demoted for revoked/lost evidence. The database relink guard and money
+    authority trigger independently re-check lineage, currentness and amount.
+    """
+    if old_ingress_id is None or new_ingress_id is None:
+        return False
+    if str(old_ingress_id) == str(new_ingress_id):
+        return False
+    old = (
+        (
+            await session.execute(
+                text(
+                    """
+                    SELECT i.b26_p2_demotion_reason,
+                           i.provider_native_event_reference,
+                           i.verified_amount_currency,
+                           i.event_timestamp
+                      FROM public.webhook_ingress_identities AS i
+                     WHERE i.id = :old_id
+                       AND i.tenant_id = :tenant_id
+                    """
+                ),
+                {
+                    "old_id": str(old_ingress_id),
+                    "tenant_id": str(tenant_id),
+                },
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if old is None:
+        return False
+    new = (
+        (
+            await session.execute(
+                text(
+                    """
+                    SELECT i.provider,
+                           i.provider_native_event_reference,
+                           i.provider_native_commerce_reference,
+                           i.verified_amount_currency,
+                           i.event_timestamp,
+                           public.b26_p2_ingress_has_current_authority(i.id)
+                               AS is_current
+                      FROM public.webhook_ingress_identities AS i
+                     WHERE i.id = :new_id
+                       AND i.tenant_id = :tenant_id
+                    """
+                ),
+                {
+                    "new_id": str(new_ingress_id),
+                    "tenant_id": str(tenant_id),
+                },
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if new is None or new["is_current"] is not True:
+        return False
+    # The demotion reason is written only by the amendment branch of the
+    # sovereign atomic, after that function checked different event reference
+    # and body, non-earlier instant, same currency and same event family. It
+    # names the amending event, so the kernel does not need (and the B2.3
+    # worker is not granted) direct reads of the consequence table.
+    if str(old["b26_p2_demotion_reason"] or "") != (
+        "superseded_by_provider_amendment:"
+        f"{new['provider_native_event_reference']}"
+    ):
+        return False
+    if str(new["provider_native_event_reference"] or "") == str(
+        old["provider_native_event_reference"] or ""
+    ):
+        return False
+    if str(new["provider"]) != str(verdict_provider):
+        return False
+    if str(new["provider_native_commerce_reference"] or "") not in {
+        str(verdict_native_commerce_reference or ""),
+        str(verdict_canonical_commerce_reference or ""),
+    }:
+        return False
+    if str(new["verified_amount_currency"] or "").upper() != str(
+        old["verified_amount_currency"] or ""
+    ).upper():
+        return False
+    if old["event_timestamp"] is None or new["event_timestamp"] is None:
+        return False
+    return new["event_timestamp"] >= old["event_timestamp"]
+
+
 async def _require_current_verdict_authority(
     session: AsyncSession,
     *,
     tenant_id: UUID,
     match_verdict_id: UUID,
+    superseding_ingress_id: UUID | None = None,
 ) -> None:
     """XVIII (H-XVIII-R7): refuse post-capture consequences on demoted verdicts.
 
@@ -436,10 +554,18 @@ async def _require_current_verdict_authority(
     requires the canonical predicate over its backing ingress, so a
     law-level revocation (registry/floor/family-source) that has not
     yet rewritten the cache cannot be extended.
+
+    XXV-2 (A2/B10): a provider amendment is a genuine supersession with a
+    *different* provider event reference, so the R20 same-reference relink
+    cannot express it. A non-current verdict is therefore admitted only when
+    the caller identifies a current amending ingress that satisfies the
+    provider-amendment conditions over the same commerce identity, and only
+    when the old source was demoted by exactly that amendment.
     """
     row = await session.execute(
         text(
-            "SELECT b26_p2_source_authority_state,"
+            "SELECT provider, provider_native_commerce_reference,"
+            " canonical_commerce_reference, b26_p2_source_authority_state,"
             " webhook_ingress_identity_id"
             " FROM b23_match_verdicts"
             " WHERE tenant_id = :tenant_id AND id = :match_verdict_id"
@@ -450,11 +576,31 @@ async def _require_current_verdict_authority(
         },
     )
     fetched = row.mappings().first()
-    state = fetched["b26_p2_source_authority_state"] if fetched else None
-    if state not in ("current", "unresolved"):
+    if fetched is None:
         raise ValueError(
             f"b23_match_verdict_authority_not_current:{match_verdict_id}"
         )
+    state = fetched["b26_p2_source_authority_state"]
+    if state not in ("current", "unresolved"):
+        if superseding_ingress_id is None or not (
+            await _is_lawful_superseding_amendment_source(
+                session,
+                tenant_id=tenant_id,
+                verdict_provider=str(fetched["provider"]),
+                verdict_native_commerce_reference=fetched[
+                    "provider_native_commerce_reference"
+                ],
+                verdict_canonical_commerce_reference=fetched[
+                    "canonical_commerce_reference"
+                ],
+                old_ingress_id=fetched["webhook_ingress_identity_id"],
+                new_ingress_id=superseding_ingress_id,
+            )
+        ):
+            raise ValueError(
+                f"b23_match_verdict_authority_not_current:{match_verdict_id}"
+            )
+        return
     if state == "current":
         ingress_id = fetched["webhook_ingress_identity_id"]
         authorized = await session.execute(
@@ -992,6 +1138,8 @@ async def _apply_gross_capture_correction(
     match_verdict_id: UUID,
     corrected_captured_gross_amount_minor: int,
     timestamp: datetime,
+    source_webhook_ingress_identity_id: UUID | None = None,
+    source_provider_native_event_reference: str | None = None,
 ) -> tuple[str, int]:
     row = (
         await session.execute(
@@ -1022,6 +1170,20 @@ async def _apply_gross_capture_correction(
     )
     discrepancy_band = _discrepancy_band_from_bps(discrepancy_ratio_bps)
 
+    # XXV-2 (A2/B10): when the corrected amount comes from a provider
+    # amendment -- a second authenticated event over the same commerce
+    # identity -- the verdict is relinked to that event in the SAME statement
+    # that writes the money. The relink is lineage-checked by
+    # b26_p2_guard_verdict_authority_guard, which requires the new source row
+    # to match the verdict's tenant, provider and provider event reference, and
+    # which then recomputes the verdict's authority state from that source. So
+    # the event reference travels with the link: a verdict holding the amended
+    # money while pointing at the superseded source would be reported as
+    # unsupported by every XXV reader, and rightly.
+    relink = (
+        source_webhook_ingress_identity_id is not None
+        and source_provider_native_event_reference is not None
+    )
     await session.execute(
         text(
             """
@@ -1033,7 +1195,13 @@ async def _apply_gross_capture_correction(
                 discrepancy_ratio_bps = :discrepancy_ratio_bps,
                 discrepancy_band = :discrepancy_band,
                 last_transition_at = :last_transition_at,
-                updated_at = :updated_at
+                updated_at = :updated_at,
+                webhook_ingress_identity_id = CASE
+                    WHEN :relink THEN CAST(:source_ingress_id AS uuid)
+                    ELSE webhook_ingress_identity_id END,
+                provider_native_event_reference = CASE
+                    WHEN :relink THEN :source_event_reference
+                    ELSE provider_native_event_reference END
             WHERE tenant_id = :tenant_id
               AND id = :match_verdict_id
             """
@@ -1047,6 +1215,13 @@ async def _apply_gross_capture_correction(
             "discrepancy_band": discrepancy_band.value,
             "last_transition_at": timestamp,
             "updated_at": timestamp,
+            "relink": relink,
+            "source_ingress_id": (
+                str(source_webhook_ingress_identity_id) if relink else None
+            ),
+            "source_event_reference": (
+                source_provider_native_event_reference if relink else None
+            ),
         },
     )
     net_verified_amount = await _recompute_b23_net_verified_amount(
@@ -1145,6 +1320,9 @@ async def register_b23_post_capture_event(
             session,
             tenant_id=post_capture_input.tenant_id,
             match_verdict_id=post_capture_input.match_verdict_id,
+            superseding_ingress_id=(
+                post_capture_input.source_webhook_ingress_identity_id
+            ),
         )
 
     (
@@ -1179,7 +1357,8 @@ async def register_b23_post_capture_event(
                 recorded_at,
                 created_at,
                 updated_at,
-                is_gross_capture_correction
+                is_gross_capture_correction,
+                b26_p2_adjustment_evidence_id
             )
             VALUES (
                 :tenant_id,
@@ -1199,7 +1378,8 @@ async def register_b23_post_capture_event(
                 :recorded_at,
                 :created_at,
                 :updated_at,
-                :is_gross_capture_correction
+                :is_gross_capture_correction,
+                :b26_p2_adjustment_evidence_id
             )
             ON CONFLICT (tenant_id, provider, provider_native_event_reference)
             DO NOTHING
@@ -1226,6 +1406,11 @@ async def register_b23_post_capture_event(
             "is_gross_capture_correction": bool(
                 post_capture_input.is_gross_capture_correction
             ),
+            "b26_p2_adjustment_evidence_id": (
+                str(post_capture_input.adjustment_evidence_id)
+                if post_capture_input.adjustment_evidence_id is not None
+                else None
+            ),
         },
     )
     if post_capture_input.is_gross_capture_correction:
@@ -1235,6 +1420,12 @@ async def register_b23_post_capture_event(
             match_verdict_id=post_capture_input.match_verdict_id,
             corrected_captured_gross_amount_minor=post_capture_input.amount_minor,
             timestamp=timestamp,
+            source_webhook_ingress_identity_id=(
+                post_capture_input.source_webhook_ingress_identity_id
+            ),
+            source_provider_native_event_reference=(
+                post_capture_input.provider_native_event_reference
+            ),
         )
         return True
 

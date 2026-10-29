@@ -815,6 +815,7 @@ KNOWN_P2_DEFINERS = frozenset(
         # surface-recorded in XXIII coverage.
         "b26_p2_authority_universe",
         "b26_p2_read_history_snapshot",
+        "b26_p2_current_verdict_for_adjustment",
     }
 )
 

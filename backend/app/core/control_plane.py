@@ -38,6 +38,26 @@ def resolve_control_plane_env(raw_value: str | None) -> str:
     return canonical
 
 
+#: The canonical environments whose deployments carry production authority:
+#: compiled cryptographic anchors, control-plane custody and least-privilege
+#: credentials are mandatory in these and only these.
+#:
+#: XXV (HB-01): every caller that needs "is this a real deployment?" MUST use
+#: ``is_production_like`` with the ALREADY CANONICAL value. Comparing
+#: ``settings.ENVIRONMENT`` to a raw literal such as ``"production"`` is a
+#: defect class, not a style choice: ``resolve_control_plane_env`` canonicalises
+#: every alias before Settings stores it, so a literal comparison against a
+#: non-canonical alias is dead code in every possible deployment. Two such
+#: comparisons silently disabled the issuance-time historical-root and custody
+#: guards for the whole life of corrective XXIV.
+PRODUCTION_LIKE_ENVS: frozenset[str] = frozenset({"prod", "stage"})
+
+
+def is_production_like(canonical_env: str | None) -> bool:
+    """True when the canonical environment carries production authority."""
+    return (canonical_env or "").strip().lower() in PRODUCTION_LIKE_ENVS
+
+
 def resolve_aws_path_for_key(*, key: str, canonical_env: str) -> str:
     contract = MANAGED_SETTINGS_CONTRACT.get(key)
     if contract is None:

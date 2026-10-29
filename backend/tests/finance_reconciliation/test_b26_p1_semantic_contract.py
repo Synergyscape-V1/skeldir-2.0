@@ -562,7 +562,7 @@ def test_b26_p1_migration_graph_is_alembic_native() -> None:
     assert set(graph) == native_revisions
     assert "202512151410" in graph
     assert "202511171000" not in graph
-    assert heads == set(script.get_heads()) == {"202610180003"}
+    assert heads == set(script.get_heads()) == {"202610280001"}
     assert "202609072001" in graph
     assert "202609170001" in graph
     assert "202609180001" in graph
@@ -584,3 +584,15 @@ def test_b26_p1_migration_graph_is_alembic_native() -> None:
     assert "202609300001" in graph
     assert "202609300002" in graph
     assert "202609300003" in graph
+
+
+
+def test_coverage_numerator_implementation_includes_provisional_match() -> None:
+    """The SQL numerator must implement the contract, not a later test goal."""
+    from app.revenue_verification.verification_coverage import (
+        _MATCHED_VERDICT_STATUSES,
+    )
+
+    assert "matched_provisional" in _MATCHED_VERDICT_STATUSES
+    assert "matched_confirmed" in _MATCHED_VERDICT_STATUSES
+    assert "adjusted" in _MATCHED_VERDICT_STATUSES

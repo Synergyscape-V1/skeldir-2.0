@@ -100,6 +100,165 @@ def _managed_migration_dsn() -> str:
     return get_migration_database_url()
 
 
+def _cleanup_migration_dsn() -> str | None:
+    """Sync migration DSN for test-database hygiene, or None when unavailable.
+
+    Regression batteries seed authenticated financial rows through the atomic
+    function rather than the authentication root, so those rows carry no
+    source-money attestation. The XXV live sweep correctly refuses a row that
+    claims ``current`` without an attestation. The test database must not be
+    left in that state: CI runs the mandatory proof against the same database
+    in some jobs, and a fixture-residue failure is not an artifact failure.
+    """
+    raw = os.environ.get("MIGRATION_DATABASE_URL") or ""
+    if not raw:
+        return None
+    if raw.startswith("postgresql+asyncpg://"):
+        raw = to_sync_postgres_dsn(raw)
+    return raw
+
+
+def _cleanup_database_name(dsn: str) -> str:
+    from urllib.parse import urlparse
+
+    return urlparse(dsn).path.lstrip("/")
+
+
+def _cleanup_is_permitted(dsn: str) -> bool:
+    name = _cleanup_database_name(dsn).lower()
+    if os.environ.get("ENVIRONMENT", "").lower() in {"prod", "production"}:
+        return False
+    if name == "skeldir_xxv" and os.environ.get("B26_P2_XXV_LANE_ROOT"):
+        return False
+    markers = ("test", "ci", "consequence", "isolation", "_lane", "xxv_amend")
+    return any(marker in name for marker in markers)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Refuse the live XXV lane database; it is not a regression database."""
+    dsn = _cleanup_migration_dsn()
+    if dsn is None:
+        return
+    name = _cleanup_database_name(dsn)
+    if name == "skeldir_xxv" and os.environ.get("B26_P2_XXV_LANE_ROOT"):
+        raise pytest.UsageError(
+            "refusing to run pytest against the live XXV lane database "
+            "skeldir_xxv; use skeldir_xxv_test for regression batteries"
+        )
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Withdraw fixture-seeded current claims that have no attestation.
+
+    The update is one transaction with RLS/triggers relaxed only for the
+    cleanup, then restored. A failure to clean leaves the session red rather
+    than silently leaving a contamination that a later mandatory proof would
+    attribute to the artifact.
+    """
+    dsn = _cleanup_migration_dsn()
+    if dsn is None or not _cleanup_is_permitted(dsn):
+        return
+    import psycopg2  # noqa: PLC0415
+
+    conn = None
+    try:
+        conn = psycopg2.connect(dsn)
+        conn.autocommit = False
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT pg_get_userbyid(relowner) = current_user"
+            " FROM pg_class WHERE oid ="
+            " 'public.b23_match_verdicts'::regclass"
+        )
+        owned = cur.fetchone()
+        if not owned or owned[0] is not True:
+            # A runtime DSN cannot alter the guard; leave the test database
+            # alone rather than turning a skip into a false red.
+            conn.rollback()
+            return
+        for statement in (
+            "ALTER TABLE public.b23_match_verdicts"
+            " NO FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE public.webhook_ingress_identities"
+            " NO FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE public.b26_p2_provider_auth_consequence"
+            " NO FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE public.b26_p2_source_money_attestation"
+            " NO FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE public.b23_match_verdicts DISABLE TRIGGER USER",
+            "ALTER TABLE public.webhook_ingress_identities"
+            " DISABLE TRIGGER USER",
+        ):
+            cur.execute(statement)
+        cur.execute(
+            """
+            SELECT v.id::text, v.webhook_ingress_identity_id::text
+              FROM public.b23_match_verdicts AS v
+              JOIN public.b26_p2_provider_auth_consequence AS c
+                ON c.webhook_ingress_identity_id =
+                   v.webhook_ingress_identity_id
+               AND c.tenant_id = v.tenant_id
+              LEFT JOIN public.b26_p2_source_money_attestation AS a
+                ON a.webhook_ingress_identity_id =
+                   v.webhook_ingress_identity_id
+               AND a.tenant_id = v.tenant_id
+             WHERE c.recorded_by = 'app_ingress'
+               AND v.b26_p2_source_authority_state = 'current'
+               AND a.webhook_ingress_identity_id IS NULL
+            """
+        )
+        rows = cur.fetchall()
+        if not rows:
+            conn.rollback()
+            return
+        for verdict_id, ingress_id in rows:
+            if ingress_id is not None:
+                cur.execute(
+                    "UPDATE public.webhook_ingress_identities"
+                    " SET b26_p2_demotion_reason ="
+                    " 'xxv_test_fixture_withdrawn'"
+                    " WHERE id = %s",
+                    (ingress_id,),
+                )
+            cur.execute(
+                "UPDATE public.b23_match_verdicts"
+                " SET b26_p2_source_authority_state ="
+                " 'historically_unverifiable'"
+                " WHERE id = %s",
+                (verdict_id,),
+            )
+        for statement in (
+            "ALTER TABLE public.b23_match_verdicts ENABLE TRIGGER USER",
+            "ALTER TABLE public.webhook_ingress_identities"
+            " ENABLE TRIGGER USER",
+            "ALTER TABLE public.b23_match_verdicts"
+            " FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE public.webhook_ingress_identities"
+            " FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE public.b26_p2_provider_auth_consequence"
+            " FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE public.b26_p2_source_money_attestation"
+            " FORCE ROW LEVEL SECURITY",
+        ):
+            cur.execute(statement)
+        conn.commit()
+        print(
+            "[xxv-fixture-hygiene] withdrew"
+            f" {len(rows)} unattested current-claiming test verdict(s)"
+        )
+    except Exception as exc:  # noqa: BLE001 - cleanup failure must be visible
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        print(f"[xxv-fixture-hygiene] cleanup failed: {type(exc).__name__}: {exc}")
+        session.exitstatus = 1
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def _is_runtime_proof_test(node) -> bool:
     keywords = node.keywords
     if "integration" in keywords or "e2e" in keywords:

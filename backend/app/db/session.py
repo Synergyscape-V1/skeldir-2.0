@@ -89,9 +89,14 @@ _FORCE_POOLING = os.getenv("DATABASE_FORCE_POOLING", "0").strip().lower() in {
     "yes",
     "on",
 }
-_USE_NULL_POOL = (
-    os.getenv("TESTING") == "1" or settings.ENVIRONMENT.lower() == "test"
-) and not _FORCE_POOLING
+# XXV (HB-01 sibling sweep): the former disjunct
+# ``settings.ENVIRONMENT.lower() == "test"`` was unreachable --
+# resolve_control_plane_env canonicalises "test" to "ci"/"local" before
+# Settings stores it -- so the pooling decision has always been driven by
+# TESTING alone. The dead disjunct is removed rather than made live:
+# changing pool behaviour in CI is not something any directive asks for.
+# Guarded by scripts/ci/validate_b26_p2_xxv_environment_predicates.py.
+_USE_NULL_POOL = os.getenv("TESTING") == "1" and not _FORCE_POOLING
 
 engine_kwargs = {
     "connect_args": _CONNECT_ARGS,

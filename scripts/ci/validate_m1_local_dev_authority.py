@@ -821,6 +821,30 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docs/forensics/evidence/b11_p1/ssot_contract_snapshot.json",
     "contracts-internal/governance/b26_p2_authority_universe.pin.json",
     "contracts-internal/governance/b26_p2_x_semantic_universe.pin.json",
+    # --- B2.6-P2 Corrective XXV sovereign source attestation ---
+    # The authority over "the provider sent this amount" moves out of the
+    # database: the authentication root signs it, every reader verifies it
+    # against a fingerprint compiled into the image, and the mandatory proof
+    # sweeps the live financial state instead of judging its own fixture.
+    "alembic/versions/007_skeldir_foundation/202610270001_b26_p2_corrective_xxv_source_attestation.py",
+    "alembic/versions/007_skeldir_foundation/202610270002_b26_p2_corrective_xxv_provider_amendment.py",
+    "alembic/versions/007_skeldir_foundation/202610280001_b26_p2_xxv_post_capture_adjustment.py",
+    "backend/app/auth_service/server.py",
+    "backend/app/core/construction_authority.py",
+    "backend/app/core/control_plane.py",
+    "backend/app/core/secrets.py",
+    "backend/app/db/session.py",
+    "backend/app/revenue_verification/source_attestation.py",
+    "backend/app/trust/builder.py",
+    "backend/app/trust/issuance_session.py",
+    "backend/app/trust/witness_anchor.py",
+    "backend/Dockerfile",
+    "scripts/ci/b26_p2_xxv_attestation_sweep.py",
+    "scripts/ci/b26_p2_xxv_coverage.py",
+    "scripts/ci/prove_b26_p2_xxv_predecessor_cohort.py",
+    "scripts/ci/b26_p2_xxv_lane.py",
+    "scripts/ci/b26_p2_xxv_falsify.py",
+    "scripts/ci/validate_b26_p2_xxv_environment_predicates.py",
 ]
 
 PROHIBITED_PATH_PATTERNS = [

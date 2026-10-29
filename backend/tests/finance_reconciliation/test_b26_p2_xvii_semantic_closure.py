@@ -86,6 +86,40 @@ def test_xvii_stripe_ambiguous_wrappers_refused() -> None:
         derive_commerce("stripe", dual_money)
 
 
+def test_xxv_shopify_creation_skew_30s_is_admitted() -> None:
+    """A9/B2 P8: the published v4 contract admits a 60 s creation window."""
+    raw = (
+        b'{"id":8001,"total_price":"42.00","currency":"USD",'
+        b'"financial_status":"paid","cancelled_at":null,"refunds":[],'
+        b'"created_at":"2024-01-15T10:00:00Z",'
+        b'"updated_at":"2024-01-15T10:00:30Z"}'
+    )
+    produced = derive_commerce("shopify", raw)
+    assert produced.verified_amount_minor == 4200
+    assert produced.provider_native_commerce_reference == "8001"
+
+
+def test_xxv_woocommerce_topic_disagreement_is_not_family_evidence() -> None:
+    """A9/B2 W4: the body status is the family fact; the topic is routing."""
+    raw = (
+        b'{"id":8002,"total":"19.99","currency":"USD",'
+        b'"status":"completed","date_completed":"2024-01-15T10:00:00Z"}'
+    )
+    produced = derive_commerce("woocommerce", raw)
+    assert produced.verified_amount_minor == 1999
+
+
+def test_xxv_woocommerce_date_created_fallback_is_admitted() -> None:
+    """A9/B2 W5: date_created is the governed fallback when completion is absent."""
+    raw = (
+        b'{"id":8003,"total":"5.00","currency":"USD",'
+        b'"status":"completed","date_created":"2024-01-15T10:00:00Z"}'
+    )
+    produced = derive_commerce("woocommerce", raw)
+    assert produced.verified_amount_minor == 500
+    assert int(produced.event_timestamp.timestamp()) == 1705312800
+
+
 def test_xvii_timestamp_day_boundary_vectors() -> None:
     """Competing timestamps resolve per governed precedence law."""
     stripe = (
