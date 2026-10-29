@@ -31,6 +31,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -513,6 +514,192 @@ def _sweep(database: str, public_key_path: str) -> dict[str, object]:
     )
 
 
+def _replay_recovery(
+    admin: str, database: str, generation: str, world: dict[str, str]
+) -> dict[str, object]:
+    """Replay the retained provider bytes to re-attest the inherited ingress.
+
+    The inherited ingress is retained with its pre-XXV demotion flag. A genuine
+    provider replay presents the exact verified bytes again; the source writer
+    signs the existing ingress statement and the journal makes it current. No
+    demotion flag is cleared and no new ingress/verdict is manufactured.
+    """
+
+    import asyncio  # noqa: PLC0415
+
+    from sqlalchemy import text as sql_text  # noqa: PLC0415
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: PLC0415
+
+    from app.core.config import settings  # noqa: PLC0415
+    from app.revenue_verification.source_attestation import (  # noqa: PLC0415
+        build_statement,
+        generate_keypair,
+        write_source_attestation,
+    )
+    from app.webhooks.signatures import verify_stripe_signature  # noqa: PLC0415
+
+    provider_input = world["provider_input"]
+    body = provider_input["body"].encode("utf-8")
+    signature_ok = verify_stripe_signature(
+        body, world["provider_secret"], provider_input["signature_header"]
+    )
+    tenant = world["tenant_id"]
+    ingress_id = world["ingress_id"]
+    verdict_id = world["verdict_id"]
+    key_dir = Path(tempfile.mkdtemp(prefix="b8-replay-"))
+    private_seed, public_b64 = generate_keypair()
+    private_path = key_dir / "source.key"
+    public_path = key_dir / "source.pub"
+    journal_path = key_dir / "source.jsonl"
+    private_path.write_text(private_seed, encoding="utf-8")
+    public_path.write_text(public_b64, encoding="utf-8")
+    settings.B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH = str(public_path)
+    settings.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH = str(journal_path)
+    settings.B26_P2_SOURCE_ATTESTATION_REQUIRED = True
+    os.environ["B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH"] = str(public_path)
+    os.environ["B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH"] = str(journal_path)
+    os.environ["B8_PUBLIC_KEY_PATH"] = str(public_path)
+
+    # VII has no provider-auth consequence in its predecessor schema. The
+    # real retained bytes are replayed through the atomic surface to create
+    # that missing binding; XX already has one and must not be replayed twice.
+    body_binding_created = False
+    ingress_dsn = _dsn(admin, database).replace(
+        "postgres:postgres@", "app_ingress:app_ingress@"
+    )
+    auth = psycopg2.connect(ingress_dsn)
+    auth.autocommit = True
+    try:
+        with auth.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant,),
+            )
+            cur.execute(
+                "SELECT count(*) FROM public.b26_p2_provider_auth_consequence"
+                " WHERE webhook_ingress_identity_id=%s",
+                (ingress_id,),
+            )
+            has_consequence = int(cur.fetchone()[0]) > 0
+            if not has_consequence:
+                cur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (tenant,),
+                )
+                cur.execute(
+                    "SELECT set_config('app.b26_p2_event_family', %s, false)",
+                    ("payment_intent.succeeded",),
+                )
+                cur.execute(
+                    "SELECT set_config('app.b26_p2_event_family_source', %s, false)",
+                    ("body-signal:type",),
+                )
+                cur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
+                    "%s, %s, %s, %s, %s, 'hmac-sha256', 'v1',"
+                    " NULL, NULL, false, NULL, NULL)",
+                    (
+                        ingress_id,
+                        "stripe",
+                        provider_input["event_reference"],
+                        provider_input["body_sha256"],
+                        provider_input["signature_sha256"],
+                    ),
+                )
+                body_binding_created = True
+    finally:
+        auth.close()
+
+    async def sign_source() -> None:
+        engine = create_async_engine(
+            "postgresql+asyncpg://app_ingress:app_ingress@"
+            + _host_port(database)
+            + "/"
+            + database
+        )
+        try:
+            async with AsyncSession(engine) as session:
+                await session.execute(
+                    sql_text(
+                        "SELECT set_config('app.current_tenant_id', :t, false)"
+                    ),
+                    {"t": tenant},
+                )
+                universe = (
+                    await session.execute(
+                        sql_text("SELECT public.b26_p2_authority_universe()::text")
+                    )
+                ).scalar_one()
+                statement = build_statement(
+                    tenant_id=tenant,
+                    webhook_ingress_identity_id=ingress_id,
+                    provider="stripe",
+                    provider_native_event_reference=provider_input[
+                        "event_reference"
+                    ],
+                    provider_native_commerce_reference=provider_input[
+                        "commerce_reference"
+                    ],
+                    normalized_commerce_reference_kind="order_reference",
+                    normalized_commerce_reference_value=provider_input[
+                        "commerce_reference"
+                    ],
+                    verified_amount_minor=1000,
+                    verified_amount_currency="USD",
+                    verified_amount_scale=2,
+                    event_timestamp=TENANT_DAY,
+                    body_sha256=provider_input["body_sha256"],
+                    authority_universe=universe,
+                )
+                await write_source_attestation(
+                    session,
+                    statement=statement,
+                    private_key_path=private_path,
+                )
+                await session.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(sign_source())
+    reader = _read_status(database, tenant, verdict_id)
+    conn = psycopg2.connect(_dsn(admin, database))
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT b26_p2_demotion_reason,"
+                " b26_p2_source_authority_state::text"
+                " FROM public.webhook_ingress_identities i"
+                " JOIN public.b23_match_verdicts v"
+                "   ON v.webhook_ingress_identity_id=i.id"
+                " WHERE i.tenant_id=%s AND v.id=%s",
+                (tenant, verdict_id),
+            )
+            demotion, authority = cur.fetchone()
+    finally:
+        conn.close()
+    return {
+        "generation": generation,
+        "provider_signature_verified": signature_ok,
+        "body_binding_created": body_binding_created,
+        "inherited_ingress_id": ingress_id,
+        "verdict_id": verdict_id,
+        "demotion_reason_preserved": demotion,
+        "verdict_authority_state": authority,
+        "reader": reader,
+        "source_journal": str(journal_path),
+        "source_public_key": str(public_path),
+        "passed": signature_ok and reader["status"] == "xxv_attested",
+        "limit_of_inference": (
+            "The provider bytes are real and the source statement is signed for"
+            " the existing inherited ingress; the pre-XXV demotion flag is"
+            " retained, not cleared. The source reader is attested; a full"
+            " Trust/coverage read still needs the surrounding historical"
+            " projections to accept the re-attested source."
+        ),
+    }
+
+
 def _verify_generation(
     admin: str, database: str, generation: str, world: dict[str, str]
 ) -> dict[str, object]:
@@ -572,8 +759,10 @@ def _verify_generation(
         not in {"current", "xxv_attested"},
         "confidence_projection_absent": projection["count"] == 0,
     }
+    recovery = _replay_recovery(admin, database, generation, world)
     return {
         "generation": generation,
+        "recovery": recovery,
         "provider_input": {
             key: value
             for key, value in provider_input.items()
@@ -589,7 +778,7 @@ def _verify_generation(
             "unverifiable": sweep_result["unverifiable"],
         },
         "checks": checks,
-        "passed": all(checks.values()),
+        "passed": all(checks.values()) and bool(recovery["passed"]),
     }
 
 
