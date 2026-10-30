@@ -9241,7 +9241,7 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
                     COALESCE(NEW.solver_consequence_kind, 'null')
                     USING ERRCODE = '42501';
             END IF;
-        
+
             recomputed := public.b28_recompute_allocation(
                 request_row.channel_evidence,
                 request_row.total_budget_minor
@@ -9471,17 +9471,17 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
             WHERE id = COALESCE(NEW.event_id, OLD.event_id);
-            
+
             SELECT COALESCE(SUM(allocated_revenue_cents), 0) INTO allocated_sum
             FROM attribution_allocations
             WHERE event_id = COALESCE(NEW.event_id, OLD.event_id)
               AND model_version = COALESCE(NEW.model_version, OLD.model_version);
-            
+
             IF ABS(allocated_sum - event_revenue) > tolerance_cents THEN
-                RAISE EXCEPTION 'Allocation sum mismatch: allocated=% expected=% drift=%', 
+                RAISE EXCEPTION 'Allocation sum mismatch: allocated=% expected=% drift=%',
                     allocated_sum, event_revenue, ABS(allocated_sum - event_revenue);
             END IF;
-            
+
             RETURN COALESCE(NEW, OLD);
         END;
         $$;
@@ -10053,7 +10053,7 @@ CREATE FUNCTION public.fn_events_prevent_mutation() RETURNS trigger
             IF current_user = 'migration_owner' THEN
                 RETURN NULL; -- Allow operation
             END IF;
-            
+
             -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'attribution_events is append-only; updates and deletes are not allowed. Use INSERT with correlation_id for corrections.';
         END;
@@ -10119,7 +10119,7 @@ CREATE FUNCTION public.fn_ledger_prevent_mutation() RETURNS trigger
             IF current_user = 'migration_owner' THEN
                 RETURN NULL; -- Allow operation
             END IF;
-            
+
             -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'revenue_ledger is immutable; updates and deletes are not allowed. Use INSERT for corrections.';
         END;
@@ -10169,7 +10169,7 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
                     NULLIF(current_setting('app.correction_reason', true), ''),
                     'No reason provided'
                 );
-                
+
                 -- Insert audit record
                 INSERT INTO channel_assignment_corrections (
                     tenant_id,
@@ -10192,7 +10192,7 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
                     correction_reason_val
                 );
             END IF;
-            
+
             RETURN NEW;
         END;
         $$;
@@ -10202,9 +10202,9 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
 -- Name: FUNCTION fn_log_channel_assignment_correction(); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.fn_log_channel_assignment_correction() IS 'Trigger function to log attribution_allocations channel_code corrections to channel_assignment_corrections table. 
-            Purpose: Ensure every post-ingestion assignment correction produces a corresponding audit row. 
-            Invariant: No assignment correction without matching correction row. 
+COMMENT ON FUNCTION public.fn_log_channel_assignment_correction() IS 'Trigger function to log attribution_allocations channel_code corrections to channel_assignment_corrections table.
+            Purpose: Ensure every post-ingestion assignment correction produces a corresponding audit row.
+            Invariant: No assignment correction without matching correction row.
             Security: SECURITY DEFINER to bypass RLS during trigger execution (reads tenant_id from allocation, already RLS-protected).';
 
 
@@ -10231,7 +10231,7 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
                     current_setting('app.channel_state_change_reason', true),
                     ''
                 );
-                
+
                 -- Insert audit record
                 INSERT INTO channel_state_transitions (
                     channel_code,
@@ -10250,7 +10250,7 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
                     change_reason_val
                 );
             END IF;
-            
+
             RETURN NEW;
         END;
         $$;
@@ -10260,9 +10260,9 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
 -- Name: FUNCTION fn_log_channel_state_change(); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.fn_log_channel_state_change() IS 'Trigger function to log channel_taxonomy state transitions to channel_state_transitions table. 
-            Purpose: Ensure every state change produces a corresponding audit row. 
-            Invariant: No taxonomy state change without matching transition row. 
+COMMENT ON FUNCTION public.fn_log_channel_state_change() IS 'Trigger function to log channel_taxonomy state transitions to channel_state_transitions table.
+            Purpose: Ensure every state change produces a corresponding audit row.
+            Invariant: No taxonomy state change without matching transition row.
             Security: SECURITY DEFINER to ensure trigger can insert audit records.';
 
 
@@ -10300,9 +10300,9 @@ CREATE FUNCTION public.fn_log_revenue_state_change() RETURNS trigger
 -- Name: FUNCTION fn_log_revenue_state_change(); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.fn_log_revenue_state_change() IS 'Trigger function for atomic audit logging of revenue_ledger state changes. 
-            Purpose: Ensure every state change produces a corresponding revenue_state_transitions row. 
-            Invariant: No ledger state change without matching transition row. 
+COMMENT ON FUNCTION public.fn_log_revenue_state_change() IS 'Trigger function for atomic audit logging of revenue_ledger state changes.
+            Purpose: Ensure every state change produces a corresponding revenue_state_transitions row.
+            Invariant: No ledger state change without matching transition row.
             Security: SECURITY DEFINER to bypass RLS on revenue_state_transitions during trigger execution.';
 
 
@@ -10319,116 +10319,116 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
             detected_key_var TEXT;
         BEGIN
             -- Scan attribution_events.raw_payload
-            FOR rec IN 
-                SELECT id, raw_payload 
-                FROM attribution_events 
+            FOR rec IN
+                SELECT id, raw_payload
+                FROM attribution_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
                 -- Find first PII key
                 SELECT key INTO detected_key_var
                 FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
-                    'email', 'email_address', 
-                    'phone', 'phone_number', 
-                    'ssn', 'social_security_number', 
-                    'ip_address', 'ip', 
-                    'first_name', 'last_name', 'full_name', 
+                    'email', 'email_address',
+                    'phone', 'phone_number',
+                    'ssn', 'social_security_number',
+                    'ip_address', 'ip',
+                    'first_name', 'last_name', 'full_name',
                     'address', 'street_address'
                 )
                 LIMIT 1;
-                
+
                 INSERT INTO pii_audit_findings (
-                    table_name, 
-                    column_name, 
-                    record_id, 
+                    table_name,
+                    column_name,
+                    record_id,
                     detected_key,
                     sample_snippet
                 )
                 VALUES (
-                    'attribution_events', 
-                    'raw_payload', 
-                    rec.id, 
+                    'attribution_events',
+                    'raw_payload',
+                    rec.id,
                     detected_key_var,
                     'Redacted for security'  -- Do not log actual PII values
                 );
-                
+
                 finding_count := finding_count + 1;
             END LOOP;
-            
+
             -- Scan dead_events.raw_payload
-            FOR rec IN 
-                SELECT id, raw_payload 
-                FROM dead_events 
+            FOR rec IN
+                SELECT id, raw_payload
+                FROM dead_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
                 -- Find first PII key
                 SELECT key INTO detected_key_var
                 FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
-                    'email', 'email_address', 
-                    'phone', 'phone_number', 
-                    'ssn', 'social_security_number', 
-                    'ip_address', 'ip', 
-                    'first_name', 'last_name', 'full_name', 
+                    'email', 'email_address',
+                    'phone', 'phone_number',
+                    'ssn', 'social_security_number',
+                    'ip_address', 'ip',
+                    'first_name', 'last_name', 'full_name',
                     'address', 'street_address'
                 )
                 LIMIT 1;
-                
+
                 INSERT INTO pii_audit_findings (
-                    table_name, 
-                    column_name, 
-                    record_id, 
+                    table_name,
+                    column_name,
+                    record_id,
                     detected_key,
                     sample_snippet
                 )
                 VALUES (
-                    'dead_events', 
-                    'raw_payload', 
-                    rec.id, 
+                    'dead_events',
+                    'raw_payload',
+                    rec.id,
                     detected_key_var,
                     'Redacted for security'
                 );
-                
+
                 finding_count := finding_count + 1;
             END LOOP;
-            
+
             -- Scan revenue_ledger.metadata (only non-NULL)
-            FOR rec IN 
-                SELECT id, metadata 
-                FROM revenue_ledger 
+            FOR rec IN
+                SELECT id, metadata
+                FROM revenue_ledger
                 WHERE metadata IS NOT NULL AND fn_detect_pii_keys(metadata)
             LOOP
                 -- Find first PII key
                 SELECT key INTO detected_key_var
                 FROM jsonb_object_keys(rec.metadata) key
                 WHERE key IN (
-                    'email', 'email_address', 
-                    'phone', 'phone_number', 
-                    'ssn', 'social_security_number', 
-                    'ip_address', 'ip', 
-                    'first_name', 'last_name', 'full_name', 
+                    'email', 'email_address',
+                    'phone', 'phone_number',
+                    'ssn', 'social_security_number',
+                    'ip_address', 'ip',
+                    'first_name', 'last_name', 'full_name',
                     'address', 'street_address'
                 )
                 LIMIT 1;
-                
+
                 INSERT INTO pii_audit_findings (
-                    table_name, 
-                    column_name, 
-                    record_id, 
+                    table_name,
+                    column_name,
+                    record_id,
                     detected_key,
                     sample_snippet
                 )
                 VALUES (
-                    'revenue_ledger', 
-                    'metadata', 
-                    rec.id, 
+                    'revenue_ledger',
+                    'metadata',
+                    rec.id,
                     detected_key_var,
                     'Redacted for security'
                 );
-                
+
                 finding_count := finding_count + 1;
             END LOOP;
-            
+
             RETURN finding_count;
         END;
         $$;
@@ -16438,9 +16438,9 @@ CREATE TABLE public.channel_taxonomy (
 -- Name: TABLE channel_taxonomy; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.channel_taxonomy IS 'Canonical channel taxonomy for attribution. Guarantees all allocation channel codes are valid. 
-            All unmapped channels MUST be normalized to the ''unknown'' code. Purpose: Provide single source 
-            of truth for channel codes, ensuring consistency across ingestion, allocation models, and UI. 
+COMMENT ON TABLE public.channel_taxonomy IS 'Canonical channel taxonomy for attribution. Guarantees all allocation channel codes are valid.
+            All unmapped channels MUST be normalized to the ''unknown'' code. Purpose: Provide single source
+            of truth for channel codes, ensuring consistency across ingestion, allocation models, and UI.
             Data class: Non-PII. Ownership: Attribution service.';
 
 
@@ -25745,9 +25745,9 @@ CREATE TRIGGER trg_allocations_channel_correction_audit AFTER UPDATE OF channel_
 -- Name: TRIGGER trg_allocations_channel_correction_audit ON attribution_allocations; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TRIGGER trg_allocations_channel_correction_audit ON public.attribution_allocations IS 'Automatically logs all channel_code corrections to channel_assignment_corrections table. 
-            Purpose: Provide atomic audit trail for revenue reclassifications. 
-            Fires: Only when channel_code column changes (not on other column updates). 
+COMMENT ON TRIGGER trg_allocations_channel_correction_audit ON public.attribution_allocations IS 'Automatically logs all channel_code corrections to channel_assignment_corrections table.
+            Purpose: Provide atomic audit trail for revenue reclassifications.
+            Fires: Only when channel_code column changes (not on other column updates).
             Note: Does NOT fire on INSERT (corrections are post-ingestion only).';
 
 
@@ -26329,8 +26329,8 @@ CREATE TRIGGER trg_channel_taxonomy_state_audit AFTER UPDATE OF state ON public.
 -- Name: TRIGGER trg_channel_taxonomy_state_audit ON channel_taxonomy; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TRIGGER trg_channel_taxonomy_state_audit ON public.channel_taxonomy IS 'Automatically logs all state transitions to channel_state_transitions table. 
-            Purpose: Provide atomic audit trail for channel lifecycle changes. 
+COMMENT ON TRIGGER trg_channel_taxonomy_state_audit ON public.channel_taxonomy IS 'Automatically logs all state transitions to channel_state_transitions table.
+            Purpose: Provide atomic audit trail for channel lifecycle changes.
             Fires: Only when state column changes (not on other column updates).';
 
 
@@ -26485,9 +26485,9 @@ CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.re
 -- Name: TRIGGER trg_revenue_ledger_state_audit ON revenue_ledger; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TRIGGER trg_revenue_ledger_state_audit ON public.revenue_ledger IS 'Audit trigger for revenue_ledger state changes. 
-            Purpose: Automatically log all state transitions to revenue_state_transitions table. 
-            Fires: AFTER UPDATE OF state when state value changes. 
+COMMENT ON TRIGGER trg_revenue_ledger_state_audit ON public.revenue_ledger IS 'Audit trigger for revenue_ledger state changes.
+            Purpose: Automatically log all state transitions to revenue_state_transitions table.
+            Fires: AFTER UPDATE OF state when state value changes.
             Atomicity: Trigger execution is atomic within the same transaction as the UPDATE.';
 
 
@@ -28990,8 +28990,8 @@ CREATE POLICY tenant_isolation_policy ON public.revenue_state_transitions USING 
 -- Name: POLICY tenant_isolation_policy ON revenue_state_transitions; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON POLICY tenant_isolation_policy ON public.revenue_state_transitions IS 'RLS policy enforcing tenant isolation on audit table. 
-            Purpose: Prevent cross-tenant access to audit trail. 
+COMMENT ON POLICY tenant_isolation_policy ON public.revenue_state_transitions IS 'RLS policy enforcing tenant isolation on audit table.
+            Purpose: Prevent cross-tenant access to audit trail.
             Requires app.current_tenant_id to be set via set_config().';
 
 

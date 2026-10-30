@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from app.core.control_plane import resolve_aws_path_for_key, resolve_control_plane_env
@@ -32,6 +35,22 @@ def test_process_database_authority_resolves_per_process_path(
     monkeypatch.setenv("SKELDIR_PROCESS_ROLE", "trust_signer")
     assert secrets_module.get_database_url().startswith("postgresql://")
     assert seen == ["/skeldir/prod/secret/database/runtime-trust_signer-url"]
+
+
+def test_each_process_role_grants_only_its_task_database_secret() -> None:
+    root = Path(__file__).resolve().parents[2]
+    matrix = json.loads(
+        (root / "contracts-internal/governance/b11_process_authority.v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    task_paths = matrix["task_database_secrets"]
+    assert len(set(task_paths.values())) == len(task_paths)
+    shared_path = "/skeldir/{env}/secret/database/runtime-url"
+    for process, task_path in task_paths.items():
+        secrets = matrix["processes"][process]["secrets"]
+        assert task_path in secrets
+        assert shared_path not in secrets
 
 
 def test_process_database_authority_refuses_missing_process_role(
