@@ -473,14 +473,20 @@ def control_plane_store(role: str, state: dict) -> dict[str, str]:
     """
     material = state["material"]
     contract = managed_contract(state.get("probe_image", BOOTSTRAP_IMAGE))
+
+    def async_role_dsn(db_role: str) -> str:
+        return role_dsn(db_role, host="pg", port=5432).replace(
+            "postgresql://", "postgresql+asyncpg://", 1
+        )
+
     dsn_for = {
-        "api": role_dsn("app_user", host="pg", port=5432),
-        "auth_ingress": role_dsn("app_user", host="pg", port=5432),
-        "worker_b23": role_dsn("app_worker", host="pg", port=5432),
-        "observer_b26_p2": role_dsn("app_worker", host="pg", port=5432),
-        "b26_p2_relay": role_dsn("app_relay", host="pg", port=5432),
-        "beat": role_dsn("app_beat", host="pg", port=5432),
-        "trust_signer": role_dsn("app_trust_signer", host="pg", port=5432),
+        "api": async_role_dsn("app_user"),
+        "auth_ingress": async_role_dsn("app_user"),
+        "worker_b23": async_role_dsn("app_worker"),
+        "observer_b26_p2": async_role_dsn("app_worker"),
+        "b26_p2_relay": async_role_dsn("app_relay"),
+        "beat": async_role_dsn("app_beat"),
+        "trust_signer": async_role_dsn("app_trust_signer"),
     }[role]
     transport = role_dsn("app_celery_transport", host="pg", port=5432)
     overrides: dict[str, str] = {
