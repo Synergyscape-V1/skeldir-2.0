@@ -1015,11 +1015,21 @@ def _provision_source_attestation_key(env: dict[str, str]) -> None:
     inside the ingress transaction. The seed is generated per run and never
     written to the repository or database.
     """
+    import base64
     import tempfile
 
-    from app.revenue_verification.source_attestation import generate_keypair
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+    )
 
-    private_seed, _public_key = generate_keypair()
+    private_key = Ed25519PrivateKey.generate()
+    private_raw = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    private_seed = base64.urlsafe_b64encode(private_raw).rstrip(b"=").decode("ascii")
     fd, key_path = tempfile.mkstemp(prefix="b26_p2_source_attestation_key_p8_")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(private_seed)
