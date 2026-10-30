@@ -888,7 +888,27 @@ AS $function$
         )
         .scalar()
     )
-    if not can_own_auth_lookup:
+    auth_lookup_already_owns = bool(
+        op.get_bind()
+        .execute(
+            text(
+                "SELECT count(*) = 2 AND bool_and("
+                "pg_get_userbyid(p.proowner) = 'app_auth_lookup')"
+                " FROM pg_proc p"
+                " JOIN pg_namespace n ON n.oid = p.pronamespace"
+                " WHERE n.nspname = 'auth'"
+                " AND p.proname IN ('lookup_user_auth_by_login_hash',"
+                " 'lookup_user_by_login_hash')"
+            )
+        )
+        .scalar()
+    )
+    # A downgrade/re-upgrade after the first owner transfer no longer has
+    # migration_owner membership (the migration revokes it), but the
+    # functions are already owned by app_auth_lookup. That is a lawful
+    # re-upgrade state; only a fresh database without the owner needs the
+    # membership check.
+    if not can_own_auth_lookup and not auth_lookup_already_owns:
         raise RuntimeError(
             "migration_role_must_own_or_inherit_app_auth_lookup"
         )
