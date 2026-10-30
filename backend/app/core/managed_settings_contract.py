@@ -670,6 +670,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/history_witness.py",
             "backend/app/tasks/b26_p2_history.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH",
@@ -681,6 +682,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/builder.py",
             "backend/app/trust/history_witness.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH",
@@ -692,6 +694,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/tasks/b26_p2_history.py",
             "backend/app/trust/history_witness.py",
         ),
+        process_roles=("observer_b26_p2",),
     ),
     "B26_P2_HISTORY_WITNESS_GENESIS_HASH": _contract(
         key="B26_P2_HISTORY_WITNESS_GENESIS_HASH",
@@ -703,6 +706,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/builder.py",
             "backend/app/tasks/b26_p2_history.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_HORIZON_SECONDS": _contract(
         key="B26_P2_HISTORY_WITNESS_HORIZON_SECONDS",
@@ -711,6 +715,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="none",
         owner="backend-platform",
         call_sites=("backend/app/trust/builder.py",),
+        process_roles=("api",),
     ),
     "B26_P2_HISTORY_WITNESS_REQUIRED": _contract(
         key="B26_P2_HISTORY_WITNESS_REQUIRED",
@@ -719,6 +724,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="none",
         owner="backend-platform",
         call_sites=("backend/app/trust/builder.py",),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH",
@@ -730,6 +736,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/builder.py",
             "backend/app/tasks/b26_p2_history.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_CUSTODY_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_CUSTODY_PATH",
@@ -741,6 +748,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/builder.py",
             "backend/app/tasks/b26_p2_history.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH": _contract(
         key="B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH",
@@ -756,6 +764,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/revenue_verification/source_attestation.py",
             "backend/app/tasks/b26_p2_history.py",
         ),
+        process_roles=("auth_ingress", "observer_b26_p2", "api"),
     ),
 }
 

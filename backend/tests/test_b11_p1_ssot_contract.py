@@ -40,3 +40,22 @@ def test_process_roles_scope_migration_authority() -> None:
     assert process_role_allows("migration", "MIGRATION_DATABASE_URL")
     assert process_role_allows("api", "DATABASE_URL")
     assert not process_role_allows("trust_signer", "UNKNOWN_SETTING")
+
+
+def test_process_roles_scope_b26_witness_and_source_journal() -> None:
+    assert process_role_allows(
+        "observer_b26_p2", "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH"
+    )
+    assert not process_role_allows(
+        "api", "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH"
+    )
+    assert process_role_allows(
+        "auth_ingress", "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH"
+    )
+    assert process_role_allows(
+        "observer_b26_p2", "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH"
+    )
+    assert not process_role_allows(
+        "worker", "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH"
+    )
+    assert not process_role_allows("worker", "B26_P2_HISTORY_WITNESS_REQUIRED")
