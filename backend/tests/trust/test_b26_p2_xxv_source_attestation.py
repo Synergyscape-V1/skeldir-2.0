@@ -77,6 +77,9 @@ def _row(**overrides: object) -> dict[str, object]:
         "verdict_captured": 4321,
         "verdict_verified": 4321,
         "verdict_currency": "USD",
+        "verdict_provider": "stripe",
+        "verdict_event_reference": "pi_1",
+        "verdict_commerce_reference": "pi_1",
         "ingress_id": INGRESS,
         "ingress_amount": 4321,
         "ingress_currency": "USD",
@@ -396,3 +399,49 @@ async def test_a_forged_amount_is_refused_even_when_the_signature_verifies(
     )
     assert status.unverifiable is True
     assert status.status == "unverifiable:ingress_amount_diverged_from_attestation"
+
+
+@pytest.mark.asyncio
+async def test_a_valid_signature_does_not_authorize_a_relinked_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    private_seed, public_b64 = sa.generate_keypair()
+    private_path = tmp_path / "attest.key"
+    public_path = tmp_path / "attest.pub"
+    private_path.write_text(private_seed, encoding="utf-8")
+    public_path.write_text(public_b64, encoding="utf-8")
+    monkeypatch.setattr(
+        settings, "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH", str(public_path)
+    )
+    statement = sa.build_statement(
+        tenant_id=TENANT,
+        webhook_ingress_identity_id=INGRESS,
+        provider="stripe",
+        provider_native_event_reference="pi_1",
+        provider_native_commerce_reference="pi_1",
+        normalized_commerce_reference_kind="provider_native",
+        normalized_commerce_reference_value="pi_1",
+        verified_amount_minor=4321,
+        verified_amount_currency="USD",
+        verified_amount_scale=2,
+        event_timestamp="2026-10-27T16:00:00Z",
+        body_sha256="a" * 64,
+        authority_universe="99999999-8888-7777-6666-555555555555",
+    )
+    signature, _fingerprint = sa.sign_statement(
+        statement, private_key_path=str(private_path)
+    )
+    session = _FakeSession(
+        _row(
+            statement=json.dumps(statement),
+            signature=signature,
+            attested_amount=4321,
+            attested_currency="USD",
+            verdict_commerce_reference="pi_other",
+        )
+    )
+    status = await sa.read_verdict_source_attestation_status(
+        session, tenant_id=TENANT, verdict_id="verdict-1"
+    )
+    assert status.unverifiable is True
+    assert status.reason == "verdict_commerce_reference_mismatch"

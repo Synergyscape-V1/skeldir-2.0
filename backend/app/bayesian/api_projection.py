@@ -68,8 +68,7 @@ def build_b24_confidence_projection_query() -> TextClause:
                     SELECT 1 FROM public.b23_match_verdicts AS v
                      WHERE v.tenant_id = revenue.tenant_id
                        AND v.id = revenue.match_verdict_id
-                       AND v.b26_p2_source_authority_state = 'current'
-                        AND public.b26_p2_verdict_has_current_authority(
+                                               AND public.b26_p2_verdict_has_current_authority(
                                 v.id
                             )
               )

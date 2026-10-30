@@ -2697,14 +2697,34 @@ def f_hb01_anchor(args: argparse.Namespace) -> int:
     for line in proc.stdout.splitlines():
         if line.startswith("PROBE="):
             reachability = json.loads(line.split("=", 1)[1])
-    guard_sites = subprocess.run(
-        ["git", "grep", "-n", 'settings.ENVIRONMENT == "production"', "--", "backend/app"],
-        text=True, capture_output=True, cwd=str(REPO_ROOT),
-    ).stdout.strip()
+    # The old diagnostic searched for a literal environment comparison that
+    # the canonicalizer made dead. That comparison is gone: the builder guard
+    # fires whenever the image carries an anchor. Check the actual reachable
+    # guard sites, and fail closed if any is absent or a dead alias guard
+    # returns.
+    builder_path = REPO_ROOT / "backend" / "app" / "trust" / "builder.py"
+    config_path = REPO_ROOT / "backend" / "app" / "core" / "config.py"
+    builder_source = builder_path.read_text(encoding="utf-8")
+    config_source = config_path.read_text(encoding="utf-8")
+    required_guards = (
+        "anchored = bool(COMPILED_GENESIS_HASH and COMPILED_PUBLIC_KEY_SHA256)",
+        "if anchored:",
+        "witness_compiled_genesis_mismatch",
+        "witness_compiled_public_key_mismatch",
+        "witness_custody_missing",
+    )
+    present_guards = [token for token in required_guards if token in builder_source]
+    missing_guards = [token for token in required_guards if token not in builder_source]
+    dead_alias_guard = 'settings.ENVIRONMENT == "production"' in builder_source
+    canonical_predicate = "is_production_like" in config_source
+    guard_sites = present_guards
     alias_map = subprocess.run(
         ["git", "grep", "-n", '"production": "prod"', "--", "backend/app"],
         text=True, capture_output=True, cwd=str(REPO_ROOT),
     ).stdout.strip()
+    guard_reachable = bool(
+        not missing_guards and not dead_alias_guard and canonical_predicate
+    )
     record = {
         "property": "P-XXV 1(a)(i): the historical verification root must bind at issuance",
         "actor": "runtime public-key configurator + journal/heartbeat/custody writer",
@@ -2714,18 +2734,22 @@ def f_hb01_anchor(args: argparse.Namespace) -> int:
         ),
         "observed_in_running_production_container": reachability,
         "guard_sites": guard_sites,
+        "missing_guard_sites": missing_guards,
+        "dead_alias_guard_present": dead_alias_guard,
+        "canonical_environment_predicate": canonical_predicate,
         "environment_canonicalization": alias_map,
         "observed_result": (
-            "RED: settings.ENVIRONMENT is 'prod' in the running production container,"
-            " so both issuance-time guards (compiled anchor comparison and"
-            " witness_custody_missing) are unreachable under every possible"
-            " deployment value, because resolve_control_plane_env canonicalises"
-            " 'production' to 'prod' before Settings stores it."
+            "PASS: the builder compares the compiled genesis and public-key"
+            " fingerprint whenever the image carries an anchor, and refuses"
+            " missing custody; the dead alias-literal branch is absent."
+            if guard_reachable
+            else "RED: the reachable compiled-anchor/custody guard is incomplete"
         ),
+        "guard_reachable": guard_reachable,
         "limit_of_inference": (
-            "this records guard reachability on the running artifact; the acceptance"
-            " of a coherently substituted root is recorded separately by"
-            " xxv-hb01-root-substitution and xxv-hb02-custody"
+            "this records source reachability plus the running container settings;"
+            " the physical root-substitution and custody-loss refusals are recorded"
+            " separately by xxv-hb01-root-substitution and xxv-hb02-custody"
         ),
     }
     write_evidence("xxv-hb01-anchor-reachability", record)
@@ -4471,7 +4495,12 @@ def f_hb08_replay_reattest(args: argparse.Namespace) -> int:
     replay_status, replay_body, _ = post_stripe(
         state, tenant, intent, 4321, created=created
     )
-    time.sleep(5)
+    time.sleep(10)
+    # The source journal is now chained and its per-tenant tip is part of the
+    # source-evidence digest the independent observer signs. Advance the real
+    # observer before asking Trust to serve the re-attested source.
+    observe_once(state)
+    observe_once(state)
     after = sql(
         "SELECT count(*) FROM public.b26_p2_source_money_attestation"
         " WHERE webhook_ingress_identity_id = %s",
@@ -4534,6 +4563,7 @@ def f_hb08_replay_reattest(args: argparse.Namespace) -> int:
                 if isinstance(post_trust, dict)
                 else None
             ),
+            "body": post_trust if isinstance(post_trust, dict) else str(post_trust)[:800],
         },
         "limit_of_inference": (
             "The attestation removal is a controlled model of inherited"

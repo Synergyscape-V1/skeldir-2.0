@@ -313,8 +313,7 @@ _SOURCE_QUERIES = {
               AND e.processing_status IN :processed_statuses
               AND e.event_type IN :conversion_event_types
               AND v.status IN :match_verdict_statuses
-              AND v.b26_p2_source_authority_state = 'current'
-              AND public.b26_p2_verdict_has_current_authority(
+                            AND public.b26_p2_verdict_has_current_authority(
                       v.id
                   )
             ORDER BY v.tenant_id ASC, e.occurred_at ASC NULLS LAST, v.id ASC
@@ -355,8 +354,7 @@ _SOURCE_QUERIES = {
                     SELECT 1 FROM public.b23_match_verdicts AS v
                      WHERE v.tenant_id = b23_revenue_events.tenant_id
                        AND v.id = b23_revenue_events.match_verdict_id
-                       AND v.b26_p2_source_authority_state = 'current'
-                        AND public.b26_p2_verdict_has_current_authority(
+                                               AND public.b26_p2_verdict_has_current_authority(
                                 v.id
                             )
               )

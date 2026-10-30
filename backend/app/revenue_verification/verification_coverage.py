@@ -194,8 +194,6 @@ async def fetch_verification_coverage_aggregate(
                    AS root_authenticated,
                v.id::text AS verdict_id,
                v.status::text AS verdict_status,
-               v.b26_p2_source_authority_state::text
-                   AS verdict_authority_state,
                upper(v.currency_code) AS verdict_currency
           FROM public.webhook_ingress_identities AS wi
           LEFT JOIN public.b26_p2_source_money_attestation AS a
@@ -333,7 +331,6 @@ async def fetch_verification_coverage_aggregate(
         if (
             verdict_id
             and row["verdict_status"] in _MATCHED_VERDICT_STATUSES
-            and row["verdict_authority_state"] == "current"
             and row["currency_code"] == normalized_currency
             and row["verdict_currency"] == normalized_currency
         ):

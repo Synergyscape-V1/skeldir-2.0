@@ -411,6 +411,9 @@ SELECT v.canonical_net_verified_amount_minor AS verdict_net,
        v.canonical_captured_gross_amount_minor AS verdict_captured,
        v.verified_amount_minor AS verdict_verified,
        v.currency_code AS verdict_currency,
+       v.provider AS verdict_provider,
+       v.provider_native_event_reference AS verdict_event_reference,
+       v.provider_native_commerce_reference AS verdict_commerce_reference,
        v.webhook_ingress_identity_id AS ingress_id,
        i.verified_amount_minor AS ingress_amount,
        i.verified_amount_currency AS ingress_currency,
@@ -647,6 +650,25 @@ async def read_verdict_source_attestation_status(
             return _unverifiable("source_currentness_ambiguous")
         if str(current_source.get("ingress_id")) != str(row["ingress_id"]):
             return _unverifiable("verdict_source_not_current")
+
+    # The verdict's link to the source is owner-writable data. It is not
+    # authority by itself: the linked source must still be the signed one.
+    # Bind the verdict's provider/event/commerce identity to the signed
+    # statement so a relink to a different current source cannot present that
+    # source's money under this verdict. This runs after currentness so a
+    # relink is refused for the specific currentness cause first.
+    if str(row["verdict_provider"] or "").lower() != str(
+        statement.get("provider") or ""
+    ).lower():
+        return _unverifiable("verdict_provider_mismatch")
+    if str(row["verdict_event_reference"] or "") != str(
+        statement.get("provider_native_event_reference") or ""
+    ):
+        return _unverifiable("verdict_event_reference_mismatch")
+    if str(row["verdict_commerce_reference"] or "") != str(
+        statement.get("provider_native_commerce_reference") or ""
+    ):
+        return _unverifiable("verdict_commerce_reference_mismatch")
 
     adjustment_rows = (
         (

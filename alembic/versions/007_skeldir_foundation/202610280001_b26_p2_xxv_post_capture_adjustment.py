@@ -183,9 +183,78 @@ def upgrade() -> None:
         " public.b26_p2_current_verdict_for_adjustment(uuid, text, text)"
         " TO app_ingress"
     )
+    # XXV/R-0021: a genuine provider replay of the retained signed bytes may
+    # lift the one-time pre-XXV demotion after the auth root has written the
+    # source attestation. The transition is auth-root-only and checks the
+    # signed statement's subject, tenant and amount against the retained row;
+    # it is not an owner-writable demotion clear.
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION public.b26_p2_lift_pre_xxv_demotion(
+            p_tenant uuid,
+            p_ingress uuid
+        )
+        RETURNS boolean
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path TO 'pg_catalog', 'public'
+        AS $$
+        BEGIN
+            IF session_user <> 'app_ingress' THEN
+                RAISE EXCEPTION
+                    'b26_p2_lift_pre_xxv_demotion_role_refused'
+                    USING ERRCODE = '42501';
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1
+                  FROM public.webhook_ingress_identities AS i
+                  JOIN public.b26_p2_source_money_attestation AS a
+                    ON a.webhook_ingress_identity_id = i.id
+                   AND a.tenant_id = i.tenant_id
+                 WHERE i.id = p_ingress
+                   AND i.tenant_id = p_tenant
+                   AND i.b26_p2_demotion_reason =
+                       'pre_xxv_source_money_unattestable'
+                   AND i.b26_p2_provenance_status = 'authenticated_known'
+                   AND a.statement->>'webhook_ingress_identity_id' =
+                       i.id::text
+                   AND a.statement->>'tenant_id' = i.tenant_id::text
+                   AND a.attested_amount_minor = i.verified_amount_minor
+                   AND upper(a.attested_amount_currency) =
+                       upper(i.verified_amount_currency)
+            ) THEN
+                RETURN false;
+            END IF;
+            UPDATE public.webhook_ingress_identities AS i
+               SET b26_p2_demotion_reason = NULL
+             WHERE i.id = p_ingress
+               AND i.tenant_id = p_tenant;
+            UPDATE public.b23_match_verdicts AS v
+               SET b26_p2_source_authority_state =
+                   public.b26_p2_derive_verdict_authority(
+                       v.webhook_ingress_identity_id
+                   )
+             WHERE v.tenant_id = p_tenant
+               AND v.webhook_ingress_identity_id = p_ingress;
+            RETURN true;
+        END $$;
+        """
+    )
+    op.execute(
+        "REVOKE ALL ON FUNCTION"
+        " public.b26_p2_lift_pre_xxv_demotion(uuid, uuid) FROM PUBLIC"
+    )
+    op.execute(
+        "GRANT EXECUTE ON FUNCTION"
+        " public.b26_p2_lift_pre_xxv_demotion(uuid, uuid) TO app_ingress"
+    )
 
 
 def downgrade() -> None:
+    op.execute(
+        "DROP FUNCTION IF EXISTS"
+        " public.b26_p2_lift_pre_xxv_demotion(uuid, uuid)"
+    )
     op.execute(
         "DROP FUNCTION IF EXISTS"
         " public.b26_p2_current_verdict_for_adjustment(uuid, text, text)"

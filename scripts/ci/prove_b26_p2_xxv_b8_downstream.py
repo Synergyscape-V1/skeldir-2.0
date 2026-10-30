@@ -30,12 +30,19 @@ OUT = Path(
         r"C:/Users/ayewhy/AppData/Local/Temp/b26p2xxv-lane/evidence/xxv-b8-downstream.json",
     )
 )
-DATABASE = "xxv_b8_replay6_xx"
+GENERATION = os.environ.get("B8_GENERATION", "XX")
+DATABASE = os.environ.get(
+    "B8_DATABASE", f"xxv_b8_replay7_{GENERATION.lower()}"
+)
 
 
 def main() -> int:
     evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
-    xx = next(item for item in evidence["generations"] if item["generation"] == "XX")
+    xx = next(
+        item
+        for item in evidence["generations"]
+        if item["generation"] == GENERATION
+    )
     recovery = xx["recovery"]
     tenant = xx["before"]["verdict"][1]
     verdict = xx["before"]["verdict"][0]

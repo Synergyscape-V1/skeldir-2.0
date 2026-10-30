@@ -160,8 +160,7 @@ _PREFLIGHT_SQL = (
               ON e.id = v.attribution_event_id
             WHERE v.tenant_id = :tenant_id
               AND v.status IN :match_verdict_statuses
-              AND v.b26_p2_source_authority_state = 'current'
-              -- XX (H-XX-A): single currentness law -- verdict-local
+                            -- XX (H-XX-A): single currentness law -- verdict-local
               -- state plus the canonical predicate over the backing
               -- ingress, so law-level revocation (registry/floor/
               -- family-source) is observed here too.
@@ -197,8 +196,7 @@ _PREFLIGHT_SQL = (
                     SELECT 1 FROM public.b23_match_verdicts AS v
                      WHERE v.tenant_id = re.tenant_id
                        AND v.id = re.match_verdict_id
-                       AND v.b26_p2_source_authority_state = 'current'
-                       -- XX (H-XX-A): single currentness law.
+                                              -- XX (H-XX-A): single currentness law.
                         AND public.b26_p2_verdict_has_current_authority(
                                 v.id
                             )

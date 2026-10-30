@@ -558,14 +558,59 @@ async def get_ingress_session(
         session.info[_SESSION_INFO_TENANT_ID] = str(tenant_id)
         if os.getenv(_MUTATION_DISABLE_TX_ENVELOPE) != "1":
             await session.begin()
+        # The source-fact journal records a signed outcome only after this
+        # boundary observes it. A raised call is not proof of rollback: a
+        # commit can succeed on the server and still raise on the client
+        # (connection loss after COMMIT). In that case the outcome is
+        # ``unknown`` and must never be signed as ``aborted``.
+        commit_attempted = False
+        committed = False
         try:
             yield session
             if session.in_transaction():
-                await session.commit()
+                commit_attempted = True
+                try:
+                    await session.commit()
+                except Exception:
+                    _record_source_commit_outcome("unknown")
+                    if session.in_transaction():
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            pass
+                    raise
+            committed = True
         except Exception:
-            if session.in_transaction():
-                await session.rollback()
+            if not committed:
+                if session.in_transaction():
+                    try:
+                        await session.rollback()
+                    except Exception:
+                        _record_source_commit_outcome("unknown")
+                        raise
+                _record_source_commit_outcome(
+                    "unknown" if commit_attempted else "aborted"
+                )
             raise
+        else:
+            _record_source_commit_outcome("committed")
+
+
+def _record_source_commit_outcome(outcome: str) -> None:
+    """Best-effort bridge to the source-fact outcome context.
+
+    Imported lazily to keep the database layer independent of the
+    revenue-verification package at import time. A missing bridge leaves the
+    context unset, which the journal treats as ``unknown``, never ``aborted``.
+    """
+    try:
+        from app.revenue_verification.source_evidence_journal import (  # noqa: PLC0415
+            record_commit_outcome,
+        )
+
+        record_commit_outcome(outcome)
+    except Exception:  # noqa: BLE001 - outcome remains unknown, never aborted
+        return
 
 
 async def validate_database_connection() -> None:

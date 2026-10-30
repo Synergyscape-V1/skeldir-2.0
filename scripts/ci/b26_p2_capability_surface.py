@@ -795,6 +795,10 @@ KNOWN_P2_DEFINERS = frozenset(
         "b26_p2_attest_provenance_evidence_v2",
         "b26_p2_read_history_continuity",
         "b26_p2_observe_history_integrity",
+        # R-0021/B8 governed replay: auth-root-only lift of a pre-XXV
+        # demotion after a signed source statement exists. Covered by the
+        # XXV registry and exercised by the B8 source/downstream proof.
+        "b26_p2_lift_pre_xxv_demotion",
         # Corrective XXII: the independent signed-history witness needs
         # read-only owner-context access to the live (count, tip, entry
         # hash, violations) so the observer can sign and verify a prefix

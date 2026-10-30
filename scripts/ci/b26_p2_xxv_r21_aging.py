@@ -78,7 +78,17 @@ def _restore_database() -> None:
 
 
 async def _read_restored(tenant: str, verdict: str, journal: Path):
+    import os
+
     from sqlalchemy import text
+
+    from app.core.config import settings
+
+    # Settings is cached at import; the two controls use different journals.
+    # Point both the settings object and the journal module environment at the
+    # requested file so the second control is not silently reading the first.
+    os.environ["B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH"] = str(journal)
+    settings.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH = str(journal)
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
     from app.revenue_verification.source_attestation import (
@@ -151,7 +161,9 @@ def main() -> int:
         record
         for record in live_records
         if not (
-            record.get("version") == "b26-p2-source-fact-journal-v2"
+            str(record.get("version") or "").startswith(
+                "b26-p2-source-fact-journal-"
+            )
             and record.get("fact_kind") == "source_money"
             and record.get("fact_id") == ingress_id
         )

@@ -125,6 +125,8 @@ class HistoryCheckpoint:
         Mapping[str, Mapping[str, tuple[str, ...]]] | None
     ) = None
     source_evidence_failures_by_tenant: Mapping[str, str] | None = None
+    source_journal_count: int | None = None
+    source_journal_tip: str | None = None
 
 
 @dataclass(frozen=True)
@@ -325,6 +327,8 @@ def _write_heartbeat(
         "source_evidence_failures_by_tenant": (
             latest.source_evidence_failures_by_tenant
         ),
+        "source_journal_count": latest.source_journal_count,
+        "source_journal_tip": latest.source_journal_tip,
     }
     if latest.authority_universe is not None:
         payload["authority_universe"] = latest.authority_universe
@@ -441,6 +445,8 @@ def _append_checkpoint_unlocked(
         Mapping[str, Mapping[str, Iterable[str]]] | None
     ) = None,
     source_evidence_failures_by_tenant: Mapping[str, str] | None = None,
+    source_journal_count: int | None = None,
+    source_journal_tip: str | None = None,
 ) -> HistoryCheckpoint:
     """Verify the existing journal, then atomically publish one observation.
 
@@ -500,6 +506,18 @@ def _append_checkpoint_unlocked(
             or source_evidence_count < 0
         ):
             raise HistoryWitnessError("witness_source_evidence_count_invalid")
+    if source_journal_count is not None and (
+        not isinstance(source_journal_count, int)
+        or isinstance(source_journal_count, bool)
+        or source_journal_count < 0
+    ):
+        raise HistoryWitnessError("witness_source_journal_count_invalid")
+    if source_journal_tip is not None and not _is_sha256_hex(source_journal_tip):
+        raise HistoryWitnessError("witness_source_journal_tip_invalid")
+    if (source_journal_count or 0) > 0 and source_journal_tip is None:
+        raise HistoryWitnessError("witness_source_journal_tip_missing")
+    if (source_journal_count or 0) == 0 and source_journal_tip is not None:
+        raise HistoryWitnessError("witness_source_journal_tip_without_records")
     normalized_failures: dict[str, str] | None = None
     if source_evidence_failures_by_tenant is not None:
         if not isinstance(source_evidence_failures_by_tenant, Mapping):
@@ -734,6 +752,8 @@ def _append_checkpoint_unlocked(
             source_evidence_failures_by_tenant=(
                 previous.source_evidence_failures_by_tenant
             ),
+            source_journal_count=previous.source_journal_count,
+            source_journal_tip=previous.source_journal_tip,
         )
     payload: dict[str, Any] = {
         "version": WITNESS_VERSION,
@@ -761,6 +781,10 @@ def _append_checkpoint_unlocked(
         )
     if normalized_failures is not None:
         payload["source_evidence_failures_by_tenant"] = normalized_failures
+    if source_journal_count is not None:
+        payload["source_journal_count"] = source_journal_count
+    if source_journal_tip is not None:
+        payload["source_journal_tip"] = source_journal_tip
     payload["checkpoint_hash"] = _checkpoint_hash(payload)
     if custody is not None and int(custody["ledger_count"]) == int(ledger_count):
         if custody.get("checkpoint_hash") != payload["checkpoint_hash"]:
@@ -820,6 +844,8 @@ def _append_checkpoint_unlocked(
         source_evidence_count=source_evidence_count,
         source_evidence_manifest_by_tenant=normalized_manifest,
         source_evidence_failures_by_tenant=normalized_failures,
+        source_journal_count=source_journal_count,
+        source_journal_tip=source_journal_tip,
     )
     try:
         _write_custody(
@@ -937,6 +963,8 @@ def verify_journal(
     expected_source_evidence_digest: str | None = None,
     expected_source_evidence_by_tenant: Mapping[str, str] | None = None,
     require_source_evidence: bool = False,
+    expected_source_journal_count: int | None = None,
+    expected_source_journal_tip: str | None = None,
     heartbeat_path: str | os.PathLike[str] | None = None,
     now: datetime | None = None,
 ) -> VerifiedJournal:
@@ -1113,6 +1141,26 @@ def verify_journal(
                     "facts": tuple(sorted(facts)),
                     "states": tuple(sorted(states)),
                 }
+        source_journal_count = payload.get("source_journal_count")
+        if source_journal_count is not None and (
+            not isinstance(source_journal_count, int)
+            or isinstance(source_journal_count, bool)
+            or source_journal_count < 0
+        ):
+            raise HistoryWitnessError(
+                "witness_source_journal_count_invalid"
+            )
+        source_journal_tip = payload.get("source_journal_tip")
+        if source_journal_tip is not None and not _is_sha256_hex(
+            source_journal_tip
+        ):
+            raise HistoryWitnessError("witness_source_journal_tip_invalid")
+        if (source_journal_count or 0) > 0 and source_journal_tip is None:
+            raise HistoryWitnessError("witness_source_journal_tip_missing")
+        if (source_journal_count or 0) == 0 and source_journal_tip is not None:
+            raise HistoryWitnessError(
+                "witness_source_journal_tip_without_records"
+            )
         if count == 0 and (tip_seq is not None or tip_hash is not None):
             raise HistoryWitnessError("witness_empty_ledger_with_tip")
         if count > 0 and (tip_seq is None or not tip_hash):
@@ -1225,6 +1273,8 @@ def verify_journal(
             source_evidence_failures_by_tenant=(
                 source_evidence_failures_by_tenant
             ),
+            source_journal_count=source_journal_count,
+            source_journal_tip=source_journal_tip,
         )
         checkpoints.append(checkpoint)
         previous_hash = computed_hash
@@ -1233,6 +1283,16 @@ def verify_journal(
     if genesis_hash is not None and checkpoints[0].checkpoint_hash != genesis_hash:
         raise HistoryWitnessError("witness_genesis_mismatch")
     latest = checkpoints[-1]
+    if expected_source_journal_count is not None:
+        if latest.source_journal_count != expected_source_journal_count:
+            raise HistoryWitnessError(
+                "witness_source_journal_count_mismatch"
+            )
+    if expected_source_journal_tip is not None:
+        if latest.source_journal_tip != expected_source_journal_tip:
+            raise HistoryWitnessError(
+                "witness_source_journal_tip_mismatch"
+            )
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     if latest.observed_at > current + timedelta(seconds=FUTURE_TOLERANCE_SECONDS):
         raise HistoryWitnessError("witness_observation_future")
@@ -1257,6 +1317,10 @@ def verify_journal(
             != (latest.source_evidence_by_tenant or None)
             or (heartbeat.get("source_evidence_count") or None)
             != (latest.source_evidence_count or None)
+            or (heartbeat.get("source_journal_count") or None)
+            != (latest.source_journal_count or None)
+            or (heartbeat.get("source_journal_tip") or None)
+            != (latest.source_journal_tip or None)
             or _canonical(
                 heartbeat.get("source_evidence_manifest_by_tenant") or {}
             )

@@ -20,15 +20,23 @@ from __future__ import annotations
 import base64
 import contextlib
 import contextvars
+import hashlib
 import json
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-SOURCE_FACT_JOURNAL_VERSION = "b26-p2-source-fact-journal-v2"
+SOURCE_FACT_JOURNAL_VERSION = "b26-p2-source-fact-journal-v3"
+SOURCE_FACT_JOURNAL_V2 = "b26-p2-source-fact-journal-v2"
 LEGACY_SOURCE_FACT_JOURNAL_VERSION = "b26-p2-source-fact-journal-v1"
 SOURCE_FACT_OUTCOME_VERSION = "b26-p2-source-fact-outcome-v1"
+
+#: Serialises append + last-hash read within one auth-root process. The
+#: production auth root runs one worker; the OS append itself remains
+#: durable and fsynced.
+_JOURNAL_APPEND_LOCK = threading.Lock()
 
 
 class SourceFactJournalError(RuntimeError):
@@ -38,6 +46,25 @@ class SourceFactJournalError(RuntimeError):
 _CURRENT_OUTCOME_CONTEXT: contextvars.ContextVar[
     list[dict[str, Any]] | None
 ] = contextvars.ContextVar("source_fact_outcome_context", default=None)
+
+#: Commit outcome recorded by the session boundary. ``None`` means the
+#: boundary did not observe a definitive commit or rollback; that is an
+#: uncertain outcome, never an abort.
+_CURRENT_COMMIT_OUTCOME: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "source_fact_commit_outcome", default=None
+)
+
+
+def record_commit_outcome(outcome: str | None) -> None:
+    """Record a definitive session outcome for the enclosing fact journal."""
+
+    if outcome not in {None, "committed", "aborted", "unknown"}:
+        raise SourceFactJournalError("source_fact_commit_outcome_invalid")
+    _CURRENT_COMMIT_OUTCOME.set(outcome)
+
+
+def current_commit_outcome() -> str | None:
+    return _CURRENT_COMMIT_OUTCOME.get()
 
 
 @dataclass(frozen=True)
@@ -49,6 +76,8 @@ class ResolvedSourceFacts:
     aborted: frozenset[tuple[str, str]]
     in_progress: frozenset[tuple[str, str]]
     unknown: frozenset[tuple[str, str]]
+    journal_count: int
+    journal_tip: str | None
 
 
 def _journal_path(path: str | os.PathLike[str] | None = None) -> Path | None:
@@ -60,6 +89,54 @@ def _canonical_outcome(payload: Mapping[str, Any]) -> bytes:
     return json.dumps(
         payload, sort_keys=True, separators=(",", ":"), default=str
     ).encode("utf-8")
+
+
+def _record_hash(record: Mapping[str, Any]) -> str:
+    """Hash one journal record, excluding its own chain hash."""
+
+    material = {
+        key: value
+        for key, value in record.items()
+        if key != "record_hash"
+    }
+    return hashlib.sha256(_canonical_outcome(material)).hexdigest()
+
+
+def journal_record_hash(record: Mapping[str, Any]) -> str:
+    """Public hash identity of one journal record."""
+
+    return str(record.get("record_hash") or "") or _record_hash(record)
+
+
+def _last_record_hash_unlocked(journal: Path) -> str | None:
+    if not journal.exists():
+        return None
+    last: str | None = None
+    with journal.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                last = line.strip()
+    if last is None:
+        return None
+    record = json.loads(last)
+    if record.get("version") == SOURCE_FACT_JOURNAL_VERSION:
+        return str(record.get("record_hash") or "") or None
+    return _record_hash(record)
+
+
+def _append_chained_record(journal: Path, record: dict[str, Any]) -> None:
+    """Append one v3 record with a durable previous/record hash chain."""
+
+    with _JOURNAL_APPEND_LOCK:
+        previous = _last_record_hash_unlocked(journal)
+        record["previous_record_hash"] = previous
+        record["record_hash"] = _record_hash(record)
+        line = json.dumps(record, sort_keys=True, separators=(",", ":"), default=str)
+        journal.parent.mkdir(parents=True, exist_ok=True)
+        with journal.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
 
 
 def _verify_outcome(
@@ -126,7 +203,7 @@ def append_source_fact_outcome(
 ) -> None:
     """Append an auth-root-signed post-commit outcome for one prepared fact."""
 
-    if outcome not in {"committed", "aborted"}:
+    if outcome not in {"committed", "aborted", "unknown"}:
         raise SourceFactJournalError("source_fact_outcome_invalid")
     journal = _journal_path(path or record.get("path"))
     if journal is None:
@@ -154,22 +231,13 @@ def append_source_fact_outcome(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
     )
-    line = json.dumps(
-        {
-            **payload,
-            "signature": "ed25519:"
-            + base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii"),
-            "key_sha256": __import__("hashlib").sha256(public_raw).hexdigest(),
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
-    journal.parent.mkdir(parents=True, exist_ok=True)
-    with journal.open("a", encoding="utf-8") as handle:
-        handle.write(line + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
+    record_payload = {
+        **payload,
+        "signature": "ed25519:"
+        + base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii"),
+        "key_sha256": hashlib.sha256(public_raw).hexdigest(),
+    }
+    _append_chained_record(journal, record_payload)
 
 
 @contextlib.asynccontextmanager
@@ -189,14 +257,22 @@ async def source_fact_outcome_transaction(
         return
     facts: list[dict[str, Any]] = []
     token = _CURRENT_OUTCOME_CONTEXT.set(facts)
+    commit_token = _CURRENT_COMMIT_OUTCOME.set(None)
     try:
         yield
     except Exception:
+        # A raised call is not proof of rollback. The session boundary
+        # records ``committed``/``aborted`` only when it observed that
+        # outcome; a failed commit leaves ``unknown``. Never manufacture an
+        # ``aborted`` receipt from an exception alone.
+        outcome = current_commit_outcome() or "unknown"
+        if outcome not in {"committed", "aborted"}:
+            outcome = "unknown"
         for fact in facts:
             try:
                 append_source_fact_outcome(
                     record=fact,
-                    outcome="aborted",
+                    outcome=outcome,
                     private_key_path=private_key_path,
                     path=fact.get("path"),
                 )
@@ -204,14 +280,21 @@ async def source_fact_outcome_transaction(
                 pass
         raise
     else:
+        # Normal return without an observed database outcome is not proof
+        # of commit. Only the session boundary may record ``committed``;
+        # otherwise the fact remains unknown.
+        outcome = current_commit_outcome() or "unknown"
+        if outcome not in {"committed", "aborted", "unknown"}:
+            outcome = "unknown"
         for fact in facts:
             append_source_fact_outcome(
                 record=fact,
-                outcome="committed",
+                outcome=outcome,
                 private_key_path=private_key_path,
                 path=fact.get("path"),
             )
     finally:
+        _CURRENT_COMMIT_OUTCOME.reset(commit_token)
         _CURRENT_OUTCOME_CONTEXT.reset(token)
 
 
@@ -247,11 +330,7 @@ def append_source_fact(
         "key_sha256": key_sha256,
         "database_transaction_id": transaction_id,
     }
-    line = json.dumps(record, sort_keys=True, separators=(",", ":"), default=str)
-    with journal.open("a", encoding="utf-8") as handle:
-        handle.write(line + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
+    _append_chained_record(journal, record)
     context = _CURRENT_OUTCOME_CONTEXT.get()
     if context is not None:
         context.append({**record, "path": str(journal)})
@@ -277,19 +356,42 @@ def load_source_fact_records(
             version = record.get("version")
             if version not in {
                 SOURCE_FACT_JOURNAL_VERSION,
+                SOURCE_FACT_JOURNAL_V2,
                 LEGACY_SOURCE_FACT_JOURNAL_VERSION,
                 SOURCE_FACT_OUTCOME_VERSION,
             }:
                 raise SourceFactJournalError(
                     "source_fact_journal_version_unsupported"
                 )
-            if version == SOURCE_FACT_JOURNAL_VERSION and not str(
-                record.get("database_transaction_id") or ""
-            ).strip():
+            if version in {
+                SOURCE_FACT_JOURNAL_VERSION,
+                SOURCE_FACT_JOURNAL_V2,
+            } and not str(record.get("database_transaction_id") or "").strip():
                 raise SourceFactJournalError(
                     "source_fact_journal_transaction_identity_missing"
                 )
             records.append(record)
+    # v3 records carry an explicit previous/record hash chain. v2/v1 records
+    # are still accepted as legacy prefixes; their computed hash is the link
+    # the first v3 record must cite, so modifying or deleting a legacy record
+    # breaks the chain at the first v3 record.
+    previous: str | None = None
+    for record in records:
+        if record.get("version") == SOURCE_FACT_JOURNAL_VERSION:
+            if str(record.get("previous_record_hash") or "") != str(
+                previous or ""
+            ):
+                raise SourceFactJournalError(
+                    "source_fact_journal_chain_previous_mismatch"
+                )
+            computed = _record_hash(record)
+            if str(record.get("record_hash") or "") != computed:
+                raise SourceFactJournalError(
+                    "source_fact_journal_chain_record_mismatch"
+                )
+            previous = computed
+        else:
+            previous = _record_hash(record)
     return records
 
 
@@ -317,7 +419,9 @@ async def _transaction_statuses(
     rows = (
         await session.execute(
             text(
-                "SELECT xid::text, pg_xact_status(xid::xid8)::text"
+                "SELECT xid::text,"
+                " CASE WHEN xid::xid8 >= pg_current_xact_id() THEN NULL"
+                " ELSE pg_xact_status(xid::xid8)::text END"
                 " FROM unnest(CAST(:xids AS text[])) AS xid"
             ),
             {"xids": sorted(transaction_ids)},
@@ -342,18 +446,27 @@ async def resolve_source_facts(
     records = load_source_fact_records(path)
     if records is None:
         return None
-    transaction_ids = {
-        str(record["database_transaction_id"])
-        for record in records
-        if record.get("version") == SOURCE_FACT_JOURNAL_VERSION
-    }
-    statuses = await _transaction_statuses(session, transaction_ids)
 
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for record in records:
         grouped.setdefault(
             (str(record["fact_kind"]), str(record["fact_id"])), []
         ).append(record)
+    # A signed outcome is authoritative and survives cluster migration. Do
+    # not ask a new cluster about an old transaction id (it can be in that
+    # cluster's future) before consulting the signed outcome.
+    transaction_ids = {
+        str(record["database_transaction_id"])
+        for entries in grouped.values()
+        if not any(
+            record.get("version") == SOURCE_FACT_OUTCOME_VERSION
+            for record in entries
+        )
+        for record in entries
+        if record.get("version")
+        in {SOURCE_FACT_JOURNAL_VERSION, SOURCE_FACT_JOURNAL_V2}
+    }
+    statuses = await _transaction_statuses(session, transaction_ids)
 
     committed: dict[tuple[str, str], dict[str, Any]] = {}
     legacy: dict[tuple[str, str], dict[str, Any]] = {}
@@ -367,6 +480,7 @@ async def resolve_source_facts(
             if record.get("version")
             in {
                 SOURCE_FACT_JOURNAL_VERSION,
+                SOURCE_FACT_JOURNAL_V2,
                 LEGACY_SOURCE_FACT_JOURNAL_VERSION,
             }
         ]
@@ -382,6 +496,14 @@ async def resolve_source_facts(
                 )
             for outcome_record in outcomes:
                 _verify_outcome(outcome_record, public_key_path)
+                if str(outcome_record.get("outcome")) not in {
+                    "committed",
+                    "aborted",
+                    "unknown",
+                }:
+                    raise SourceFactJournalError(
+                        "source_fact_outcome_value_unsupported"
+                    )
             committed_outcomes = [
                 record
                 for record in outcomes
@@ -405,6 +527,12 @@ async def resolve_source_facts(
                         "source_fact_outcome_prepared_fact_missing"
                     )
                 committed[key] = chosen
+                continue
+            if any(
+                str(record.get("outcome")) == "unknown"
+                for record in outcomes
+            ):
+                unknown.add(key)
                 continue
             aborted.add(key)
             continue
@@ -434,10 +562,18 @@ async def resolve_source_facts(
         else:
             aborted.add(key)
 
+    journal_tip = None
+    if records:
+        last = records[-1]
+        journal_tip = (
+            str(last.get("record_hash") or "") or _record_hash(last)
+        )
     return ResolvedSourceFacts(
         committed=committed,
         legacy=legacy,
         aborted=frozenset(aborted),
         in_progress=frozenset(in_progress),
         unknown=frozenset(unknown),
+        journal_count=len(records),
+        journal_tip=journal_tip,
     )

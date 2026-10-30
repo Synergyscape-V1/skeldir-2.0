@@ -659,6 +659,85 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             .mappings()
             .one_or_none()
         )
+        if winner is None:
+            # XXV/R-0021: a demoted pre-XXV source with a retained
+            # provider-auth consequence is eligible for a governed replay.
+            # The provider bytes were already verified and derived above;
+            # the source writer re-attests the existing row and the
+            # auth-root-only lift clears the one-time pre-XXV demotion.
+            inherited = (
+                (
+                    await session.execute(
+                        text(
+                            "WITH cand AS MATERIALIZED ("
+                            " SELECT c.webhook_ingress_identity_id AS iid,"
+                            " c.tenant_id AS tenant_id"
+                            " FROM public.b26_p2_provider_auth_consequence AS c"
+                            " WHERE c.tenant_id = :tenant"
+                            " AND c.body_sha256 = :body_sha"
+                            " AND c.provider_event_reference = :event_ref"
+                            ")"
+                            " SELECT i.id::text AS iid"
+                            " FROM public.webhook_ingress_identities AS i"
+                            " JOIN cand ON cand.iid = i.id"
+                            " AND cand.tenant_id = i.tenant_id"
+                            " WHERE i.tenant_id = :tenant"
+                            " AND i.b26_p2_demotion_reason ="
+                            " 'pre_xxv_source_money_unattestable'"
+                            " AND i.b26_p2_provenance_status ="
+                            " 'authenticated_known'"
+                            " LIMIT 1"
+                        ),
+                        {
+                            "tenant": str(tenant_uuid),
+                            "body_sha": body_sha,
+                            "event_ref": derived.provider_native_event_reference,
+                        },
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if inherited is not None:
+                await _write_source_money_attestation(
+                    session,
+                    tenant_id=str(tenant_uuid),
+                    ingress_id=str(inherited["iid"]),
+                    provider=provider,
+                    commerce={
+                        "event_ref": derived.provider_native_event_reference,
+                        "commerce_ref": (
+                            derived.provider_native_commerce_reference
+                        ),
+                        "norm_kind": (
+                            derived.normalized_commerce_reference_kind
+                        ),
+                        "norm_value": (
+                            derived.normalized_commerce_reference_value
+                        ),
+                        "amount_minor": int(derived.verified_amount_minor),
+                        "amount_currency": derived.verified_amount_currency,
+                        "amount_scale": int(derived.verified_amount_scale),
+                    },
+                    event_timestamp=derived.event_timestamp,
+                    body_sha256=body_sha,
+                )
+                await session.execute(
+                    text(
+                        "SELECT public.b26_p2_lift_pre_xxv_demotion("
+                        ":tenant, :ingress)"
+                    ),
+                    {
+                        "tenant": str(tenant_uuid),
+                        "ingress": str(inherited["iid"]),
+                    },
+                )
+                return AuthenticateResponse(
+                    status="authenticated",
+                    provenance_status="authenticated_known",
+                    ingress_id=str(inherited["iid"]),
+                    tenant_id=str(tenant_uuid),
+                )
         if winner is not None:
             # XXV historical qualification: an inherited source can be
             # current authority without a source-money attestation because

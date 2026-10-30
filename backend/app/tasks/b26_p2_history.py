@@ -157,6 +157,20 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         tenant: hashlib.sha256(reason.encode("utf-8")).hexdigest()
         for tenant, reason in source_failures.items()
     }
+    from app.revenue_verification.source_evidence_journal import (  # noqa: PLC0415
+        journal_record_hash,
+        load_source_fact_records,
+    )
+
+    journal_records = load_source_fact_records(
+        settings.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH
+    ) or []
+    source_journal_count = len(journal_records)
+    source_journal_tip = (
+        journal_record_hash(journal_records[-1])
+        if journal_records
+        else None
+    )
 
     violations = str(raw_violations or "").strip()
     if violations:
@@ -206,6 +220,8 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         source_evidence_count=source_count,
         source_evidence_manifest_by_tenant=source_manifest,
         source_evidence_failures_by_tenant=source_failure_digests,
+        source_journal_count=source_journal_count,
+        source_journal_tip=source_journal_tip,
     )
     return {
         "ledger_count": checkpoint.ledger_count,

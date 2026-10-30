@@ -1267,6 +1267,10 @@ def _verify_signed_history_witness(
         COMPILED_GENESIS_HASH,
         COMPILED_PUBLIC_KEY_SHA256,
     )
+    from app.revenue_verification.source_evidence_journal import (  # noqa: PLC0415
+        journal_record_hash,
+        load_source_fact_records,
+    )
 
     if not settings.B26_P2_HISTORY_WITNESS_REQUIRED:
         return True, ""
@@ -1305,6 +1309,10 @@ def _verify_signed_history_witness(
                     "witness_compiled_public_key_mismatch"
                 )
             genesis_hash = COMPILED_GENESIS_HASH
+        source_journal_records = load_source_fact_records(
+            settings.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH
+        ) or []
+
         journal = verify_journal(
             settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH,
             public_key_path=settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
@@ -1320,6 +1328,24 @@ def _verify_signed_history_witness(
             require_source_evidence=(tenant_source_evidence_digest is not None),
             heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
         )
+        # The signed source-journal custody commits a prefix. Later appends
+        # (for example an outcome receipt written after the observer's read)
+        # are lawful; a shorter journal, a different record at the committed
+        # index, or a broken chain is not.
+        witnessed_journal_count = journal.latest.source_journal_count
+        if witnessed_journal_count is not None:
+            if len(source_journal_records) < witnessed_journal_count:
+                raise HistoryWitnessError(
+                    "witness_source_journal_truncated"
+                )
+            if witnessed_journal_count > 0:
+                committed_tip = journal_record_hash(
+                    source_journal_records[witnessed_journal_count - 1]
+                )
+                if committed_tip != journal.latest.source_journal_tip:
+                    raise HistoryWitnessError(
+                        "witness_source_journal_tip_mismatch"
+                    )
         custody = load_custody(
             settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH
         )

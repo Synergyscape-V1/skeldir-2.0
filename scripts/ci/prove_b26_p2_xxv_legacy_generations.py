@@ -661,6 +661,22 @@ def _replay_recovery(
             await engine.dispose()
 
     asyncio.run(sign_source())
+    # Auth-root-only governed lift after the signed source statement exists.
+    lift = psycopg2.connect(ingress_dsn)
+    lift.autocommit = True
+    try:
+        with lift.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant,),
+            )
+            cur.execute(
+                "SELECT public.b26_p2_lift_pre_xxv_demotion(%s, %s)",
+                (tenant, ingress_id),
+            )
+            demotion_lifted = bool(cur.fetchone()[0])
+    finally:
+        lift.close()
     reader = _read_status(database, tenant, verdict_id)
     conn = psycopg2.connect(_dsn(admin, database))
     conn.autocommit = True
@@ -682,6 +698,7 @@ def _replay_recovery(
         "generation": generation,
         "provider_signature_verified": signature_ok,
         "body_binding_created": body_binding_created,
+        "demotion_lifted": demotion_lifted,
         "inherited_ingress_id": ingress_id,
         "verdict_id": verdict_id,
         "demotion_reason_preserved": demotion,
@@ -692,10 +709,12 @@ def _replay_recovery(
         "passed": signature_ok and reader["status"] == "xxv_attested",
         "limit_of_inference": (
             "The provider bytes are real and the source statement is signed for"
-            " the existing inherited ingress; the pre-XXV demotion flag is"
-            " retained, not cleared. The source reader is attested; a full"
-            " Trust/coverage read still needs the surrounding historical"
-            " projections to accept the re-attested source."
+            " the existing inherited ingress. A pre-XXV demotion, when"
+            " present, is lifted only by the auth-root governed function"
+            " after the signed source statement exists; no owner or runtime"
+            " principal can clear it. The source reader is attested; Trust"
+            " and coverage are exercised separately on the same DB, tenant"
+            " and window."
         ),
     }
 

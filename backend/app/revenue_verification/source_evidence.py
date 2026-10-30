@@ -348,6 +348,54 @@ async def source_evidence_snapshot(
             if str(row["match_verdict_id"]) in attested_verdicts
         ],
     }
+    current_sources: dict[str, dict[str, Any]] = {}
+    sources_by_commerce: dict[str, list[dict[str, Any]]] = {}
+    for row in valid_sources.values():
+        statement = (
+            row["statement"]
+            if isinstance(row["statement"], dict)
+            else json.loads(str(row["statement"]))
+        )
+        try:
+            event_instant = datetime.fromisoformat(
+                str(statement["event_timestamp"]).replace("Z", "+00:00")
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SourceEvidenceError(
+                "source_fact_event_timestamp_invalid"
+            ) from exc
+        if event_instant.tzinfo is None:
+            raise SourceEvidenceError("source_fact_event_timestamp_timezone_required")
+        key = (
+            str(statement.get("provider") or "").lower()
+            + "\x1f"
+            + str(statement.get("provider_native_commerce_reference") or "")
+        )
+        sources_by_commerce.setdefault(key, []).append(
+            {
+                "ingress_id": str(row["webhook_ingress_identity_id"]),
+                "amount_minor": int(statement["verified_amount_minor"]),
+                "event_timestamp": event_instant.astimezone(timezone.utc),
+            }
+        )
+    for key, candidates in sources_by_commerce.items():
+        latest_instant = max(item["event_timestamp"] for item in candidates)
+        latest = [
+            item for item in candidates if item["event_timestamp"] == latest_instant
+        ]
+        if len({item["ingress_id"] for item in latest}) != 1:
+            current_sources[key] = {
+                "status": "ambiguous",
+                "event_timestamp": latest_instant.isoformat(),
+            }
+            continue
+        current_sources[key] = {
+            "status": "current",
+            "ingress_id": latest[0]["ingress_id"],
+            "amount_minor": latest[0]["amount_minor"],
+            "event_timestamp": latest_instant.isoformat(),
+        }
+
     from app.revenue_verification.source_evidence_journal import (
         SourceFactJournalError,
         resolve_source_facts,
@@ -412,6 +460,30 @@ async def source_evidence_snapshot(
             key = ("source_money", ingress_id)
             if key in journal.committed or key in journal.legacy:
                 continue
+            source = valid_sources[ingress_id]
+            statement = (
+                source["statement"]
+                if isinstance(source["statement"], dict)
+                else json.loads(str(source["statement"]))
+            )
+            source_key = (
+                str(statement.get("provider") or "").lower()
+                + "\x1f"
+                + str(statement.get("provider_native_commerce_reference") or "")
+            )
+            current_source = current_sources.get(source_key)
+            superseded = bool(
+                current_source
+                and current_source.get("status") == "current"
+                and str(current_source.get("ingress_id")) != str(ingress_id)
+            )
+            if superseded:
+                # An uncertain or aborted attempt that is no longer the
+                # current source cannot govern current money. A later
+                # committed source for the same commerce identity is the
+                # governed retry; the old attempt remains journal history but
+                # does not poison the retry.
+                continue
             if key in journal.aborted:
                 raise SourceEvidenceError(
                     f"source_fact_journal_source_not_committed:{ingress_id}"
@@ -447,54 +519,6 @@ async def source_evidence_snapshot(
             raise SourceEvidenceError(
                 f"source_fact_journal_adjustment_missing:{evidence_id}"
             )
-
-    current_sources: dict[str, dict[str, Any]] = {}
-    sources_by_commerce: dict[str, list[dict[str, Any]]] = {}
-    for row in valid_sources.values():
-        statement = (
-            row["statement"]
-            if isinstance(row["statement"], dict)
-            else json.loads(str(row["statement"]))
-        )
-        try:
-            event_instant = datetime.fromisoformat(
-                str(statement["event_timestamp"]).replace("Z", "+00:00")
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise SourceEvidenceError(
-                "source_fact_event_timestamp_invalid"
-            ) from exc
-        if event_instant.tzinfo is None:
-            raise SourceEvidenceError("source_fact_event_timestamp_timezone_required")
-        key = (
-            str(statement.get("provider") or "").lower()
-            + "\x1f"
-            + str(statement.get("provider_native_commerce_reference") or "")
-        )
-        sources_by_commerce.setdefault(key, []).append(
-            {
-                "ingress_id": str(row["webhook_ingress_identity_id"]),
-                "amount_minor": int(statement["verified_amount_minor"]),
-                "event_timestamp": event_instant.astimezone(timezone.utc),
-            }
-        )
-    for key, candidates in sources_by_commerce.items():
-        latest_instant = max(item["event_timestamp"] for item in candidates)
-        latest = [
-            item for item in candidates if item["event_timestamp"] == latest_instant
-        ]
-        if len({item["ingress_id"] for item in latest}) != 1:
-            current_sources[key] = {
-                "status": "ambiguous",
-                "event_timestamp": latest_instant.isoformat(),
-            }
-            continue
-        current_sources[key] = {
-            "status": "current",
-            "ingress_id": latest[0]["ingress_id"],
-            "amount_minor": latest[0]["amount_minor"],
-            "event_timestamp": latest_instant.isoformat(),
-        }
 
     for verdict in attested_verdicts.values():
         current_key = (
@@ -656,7 +680,6 @@ async def source_evidence_is_attested(
             text(
                 "SELECT id::text FROM public.b23_match_verdicts"
                 " WHERE tenant_id = :tenant"
-                "   AND b26_p2_source_authority_state = 'current'"
             ),
             {"tenant": tenant},
         )

@@ -46,6 +46,9 @@ _XXV_NEW = frozenset(
         "app_ingress:INSERT:b26_p2_adjustment_attestation",
         "app_ingress:SELECT:b26_p2_adjustment_attestation",
         "app_ingress:EXECUTE:b26_p2_current_verdict_for_adjustment",
+        # Auth-root-only governed lift of a pre-XXV demotion after a signed
+        # source attestation exists. No runtime principal receives it.
+        "app_ingress:EXECUTE:b26_p2_lift_pre_xxv_demotion",
         "app_user:SELECT:b26_p2_adjustment_evidence",
         "app_worker:SELECT:b26_p2_adjustment_evidence",
         "app_trust_issuer:SELECT:b26_p2_adjustment_evidence",

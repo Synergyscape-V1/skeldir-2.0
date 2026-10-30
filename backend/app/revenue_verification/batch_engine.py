@@ -58,7 +58,7 @@ _CANDIDATE_SCOPE_SQL = """
           WHERE existing.tenant_id = wi.tenant_id
             AND existing.provider = wi.provider
             AND existing.provider_native_event_reference = wi.provider_native_event_reference
-            AND existing.b26_p2_source_authority_state = 'current'
+            AND public.b26_p2_verdict_has_current_authority(existing.id)
       )
       -- XXV-2 (A2/B10): a second authenticated event over one commerce
       -- identity is a provider amendment, not a fresh capture. It becomes
