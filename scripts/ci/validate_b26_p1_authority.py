@@ -175,6 +175,10 @@ COVERAGE_SQL_GRANDFATHERED_FILES = frozenset(
         "backend/app/revenue_verification/batch_engine.py",
         "backend/app/revenue_verification/match_engine_kernel.py",
         "backend/app/bayesian/eligibility.py",
+        # XXV source attestation reads the provider amount to verify the
+        # signed statement. It computes no coverage ratio and is not a
+        # coverage authority; the read is bound to the attestation subject.
+        "backend/app/revenue_verification/source_attestation.py",
     }
 )
 # semantic_contract.py legitimately names total_business_minor inside the golden
