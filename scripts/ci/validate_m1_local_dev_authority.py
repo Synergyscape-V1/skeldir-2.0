@@ -827,6 +827,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     # against a fingerprint compiled into the image, and the mandatory proof
     # sweeps the live financial state instead of judging its own fixture.
     "alembic/versions/007_skeldir_foundation/202610270001_b26_p2_corrective_xxv_source_attestation.py",
+    "alembic/env.py",
     "alembic/versions/007_skeldir_foundation/202610270002_b26_p2_corrective_xxv_provider_amendment.py",
     "alembic/versions/007_skeldir_foundation/202610280001_b26_p2_xxv_post_capture_adjustment.py",
     "backend/app/auth_service/server.py",
