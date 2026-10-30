@@ -215,6 +215,14 @@ def validate(matrix: dict) -> None:
             raise SystemExit(f"task_database_secret_path_invalid:{process}")
         if "*" in path:
             raise SystemExit(f"task_database_secret_wildcard:{process}")
+        # Terraform grants each process exactly the secrets listed for it.
+        # A task database path in another process's list would become a real
+        # cross-process IAM read grant, so the matrix must exclude it.
+        for other, entries in processes.items():
+            if other != process and path in entries["secrets"]:
+                raise SystemExit(
+                    f"task_database_secret_cross_grant:{process}:{other}"
+                )
     if any(
         _path("MIGRATION_DATABASE_URL") in entries["secrets"]
         for process, entries in processes.items()
