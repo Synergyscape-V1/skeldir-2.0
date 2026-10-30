@@ -186,7 +186,7 @@ jobs:
           GRANT SELECT ON TABLE public.b23_match_task_dispatches TO app_ingress;
           GRANT SELECT ON TABLE public.b26_p2_provenance_evidence TO app_ingress;
           GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
-          GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
+          GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) TO app_ingress;
           GRANT EXECUTE ON FUNCTION public.b26_p2_state_eligible_for_p3(text, uuid) TO app_ingress;
           SQL
 
