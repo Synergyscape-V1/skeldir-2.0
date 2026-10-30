@@ -89,6 +89,7 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_ingress NOLOGIN;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_worker NOLOGIN;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_trust_issuer NOLOGIN;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_relay NOLOGIN;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER migration_owner;"

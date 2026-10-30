@@ -43,7 +43,7 @@ def _normalize_schema(text: str) -> str:
             continue
         if line.startswith("SELECT set_config("):
             continue
-        if line.startswith("COMMENT ON EXTENSION"):
+        if line.startswith("COMMENT ON "):
             continue
         norm = line.rstrip()
         if "--" in norm:

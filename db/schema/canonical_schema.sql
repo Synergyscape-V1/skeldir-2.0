@@ -24,9 +24,19 @@ SET row_security = off;
 
 CREATE SCHEMA auth;
 
+
+
+
 CREATE SCHEMA security;
 
+
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+
+
+
+
 
 CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
     LANGUAGE sql SECURITY DEFINER
@@ -37,10 +47,12 @@ CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text
                 u.is_active,
                 u.auth_provider,
                 u.password_hash
-            FROM users AS u
+            FROM public.users AS u
             WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
+
+
 
 CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text)
     LANGUAGE sql SECURITY DEFINER
@@ -50,10 +62,12 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
                 u.id AS user_id,
                 u.is_active,
                 u.auth_provider
-            FROM users AS u
+            FROM public.users AS u
             WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
+
+
 
 CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
     LANGUAGE plpgsql
@@ -64,18 +78,24 @@ CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
             table_owner_oid oid;
             worker_role_oid oid;
         BEGIN
-
+            -- A superuser can drop this trigger, so refusing it buys no
+            -- authority and only breaks administrative provisioning.
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_roles
+              FROM pg_catalog.pg_roles
              WHERE rolname = session_user;
             IF COALESCE(principal_is_superuser, false) THEN
                 RETURN NEW;
             END IF;
 
+            -- The migration principal owns this relation and can drop the
+            -- trigger, so refusing it buys no authority either. It is already
+            -- a member of app_worker where that role exists; naming ownership
+            -- explicitly keeps provisioning working in the environments that
+            -- migrate before any runtime role is created.
             SELECT relowner
               INTO table_owner_oid
-              FROM pg_class
+              FROM pg_catalog.pg_class
              WHERE oid = TG_RELID;
             IF pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE') THEN
                 RETURN NEW;
@@ -83,10 +103,10 @@ CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
 
             SELECT oid
               INTO worker_role_oid
-              FROM pg_roles
+              FROM pg_catalog.pg_roles
              WHERE rolname = 'app_worker';
             IF worker_role_oid IS NOT NULL
-               AND pg_has_role(session_user, worker_role_oid, 'USAGE')
+               AND pg_catalog.pg_has_role(session_user, worker_role_oid, 'USAGE')
             THEN
                 RETURN NEW;
             END IF;
@@ -99,6 +119,8 @@ CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.b23_project_allocation_verification() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -108,7 +130,7 @@ CREATE FUNCTION public.b23_project_allocation_verification() RETURNS trigger
         BEGIN
             SELECT verdict.*
               INTO authority
-              FROM b23_match_verdicts AS verdict
+              FROM public.b23_match_verdicts AS verdict
              WHERE verdict.tenant_id = NEW.tenant_id
                AND verdict.attribution_event_id = NEW.event_id
                AND verdict.status IN ('matched_confirmed', 'adjusted')
@@ -130,6 +152,11 @@ CREATE FUNCTION public.b23_project_allocation_verification() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+
+
+
+
+
 
 CREATE FUNCTION public.b23_refresh_allocation_verification() RETURNS trigger
     LANGUAGE plpgsql
@@ -173,6 +200,11 @@ CREATE FUNCTION public.b23_refresh_allocation_verification() RETURNS trigger
         END;
         $$;
 
+
+
+
+
+
 CREATE FUNCTION public.b24_assert_dispatch_publisher() RETURNS text
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -184,6 +216,8 @@ CREATE FUNCTION public.b24_assert_dispatch_publisher() RETURNS text
             RETURN session_user;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid, p_task_name text, p_attempt_id uuid, p_payload_hash text, p_worker_generation text, p_worker_pid integer, p_worker_process_token text, p_recovery_generation integer DEFAULT 0, p_lease_seconds integer DEFAULT 330) RETURNS TABLE(outcome text, tenant_id uuid, fit_id uuid, dispatch_id uuid, attempt_id uuid, claim_epoch integer, lease_capability text, lease_expires_at timestamp with time zone)
     LANGUAGE plpgsql SECURITY DEFINER
@@ -203,13 +237,13 @@ BEGIN
 
     IF NOT EXISTS (
         SELECT 1
-        FROM b24_worker_process_authority auth
-        WHERE generation_id = p_worker_generation
-          AND pid = p_worker_pid
-          AND process_token_digest = b24_sha256_text(p_worker_process_token)
-          AND status = 'active'
-          AND revoked_at IS NULL
-          AND expires_at > now()
+        FROM public.b24_worker_process_authority auth
+        WHERE auth.generation_id = p_worker_generation
+          AND auth.pid = p_worker_pid
+          AND auth.process_token_digest = public.b24_sha256_text(p_worker_process_token)
+          AND auth.status = 'active'
+          AND auth.revoked_at IS NULL
+          AND auth.expires_at > now()
     ) THEN
         RETURN QUERY SELECT 'UNAUTHORIZED', NULL::uuid, NULL::uuid, NULL::uuid,
             NULL::uuid, NULL::integer, NULL::text, NULL::timestamptz;
@@ -218,7 +252,7 @@ BEGIN
 
     SELECT *
     INTO v_row
-    FROM b24_fit_dispatch_outbox outbox
+    FROM public.b24_fit_dispatch_outbox outbox
     WHERE outbox.id = p_dispatch_id
       AND outbox.fit_id = p_fit_id
     FOR UPDATE;
@@ -318,6 +352,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_complete_fit_dispatch() RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -329,12 +365,14 @@ CREATE FUNCTION public.b24_complete_fit_dispatch() RETURNS void
                 terminal_reason = NULL,
                 updated_at = now()
             WHERE outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
-              AND b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
+              AND public.b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b24_dispatch_complete_fence_rejected';
             END IF;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease_owner text, p_wakeup_revision bigint, p_succeeded boolean, p_quiet_period_seconds integer, p_max_wait_seconds integer) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -348,7 +386,9 @@ CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease
             IF session_user <> 'app_worker' THEN
                 RAISE EXCEPTION 'b24_worker_database_identity_required';
             END IF;
-
+            -- Residual authority is tenant truth read under FORCE RLS. The
+            -- caller must already have bound the tenant, so the obligation can
+            -- never be judged against another tenant's dirty state.
             IF current_setting('app.current_tenant_id', true)
                IS DISTINCT FROM p_tenant_id::text THEN
                 RAISE EXCEPTION 'b24_fit_planner_tenant_context_required';
@@ -370,7 +410,7 @@ CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease
 
             SELECT eligible_group_count, next_eligible_at
             INTO residual_eligible, residual_next
-            FROM b24_fit_planner_residual_obligation(
+            FROM public.b24_fit_planner_residual_obligation(
                 p_tenant_id, p_quiet_period_seconds, p_max_wait_seconds
             );
 
@@ -413,6 +453,9 @@ CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease
                 END IF;
             END IF;
 
+            -- Revision fence missed: newer evidence arrived while this pass ran.
+            -- Release any lease this owner still holds so the newer revision is
+            -- immediately runnable, and never delete it.
             UPDATE public.b24_fit_planner_wakeups
             SET status = 'pending', lease_owner = NULL,
                 lease_expires_at = NULL, next_eligible_at = NULL,
@@ -423,6 +466,8 @@ CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease
             RETURN 'stale_revision';
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 25) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
@@ -438,7 +483,7 @@ CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 2
 
             FOR v_row IN
                 SELECT *
-                FROM b24_fit_dispatch_outbox outbox
+                FROM public.b24_fit_dispatch_outbox outbox
                 WHERE outbox.status IN ('dispatched', 'leased', 'running', 'failed_retryable', 'stale_recovered')
                   AND outbox.next_recovery_at <= now()
                   AND (
@@ -497,25 +542,29 @@ CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 2
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_current_dispatch_fence_valid(p_tenant_id uuid, p_fit_id uuid) RETURNS boolean
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
             SELECT EXISTS (
                 SELECT 1
-                FROM b24_fit_dispatch_outbox outbox
+                FROM public.b24_fit_dispatch_outbox outbox
                 WHERE outbox.tenant_id = p_tenant_id
                   AND outbox.fit_id = p_fit_id
                   AND outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
                   AND outbox.attempt_id = NULLIF(current_setting('app.b24_attempt_id', true), '')::uuid
                   AND outbox.claim_epoch = NULLIF(current_setting('app.b24_claim_epoch', true), '')::integer
-                  AND outbox.lease_capability_digest = b24_sha256_text(
+                  AND outbox.lease_capability_digest = public.b24_sha256_text(
                         current_setting('app.b24_lease_capability', true)
                       )
                   AND outbox.lease_expires_at > now()
                   AND outbox.status IN ('leased', 'running')
             )
         $$;
+
+
 
 CREATE FUNCTION public.b24_due_fit_planner_tenants(p_lease_owner text, p_limit integer DEFAULT 25) RETURNS TABLE(tenant_id uuid, wakeup_revision bigint)
     LANGUAGE plpgsql SECURITY DEFINER
@@ -531,7 +580,7 @@ CREATE FUNCTION public.b24_due_fit_planner_tenants(p_lease_owner text, p_limit i
             RETURN QUERY
             WITH due AS (
                 SELECT wakeup.tenant_id
-                FROM b24_fit_planner_wakeups wakeup
+                FROM public.b24_fit_planner_wakeups wakeup
                 WHERE (
                         wakeup.next_eligible_at IS NULL
                         OR wakeup.next_eligible_at <= now()
@@ -559,6 +608,8 @@ CREATE FUNCTION public.b24_due_fit_planner_tenants(p_lease_owner text, p_limit i
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_enforce_artifact_lifecycle() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -573,6 +624,8 @@ CREATE FUNCTION public.b24_enforce_artifact_lifecycle() RETURNS trigger
             RETURN NEW;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -596,7 +649,7 @@ CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
                 END IF;
 
                 SELECT EXISTS (
-                    SELECT 1 FROM b24_inference_policy_registry registry
+                    SELECT 1 FROM public.b24_inference_policy_registry registry
                     WHERE registry.policy_bundle_hash = NEW.policy_bundle_hash
                       AND registry.inference_profile_version = NEW.inference_profile_version
                       AND registry.runtime_policy_version = NEW.runtime_policy_version
@@ -628,7 +681,7 @@ CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
 
             IF available_bucket THEN
                 SELECT EXISTS (
-                    SELECT 1 FROM b24_inference_policy_registry registry
+                    SELECT 1 FROM public.b24_inference_policy_registry registry
                     WHERE registry.policy_bundle_hash = NEW.policy_bundle_hash
                       AND registry.inference_profile_version = NEW.inference_profile_version
                       AND registry.runtime_policy_version = NEW.runtime_policy_version
@@ -645,6 +698,8 @@ CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_enforce_dirty_event_authority() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -655,23 +710,30 @@ CREATE FUNCTION public.b24_enforce_dirty_event_authority() RETURNS trigger
             planner_role_oid oid;
             caller_is_planner boolean;
         BEGIN
-
+            -- A superuser can drop this trigger, so refusing it buys no
+            -- authority and only breaks administrative provisioning.
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_roles
+              FROM pg_catalog.pg_roles
              WHERE rolname = session_user;
             IF COALESCE(principal_is_superuser, false) THEN
                 RETURN NEW;
             END IF;
 
+            -- Likewise the migration principal, which owns the relation and can
+            -- drop the trigger outright. C20 asserts, beside its own fence, that
+            -- no runtime login can reach that role; the same assertion carries
+            -- this one.
             SELECT relowner
               INTO table_owner_oid
-              FROM pg_class
+              FROM pg_catalog.pg_class
              WHERE oid = TG_RELID;
             IF pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE') THEN
                 RETURN NEW;
             END IF;
 
+            -- Identity of the invalidation evidence is written once, by the
+            -- producer, and is never restated by a lifecycle transition.
             IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
            OR NEW.model_type IS DISTINCT FROM OLD.model_type
            OR NEW.model_version IS DISTINCT FROM OLD.model_version
@@ -690,14 +752,17 @@ CREATE FUNCTION public.b24_enforce_dirty_event_authority() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- The resolved source snapshot has exactly one lawful writer and
+            -- exactly one lawful moment: the B2.4 planner binding it as a leased
+            -- obligation enters authority_waiting.
             IF NEW.source_snapshot_hash IS DISTINCT FROM OLD.source_snapshot_hash
             THEN
                 SELECT oid
                   INTO planner_role_oid
-                  FROM pg_roles
+                  FROM pg_catalog.pg_roles
                  WHERE rolname = 'app_worker';
                 caller_is_planner := planner_role_oid IS NOT NULL
-                    AND pg_has_role(
+                    AND pg_catalog.pg_has_role(
                         session_user, planner_role_oid, 'USAGE'
                     );
                 IF NOT caller_is_planner THEN
@@ -721,6 +786,8 @@ CREATE FUNCTION public.b24_enforce_dirty_event_authority() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.b24_enforce_dirty_event_lifecycle() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -740,6 +807,8 @@ CREATE FUNCTION public.b24_enforce_dirty_event_lifecycle() RETURNS trigger
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -758,7 +827,10 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
                        OR NEW.id IS DISTINCT FROM OLD.id THEN
                         RAISE EXCEPTION 'b24_dispatch_immutable_fit_authority';
                     END IF;
-
+                    -- B2.5-P13 C5: the planner owns fit creation and scheduling
+                    -- bookkeeping and never holds a dispatch lease. An update
+                    -- that changes no authority-bearing column changes nothing
+                    -- the fence exists to protect.
                     IF NOT (NEW.status IS DISTINCT FROM OLD.status
                OR NEW.source_snapshot_hash IS DISTINCT FROM OLD.source_snapshot_hash
                OR NEW.source_read_started_at IS DISTINCT FROM OLD.source_read_started_at
@@ -856,6 +928,8 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_enforce_evidence_temporal_plausibility() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -881,6 +955,8 @@ CREATE FUNCTION public.b24_enforce_evidence_temporal_plausibility() RETURNS trig
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_enforce_policy_bundle_write_authority() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -905,6 +981,8 @@ CREATE FUNCTION public.b24_enforce_policy_bundle_write_authority() RETURNS trigg
             RETURN NEW;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
     LANGUAGE plpgsql
@@ -960,11 +1038,15 @@ CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_evidence_future_skew_tolerance_seconds() RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
             SELECT 120
         $$;
+
+
 
 CREATE FUNCTION public.b24_fail_fit_dispatch_recoverable(p_reason text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -977,9 +1059,9 @@ DECLARE
 BEGIN
     SELECT *
     INTO v_row
-    FROM b24_fit_dispatch_outbox outbox
+    FROM public.b24_fit_dispatch_outbox outbox
     WHERE outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
-      AND b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id)
+      AND public.b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id)
     FOR UPDATE;
 
     IF NOT FOUND THEN
@@ -1039,6 +1121,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_fail_fit_dispatch_terminal(p_reason text) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1050,12 +1134,14 @@ CREATE FUNCTION public.b24_fail_fit_dispatch_terminal(p_reason text) RETURNS voi
                 completed_at = now(),
                 updated_at = now()
             WHERE outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
-              AND b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
+              AND public.b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b24_dispatch_failure_fence_rejected';
             END IF;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_fit_planner_residual_obligation(p_tenant_id uuid, p_quiet_period_seconds integer, p_max_wait_seconds integer) RETURNS TABLE(eligible_group_count integer, next_eligible_at timestamp with time zone)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -1067,7 +1153,7 @@ CREATE FUNCTION public.b24_fit_planner_residual_obligation(p_tenant_id uuid, p_q
                 SELECT
                     max(dirty.observed_at) AS last_observed_at,
                     min(dirty.observed_at) AS first_observed_at
-                FROM b24_dirty_events dirty
+                FROM public.b24_dirty_events dirty
                 WHERE dirty.tenant_id = p_tenant_id
                   AND (
                       dirty.status IN ('pending', 'authority_retry_ready')
@@ -1101,9 +1187,13 @@ CREATE FUNCTION public.b24_fit_planner_residual_obligation(p_tenant_id uuid, p_q
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_fit_status_is_terminal(p_status text) RETURNS boolean
     LANGUAGE sql IMMUTABLE
     AS $$ SELECT p_status IN ('succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled') $$;
+
+
 
 CREATE FUNCTION public.b24_invalidate_attribution_allocations_delete() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1143,6 +1233,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_invalidate_attribution_allocations_insert() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1180,6 +1272,8 @@ BEGIN
     RETURN NULL;
 END
 $$;
+
+
 
 CREATE FUNCTION public.b24_invalidate_attribution_allocations_update() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1238,6 +1332,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_invalidate_attribution_events_delete() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1276,6 +1372,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_invalidate_attribution_events_insert() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1313,6 +1411,8 @@ BEGIN
     RETURN NULL;
 END
 $$;
+
+
 
 CREATE FUNCTION public.b24_invalidate_attribution_events_update() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1371,6 +1471,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_invalidate_b23_match_verdicts_delete() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1409,6 +1511,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_invalidate_b23_match_verdicts_insert() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1446,6 +1550,8 @@ BEGIN
     RETURN NULL;
 END
 $$;
+
+
 
 CREATE FUNCTION public.b24_invalidate_b23_match_verdicts_update() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1504,6 +1610,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_invalidate_b23_revenue_events_delete() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1542,6 +1650,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_invalidate_b23_revenue_events_insert() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1579,6 +1689,8 @@ BEGIN
     RETURN NULL;
 END
 $$;
+
+
 
 CREATE FUNCTION public.b24_invalidate_b23_revenue_events_update() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1637,6 +1749,8 @@ BEGIN
 END
 $$;
 
+
+
 CREATE FUNCTION public.b24_lease_fit_recovery_rows(p_batch_size integer DEFAULT 25, p_stale_publishing_seconds integer DEFAULT 300) RETURNS TABLE(recovery_id uuid, tenant_id uuid, dispatch_id uuid, fit_id uuid, task_name text, attempt_id uuid, payload_hash text, recovery_generation integer, publish_attempt_count integer)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -1645,7 +1759,7 @@ CREATE FUNCTION public.b24_lease_fit_recovery_rows(p_batch_size integer DEFAULT 
             RETURN QUERY
             WITH due AS (
                 SELECT recovery.tenant_id, recovery.id, recovery.dispatch_id
-                FROM b24_fit_recovery_outbox recovery
+                FROM public.b24_fit_recovery_outbox recovery
                 WHERE (
                     recovery.status IN ('pending', 'failed_retryable')
                     OR (
@@ -1708,6 +1822,8 @@ CREATE FUNCTION public.b24_lease_fit_recovery_rows(p_batch_size integer DEFAULT 
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_mark_allocation_financial_window_dirty() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -1754,7 +1870,7 @@ BEGIN
 
     SELECT date_trunc('day', event.occurred_at)
       INTO financial_window_start
-      FROM attribution_events AS event
+      FROM public.attribution_events AS event
      WHERE event.tenant_id = source_row.tenant_id
        AND event.id = source_row.event_id
        AND event.processing_status IN ('pending', 'processed')
@@ -1787,6 +1903,11 @@ BEGIN
 END;
 $$;
 
+
+
+
+
+
 CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1797,12 +1918,14 @@ CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
                 last_heartbeat_at = now(),
                 updated_at = now()
             WHERE outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
-              AND b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
+              AND public.b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b24_dispatch_running_fence_rejected';
             END IF;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_mark_fit_recovery_failed(p_tenant_id uuid, p_recovery_id uuid, p_dispatch_id uuid, p_error text, p_max_attempts integer DEFAULT 5) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1828,6 +1951,8 @@ CREATE FUNCTION public.b24_mark_fit_recovery_failed(p_tenant_id uuid, p_recovery
             RETURN v_count = 1;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_mark_fit_recovery_published(p_tenant_id uuid, p_recovery_id uuid, p_dispatch_id uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1864,6 +1989,8 @@ CREATE FUNCTION public.b24_mark_fit_recovery_published(p_tenant_id uuid, p_recov
             RETURN true;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_mark_verdict_financial_window_dirty() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1924,7 +2051,7 @@ BEGIN
 
     SELECT date_trunc('day', event.occurred_at)
       INTO financial_window_start
-      FROM attribution_events AS event
+      FROM public.attribution_events AS event
      WHERE event.tenant_id = source_row.tenant_id
        AND event.id = source_row.attribution_event_id
        AND event.processing_status IN ('pending', 'processed')
@@ -1957,6 +2084,11 @@ BEGIN
 END;
 $$;
 
+
+
+
+
+
 CREATE FUNCTION public.b24_next_active_worker_generation() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1966,17 +2098,19 @@ CREATE FUNCTION public.b24_next_active_worker_generation() RETURNS text
         BEGIN
             PERFORM set_config('app.b24_worker_authority_access', 'on', true);
 
-            SELECT generation_id
+            SELECT auth.generation_id
             INTO v_generation
-            FROM b24_worker_process_authority auth
-            WHERE status = 'active'
-              AND revoked_at IS NULL
-              AND expires_at > now()
-            ORDER BY registered_at DESC, generation_id DESC
+            FROM public.b24_worker_process_authority auth
+            WHERE auth.status = 'active'
+              AND auth.revoked_at IS NULL
+              AND auth.expires_at > now()
+            ORDER BY auth.registered_at DESC, auth.generation_id DESC
             LIMIT 1;
             RETURN v_generation;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uuid) RETURNS boolean
     LANGUAGE plpgsql STABLE
@@ -1985,10 +2119,14 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
         DECLARE
             v_complete boolean;
         BEGIN
-
+            -- plpgsql, not sql, so the body is resolved when it runs.
+            -- canonical_schema.sql emits functions before tables, and a
+            -- LANGUAGE sql body is resolved at CREATE, so this function
+            -- alone could not be applied to a bare database. The query is
+            -- unchanged.
             WITH fit AS (
                 SELECT policy_replan_count
-                FROM bayesian_model_fits
+                FROM public.bayesian_model_fits
                 WHERE tenant_id = p_tenant_id AND id = p_fit_id
             ), ordered AS (
                 SELECT transition_sequence,
@@ -1997,7 +2135,7 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
                        lag(to_policy_bundle_hash) OVER (
                            ORDER BY transition_sequence
                        ) AS prior_to
-                FROM b24_fit_policy_replan_lineage
+                FROM public.b24_fit_policy_replan_lineage
                 WHERE tenant_id = p_tenant_id AND fit_id = p_fit_id
             ), summary AS (
                 SELECT count(*)::integer AS row_count,
@@ -2026,6 +2164,8 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
             RETURN COALESCE(v_complete, false);
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_register_worker_process_authority(p_generation_id text, p_pid integer, p_parent_pid integer, p_topology_fingerprint text, p_process_token text, p_ttl_seconds integer DEFAULT 3600) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2079,6 +2219,8 @@ CREATE FUNCTION public.b24_register_worker_process_authority(p_generation_id tex
         END
         $_$;
 
+
+
 CREATE FUNCTION public.b24_reject_policy_registry_rewrite() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -2086,6 +2228,8 @@ CREATE FUNCTION public.b24_reject_policy_registry_rewrite() RETURNS trigger
             RAISE EXCEPTION 'b24_policy_registry_immutable';
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_reject_replan_lineage_mutation() RETURNS trigger
     LANGUAGE plpgsql
@@ -2095,11 +2239,15 @@ CREATE FUNCTION public.b24_reject_replan_lineage_mutation() RETURNS trigger
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_sha256_text(value text) RETURNS text
     LANGUAGE sql IMMUTABLE
     AS $$
             SELECT encode(digest(value, 'sha256'), 'hex')
         $$;
+
+
 
 CREATE FUNCTION public.b24_signal_fit_planner_wakeup() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2126,6 +2274,8 @@ CREATE FUNCTION public.b24_signal_fit_planner_wakeup() RETURNS trigger
             RETURN NEW;
         END
         $$;
+
+
 
 CREATE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2162,11 +2312,18 @@ CREATE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced() RETURNS trigger
         END
         $$;
 
+
+
 CREATE FUNCTION public.b24_source_windows_overlap(p_change_start timestamp with time zone, p_change_end timestamp with time zone, p_fit_start timestamp with time zone, p_fit_end timestamp with time zone) RETURNS boolean
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
     AS $$
             SELECT p_change_start < p_fit_end AND p_fit_start < p_change_end
         $$;
+
+
+
+
+
 
 CREATE FUNCTION public.b26_p2_ascii_strip(p_value text) RETURNS text
     LANGUAGE sql IMMUTABLE
@@ -2176,6 +2333,8 @@ CREATE FUNCTION public.b26_p2_ascii_strip(p_value text) RETURNS text
                  regexp_replace(COALESCE(p_value, ''), '^[ \t\n\r\f\v]+', ''),
                '[ \t\n\r\f\v]+$', '')
         $_$;
+
+
 
 CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_kind text, p_ref text, p_financial_status text, p_cancelled_at timestamp with time zone, p_refunds_present boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2213,9 +2372,11 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- Single ingress-boundary law (dynamic owner): only the
+            -- ingress credential, the table owner, and the cluster
+            -- superuser may attest.
             IF session_user IS DISTINCT FROM 'app_ingress'
-               AND session_user IS DISTINCT FROM b26_p2_table_owner(
+               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
                    'public.webhook_ingress_identities'::regclass)
                AND session_user IS DISTINCT FROM 'postgres' THEN
                 RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
@@ -2253,7 +2414,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                    i.event_timestamp
               INTO _tenant, _idem, _state, _prov_status, _demotion, _row_provider,
                    _t_kind, _t_value, _t_amount, _t_ccy, _t_scale, _t_ts
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_evidence_ingress_missing'
@@ -2273,7 +2434,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                     USING ERRCODE = '42501';
             END IF;
             SELECT w.witness_hash INTO _witness
-              FROM b26_p2_ingress_auth_witness AS w
+              FROM public.b26_p2_ingress_auth_witness AS w
              WHERE w.webhook_ingress_identity_id = p_ingress;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_evidence_witness_missing'
@@ -2282,14 +2443,26 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
             SELECT c.provider, c.provider_event_reference, c.body_sha256,
                    c.signature_envelope_sha256, c.auth_method, c.auth_version
               INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
-              FROM b26_p2_provider_auth_consequence AS c
+              FROM public.b26_p2_provider_auth_consequence AS c
              WHERE c.webhook_ingress_identity_id = p_ingress
                AND c.tenant_id = _tenant;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_evidence_no_auth_consequence'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- XXI: the re-attestation preimage is the atomic mint
+            -- preimage bit-for-bit (commerce suffix included); a shorter
+            -- recomputation could never match an atomically-minted
+            -- witness and would deaden genuine re-ingestion. Rows
+            -- bound by the legacy recorder path (which supplies no
+            -- commerce context) carry the short preimage instead: both
+            -- are accepted here because each stored witness dictates
+            -- which one must match -- a short witness never matches a
+            -- long-stored row and vice versa. Accepting the
+            -- recorder-bound form does NOT promote it: the XIV
+            -- promotion trigger still refuses the authenticated stamp
+            -- without auth-root evidence (provenance_promotion_refused),
+            -- which only the atomic creates.
             _t_ts_canon := to_char(_t_ts AT TIME ZONE 'UTC',
                                    'YYYY-MM-DD HH24:MI:SS.US');
             _expected := encode(digest(
@@ -2316,7 +2489,8 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 RAISE EXCEPTION 'b26_p2_evidence_witness_not_bound'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- XIX family: an explicit allowlisted claim is required and
+            -- bound into the consequence row; absent claims are refused.
             BEGIN
                 _family := current_setting(
                     'app.b26_p2_event_family', true);
@@ -2324,7 +2498,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 _family := NULL;
             END;
             IF _family IS NULL
-               OR b26_p2_ascii_strip(_family) = '' THEN
+               OR public.b26_p2_ascii_strip(_family) = '' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -2387,7 +2561,9 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- XXI (H-XXI-03): contradiction-only lifecycle
+            -- re-check at re-attestation (the original mint
+            -- already established positive creation).
             PERFORM public.b26_p2_enforce_lifecycle_admission(
                 _row_provider, _family, p_financial_status,
                 p_cancelled_at, p_refunds_present,
@@ -2414,7 +2590,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                     evidence_ref = EXCLUDED.evidence_ref,
                     evidence_witness_hash = EXCLUDED.evidence_witness_hash,
                     attested_at = now();
-
+                -- XIX: the stamp carries no bearer mark (see atomic).
                 UPDATE public.webhook_ingress_identities AS i
                    SET b26_p2_provenance_status = 'authenticated_known',
                        b26_p2_semantic_regime = 'xvii-sovereign-v1',
@@ -2427,6 +2603,8 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 RAISE;
             END;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text, p_sig_envelope_sha256 text, p_method text, p_version text, p_financial_status text, p_cancelled_at timestamp with time zone, p_refunds_present boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2473,15 +2651,19 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- The ingress credential alone may invoke the transition;
+            -- the table owner (direct administration, any topology)
+            -- and the cluster superuser may also invoke it; every
+            -- other session role is refused at the function boundary.
             IF session_user IS DISTINCT FROM 'app_ingress'
-               AND session_user IS DISTINCT FROM b26_p2_table_owner(
+               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
                    'public.webhook_ingress_identities'::regclass)
                AND session_user IS DISTINCT FROM 'postgres' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- XXI floor: a downgraded schema (floor row/table absent or
+            -- behind) cannot mint authority.
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
                  WHERE f.id = 1 AND f.floor_revision >= '202609300004';
@@ -2508,7 +2690,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
               INTO _tenant, _idem, _state, _row_provider, _prov,
                    _t_kind, _t_value, _t_cref, _t_amount, _t_ccy, _t_scale,
                    _t_ts, _sem_regime, _demotion
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress
              FOR UPDATE;
             IF NOT FOUND THEN
@@ -2533,11 +2715,18 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                     USING ERRCODE = '42501';
             END IF;
             IF public.b26_p2_ascii_strip(COALESCE(p_event_ref, '')) = ''
-               OR b26_p2_ascii_strip(COALESCE(p_method, '')) = '' THEN
+               OR public.b26_p2_ascii_strip(COALESCE(p_method, '')) = '' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_blank_shape_refused'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- XIX: sovereign event-family allowlist. The family's only
+            -- authority is this transition over provider + the
+            -- root-supplied explicit claim (transaction-local GUCs
+            -- app.b26_p2_event_family / app.b26_p2_event_family_source,
+            -- derived by the root from authenticated bytes or the
+            -- provider-transported topic): relay route selection cannot
+            -- confer it, and provider name alone cannot confer it. An
+            -- absent claim is REFUSED -- never defaulted.
             BEGIN
                 _family := current_setting(
                     'app.b26_p2_event_family', true);
@@ -2545,7 +2734,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 _family := NULL;
             END;
             IF _family IS NULL
-               OR b26_p2_ascii_strip(_family) = '' THEN
+               OR public.b26_p2_ascii_strip(_family) = '' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -2608,17 +2797,19 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- XXI (H-XXI-03): lifecycle admission at the seam.
             PERFORM public.b26_p2_enforce_lifecycle_admission(
                 _fam_provider, _family, p_financial_status,
                 p_cancelled_at, p_refunds_present,
                 p_created_at, p_updated_at, true);
-
+            -- Serialize authentications of identical bytes.
             PERFORM pg_advisory_xact_lock(
                 hashtext('b26_p2_sovereign_bytes:' || _tenant::text),
                 hashtext(lower(p_body_sha256))
             );
-
+            -- Serialize authentications of the same provider event and
+            -- the same commerce identity, so concurrent conflicting
+            -- first-authentications cannot both pass the checks below.
             PERFORM pg_advisory_xact_lock(
                 hashtext('b26_p2_sovereign_event:' || _tenant::text
                          || '|' || COALESCE(p_provider, '')),
@@ -2631,8 +2822,8 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                          || '|' || COALESCE(_t_value, ''))
             );
             SELECT i.id INTO _dup_id
-              FROM webhook_ingress_identities AS i
-              JOIN b26_p2_provider_auth_consequence AS c
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_provider_auth_consequence AS c
                 ON c.webhook_ingress_identity_id = i.id
                AND c.tenant_id = i.tenant_id
              WHERE i.tenant_id = _tenant
@@ -2646,8 +2837,8 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                     USING ERRCODE = '42501';
             END IF;
             SELECT i.id INTO _conflict_id
-              FROM webhook_ingress_identities AS i
-              JOIN b26_p2_provider_auth_consequence AS c
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_provider_auth_consequence AS c
                 ON c.webhook_ingress_identity_id = i.id
                AND c.tenant_id = i.tenant_id
              WHERE i.tenant_id = _tenant
@@ -2661,14 +2852,41 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 RAISE EXCEPTION 'b26_p2_atomic_event_identity_conflict_refused'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- XXV-2: commerce-identity collision and provider amendment are
+            -- two different things, and conflating them cost the phase its
+            -- positive obligation. Before this revision ANY second
+            -- authenticated event over one commerce identity was refused, so
+            -- a provider that amends a captured amount had no reachable way
+            -- to move the system's money: no lawful amount-changing source
+            -- existed, and with it went checkpoint growth, the crash window,
+            -- stale-issuance racing and the requalified second read
+            -- (directive XXV A2/A3/A7/A8/B10/B12).
+            --
+            -- An amendment is admitted only when the provider itself
+            -- distinguishes it from the event already holding authority:
+            --   * a different provider event reference (not a redelivery of
+            --     the same event),
+            --   * different signed bytes (not a replay of the same body),
+            --   * an event instant no earlier than the current authority's
+            --     (history moves forward, never backward),
+            --   * the same currency (an amendment corrects an amount, it
+            --     does not change the unit of the money), and
+            --   * the same event family (a cross-family claim on one
+            --     commerce identity is still a collision).
+            -- Anything else keeps the strict refusal.
+            --
+            -- The prior row is SUPERSEDED, never replaced: its authenticated
+            -- money and its attestation stay exactly as the provider sent
+            -- them, and it simply stops being the current authority. That is
+            -- what keeps this from becoming "arbitrary replacement of
+            -- original authenticated money", which the directive forbids.
             SELECT i.id, i.provider_native_event_reference,
                    i.verified_amount_currency, i.event_timestamp,
                    lower(c.body_sha256), c.b26_p2_event_family
               INTO _conflict_id, _amend_event_ref, _amend_ccy, _amend_ts,
                    _amend_body, _amend_family
-              FROM webhook_ingress_identities AS i
-              LEFT JOIN b26_p2_provider_auth_consequence AS c
+              FROM public.webhook_ingress_identities AS i
+              LEFT JOIN public.b26_p2_provider_auth_consequence AS c
                      ON c.webhook_ingress_identity_id = i.id
                     AND c.tenant_id = i.tenant_id
              WHERE i.tenant_id = _tenant
@@ -2709,7 +2927,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 SELECT c.provider, c.provider_event_reference, c.body_sha256,
                        c.signature_envelope_sha256, c.auth_method, c.auth_version
                   INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
-                  FROM b26_p2_provider_auth_consequence AS c
+                  FROM public.b26_p2_provider_auth_consequence AS c
                  WHERE c.webhook_ingress_identity_id = p_ingress;
                 IF NOT FOUND THEN
                     INSERT INTO public.b26_p2_provider_auth_consequence AS c (
@@ -2726,7 +2944,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                     SELECT c.provider, c.provider_event_reference, c.body_sha256,
                            c.signature_envelope_sha256, c.auth_method, c.auth_version
                       INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
-                      FROM b26_p2_provider_auth_consequence AS c
+                      FROM public.b26_p2_provider_auth_consequence AS c
                      WHERE c.webhook_ingress_identity_id = p_ingress;
                 ELSE
                     IF _c_provider IS DISTINCT FROM p_provider
@@ -2747,7 +2965,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 _t_ts_canon := to_char(_t_ts AT TIME ZONE 'UTC',
                                        'YYYY-MM-DD HH24:MI:SS.US');
                 SELECT w.witness_hash INTO _witness
-                  FROM b26_p2_ingress_auth_witness AS w
+                  FROM public.b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = p_ingress;
                 _expected := encode(digest(
                         _tenant::text || '|' || p_ingress::text || '|'
@@ -2769,7 +2987,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                     VALUES (p_ingress, _tenant, _expected, session_user)
                     ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
                     SELECT w.witness_hash INTO _witness
-                      FROM b26_p2_ingress_auth_witness AS w
+                      FROM public.b26_p2_ingress_auth_witness AS w
                      WHERE w.webhook_ingress_identity_id = p_ingress;
                 ELSIF _witness IS DISTINCT FROM _expected THEN
                     UPDATE public.b26_p2_ingress_auth_witness AS w
@@ -2799,7 +3017,13 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                         lower(_c_body), lower(_c_sig),
                         _c_method, COALESCE(_c_version, 'v1'))
                 ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
-
+                -- XIX: stamp the governed semantic regime and clear any
+                -- historical demotion reason. No bearer mark is set or
+                -- needed: this DEFINER transition executes as the owner,
+                -- which is exactly the context the guard admits.
+                -- (Reachable only for non-demoted rows: demoted rows
+                -- were refused above, so this stamp can never bless
+                -- stale money.)
                 UPDATE public.webhook_ingress_identities AS i
                    SET b26_p2_provenance_status = 'authenticated_known',
                        b26_p2_semantic_regime = 'xvii-sovereign-v1',
@@ -2813,11 +3037,15 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
             END;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_authority_universe() RETURNS uuid
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$ SELECT universe FROM public.b26_p2_authority_universe
               WHERE id = 1 $$;
+
+
 
 CREATE FUNCTION public.b26_p2_canonical_day_end(p_event_timestamp timestamp with time zone) RETURNS timestamp with time zone
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
@@ -2827,6 +3055,11 @@ CREATE FUNCTION public.b26_p2_canonical_day_end(p_event_timestamp timestamp with
                      AT TIME ZONE 'UTC') + interval '1 day')
         $$;
 
+
+
+
+
+
 CREATE FUNCTION public.b26_p2_canonical_day_start(p_event_timestamp timestamp with time zone) RETURNS timestamp with time zone
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
     SET search_path TO 'pg_catalog', 'public'
@@ -2834,6 +3067,11 @@ CREATE FUNCTION public.b26_p2_canonical_day_start(p_event_timestamp timestamp wi
             SELECT (date_trunc('day', p_event_timestamp AT TIME ZONE 'UTC')
                     AT TIME ZONE 'UTC')
         $$;
+
+
+
+
+
 
 CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid, p_ws timestamp with time zone, p_we timestamp with time zone) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2858,7 +3096,7 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
             BEGIN
                 SELECT scope_policy_version, semantic_sha256
                   INTO _policy_version, _policy_semantic
-                  FROM b26_p2_scope_policy_authority
+                  FROM public.b26_p2_scope_policy_authority
                  ORDER BY scope_policy_version DESC LIMIT 1;
                 IF NOT FOUND
                    OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -2873,18 +3111,20 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
                          || '|' || 'source_verified_gross_not_canonical_net'
                          || '|' || 'b2.2_ingress_verified_amount_minor'
                          || '|' || 'b2.3_match_verdicts.canonical_net_verified_amount_minor_only';
-
+                -- XI: quarantined ingress is explicitly
+                -- non-authoritative and excluded from both the
+                -- blank-shape gate and the canonical aggregate.
                 IF EXISTS (
-                    SELECT 1 FROM webhook_ingress_identities AS i
+                    SELECT 1 FROM public.webhook_ingress_identities AS i
                      WHERE i.tenant_id = p_tenant
                        AND i.verified_commerce_ingress_state = 'authenticity_verified'
                        AND NOT EXISTS (
-                            SELECT 1 FROM b26_p2_execution_quarantine AS q
+                            SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                              WHERE q.webhook_ingress_identity_id = i.id
                        )
-                       AND (b26_p2_ascii_strip(COALESCE(i.provider,'')) = ''
-                            OR b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,'')) = ''
-                            OR length(b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,''))) <> 3)
+                       AND (public.b26_p2_ascii_strip(COALESCE(i.provider,'')) = ''
+                            OR public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,'')) = ''
+                            OR length(public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,''))) <> 3)
                 ) THEN
                     PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc,''), true);
                     RAISE EXCEPTION 'b26_p2_canonical_scope_blank_shape' USING ERRCODE='42501';
@@ -2892,15 +3132,15 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
                 SELECT string_agg(line, '|' ORDER BY line) INTO _lines FROM (
                     SELECT
                         i.id::text || ':' || _all._prov || ':' || _all._prov || ':' || _all._cur || ':' || _all._disp || ':' || _all._reason || ':' || i.verified_amount_minor::text AS line
-                    FROM webhook_ingress_identities AS i,
+                    FROM public.webhook_ingress_identities AS i,
                     LATERAL (SELECT public.b26_p2_strip_provider_token(i.provider) AS _prov,
                                     public.b26_p2_strip_currency_token(i.verified_amount_currency) AS _cur) AS _norm,
                     LATERAL (SELECT EXISTS (
-                            SELECT 1 FROM b23_match_verdicts AS v
+                            SELECT 1 FROM public.b23_match_verdicts AS v
                              WHERE v.tenant_id = p_tenant
                                AND v.webhook_ingress_identity_id = i.id
                                AND v.status IN ('matched_provisional','matched_confirmed','adjusted')
-                               AND b26_p2_ascii_strip(COALESCE(v.canonical_commerce_reference,'')) <> ''
+                               AND public.b26_p2_ascii_strip(COALESCE(v.canonical_commerce_reference,'')) <> ''
                         ) AS _has_ref) AS _r,
                     LATERAL (SELECT CASE
                                 WHEN _norm._prov NOT IN ('paypal','shopify','stripe','woocommerce') THEN 'EXCLUDED_PROVIDER'
@@ -2925,7 +3165,7 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
                     WHERE i.tenant_id = p_tenant
                       AND i.verified_commerce_ingress_state = 'authenticity_verified'
                       AND NOT EXISTS (
-                           SELECT 1 FROM b26_p2_execution_quarantine AS q
+                           SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                             WHERE q.webhook_ingress_identity_id = i.id
                       )
                 ) AS sub;
@@ -2943,6 +3183,8 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
             END;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_chain_verdict_supersession() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -2953,7 +3195,7 @@ CREATE FUNCTION public.b26_p2_chain_verdict_supersession() RETURNS trigger
         BEGIN
             PERFORM pg_advisory_xact_lock(82173645, 300003);
             SELECT l.entry_hash INTO _prev
-              FROM b26_p2_verdict_supersession_ledger AS l
+              FROM public.b26_p2_verdict_supersession_ledger AS l
              ORDER BY l.seq DESC
              LIMIT 1;
             NEW.prev_entry_hash := _prev;
@@ -2969,6 +3211,8 @@ CREATE FUNCTION public.b26_p2_chain_verdict_supersession() RETURNS trigger
                 encode(digest(_preimage, 'sha256'), 'hex');
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_classify_candidate(p_tenant uuid, p_provider_raw text, p_currency_raw text, p_event_time timestamp with time zone, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_policy_version text, p_source_reference text) RETURNS TABLE(o_provider text, o_rail text, o_currency text, o_disposition text, o_reason text)
     LANGUAGE plpgsql IMMUTABLE
@@ -3038,6 +3282,8 @@ CREATE FUNCTION public.b26_p2_classify_candidate(p_tenant uuid, p_provider_raw t
             RETURN;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_current_verdict_for_adjustment(p_tenant uuid, p_provider text, p_parent_commerce_reference text) RETURNS TABLE(verdict_id uuid, captured_amount_minor integer, currency_code character, commerce_reference text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -3051,7 +3297,7 @@ CREATE FUNCTION public.b26_p2_current_verdict_for_adjustment(p_tenant uuid, p_pr
                    v.canonical_captured_gross_amount_minor,
                    v.currency_code,
                    v.provider_native_commerce_reference::text
-              FROM b23_match_verdicts AS v
+              FROM public.b23_match_verdicts AS v
              WHERE v.tenant_id = p_tenant
                AND v.provider = lower(p_provider)
                AND (
@@ -3060,7 +3306,7 @@ CREATE FUNCTION public.b26_p2_current_verdict_for_adjustment(p_tenant uuid, p_pr
                    OR v.canonical_commerce_reference =
                        p_parent_commerce_reference
                )
-               AND b26_p2_ingress_has_current_authority(
+               AND public.b26_p2_ingress_has_current_authority(
                        v.webhook_ingress_identity_id)
              ORDER BY v.last_transition_at DESC, v.id DESC
              LIMIT 1;
@@ -3068,6 +3314,8 @@ CREATE FUNCTION public.b26_p2_current_verdict_for_adjustment(p_tenant uuid, p_pr
                 'app.current_tenant_id', COALESCE(_previous, ''), true
             );
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_derive_verdict_authority(p_ingress uuid) RETURNS text
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -3082,6 +3330,8 @@ CREATE FUNCTION public.b26_p2_derive_verdict_authority(p_ingress uuid) RETURNS t
             END IF;
             RETURN 'historically_unverifiable';
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS trigger
     LANGUAGE plpgsql
@@ -3114,7 +3364,10 @@ CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS tr
                 RETURN NEW;
             END IF;
             IF TG_OP = 'DELETE' THEN
-
+                -- Fixture cleanup and lawful retention run as migration
+                -- admins; runtime principals can never delete evidence
+                -- (they hold no DELETE grant, and this gate refuses them
+                -- even where a grant exists).
                 IF session_user IS DISTINCT FROM 'migration_owner'
                    AND session_user IS DISTINCT FROM 'postgres' THEN
                     RAISE EXCEPTION 'b26_p2_auth_cons_delete_refused'
@@ -3125,6 +3378,8 @@ CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS tr
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3133,10 +3388,23 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
             _ctx text;
         BEGIN
             IF TG_OP = 'INSERT' THEN
-
+                -- Lawful path 1: migration-admin maintenance (seeders /
+                -- provisioners running as migration_owner/postgres).
                 IF session_user IS DISTINCT FROM 'migration_owner'
                    AND session_user IS DISTINCT FROM 'postgres' THEN
-
+                    -- Lawful path 2: the single sovereign transition. The
+                    -- trigger fires inside the atomic's transaction, so
+                    -- PG_CONTEXT contains the atomic's exact frame. A
+                    -- substring test would also match wrappers,
+                    -- comments, or same-name overloads; the anchored
+                    -- expression below admits only the exact 12-argument
+                    -- v2 sovereign signature. The retired v1 signature
+                    -- no longer exists at this head, so no stale binary
+                    -- can present it. Any other SECURITY DEFINER
+                    -- routine (an administrator-authored deputy, a future
+                    -- helper, a confused deputy) carries its own frame
+                    -- instead and is refused here with
+                    -- b26_p2_auth_root_evidence_transition_refused.
                     GET DIAGNOSTICS _ctx = PG_CONTEXT;
                     IF _ctx IS NULL OR _ctx !~ 'PL/pgSQL function b26_p2_authenticate_ingress_atomic_v2\(uuid,text,text,text,text,text,text,text,timestamp with time zone,boolean,timestamp with time zone,timestamp with time zone\)' THEN
                         RAISE EXCEPTION 'b26_p2_auth_root_evidence_transition_refused'
@@ -3170,13 +3438,17 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
             IF TG_OP = 'UPDATE' THEN
-
+                -- Only authenticated rows are fenced. Pending precursors
+                -- (promotion pending -> verified) and non-authenticated
+                -- states pass through to the sibling guards.
                 IF OLD.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
                    OR OLD.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known' THEN
                     IF OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
@@ -3190,7 +3462,9 @@ CREATE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability() RETUR
                        OR OLD.verified_amount_scale IS DISTINCT FROM NEW.verified_amount_scale
                        OR OLD.event_timestamp IS DISTINCT FROM NEW.event_timestamp
                        OR OLD.idempotency_key IS DISTINCT FROM NEW.idempotency_key THEN
-
+                        -- NOTE: the Skeldir event_id link is intentionally
+                        -- not fenced: genuine duplicate re-ingestion rebinds
+                        -- it while financial meaning stays fixed.
                         RAISE EXCEPTION 'b26_p2_authenticated_meaning_immutable_refused'
                             USING ERRCODE = '42501';
                     END IF;
@@ -3200,12 +3474,16 @@ CREATE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability() RETUR
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_authority_transition() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
-
+            -- XIX: caller-supplied context (GUCs, headers, arguments)
+            -- transports facts; it never constitutes authority. Only
+            -- owner execution context may write authority state.
             IF current_setting('transaction_isolation', true)
                IS DISTINCT FROM 'read committed' THEN
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
@@ -3227,6 +3505,8 @@ CREATE FUNCTION public.b26_p2_enforce_authority_transition() RETURNS trigger
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_consequence_family_coherence() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -3245,6 +3525,8 @@ CREATE FUNCTION public.b26_p2_enforce_consequence_family_coherence() RETURNS tri
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_directory_coherence() RETURNS trigger
     LANGUAGE plpgsql
@@ -3284,7 +3566,7 @@ CREATE FUNCTION public.b26_p2_enforce_directory_coherence() RETURNS trigger
             SELECT d.tenant_id, d.webhook_ingress_identity_id,
                    d.window_start, d.window_end
               INTO _d_tenant, _d_ingress, _d_ws, _d_we
-              FROM b23_match_task_dispatches AS d
+              FROM public.b23_match_task_dispatches AS d
              WHERE d.task_id = NEW.task_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_directory_no_canonical_execution'
@@ -3299,6 +3581,8 @@ CREATE FUNCTION public.b26_p2_enforce_directory_coherence() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
     LANGUAGE plpgsql
@@ -3315,7 +3599,11 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
                     RAISE EXCEPTION 'b26_p2_conducted_requires_gate'
                         USING ERRCODE = '42501';
                 END IF;
-
+                -- The progress anchor is server-derived, never
+                -- caller-authored: a future-dated anchor at INSERT would
+                -- suppress the non-conduction signal before it starts.
+                -- Publication anchors at now(); pre-published rows carry
+                -- no anchor.
                 IF NEW.delivery_state = 'published' THEN
                     NEW.first_published_at := now();
                 ELSE
@@ -3388,7 +3676,11 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
                 RAISE EXCEPTION 'b26_p2_dispatch_attempts_regression'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- The progress anchor is server-derived on every write, never
+            -- caller-preserved: a pre-set (e.g. future-dated) anchor on a
+            -- pending row is stripped here, and the publish transition
+            -- stamps now() unconditionally. No reachable UPDATE path can
+            -- carry a caller-authored anchor into published life.
             IF NEW.delivery_state = 'pending_publish' THEN
                 NEW.first_published_at := NULL;
             END IF;
@@ -3398,7 +3690,8 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
                     NEW.first_published_at := now();
                 ELSIF OLD.delivery_state = 'published'
                    AND NEW.delivery_state = 'conducted' THEN
-
+                    -- Corrective V gate law preserved: only the conduction
+                    -- gate (owner execution context) may assert conducted.
                     IF current_user NOT IN ('migration_owner', 'postgres') THEN
                         RAISE EXCEPTION 'b26_p2_conducted_requires_gate'
                             USING ERRCODE = '42501';
@@ -3417,6 +3710,8 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3431,32 +3726,34 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
             SELECT c.b26_p2_event_family INTO _family
-              FROM b26_p2_provider_auth_consequence AS c
+              FROM public.b26_p2_provider_auth_consequence AS c
              WHERE c.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
                AND c.tenant_id = NEW.tenant_id;
             IF NOT FOUND OR _family IS NULL THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_family_unbound_refused' USING ERRCODE = '42501';
             END IF;
             IF EXISTS (
-                SELECT 1 FROM b26_p2_execution_quarantine AS q
+                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                  WHERE q.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
             ) THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_quarantined_refused' USING ERRCODE = '42501';
             END IF;
             SELECT w.witness_hash INTO _witness
-              FROM b26_p2_ingress_auth_witness AS w
+              FROM public.b26_p2_ingress_auth_witness AS w
              WHERE w.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_witness_missing' USING ERRCODE = '42501';
             END IF;
             IF NOT EXISTS (
-                SELECT 1 FROM b26_p2_auth_root_evidence AS r
+                SELECT 1 FROM public.b26_p2_auth_root_evidence AS r
                  WHERE r.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
             ) THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_root_missing' USING ERRCODE = '42501';
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion() RETURNS trigger
     LANGUAGE plpgsql
@@ -3465,14 +3762,14 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion() RETURNS tr
         BEGIN
             IF NEW.webhook_ingress_identity_id IS NOT NULL
                AND EXISTS (
-                    SELECT 1 FROM b26_p2_execution_quarantine AS q
+                    SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                      WHERE q.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
                ) THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_quarantined_ingress_refused'
                     USING ERRCODE = '42501';
             END IF;
             IF EXISTS (
-                SELECT 1 FROM b26_p2_execution_quarantine AS q
+                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                  WHERE q.task_id = NEW.task_id
             ) THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_quarantined_task_refused'
@@ -3480,6 +3777,8 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion() RETURNS tr
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigger
     LANGUAGE plpgsql
@@ -3494,12 +3793,18 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigge
             _exp_ws timestamptz;
             _exp_we timestamptz;
         BEGIN
-
+            -- Committed-state serialization (Corrective VII, P2-CA7-01):
+            -- lock the sovereign ingress row BEFORE validating. A concurrent
+            -- ingress UPDATE blocks here until this dispatch commits; the
+            -- reversed ordering blocks the dispatch until the ingress UPDATE
+            -- commits, then this SELECT sees the latest committed clock and
+            -- refuses a stale window. Plain SELECT cannot serialize; FOR
+            -- UPDATE makes the invariant unavoidable under READ COMMITTED.
             SELECT i.event_timestamp, i.tenant_id, i.provider,
                    i.verified_commerce_ingress_state, i.verified_amount_currency
               INTO _clock, _ingress_tenant, _ingress_provider, _ingress_state,
                    _ingress_currency
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.id = NEW.webhook_ingress_identity_id
              FOR UPDATE;
             IF NOT FOUND THEN
@@ -3514,7 +3819,8 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigge
                 RAISE EXCEPTION 'b26_p2_dispatch_sovereign_ingress_unverified'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- Shape law mirrors scope_authority.classify INVALID set: blank
+            -- provider/currency can never be sovereign execution authority.
             IF btrim(COALESCE(_ingress_provider, '')) = '' THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_provider_shape_refused:blank'
                     USING ERRCODE = '42501';
@@ -3540,7 +3846,7 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigge
                     USING ERRCODE = '42501';
             END IF;
             IF EXISTS (
-                SELECT 1 FROM celery_taskmeta AS m
+                SELECT 1 FROM public.celery_taskmeta AS m
                  WHERE m.task_id = NEW.task_id
                    AND m.status = 'FAILURE'
             ) THEN
@@ -3549,6 +3855,8 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigge
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_history_immutability() RETURNS trigger
     LANGUAGE plpgsql
@@ -3568,6 +3876,8 @@ CREATE FUNCTION public.b26_p2_enforce_history_immutability() RETURNS trigger
                 USING ERRCODE = '42501';
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3577,13 +3887,13 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption() RETURNS trigg
             _mismatch boolean := false;
         BEGIN
             SELECT * INTO _existing
-              FROM webhook_ingress_identities AS e
+              FROM public.webhook_ingress_identities AS e
              WHERE e.tenant_id = NEW.tenant_id
                AND e.idempotency_key = NEW.idempotency_key
              LIMIT 1;
             IF NOT FOUND THEN
                 SELECT * INTO _existing
-                  FROM webhook_ingress_identities AS e
+                  FROM public.webhook_ingress_identities AS e
                  WHERE e.tenant_id = NEW.tenant_id
                    AND e.event_id = NEW.event_id
                  LIMIT 1;
@@ -3619,6 +3929,8 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption() RETURNS trigg
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_ingress_event_chronology() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3631,6 +3943,8 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_event_chronology() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
     LANGUAGE plpgsql
@@ -3658,27 +3972,33 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
                     IF NEW.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                        AND OLD.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known'
                        AND NOT EXISTS (
-                                SELECT 1 FROM b26_p2_provenance_evidence AS e
+                                SELECT 1 FROM public.b26_p2_provenance_evidence AS e
                                  WHERE e.webhook_ingress_identity_id = OLD.id
                                    AND e.evidence_witness_hash IS NOT NULL
                                    AND char_length(e.evidence_witness_hash) > 0
                                    AND EXISTS (
-                                        SELECT 1 FROM b26_p2_ingress_auth_witness AS w
+                                        SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
                                          WHERE w.webhook_ingress_identity_id = OLD.id
                                            AND w.witness_hash IS NOT DISTINCT FROM e.evidence_witness_hash
                                    )
                                    AND EXISTS (
-                                        SELECT 1 FROM b26_p2_provider_auth_consequence AS c
+                                        SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
                                          WHERE c.webhook_ingress_identity_id = OLD.id
                                    )
                             ) THEN
                         RAISE EXCEPTION 'b26_p2_provenance_promotion_refused' USING ERRCODE = '42501';
                     END IF;
-
+                    -- XIV: root-evidence binding. Even with full legacy
+                    -- evidence, promotion requires the immutable
+                    -- auth-root evidence identity created only by the
+                    -- single authoritative commit interface in the same
+                    -- transaction. Legacy paths without the atomic fail
+                    -- here; the atomic creates root evidence before this
+                    -- UPDATE fires, so it passes.
                     IF NEW.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                        AND OLD.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known'
                        AND NOT EXISTS (
-                                SELECT 1 FROM b26_p2_auth_root_evidence AS r
+                                SELECT 1 FROM public.b26_p2_auth_root_evidence AS r
                                  WHERE r.webhook_ingress_identity_id = OLD.id
                             ) THEN
                         RAISE EXCEPTION 'b26_p2_provenance_promotion_refused' USING ERRCODE = '42501';
@@ -3689,6 +4009,8 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3696,7 +4018,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody() RETURNS trigge
         BEGIN
             IF TG_OP = 'DELETE' THEN
                 IF EXISTS (
-                    SELECT 1 FROM b23_match_task_dispatches AS d
+                    SELECT 1 FROM public.b23_match_task_dispatches AS d
                     WHERE d.webhook_ingress_identity_id = OLD.id
                 ) THEN
                     RAISE EXCEPTION 'b26_p2_ingress_sovereign_delete_refused'
@@ -3705,7 +4027,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody() RETURNS trigge
                 RETURN OLD;
             END IF;
             IF EXISTS (
-                SELECT 1 FROM b23_match_task_dispatches AS d
+                SELECT 1 FROM public.b23_match_task_dispatches AS d
                 WHERE d.webhook_ingress_identity_id = NEW.id
             ) THEN
                 IF OLD.event_timestamp IS DISTINCT FROM NEW.event_timestamp THEN
@@ -3739,6 +4061,8 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody() RETURNS trigge
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3769,13 +4093,18 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trig
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_ledger_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
-
+                -- Owner execution context only (direct owner
+                -- administration or the sovereign DEFINER trigger that
+                -- appends supersessions), resolved live so every
+                -- deployment topology enforces the same law.
                 IF NOT public.b26_p2_sovereign_writer(
                        'public.b26_p2_verdict_supersession_ledger'::regclass
                    ) THEN
@@ -3787,6 +4116,8 @@ CREATE FUNCTION public.b26_p2_enforce_ledger_immutability() RETURNS trigger
             RAISE EXCEPTION 'b26_p2_ledger_history_immutable_refused'
                 USING ERRCODE = '42501';
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_family text, p_financial_status text, p_cancelled_at timestamp with time zone, p_refunds_present boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone, p_require_creation_proof boolean) RETURNS void
     LANGUAGE plpgsql IMMUTABLE
@@ -3803,11 +4134,11 @@ CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_fam
             END IF;
             IF lower(public.b26_p2_ascii_strip(COALESCE(p_provider, '')))
                    = 'shopify'
-               AND lower(b26_p2_ascii_strip(COALESCE(p_family, '')))
+               AND lower(public.b26_p2_ascii_strip(COALESCE(p_family, '')))
                    = 'orders.create' THEN
                 IF p_require_creation_proof THEN
                     IF p_financial_status IS NULL
-                       OR lower(b26_p2_ascii_strip(p_financial_status))
+                       OR lower(public.b26_p2_ascii_strip(p_financial_status))
                           NOT IN ('pending', 'authorized', 'paid',
                                   'partially_paid') THEN
                         RAISE EXCEPTION
@@ -3820,7 +4151,7 @@ CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_fam
                     END IF;
                 ELSE
                     IF p_financial_status IS NOT NULL
-                       AND lower(b26_p2_ascii_strip(p_financial_status))
+                       AND lower(public.b26_p2_ascii_strip(p_financial_status))
                           NOT IN ('pending', 'authorized', 'paid',
                                   'partially_paid', 'voided', 'refunded',
                                   'partially_refunded') THEN
@@ -3846,6 +4177,8 @@ CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_fam
             RETURN;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_observation_chronology() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3858,6 +4191,8 @@ CREATE FUNCTION public.b26_p2_enforce_observation_chronology() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_outbox_issuance() RETURNS trigger
     LANGUAGE plpgsql
@@ -3874,6 +4209,8 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_issuance() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
     LANGUAGE plpgsql
@@ -3906,7 +4243,7 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
                     NULL;
                 ELSIF OLD.state = 'published'
                    AND NEW.state = 'conducted' THEN
-
+                    -- Corrective V: same gate law as dispatch above.
                     IF current_user NOT IN ('migration_owner', 'postgres') THEN
                         RAISE EXCEPTION 'b26_p2_conducted_requires_gate'
                             USING ERRCODE = '42501';
@@ -3920,13 +4257,18 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_policy_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
             IF TG_OP = 'UPDATE' THEN
-
+                -- XIV: policy versions are append-only governance. New
+                -- versions arrive via INSERT; renaming a version in place
+                -- breaks the VERSION_BOUND disposition (receipts bind the
+                -- version string) and fails closed.
                 IF OLD.scope_policy_version IS DISTINCT FROM NEW.scope_policy_version THEN
                     RAISE EXCEPTION 'b26_p2_policy_version_immutable_refused'
                         USING ERRCODE = '42501';
@@ -3941,12 +4283,19 @@ CREATE FUNCTION public.b26_p2_enforce_policy_immutability() RETURNS trigger
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_registry_governance() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
-
+            -- XIX: publication law changes only by direct owner
+            -- administration (forward migration) or the cluster
+            -- superuser, resolved live from the catalog. A DEFINER
+            -- deputy (current_user = owner, session_user = caller)
+            -- satisfies neither disjunct; runtime roles satisfy
+            -- neither either.
             IF NOT (
                 (
                     public.b26_p2_table_owner(
@@ -3965,6 +4314,8 @@ CREATE FUNCTION public.b26_p2_enforce_registry_governance() RETURNS trigger
             RETURN COALESCE(NEW, OLD);
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_enforce_registry_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3981,6 +4332,8 @@ CREATE FUNCTION public.b26_p2_enforce_registry_immutability() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
     LANGUAGE plpgsql
@@ -4000,7 +4353,7 @@ CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
                 RETURN NEW;
             END IF;
             SELECT EXISTS (
-                SELECT 1 FROM b26_p2_task_authority_directory AS dir
+                SELECT 1 FROM public.b26_p2_task_authority_directory AS dir
                  WHERE dir.task_id = NEW.task_id
             ) INTO _is_p2_task;
             IF NOT _is_p2_task THEN
@@ -4009,6 +4362,8 @@ CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
             RAISE EXCEPTION 'b26_p2_result_failure_forge_refused'
                 USING ERRCODE = '42501';
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -4026,15 +4381,15 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
             _owner oid;
         BEGIN
             IF session_user = 'postgres'
-               OR pg_has_role(
+               OR pg_catalog.pg_has_role(
                       session_user, 'migration_owner', 'USAGE') THEN
                 RETURN NEW;
             END IF;
             SELECT relowner INTO _owner
-              FROM pg_class
+              FROM pg_catalog.pg_class
              WHERE oid = TG_RELID;
             IF _owner IS NOT NULL
-               AND pg_has_role(session_user, _owner, 'USAGE') THEN
+               AND pg_catalog.pg_has_role(session_user, _owner, 'USAGE') THEN
                 RETURN NEW;
             END IF;
             IF current_setting('transaction_isolation', true)
@@ -4118,7 +4473,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
                 SELECT COALESCE(ae.conversion_value_cents,
                                 ae.revenue_cents, 0)
                   INTO _attribution_amount
-                  FROM attribution_events AS ae
+                  FROM public.attribution_events AS ae
                  WHERE ae.id = NEW.attribution_event_id
                    AND ae.tenant_id = NEW.tenant_id;
                 IF NOT FOUND THEN
@@ -4141,21 +4496,21 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
             IF _verified_changed THEN
                 IF NEW.webhook_ingress_identity_id IS NOT NULL THEN
                     SELECT i.verified_amount_minor INTO _source_amount
-                      FROM webhook_ingress_identities AS i
+                      FROM public.webhook_ingress_identities AS i
                      WHERE i.id = NEW.webhook_ingress_identity_id
                        AND i.tenant_id = NEW.tenant_id;
                     IF FOUND
                        AND _source_amount
                            IS NOT DISTINCT FROM NEW.verified_amount_minor
-                       AND b26_p2_ingress_has_current_authority(
+                       AND public.b26_p2_ingress_has_current_authority(
                                NEW.webhook_ingress_identity_id) THEN
                         _source_ok := true;
                     END IF;
                 END IF;
                 IF NOT _source_ok THEN
                     SELECT true INTO _source_ok
-                      FROM b23_revenue_events AS e
-                      JOIN webhook_ingress_identities AS i
+                      FROM public.b23_revenue_events AS e
+                      JOIN public.webhook_ingress_identities AS i
                         ON i.tenant_id = e.tenant_id
                        AND i.provider = e.provider
                        AND i.provider_native_event_reference =
@@ -4167,7 +4522,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
                            NEW.canonical_captured_gross_amount_minor
                        AND i.verified_amount_minor =
                            NEW.canonical_captured_gross_amount_minor
-                       AND b26_p2_ingress_has_current_authority(
+                       AND public.b26_p2_ingress_has_current_authority(
                                i.id)
                      LIMIT 1;
                 END IF;
@@ -4203,7 +4558,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
                                    ELSE 0
                                END), 0))
                   INTO _net
-                  FROM b23_revenue_events AS e
+                  FROM public.b23_revenue_events AS e
                  WHERE e.tenant_id = NEW.tenant_id
                    AND e.match_verdict_id = NEW.id;
                 IF NEW.canonical_net_verified_amount_minor
@@ -4216,6 +4571,8 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS trigger
     LANGUAGE plpgsql
@@ -4239,7 +4596,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                                             'matched_confirmed', 'adjusted');
                 IF _new_qual AND _ingress IS NOT NULL THEN
                     IF EXISTS (
-                        SELECT 1 FROM b23_match_task_dispatches AS d
+                        SELECT 1 FROM public.b23_match_task_dispatches AS d
                          WHERE d.tenant_id = _tenant
                            AND d.webhook_ingress_identity_id = _ingress
                            AND d.delivery_state = 'conducted'
@@ -4257,7 +4614,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                                             'matched_confirmed', 'adjusted');
                 IF _old_qual AND _ingress IS NOT NULL THEN
                     IF EXISTS (
-                        SELECT 1 FROM b23_match_task_dispatches AS d
+                        SELECT 1 FROM public.b23_match_task_dispatches AS d
                          WHERE d.tenant_id = _tenant
                            AND d.webhook_ingress_identity_id = _ingress
                            AND d.delivery_state = 'conducted'
@@ -4280,6 +4637,13 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                 _new_ref_present := public.b26_p2_ascii_strip(COALESCE(NEW.canonical_commerce_reference, '')) <> '';
                 _ref_presence_flipped := _old_ref_present IS DISTINCT FROM _new_ref_present;
 
+                -- XXV-2 (A2/B10): a provider amendment may relink a conducted
+                -- verdict to its successor source. Every condition the
+                -- amendment admission enforced is re-checked here, and the old
+                -- source must name exactly the new source's event in its
+                -- supersession reason. The new source has no conducted
+                -- dispatch (it is not independently matched), which the next
+                -- branch still enforces.
                 _amendment_link :=
                     _link_moved
                     AND OLD.webhook_ingress_identity_id IS NOT NULL
@@ -4287,8 +4651,8 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                     AND OLD.tenant_id IS NOT DISTINCT FROM NEW.tenant_id
                     AND EXISTS (
                         SELECT 1
-                          FROM webhook_ingress_identities AS oldi
-                          JOIN webhook_ingress_identities AS newi
+                          FROM public.webhook_ingress_identities AS oldi
+                          JOIN public.webhook_ingress_identities AS newi
                             ON newi.id = NEW.webhook_ingress_identity_id
                            AND newi.tenant_id = OLD.tenant_id
                          WHERE oldi.id = OLD.webhook_ingress_identity_id
@@ -4307,14 +4671,14 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                                IS NOT DISTINCT FROM
                                oldi.verified_amount_currency
                            AND newi.event_timestamp >= oldi.event_timestamp
-                           AND b26_p2_ingress_has_current_authority(
+                           AND public.b26_p2_ingress_has_current_authority(
                                    newi.id)
                     );
                 IF ((_old_qual AND NOT _new_qual) OR (_old_qual AND _link_moved))
                    AND NOT _amendment_link THEN
                     IF OLD.webhook_ingress_identity_id IS NOT NULL THEN
                         IF EXISTS (
-                            SELECT 1 FROM b23_match_task_dispatches AS d
+                            SELECT 1 FROM public.b23_match_task_dispatches AS d
                              WHERE d.tenant_id = OLD.tenant_id
                                AND d.webhook_ingress_identity_id = OLD.webhook_ingress_identity_id
                                AND d.delivery_state = 'conducted'
@@ -4329,7 +4693,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                         OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
                         OR (NOT _old_qual)) THEN
                     IF EXISTS (
-                        SELECT 1 FROM b23_match_task_dispatches AS d
+                        SELECT 1 FROM public.b23_match_task_dispatches AS d
                          WHERE d.tenant_id = NEW.tenant_id
                            AND d.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
                            AND d.delivery_state = 'conducted'
@@ -4338,14 +4702,19 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                             USING ERRCODE = '42501';
                     END IF;
                 END IF;
-
+                -- XIV: conducted commerce-reference value rewrite. Presence
+                -- flips are refused below; a present-to-present value change
+                -- on a conducted lineage is an equal violation of the
+                -- UPDATE_REFUSED disposition and fails with the same
+                -- regression law. Non-conducted (B2.3-correctable) rows are
+                -- unaffected: the EXISTS test finds no conducted dispatch.
                 IF OLD.canonical_commerce_reference IS DISTINCT FROM NEW.canonical_commerce_reference
                    AND _old_qual AND _new_qual
                    AND _old_ref_present AND _new_ref_present
                    AND NOT _link_moved THEN
                     IF OLD.webhook_ingress_identity_id IS NOT NULL THEN
                         IF EXISTS (
-                            SELECT 1 FROM b23_match_task_dispatches AS d
+                            SELECT 1 FROM public.b23_match_task_dispatches AS d
                              WHERE d.tenant_id = OLD.tenant_id
                                AND d.webhook_ingress_identity_id = OLD.webhook_ingress_identity_id
                                AND d.delivery_state = 'conducted'
@@ -4358,7 +4727,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                 IF _ref_presence_flipped THEN
                     IF OLD.webhook_ingress_identity_id IS NOT NULL AND (_old_qual OR _new_qual) THEN
                         IF EXISTS (
-                            SELECT 1 FROM b23_match_task_dispatches AS d
+                            SELECT 1 FROM public.b23_match_task_dispatches AS d
                              WHERE d.tenant_id = OLD.tenant_id
                                AND d.webhook_ingress_identity_id = OLD.webhook_ingress_identity_id
                                AND d.delivery_state = 'conducted'
@@ -4371,7 +4740,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                        AND (OLD.webhook_ingress_identity_id IS DISTINCT FROM NEW.webhook_ingress_identity_id
                             OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id) THEN
                         IF EXISTS (
-                            SELECT 1 FROM b23_match_task_dispatches AS d
+                            SELECT 1 FROM public.b23_match_task_dispatches AS d
                              WHERE d.tenant_id = NEW.tenant_id
                                AND d.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
                                AND d.delivery_state = 'conducted'
@@ -4385,6 +4754,8 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -4428,7 +4799,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
             END IF;
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id
               INTO _tenant, _ingress
-              FROM b26_p2_task_authority_directory AS dir
+              FROM public.b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_conducted_effect_refused:no_authority'
@@ -4436,7 +4807,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
             END IF;
             SELECT scope_policy_version, source_sha256, semantic_sha256
               INTO _policy_version, _policy_source, _policy_semantic
-              FROM b26_p2_scope_policy_authority
+              FROM public.b26_p2_scope_policy_authority
              ORDER BY scope_policy_version DESC LIMIT 1;
             IF NOT FOUND
                OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -4454,7 +4825,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
             BEGIN
                 SELECT d.window_start, d.window_end
                   INTO _dispatch_ws, _dispatch_we
-                  FROM b23_match_task_dispatches AS d
+                  FROM public.b23_match_task_dispatches AS d
                  WHERE d.task_id = _task
                  FOR SHARE;
                 IF NOT FOUND THEN
@@ -4464,7 +4835,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state,
                        i.b26_p2_provenance_status
                   INTO _clock, _ingress_state, _ingress_prov
-                  FROM webhook_ingress_identities AS i
+                  FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant
                  FOR SHARE;
@@ -4489,7 +4860,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
                 END IF;
                 SELECT count(*), max(r.p2_scope_identity), max(r.policy_semantic_sha256)
                   INTO _receipt_count, _receipt_scope, _receipt_sha
-                  FROM b26_p2_conduction_receipts AS r
+                  FROM public.b26_p2_conduction_receipts AS r
                  WHERE r.task_id = _task
                    AND r.tenant_id = _tenant
                    AND r.webhook_ingress_identity_id = _ingress;
@@ -4511,7 +4882,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
                         USING ERRCODE = '42501';
                 END IF;
                 SELECT count(*) INTO _verdict_count
-                  FROM b23_match_verdicts AS v
+                  FROM public.b23_match_verdicts AS v
                  WHERE v.tenant_id = _tenant
                    AND v.webhook_ingress_identity_id = _ingress
                    AND v.status IN ('matched_provisional',
@@ -4528,6 +4899,8 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
                 RAISE;
             END;
         END $_$;
+
+
 
 CREATE FUNCTION public.b26_p2_guard_conduction_receipt() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -4556,7 +4929,7 @@ CREATE FUNCTION public.b26_p2_guard_conduction_receipt() RETURNS trigger
             END IF;
             SELECT scope_policy_version, source_sha256, semantic_sha256
               INTO _policy_version, _policy_source, _policy_semantic
-              FROM b26_p2_scope_policy_authority
+              FROM public.b26_p2_scope_policy_authority
              ORDER BY scope_policy_version DESC LIMIT 1;
             IF NOT FOUND
                OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -4580,7 +4953,7 @@ CREATE FUNCTION public.b26_p2_guard_conduction_receipt() RETURNS trigger
             BEGIN
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state
                   INTO _clock, _ingress_state
-                  FROM webhook_ingress_identities AS i
+                  FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant
                  FOR SHARE;
@@ -4612,6 +4985,8 @@ CREATE FUNCTION public.b26_p2_guard_conduction_receipt() RETURNS trigger
             END;
         END $_$;
 
+
+
 CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -4627,14 +5002,16 @@ CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- Relink re-derivation (lineage-bound, unchanged): a relink
+            -- is a lineage claim verified against the new source, and
+            -- the state is always recomputed -- never caller-asserted.
             IF NEW.webhook_ingress_identity_id
                    IS DISTINCT FROM OLD.webhook_ingress_identity_id THEN
                 IF NEW.webhook_ingress_identity_id IS NOT NULL THEN
                     SELECT i.tenant_id, i.provider,
                            i.provider_native_event_reference
                       INTO _link_tenant, _link_provider, _link_ref
-                      FROM webhook_ingress_identities AS i
+                      FROM public.webhook_ingress_identities AS i
                      WHERE i.id = NEW.webhook_ingress_identity_id;
                     IF NOT FOUND
                        OR _link_tenant IS DISTINCT FROM NEW.tenant_id
@@ -4651,7 +5028,11 @@ CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
                         NEW.webhook_ingress_identity_id);
                 RETURN NEW;
             END IF;
-
+            -- XIX: state-only writes are admitted iff they equal the
+            -- deterministic projection of the linked source. A forged
+            -- 'current' for a non-current source differs from the
+            -- derivation and is refused; asserting the true projection
+            -- is harmless. No identity token is consulted.
             _derived := public.b26_p2_derive_verdict_authority(
                 NEW.webhook_ingress_identity_id);
             IF NEW.b26_p2_source_authority_state
@@ -4661,6 +5042,8 @@ CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETURNS boolean
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -4674,7 +5057,7 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             SELECT i.b26_p2_provenance_status, i.b26_p2_semantic_regime,
                    i.b26_p2_demotion_reason
               INTO _prov, _regime, _reason
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
                 RETURN FALSE;
@@ -4688,15 +5071,17 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             IF _reason IS NOT NULL THEN
                 RETURN FALSE;
             END IF;
-
+            -- XX: the bound regime must be live in the registry
+            -- (retirement ends currentness transactionally).
             IF NOT EXISTS (
-                SELECT 1 FROM b26_p2_semantic_regime_registry AS r
+                SELECT 1 FROM public.b26_p2_semantic_regime_registry AS r
                  WHERE r.regime_id = _regime
                    AND r.status = 'active'
             ) THEN
                 RETURN FALSE;
             END IF;
-
+            -- XX: the operational floor must hold at this revision
+            -- (downgrade ends current readability fail-closed).
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
                  WHERE f.id = 1 AND f.floor_revision = '202609300004';
@@ -4706,22 +5091,26 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             EXCEPTION WHEN undefined_table THEN
                 RETURN FALSE;
             END;
-
+            -- XX: every load-bearing justification must still exist.
             IF NOT EXISTS (
-                SELECT 1 FROM b26_p2_ingress_auth_witness AS w
+                SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = p_ingress
             ) THEN
                 RETURN FALSE;
             END IF;
             IF NOT EXISTS (
-                SELECT 1 FROM b26_p2_provenance_evidence AS e
+                SELECT 1 FROM public.b26_p2_provenance_evidence AS e
                  WHERE e.webhook_ingress_identity_id = p_ingress
             ) THEN
                 RETURN FALSE;
             END IF;
-
+            -- XX (H-XX-C): the bound family must rest on explicit
+            -- authenticated evidence. Grandfathered pre-XIX backfill rows
+            -- (xix-backfill:pre-xix-mint) keep their audit record but no
+            -- longer satisfy currentness: the migration assigned that
+            -- label, no provider evidence established the family.
             IF NOT EXISTS (
-                SELECT 1 FROM b26_p2_provider_auth_consequence AS c
+                SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
                  WHERE c.webhook_ingress_identity_id = p_ingress
                    AND c.b26_p2_event_family IN (
                        'payment_intent.succeeded', 'orders.create',
@@ -4735,13 +5124,15 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
                 RETURN FALSE;
             END IF;
             IF NOT EXISTS (
-                SELECT 1 FROM b26_p2_auth_root_evidence AS r
+                SELECT 1 FROM public.b26_p2_auth_root_evidence AS r
                  WHERE r.webhook_ingress_identity_id = p_ingress
             ) THEN
                 RETURN FALSE;
             END IF;
             RETURN TRUE;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_lift_pre_xxv_demotion(p_tenant uuid, p_ingress uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
@@ -4755,8 +5146,8 @@ CREATE FUNCTION public.b26_p2_lift_pre_xxv_demotion(p_tenant uuid, p_ingress uui
             END IF;
             IF NOT EXISTS (
                 SELECT 1
-                  FROM webhook_ingress_identities AS i
-                  JOIN b26_p2_source_money_attestation AS a
+                  FROM public.webhook_ingress_identities AS i
+                  JOIN public.b26_p2_source_money_attestation AS a
                     ON a.webhook_ingress_identity_id = i.id
                    AND a.tenant_id = i.tenant_id
                  WHERE i.id = p_ingress
@@ -4786,6 +5177,8 @@ CREATE FUNCTION public.b26_p2_lift_pre_xxv_demotion(p_tenant uuid, p_ingress uui
                AND v.webhook_ingress_identity_id = p_ingress;
             RETURN true;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -4830,7 +5223,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
             END IF;
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id
               INTO _tenant, _ingress
-              FROM b26_p2_task_authority_directory AS dir
+              FROM public.b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_conducted_no_authority'
@@ -4838,7 +5231,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
             END IF;
             SELECT scope_policy_version, source_sha256, semantic_sha256
               INTO _policy_version, _policy_source, _policy_semantic
-              FROM b26_p2_scope_policy_authority
+              FROM public.b26_p2_scope_policy_authority
              ORDER BY scope_policy_version DESC LIMIT 1;
             IF NOT FOUND
                OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -4856,7 +5249,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
             BEGIN
                 SELECT d.delivery_state, d.window_start, d.window_end, d.provider
                   INTO _dispatch_state, _dispatch_ws, _dispatch_we, _dispatch_provider
-                  FROM b23_match_task_dispatches AS d
+                  FROM public.b23_match_task_dispatches AS d
                  WHERE d.task_id = _task
                  FOR UPDATE;
                 IF NOT FOUND THEN
@@ -4864,7 +5257,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                         USING ERRCODE = '42501';
                 END IF;
                 SELECT o.state INTO _outbox_state
-                  FROM b26_p2_execution_outbox AS o
+                  FROM public.b26_p2_execution_outbox AS o
                  WHERE o.dispatch_task_id = _task
                  FOR UPDATE;
                 IF NOT FOUND THEN
@@ -4874,7 +5267,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state,
                        i.provider, i.verified_amount_currency
                   INTO _clock, _ingress_state, _ingress_provider, _ingress_currency
-                  FROM webhook_ingress_identities AS i
+                  FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant
                  FOR SHARE;
@@ -4916,7 +5309,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                 SELECT count(*), max(r.window_start), max(r.window_end),
                        max(r.p2_scope_identity), max(r.policy_semantic_sha256)
                   INTO _receipt_count, _receipt_ws, _receipt_we, _receipt_scope, _receipt_sha
-                  FROM b26_p2_conduction_receipts AS r
+                  FROM public.b26_p2_conduction_receipts AS r
                  WHERE r.task_id = _task
                    AND r.tenant_id = _tenant
                    AND r.webhook_ingress_identity_id = _ingress;
@@ -4937,7 +5330,8 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                     RAISE EXCEPTION 'b26_p2_conducted_policy_semantic_not_bound'
                         USING ERRCODE = '42501';
                 END IF;
-
+                -- IX canonical binding: receipt scope must equal sovereign
+                -- recomputation for this tenant window at gate time.
                 _canonical := public.b26_p2_canonical_scope_identity_for_window(_tenant, _exp_ws, _exp_we);
                 IF _receipt_scope IS DISTINCT FROM _canonical THEN
                     RAISE EXCEPTION 'b26_p2_conducted_scope_not_canonical'
@@ -4948,7 +5342,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                    AND v.webhook_ingress_identity_id = _ingress
                  FOR SHARE;
                 SELECT count(*) INTO _verdict_count
-                  FROM b23_match_verdicts AS v
+                  FROM public.b23_match_verdicts AS v
                  WHERE v.tenant_id = _tenant
                    AND v.webhook_ingress_identity_id = _ingress
                    AND v.status IN ('matched_provisional',
@@ -4979,6 +5373,8 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
             END;
         END $_$;
 
+
+
 CREATE FUNCTION public.b26_p2_normalize_currency(p_raw text) RETURNS text
     LANGUAGE plpgsql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -5002,6 +5398,8 @@ CREATE FUNCTION public.b26_p2_normalize_currency(p_raw text) RETURNS text
             RETURN _token;
         END $_$;
 
+
+
 CREATE FUNCTION public.b26_p2_normalize_provider(p_raw text) RETURNS text
     LANGUAGE plpgsql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -5021,6 +5419,8 @@ CREATE FUNCTION public.b26_p2_normalize_provider(p_raw text) RETURNS text
             RETURN _token;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_observe_history_integrity() RETURNS TABLE(observation_id bigint, observed_at timestamp with time zone, ledger_count bigint, ledger_tip text, violations text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5034,21 +5434,21 @@ CREATE FUNCTION public.b26_p2_observe_history_integrity() RETURNS TABLE(observat
             _ts timestamptz;
         BEGIN
             FOR _v IN SELECT violation
-                        FROM b26_p2_verify_history_protection()
+                        FROM public.b26_p2_verify_history_protection()
             LOOP
                 _viol := _viol || _v || ';';
             END LOOP;
             FOR _v IN SELECT violation
-                        FROM b26_p2_verify_history_continuity()
+                        FROM public.b26_p2_verify_history_continuity()
             LOOP
                 _viol := _viol || _v || ';';
             END LOOP;
             SELECT count(*),
                    (SELECT l.entry_hash
-                      FROM b26_p2_verdict_supersession_ledger AS l
+                      FROM public.b26_p2_verdict_supersession_ledger AS l
                      ORDER BY l.seq DESC LIMIT 1)
               INTO _n, _tip
-              FROM b26_p2_verdict_supersession_ledger;
+              FROM public.b26_p2_verdict_supersession_ledger;
             INSERT INTO public.b26_p2_history_integrity_observations
                 (ledger_count, ledger_tip, observer_violations)
             VALUES (_n, _tip, _viol)
@@ -5063,6 +5463,8 @@ CREATE FUNCTION public.b26_p2_observe_history_integrity() RETURNS TABLE(observat
             RETURN NEXT;
             RETURN;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_after_seconds integer DEFAULT 300) RETURNS text
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -5096,7 +5498,7 @@ CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_af
             END IF;
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id
               INTO _tenant, _ingress
-              FROM b26_p2_task_authority_directory AS dir
+              FROM public.b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RETURN 'NOT_ACCEPTED';
@@ -5112,26 +5514,26 @@ CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_af
                        COALESCE(d.first_published_at, d.dispatched_at),
                        d.dispatched_at
                   INTO _dispatch_state, _anchor, _dispatched
-                  FROM b23_match_task_dispatches AS d
+                  FROM public.b23_match_task_dispatches AS d
                  WHERE d.task_id = _task;
                 IF NOT FOUND THEN
                     _result := 'DIVERGENT_ACTIONABLE';
                 ELSE
                     SELECT (o.state IS NOT NULL), o.state
                       INTO _has_outbox, _outbox_state
-                      FROM b26_p2_execution_outbox AS o
+                      FROM public.b26_p2_execution_outbox AS o
                      WHERE o.dispatch_task_id = _task;
                     _has_outbox := COALESCE(_has_outbox, false);
                     SELECT EXISTS (
-                        SELECT 1 FROM b26_p2_execution_quarantine AS q
+                        SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                          WHERE q.task_id = _task
                     ) INTO _quarantined;
                     SELECT EXISTS (
-                        SELECT 1 FROM worker_failed_jobs AS w
+                        SELECT 1 FROM public.worker_failed_jobs AS w
                          WHERE w.task_id = _task
                     ) INTO _dlq;
                     SELECT EXISTS (
-                        SELECT 1 FROM celery_taskmeta AS m
+                        SELECT 1 FROM public.celery_taskmeta AS m
                          WHERE m.task_id = _task
                            AND m.status = 'FAILURE'
                     ) INTO _failed;
@@ -5147,7 +5549,10 @@ CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_af
                        AND _dispatch_state = 'pending_publish' THEN
                         _result := 'QUARANTINED_ACTIONABLE';
                     ELSIF _dispatch_state = 'pending_publish' THEN
-
+                        -- Finiteness law (P2-CA7-05): accepted pending beyond
+                        -- the governed horizon is actionable, never silent.
+                        -- Anchor is dispatched_at (immutable); non-progress
+                        -- metadata cannot extend it.
                         IF _dispatched < now() - (_threshold || ' seconds')::interval THEN
                             _result := 'PENDING_PUBLICATION_ACTIONABLE';
                         ELSE
@@ -5177,6 +5582,8 @@ CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_af
             END;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_propagate_verdict_authority() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5201,6 +5608,8 @@ CREATE FUNCTION public.b26_p2_propagate_verdict_authority() RETURNS trigger
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5214,14 +5623,19 @@ CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change() RET
             EXCEPTION WHEN OTHERS THEN
                 _prev_guc := NULL;
             END;
-
+            -- Driver is the tenant registry (no RLS): the ingress and
+            -- verdict tables enforce FORCE RLS, so listing affected
+            -- tenants from them would fail or silently empty under
+            -- owner administration without tenant context. Walk every
+            -- tenant with explicit transaction-local context; tenants
+            -- without affected rows update zero rows.
             FOR _t IN SELECT t.id FROM public.tenants AS t
             LOOP
                 PERFORM set_config('app.current_tenant_id', _t::text, true);
                 UPDATE public.b23_match_verdicts AS v
                    SET b26_p2_source_authority_state =
                        public.b26_p2_derive_verdict_authority(v.webhook_ingress_identity_id)
-                  FROM webhook_ingress_identities AS i
+                  FROM public.webhook_ingress_identities AS i
                  WHERE i.b26_p2_semantic_regime = NEW.regime_id
                    AND v.webhook_ingress_identity_id = i.id
                    AND v.tenant_id = i.tenant_id
@@ -5233,6 +5647,8 @@ CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change() RET
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_read_history_continuity() RETURNS TABLE(n bigint, tip text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5240,13 +5656,15 @@ CREATE FUNCTION public.b26_p2_read_history_continuity() RETURNS TABLE(n bigint, 
         BEGIN
             SELECT count(*),
                    (SELECT l.entry_hash
-                      FROM b26_p2_verdict_supersession_ledger AS l
+                      FROM public.b26_p2_verdict_supersession_ledger AS l
                      ORDER BY l.seq DESC LIMIT 1)
               INTO n, tip
-              FROM b26_p2_verdict_supersession_ledger;
+              FROM public.b26_p2_verdict_supersession_ledger;
             RETURN NEXT;
             RETURN;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_read_history_entry_hash(p_seq bigint) RETURNS text
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -5256,10 +5674,12 @@ CREATE FUNCTION public.b26_p2_read_history_entry_hash(p_seq bigint) RETURNS text
             _hash text;
         BEGIN
             SELECT entry_hash INTO _hash
-              FROM b26_p2_verdict_supersession_ledger
+              FROM public.b26_p2_verdict_supersession_ledger
              WHERE seq = p_seq;
             RETURN _hash;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_read_history_prefix_digest() RETURNS text
     LANGUAGE sql STABLE SECURITY DEFINER
@@ -5278,8 +5698,10 @@ CREATE FUNCTION public.b26_p2_read_history_prefix_digest() RETURNS text
             ),
             'hex'
         )
-          FROM b26_p2_verdict_supersession_ledger AS l
+          FROM public.b26_p2_verdict_supersession_ledger AS l
         $$;
+
+
 
 CREATE FUNCTION public.b26_p2_read_history_snapshot(p_prior_tip_seq bigint DEFAULT NULL::bigint) RETURNS TABLE(n bigint, tip_seq bigint, tip_hash text, prefix_digest text, violations text, authority_universe uuid, prior_tip_hash text)
     LANGUAGE sql STABLE SECURITY DEFINER
@@ -5296,8 +5718,10 @@ CREATE FUNCTION public.b26_p2_read_history_snapshot(p_prior_tip_seq bigint DEFAU
                        ELSE public.b26_p2_read_history_entry_hash(
                            p_prior_tip_seq)
                    END
-              FROM b26_p2_read_history_witness_state() AS state
+              FROM public.b26_p2_read_history_witness_state() AS state
         $$;
+
+
 
 CREATE FUNCTION public.b26_p2_read_history_violations() RETURNS text
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -5308,17 +5732,19 @@ CREATE FUNCTION public.b26_p2_read_history_violations() RETURNS text
             _v text;
         BEGIN
             FOR _v IN SELECT violation
-                        FROM b26_p2_verify_history_protection()
+                        FROM public.b26_p2_verify_history_protection()
             LOOP
                 _viol := _viol || _v || ';';
             END LOOP;
             FOR _v IN SELECT violation
-                        FROM b26_p2_verify_history_continuity()
+                        FROM public.b26_p2_verify_history_continuity()
             LOOP
                 _viol := _viol || _v || ';';
             END LOOP;
             RETURN _viol;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_read_history_witness_state() RETURNS TABLE(n bigint, tip_seq bigint, tip_hash text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -5328,13 +5754,15 @@ CREATE FUNCTION public.b26_p2_read_history_witness_state() RETURNS TABLE(n bigin
             SELECT count(*),
                    max(l.seq),
                    (SELECT entry_hash
-                      FROM b26_p2_verdict_supersession_ledger
+                      FROM public.b26_p2_verdict_supersession_ledger
                      ORDER BY seq DESC LIMIT 1)
               INTO n, tip_seq, tip_hash
-              FROM b26_p2_verdict_supersession_ledger AS l;
+              FROM public.b26_p2_verdict_supersession_ledger AS l;
             RETURN NEXT;
             RETURN;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_identity text, p_processed_count integer DEFAULT 0, p_policy_semantic_sha256 text DEFAULT NULL::text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -5387,7 +5815,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
             END IF;
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id
               INTO _tenant, _ingress
-              FROM b26_p2_task_authority_directory AS dir
+              FROM public.b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_conducted_no_authority'
@@ -5395,7 +5823,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
             END IF;
             SELECT scope_policy_version, source_sha256, semantic_sha256
               INTO _policy_version, _policy_source, _policy_semantic
-              FROM b26_p2_scope_policy_authority
+              FROM public.b26_p2_scope_policy_authority
              ORDER BY scope_policy_version DESC LIMIT 1;
             IF NOT FOUND
                OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -5417,7 +5845,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
             BEGIN
                 SELECT d.window_start, d.window_end
                   INTO _dispatch_ws, _dispatch_we
-                  FROM b23_match_task_dispatches AS d
+                  FROM public.b23_match_task_dispatches AS d
                  WHERE d.task_id = _task;
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'b26_p2_conducted_no_dispatch'
@@ -5426,7 +5854,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state,
                        i.provider, i.verified_amount_currency
                   INTO _clock, _ingress_state, _ingress_provider, _ingress_currency
-                  FROM webhook_ingress_identities AS i
+                  FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant
                  FOR SHARE;
@@ -5454,7 +5882,8 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
                     RAISE EXCEPTION 'b26_p2_dispatch_window_not_sovereign'
                         USING ERRCODE = '42501';
                 END IF;
-
+                -- IX canonical consequence binding: caller scope must equal
+                -- sovereign recomputation for this tenant window.
                 _canonical := public.b26_p2_canonical_scope_identity_for_window(_tenant, _exp_ws, _exp_we);
                 IF _scope IS DISTINCT FROM _canonical THEN
                     RAISE EXCEPTION 'b26_p2_receipt_scope_not_canonical'
@@ -5475,9 +5904,9 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
                     p2_scope_identity = EXCLUDED.p2_scope_identity,
                     policy_semantic_sha256 = EXCLUDED.policy_semantic_sha256,
                     ix_meaning_status = 'canonically_bound'
-                 WHERE b26_p2_conduction_receipts.task_id = EXCLUDED.task_id
+                 WHERE public.b26_p2_conduction_receipts.task_id = EXCLUDED.task_id
                    AND NOT EXISTS (
-                       SELECT 1 FROM b23_match_task_dispatches AS d
+                       SELECT 1 FROM public.b23_match_task_dispatches AS d
                         WHERE d.task_id = EXCLUDED.task_id
                           AND d.delivery_state = 'conducted'
                    );
@@ -5490,6 +5919,8 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
                 RAISE;
             END;
         END $_$;
+
+
 
 CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds integer DEFAULT 300) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -5527,15 +5958,17 @@ CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds i
                 RAISE EXCEPTION 'b26_p2_heartbeat_tenant_malformed'
                     USING ERRCODE = '42501';
             END;
-
+            -- The counts below are recomputed from the live tables on
+            -- every call: the row is evaluation evidence, never a bare
+            -- timestamp the caller chose.
             SELECT count(*) INTO _pending_actionable
-              FROM b23_match_task_dispatches AS d
+              FROM public.b23_match_task_dispatches AS d
              WHERE d.tenant_id = _tenant
                AND d.delivery_state = 'pending_publish'
                AND d.dispatched_at < now() - (_threshold || ' seconds')::interval;
             SELECT count(*) INTO _stale
-              FROM b23_match_task_dispatches AS d
-              JOIN b26_p2_execution_outbox AS o
+              FROM public.b23_match_task_dispatches AS d
+              JOIN public.b26_p2_execution_outbox AS o
                 ON o.dispatch_task_id = d.task_id
                AND o.tenant_id = d.tenant_id
                AND o.webhook_ingress_identity_id = d.webhook_ingress_identity_id
@@ -5545,7 +5978,7 @@ CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds i
                AND COALESCE(d.first_published_at, d.dispatched_at)
                    < now() - (_threshold || ' seconds')::interval;
             SELECT count(*) INTO _quarantine
-              FROM b26_p2_execution_quarantine AS q
+              FROM public.b26_p2_execution_quarantine AS q
              WHERE q.tenant_id = _tenant;
             INSERT INTO public.b26_p2_evaluator_heartbeat AS h (
                 tenant_id, last_tick, tick_count, updated_at,
@@ -5564,6 +5997,8 @@ CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds i
             RETURN 'evaluated';
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5573,6 +6008,8 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid) RETURN
                 USING ERRCODE = '42501';
             RETURN NULL;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -5601,7 +6038,7 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
             SELECT i.tenant_id, i.idempotency_key,
                    i.verified_commerce_ingress_state, i.provider
               INTO _tenant, _idem, _state, _row_provider
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_witness_ingress_missing'
@@ -5615,11 +6052,14 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
                 RAISE EXCEPTION 'b26_p2_witness_blank_shape_refused'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- The predecessor event must exist independently of this
+            -- call: a consequence row authored by the API application
+            -- principal in the HMAC-verified path, binding the same
+            -- tenant/provider/event/body.
             SELECT c.provider, c.provider_event_reference, c.body_sha256,
                    c.signature_envelope_sha256, c.auth_method, c.auth_version
               INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
-              FROM b26_p2_provider_auth_consequence AS c
+              FROM public.b26_p2_provider_auth_consequence AS c
              WHERE c.webhook_ingress_identity_id = p_ingress
                AND c.tenant_id = _tenant;
             IF NOT FOUND THEN
@@ -5643,7 +6083,7 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
                     USING ERRCODE = '42501';
             END IF;
             SELECT w.witness_hash INTO _existing
-              FROM b26_p2_ingress_auth_witness AS w
+              FROM public.b26_p2_ingress_auth_witness AS w
              WHERE w.webhook_ingress_identity_id = p_ingress;
             IF FOUND THEN
                 RETURN _existing;
@@ -5670,7 +6110,7 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
                     'app.current_tenant_id', COALESCE(_prev_guc, ''), true
                 );
                 SELECT w.witness_hash INTO _existing
-                  FROM b26_p2_ingress_auth_witness AS w
+                  FROM public.b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = p_ingress;
                 RETURN _existing;
             EXCEPTION WHEN OTHERS THEN
@@ -5680,6 +6120,8 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
                 RAISE;
             END;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text, p_sig_envelope_sha256 text, p_method text, p_version text DEFAULT 'v1'::text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -5698,7 +6140,9 @@ CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p
             _existing_version text;
             _prev_guc text;
         BEGIN
-
+            -- Only the dedicated authentication trust root may record
+            -- the predecessor event. The generic application principal
+            -- is physically incapable (grant + this gate).
             IF session_user IS DISTINCT FROM 'app_ingress'
                AND session_user IS DISTINCT FROM 'migration_owner'
                AND session_user IS DISTINCT FROM 'postgres' THEN
@@ -5728,23 +6172,27 @@ CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p
             SELECT i.tenant_id, i.idempotency_key,
                    i.verified_commerce_ingress_state, i.provider
               INTO _tenant, _idem, _state, _row_provider
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_auth_cons_ingress_missing'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- Provider binding: a PayPal consequence on a Stripe row
+            -- is structurally refused (NULL-safe).
             IF p_provider IS DISTINCT FROM _row_provider THEN
                 RAISE EXCEPTION 'b26_p2_auth_cons_provider_mismatch'
                     USING ERRCODE = '42501';
             END IF;
-
+            -- Immutability: an existing consequence is authoritative
+            -- evidence and cannot be rewritten by its author. Identical
+            -- re-record is idempotent; any digest/event/method drift
+            -- is refused (prevents post-witness substitution).
             SELECT c.provider, c.provider_event_reference, c.body_sha256,
                    c.signature_envelope_sha256, c.auth_method, c.auth_version
               INTO _existing_provider, _existing_event, _existing_body,
                    _existing_sig, _existing_method, _existing_version
-              FROM b26_p2_provider_auth_consequence AS c
+              FROM public.b26_p2_provider_auth_consequence AS c
              WHERE c.webhook_ingress_identity_id = p_ingress;
             IF FOUND THEN
                 IF _existing_provider IS DISTINCT FROM p_provider
@@ -5786,6 +6234,8 @@ CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p
                 RAISE;
             END;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_record_scheduler_heartbeat() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -5842,6 +6292,8 @@ CREATE FUNCTION public.b26_p2_record_scheduler_heartbeat() RETURNS text
             RETURN 'scheduled';
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_record_verdict_supersession() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5880,6 +6332,8 @@ CREATE FUNCTION public.b26_p2_record_verdict_supersession() RETURNS trigger
             RETURN NEW;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS TABLE(tenant_id uuid, webhook_ingress_identity_id uuid, window_start timestamp with time zone, window_end timestamp with time zone)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5907,7 +6361,7 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id,
                    dir.window_start, dir.window_end
               INTO _tenant, _ingress, _dir_ws, _dir_we
-              FROM b26_p2_task_authority_directory AS dir
+              FROM public.b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RETURN;
@@ -5921,7 +6375,7 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
             BEGIN
                 SELECT d.window_start, d.window_end
                   INTO _dispatch_ws, _dispatch_we
-                  FROM b23_match_task_dispatches AS d
+                  FROM public.b23_match_task_dispatches AS d
                  WHERE d.task_id = _task;
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'b26_p2_dispatch_authority_missing'
@@ -5935,7 +6389,7 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state,
                        i.b26_p2_provenance_status, i.b26_p2_semantic_regime
                   INTO _clock, _ingress_state, _ingress_prov, _ingress_regime
-                  FROM webhook_ingress_identities AS i
+                  FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant;
                 IF NOT FOUND THEN
@@ -5976,6 +6430,8 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
             END;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -6001,6 +6457,8 @@ CREATE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss() RETURNS trigge
             RETURN COALESCE(NEW, OLD);
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_sovereign_writer(p_table regclass) RETURNS boolean
     LANGUAGE sql STABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -6008,9 +6466,11 @@ CREATE FUNCTION public.b26_p2_sovereign_writer(p_table regclass) RETURNS boolean
             SELECT pg_get_userbyid(c.relowner) = current_user
                    OR (current_user = session_user
                        AND session_user = 'postgres')
-              FROM pg_class AS c
+              FROM pg_catalog.pg_class AS c
              WHERE c.oid = p_table
         $$;
+
+
 
 CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DEFAULT 300) RETURNS TABLE(task_id character varying, tenant_id uuid, state character varying, age_seconds double precision, updated_at timestamp with time zone)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -6029,8 +6489,8 @@ CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DE
                    EXTRACT(EPOCH FROM (now() - COALESCE(
                        d.first_published_at, d.dispatched_at)))::double precision,
                    COALESCE(d.first_published_at, d.dispatched_at)
-            FROM b23_match_task_dispatches AS d
-            JOIN b26_p2_execution_outbox AS o
+            FROM public.b23_match_task_dispatches AS d
+            JOIN public.b26_p2_execution_outbox AS o
               ON o.dispatch_task_id = d.task_id
              AND o.tenant_id = d.tenant_id
              AND o.webhook_ingress_identity_id = d.webhook_ingress_identity_id
@@ -6038,14 +6498,18 @@ CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DE
               AND o.state = 'published'
               AND COALESCE(d.first_published_at, d.dispatched_at)
                   < now() - (_threshold || ' seconds')::interval
-
+              -- Terminal task failure is actionable ONLY when both
+              -- telemetry channels agree (DLQ row AND result FAILURE).
+              -- Either channel alone never silences never-consumed work:
+              -- disagreement stays visible here (actionable), never
+              -- invisible everywhere.
               AND NOT (
                     EXISTS (
-                        SELECT 1 FROM worker_failed_jobs AS w
+                        SELECT 1 FROM public.worker_failed_jobs AS w
                          WHERE w.task_id = d.task_id
                     )
                 AND EXISTS (
-                        SELECT 1 FROM celery_taskmeta AS m
+                        SELECT 1 FROM public.celery_taskmeta AS m
                          WHERE m.task_id = d.task_id
                            AND m.status = 'FAILURE'
                     )
@@ -6053,17 +6517,22 @@ CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DE
             ORDER BY COALESCE(d.first_published_at, d.dispatched_at) ASC;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_stamp_verdict_authority() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
-
+            -- Authority state is never caller-asserted: every INSERT
+            -- is stamped from the central predicate in this transition.
             NEW.b26_p2_source_authority_state :=
                 public.b26_p2_derive_verdict_authority(
                     NEW.webhook_ingress_identity_id);
             RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6098,7 +6567,7 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
             SELECT d.tenant_id, d.webhook_ingress_identity_id,
                    d.window_start, d.window_end
               INTO _tenant, _ingress, _ws, _we
-              FROM b23_match_task_dispatches AS d
+              FROM public.b23_match_task_dispatches AS d
              WHERE d.task_id = p_task_id;
             IF NOT FOUND THEN
                 PERFORM set_config(
@@ -6113,11 +6582,11 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 RETURN FALSE;
             END IF;
             END;
-
+            -- Authenticated, witnessed, regime-governed provenance.
             BEGIN
             SELECT i.b26_p2_provenance_status, i.b26_p2_semantic_regime
               INTO _prov, _regime
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.id = _ingress;
             IF _prov IS DISTINCT FROM 'authenticated_known' THEN
                 PERFORM set_config(
@@ -6132,7 +6601,7 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 RETURN FALSE;
             END IF;
             IF NOT EXISTS (
-                SELECT 1 FROM b26_p2_ingress_auth_witness AS w
+                SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = _ingress
             ) THEN
                 PERFORM set_config(
@@ -6140,28 +6609,32 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 );
                 RETURN FALSE;
             END IF;
-
+            -- XX (H-XX-A): the bound source must satisfy the complete
+            -- canonical currentness law -- demotion, family-source,
+            -- quarantine-adjacent evidence, registry, and floor -- not
+            -- just the three clauses above.
             IF NOT public.b26_p2_ingress_has_current_authority(_ingress) THEN
                 PERFORM set_config(
                     'app.current_tenant_id', COALESCE(_prev_guc, ''), true
                 );
                 RETURN FALSE;
             END IF;
-
+            -- Tenant identity valid.
             IF _tenant IS NULL
                OR NOT EXISTS (
-                    SELECT 1 FROM tenants AS t WHERE t.id = _tenant
+                    SELECT 1 FROM public.tenants AS t WHERE t.id = _tenant
                ) THEN
                 PERFORM set_config(
                     'app.current_tenant_id', COALESCE(_prev_guc, ''), true
                 );
                 RETURN FALSE;
             END IF;
-
+            -- Canonical execution identity valid: receipt bound, current,
+            -- canonically meaningful, policy-current.
             SELECT r.p2_scope_identity, r.policy_semantic_sha256,
                    r.ix_meaning_status
               INTO _receipt_identity, _receipt_policy, _receipt_meaning
-              FROM b26_p2_conduction_receipts AS r
+              FROM public.b26_p2_conduction_receipts AS r
              WHERE r.task_id = p_task_id;
             IF NOT FOUND THEN
                 PERFORM set_config(
@@ -6199,9 +6672,9 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 );
                 RETURN FALSE;
             END IF;
-
+            -- Historical state not quarantined/stale.
             IF EXISTS (
-                SELECT 1 FROM b26_p2_execution_quarantine AS q
+                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                  WHERE q.task_id = p_task_id
             ) THEN
                 PERFORM set_config(
@@ -6210,7 +6683,7 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 RETURN FALSE;
             END IF;
             IF EXISTS (
-                SELECT 1 FROM b26_p2_execution_quarantine AS q
+                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                  WHERE q.webhook_ingress_identity_id = _ingress
             ) THEN
                 PERFORM set_config(
@@ -6234,39 +6707,49 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
             RETURN FALSE;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_strip_currency_token(p_raw text) RETURNS text
     LANGUAGE sql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-        SELECT upper(b26_p2_ascii_strip(p_raw))
+        SELECT upper(public.b26_p2_ascii_strip(p_raw))
         $$;
+
+
 
 CREATE FUNCTION public.b26_p2_strip_provider_token(p_raw text) RETURNS text
     LANGUAGE sql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-        SELECT lower(b26_p2_ascii_strip(p_raw))
+        SELECT lower(public.b26_p2_ascii_strip(p_raw))
         $$;
+
+
 
 CREATE FUNCTION public.b26_p2_table_owner(p_table regclass) RETURNS name
     LANGUAGE sql STABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
             SELECT pg_get_userbyid(c.relowner)
-              FROM pg_class AS c
+              FROM pg_catalog.pg_class AS c
              WHERE c.oid = p_table
         $$;
+
+
 
 CREATE FUNCTION public.b26_p2_verdict_has_current_authority(p_verdict uuid) RETURNS boolean
     LANGUAGE sql STABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-          SELECT b26_p2_ingress_has_current_authority(
+          SELECT public.b26_p2_ingress_has_current_authority(
             (SELECT v.webhook_ingress_identity_id
-               FROM b23_match_verdicts AS v
+               FROM public.b23_match_verdicts AS v
               WHERE v.id = p_verdict)
           );
         $$;
+
+
 
 CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violation text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -6274,7 +6757,7 @@ CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violatio
     AS $_$
         BEGIN
             IF EXISTS (
-                SELECT 1 FROM b26_p2_verdict_supersession_ledger AS l
+                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
                  WHERE l.entry_hash IS NULL
                     OR l.entry_hash !~ '^[0-9a-f]{64}$'
             ) THEN
@@ -6286,7 +6769,7 @@ CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violatio
                     SELECT l.seq,
                            l.prev_entry_hash,
                            lag(l.entry_hash) OVER (ORDER BY l.seq) AS prior
-                      FROM b26_p2_verdict_supersession_ledger AS l
+                      FROM public.b26_p2_verdict_supersession_ledger AS l
                 )
                 SELECT 1 FROM ordered
                  WHERE (prior IS NULL AND prev_entry_hash IS NOT NULL)
@@ -6299,6 +6782,8 @@ CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violatio
             RETURN;
         END $_$;
 
+
+
 CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violation text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -6307,7 +6792,9 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
             _role text;
             _missing text;
         BEGIN
-
+            -- 6a. Protection triggers must exist and be enabled. A
+            -- non-superuser owner disabling one is the exact F-D vector;
+            -- the disable itself is catalog-visible here.
             FOR _missing IN SELECT unnest(ARRAY[
                 'trg_b26_p2_xix_supersession_ledger|b23_match_verdicts',
                 'trg_b26_p2_xix_ledger_immutable|b26_p2_verdict_supersession_ledger',
@@ -6341,7 +6828,8 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                     RETURN NEXT;
                 END IF;
             END LOOP;
-
+            -- 6b. No runtime principal may hold mutating privilege on
+            -- either ledger or the publication history.
             FOREACH _role IN ARRAY ARRAY[
                 'app_user', 'app_ingress', 'app_worker', 'app_relay',
                 'app_beat', 'app_dispatch_publisher', 'app_trust_issuer',
@@ -6373,9 +6861,11 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                     RETURN NEXT;
                 END IF;
             END LOOP;
-
+            -- 6c. Publication-chain linkage: genesis anchors at NULL
+            -- prev; every other row's prev must equal a strictly older
+            -- row's entry hash; entry hashes must be 64-hex shaped.
             IF EXISTS (
-                SELECT 1 FROM b26_p2_publication_history AS h
+                SELECT 1 FROM public.b26_p2_publication_history AS h
                  WHERE h.entry_hash IS NULL
                     OR h.entry_hash !~ '^[0-9a-f]{64}$'
             ) THEN
@@ -6388,26 +6878,27 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                 RETURN NEXT;
             END IF;
             IF EXISTS (
-                SELECT 1 FROM b26_p2_publication_history AS h
+                SELECT 1 FROM public.b26_p2_publication_history AS h
                  WHERE h.prev_entry_hash IS NOT NULL
                    AND NOT EXISTS (
-                       SELECT 1 FROM b26_p2_publication_history AS p
+                       SELECT 1 FROM public.b26_p2_publication_history AS p
                         WHERE p.entry_hash = h.prev_entry_hash
                    )
             ) THEN
                 violation := 'publication_chain_linkage_broken';
                 RETURN NEXT;
             END IF;
-
+            -- 6d. Supersession-chain recomputation: every chained row
+            -- must equal the documented preimage digest.
             IF EXISTS (
-                SELECT 1 FROM b26_p2_verdict_supersession_ledger AS l
+                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
                  WHERE l.entry_hash IS NULL
             ) THEN
                 violation := 'supersession_chain_unchained_row';
                 RETURN NEXT;
             END IF;
             IF EXISTS (
-                SELECT 1 FROM b26_p2_verdict_supersession_ledger AS l
+                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
                  WHERE l.entry_hash IS DISTINCT FROM encode(digest(
                        COALESCE(l.verdict_id::text, '')
                        || '|' || COALESCE(l.prior_attributed_amount_minor::text, 'NULL')
@@ -6422,12 +6913,12 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                 violation := 'supersession_chain_digest_mismatch';
                 RETURN NEXT;
             END IF;
-
+            -- 6e. Supersession linkage: non-genesis prev must resolve.
             IF EXISTS (
-                SELECT 1 FROM b26_p2_verdict_supersession_ledger AS l
+                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
                  WHERE l.prev_entry_hash IS NOT NULL
                    AND NOT EXISTS (
-                       SELECT 1 FROM b26_p2_verdict_supersession_ledger AS p
+                       SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS p
                         WHERE p.entry_hash = l.prev_entry_hash
                    )
             ) THEN
@@ -6436,6 +6927,8 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
             END IF;
             RETURN;
         END $_$;
+
+
 
 CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid, p_verdict_id uuid) RETURNS TABLE(violation text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -6458,7 +6951,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                    v.verified_amount_minor,
                    v.attributed_amount_minor
               INTO _ingress, _verified, _attributed
-              FROM b23_match_verdicts AS v
+              FROM public.b23_match_verdicts AS v
              WHERE v.tenant_id = p_tenant_id
                AND v.id = p_verdict_id;
             IF NOT FOUND THEN
@@ -6467,6 +6960,11 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                 RETURN;
             END IF;
 
+            -- XXIV (A6): agreement between the verdict and the ingress
+            -- is not source authority when both are rewritable. The
+            -- ingress must still hold current P2 authority, and the
+            -- independently written attribution event must carry the
+            -- same amount and currency as the ingress envelope.
             IF _ingress IS NOT NULL THEN
                 IF NOT public.b26_p2_ingress_has_current_authority(_ingress)
                 THEN
@@ -6480,8 +6978,8 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                        e.currency
                   INTO _ingress_amount, _ingress_currency,
                        _event_amount, _event_currency
-                  FROM webhook_ingress_identities AS i
-                  JOIN attribution_events AS e
+                  FROM public.webhook_ingress_identities AS i
+                  JOIN public.attribution_events AS e
                     ON e.id = i.event_id
                    AND e.tenant_id = i.tenant_id
                  WHERE i.id = _ingress
@@ -6503,7 +7001,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             END IF;
 
             SELECT count(*) INTO _count
-              FROM b26_p2_verdict_supersession_ledger AS l
+              FROM public.b26_p2_verdict_supersession_ledger AS l
              WHERE l.tenant_id = p_tenant_id
                AND l.verdict_id = p_verdict_id;
 
@@ -6518,7 +7016,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                     RETURN;
                 END IF;
                 SELECT i.verified_amount_minor INTO _ingress_amount
-                  FROM webhook_ingress_identities AS i
+                  FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = p_tenant_id;
                 IF NOT FOUND THEN
@@ -6527,11 +7025,13 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                     RETURN;
                 END IF;
                 IF _verified IS DISTINCT FROM _ingress_amount THEN
-
+                    -- A gross-capture correction may bind a provider
+                    -- event whose authenticated ingress carries the new
+                    -- amount. Nothing else may diverge from the source.
                     IF NOT EXISTS (
                         SELECT 1
-                          FROM b23_revenue_events AS e
-                          JOIN webhook_ingress_identities AS i
+                          FROM public.b23_revenue_events AS e
+                          JOIN public.webhook_ingress_identities AS i
                             ON i.tenant_id = e.tenant_id
                            AND i.provider = e.provider
                            AND i.provider_native_event_reference =
@@ -6541,7 +7041,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                            AND e.is_gross_capture_correction = true
                            AND e.captured_amount_minor = _verified
                            AND i.verified_amount_minor = _verified
-                           AND b26_p2_ingress_has_current_authority(
+                           AND public.b26_p2_ingress_has_current_authority(
                                    i.id)
                     ) THEN
                         violation := 'conservation_source_amount_diverged';
@@ -6558,16 +7058,20 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             END IF;
 
             SELECT l.* INTO _first
-              FROM b26_p2_verdict_supersession_ledger AS l
+              FROM public.b26_p2_verdict_supersession_ledger AS l
              WHERE l.tenant_id = p_tenant_id
                AND l.verdict_id = p_verdict_id
              ORDER BY l.seq ASC
              LIMIT 1;
 
             IF _first.prior_source_ingress IS NULL THEN
-
+                -- A verdict may exist before its ingress link. Anchor
+                -- the first predecessor to the current authenticated
+                -- source instead of assuming the link transition was
+                -- amount-preserving; later corrections remain governed
+                -- by the chain and final source checks below.
                 SELECT i.verified_amount_minor INTO _ingress_amount
-                  FROM webhook_ingress_identities AS i
+                  FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = p_tenant_id;
                 IF NOT FOUND THEN
@@ -6583,7 +7087,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                 END IF;
             ELSE
                 SELECT i.verified_amount_minor INTO _ingress_amount
-                  FROM webhook_ingress_identities AS i
+                  FROM public.webhook_ingress_identities AS i
                  WHERE i.id = _first.prior_source_ingress
                    AND i.tenant_id = p_tenant_id;
                 IF NOT FOUND THEN
@@ -6601,7 +7105,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             _prev := NULL;
             FOR _row IN
                 SELECT l.*
-                  FROM b26_p2_verdict_supersession_ledger AS l
+                  FROM public.b26_p2_verdict_supersession_ledger AS l
                  WHERE l.tenant_id = p_tenant_id
                    AND l.verdict_id = p_verdict_id
                  ORDER BY l.seq ASC
@@ -6628,7 +7132,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             END IF;
 
             SELECT i.verified_amount_minor INTO _ingress_amount
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.id = _ingress
                AND i.tenant_id = p_tenant_id;
             IF NOT FOUND THEN
@@ -6639,8 +7143,8 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             IF _verified IS DISTINCT FROM _ingress_amount THEN
                 IF NOT EXISTS (
                     SELECT 1
-                      FROM b23_revenue_events AS e
-                      JOIN webhook_ingress_identities AS i
+                      FROM public.b23_revenue_events AS e
+                      JOIN public.webhook_ingress_identities AS i
                         ON i.tenant_id = e.tenant_id
                        AND i.provider = e.provider
                        AND i.provider_native_event_reference =
@@ -6650,7 +7154,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                        AND e.is_gross_capture_correction = true
                        AND e.captured_amount_minor = _verified
                        AND i.verified_amount_minor = _verified
-                       AND b26_p2_ingress_has_current_authority(i.id)
+                       AND public.b26_p2_ingress_has_current_authority(i.id)
                 ) THEN
                     violation := 'conservation_source_amount_diverged';
                     RETURN NEXT;
@@ -6659,73 +7163,79 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             RETURN;
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_xi_invariant_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
-
+            -- D-A: authenticated foundation without a witness can found
+            -- no new truth (dispatch-bearing or dispatchless: the
+            -- identity aggregate reads dispatchless verified rows).
             RETURN QUERY
             SELECT 'xi_witnessless_authenticated_foundation'::text,
                    COALESCE(d.task_id::text, 'ingress:' || i.id::text),
                    ('ingress=' || i.id::text)::text
-              FROM webhook_ingress_identities AS i
-              LEFT JOIN b23_match_task_dispatches AS d
+              FROM public.webhook_ingress_identities AS i
+              LEFT JOIN public.b23_match_task_dispatches AS d
                 ON d.webhook_ingress_identity_id = i.id
                AND d.tenant_id = i.tenant_id
              WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
                AND i.b26_p2_provenance_status = 'authenticated_known'
                AND NOT EXISTS (
-                    SELECT 1 FROM b26_p2_ingress_auth_witness AS w
+                    SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
                      WHERE w.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                    SELECT 1 FROM b26_p2_execution_quarantine AS q
+                    SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                      WHERE q.webhook_ingress_identity_id = i.id
                );
-
+            -- D-B: blank-shape authenticated foundation.
             RETURN QUERY
             SELECT 'xi_blank_authenticated_foundation'::text,
                    COALESCE(d.task_id::text, 'ingress:' || i.id::text),
                    ('ingress=' || i.id::text)::text
-              FROM webhook_ingress_identities AS i
-              LEFT JOIN b23_match_task_dispatches AS d
+              FROM public.webhook_ingress_identities AS i
+              LEFT JOIN public.b23_match_task_dispatches AS d
                 ON d.webhook_ingress_identity_id = i.id
                AND d.tenant_id = i.tenant_id
              WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
                AND i.b26_p2_provenance_status = 'authenticated_known'
-               AND (b26_p2_ascii_strip(COALESCE(i.provider, '')) = ''
-                    OR b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, '')) = ''
-                    OR length(b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, ''))) <> 3)
+               AND (public.b26_p2_ascii_strip(COALESCE(i.provider, '')) = ''
+                    OR public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, '')) = ''
+                    OR length(public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, ''))) <> 3)
                AND NOT EXISTS (
-                    SELECT 1 FROM b26_p2_execution_quarantine AS q
+                    SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                      WHERE q.webhook_ingress_identity_id = i.id
                );
-
+            -- D-C: divergent terminal twins (conducted dispatch beside
+            -- a non-conducted outbox twin, or vice versa).
             RETURN QUERY
             SELECT 'xi_divergent_terminal_twins'::text, d.task_id::text,
                    ('dispatch=' || d.delivery_state::text || ',outbox=' || COALESCE(o.state::text, 'missing'))::text
-              FROM b23_match_task_dispatches AS d
-              LEFT JOIN b26_p2_execution_outbox AS o
+              FROM public.b23_match_task_dispatches AS d
+              LEFT JOIN public.b26_p2_execution_outbox AS o
                 ON o.dispatch_task_id = d.task_id
              WHERE (d.delivery_state = 'conducted'
                     AND COALESCE(o.state::text, 'missing') IS DISTINCT FROM 'conducted')
                 OR (o.state = 'conducted'
                     AND d.delivery_state IS DISTINCT FROM 'conducted');
-
+            -- D-D: garbage policy-sha receipt stamped canonically bound.
             RETURN QUERY
             SELECT 'xi_garbage_policy_receipt'::text, r.task_id::text,
                    ('policy_sha=' || COALESCE(r.policy_semantic_sha256, 'null'))::text
-              FROM b26_p2_conduction_receipts AS r
+              FROM public.b26_p2_conduction_receipts AS r
              WHERE r.ix_meaning_status = 'canonically_bound'
                AND r.policy_semantic_sha256 IS DISTINCT FROM
                    'fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99';
-
+            -- D-E: stale terminal binding (receipt disagrees with live
+            -- canonical identity).
             RETURN QUERY
             SELECT 'xi_stale_terminal_binding'::text, r.task_id::text,
                    'receipt_identity_not_current'::text
-              FROM b26_p2_conduction_receipts AS r
-              JOIN b23_match_task_dispatches AS d
+              FROM public.b26_p2_conduction_receipts AS r
+              JOIN public.b23_match_task_dispatches AS d
                 ON d.task_id = r.task_id
              WHERE d.delivery_state = 'conducted'
                AND r.ix_meaning_status = 'canonically_bound'
@@ -6733,29 +7243,31 @@ CREATE FUNCTION public.b26_p2_xi_invariant_oracle() RETURNS TABLE(violation_kind
                    public.b26_p2_canonical_scope_identity_for_window(
                        r.tenant_id, r.window_start, r.window_end
                    );
-
+            -- D-F: conducted without a canonically bound consequence.
             RETURN QUERY
             SELECT 'xi_conducted_without_consequence'::text, d.task_id::text,
                    'missing_canonically_bound_receipt'::text
-              FROM b23_match_task_dispatches AS d
+              FROM public.b23_match_task_dispatches AS d
              WHERE d.delivery_state = 'conducted'
                AND NOT EXISTS (
-                    SELECT 1 FROM b26_p2_conduction_receipts AS r
+                    SELECT 1 FROM public.b26_p2_conduction_receipts AS r
                      WHERE r.task_id = d.task_id
                        AND r.ix_meaning_status = 'canonically_bound'
                );
-
+            -- D-G: unknown-provenance truth-capable dispatch.
             RETURN QUERY
             SELECT 'xi_unknown_provenance_truth'::text, d.task_id::text,
                    ('ingress=' || i.id::text)::text
-              FROM b23_match_task_dispatches AS d
-              JOIN webhook_ingress_identities AS i
+              FROM public.b23_match_task_dispatches AS d
+              JOIN public.webhook_ingress_identities AS i
                 ON i.id = d.webhook_ingress_identity_id
                AND i.tenant_id = d.tenant_id
              WHERE d.delivery_state IN ('published', 'conducted', 'pending_publish')
                AND i.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known';
             RETURN;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_xii_invariant_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6766,21 +7278,23 @@ CREATE FUNCTION public.b26_p2_xii_invariant_oracle() RETURNS TABLE(violation_kin
             SELECT 'xii_witness_without_consequence'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM webhook_ingress_identities AS i
-              JOIN b26_p2_ingress_auth_witness AS w
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_ingress_auth_witness AS w
                 ON w.webhook_ingress_identity_id = i.id
               WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
                 AND i.b26_p2_provenance_status = 'authenticated_known'
                 AND NOT EXISTS (
-                     SELECT 1 FROM b26_p2_provider_auth_consequence AS c
+                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
                       WHERE c.webhook_ingress_identity_id = i.id
                 )
                 AND NOT EXISTS (
-                     SELECT 1 FROM b26_p2_execution_quarantine AS q
+                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                       WHERE q.webhook_ingress_identity_id = i.id
                 );
             RETURN;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6795,7 +7309,12 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             END IF;
             GRANT USAGE ON SCHEMA public TO app_ingress;
             GRANT SELECT, INSERT ON TABLE public.webhook_ingress_identities TO app_ingress;
-
+            -- XXI: no table-level UPDATE (XXI-1 least privilege).
+            -- Operational columns are re-granted from the live
+            -- catalog with the authority columns excluded, exactly
+            -- reproducing the migration posture idempotently: a
+            -- table-level UPDATE here would re-open the authority
+            -- columns the XX composition gate censuses.
             FOR _col IN
                 SELECT column_name
                   FROM information_schema.columns
@@ -6820,12 +7339,19 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) TO app_ingress;
-
+            -- XXI: the XX-era body revoked the consequence recorder
+            -- from app_ingress here; XIII (root-of-trust closure)
+            -- deliberately re-granted it (record path needs ingress
+            -- authorship, canonical_authority (consequence)), so the
+            -- revoke is dropped: re-asserting it would clobber live
+            -- posture and break every ingress record path.
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) FROM app_user;
             RETURN 'xii_topology_provisioned';
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_xii_topology_check() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6857,6 +7383,8 @@ CREATE FUNCTION public.b26_p2_xii_topology_check() RETURNS text
             RETURN 'xii_topology_strict';
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_xiii_invariant_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -6866,64 +7394,69 @@ CREATE FUNCTION public.b26_p2_xiii_invariant_oracle() RETURNS TABLE(violation_ki
             SELECT 'xiii_witness_without_consequence'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM webhook_ingress_identities AS i
-              JOIN b26_p2_ingress_auth_witness AS w
+              FROM public.webhook_ingress_identities AS i
+              JOIN public.b26_p2_ingress_auth_witness AS w
                 ON w.webhook_ingress_identity_id = i.id
              WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
                AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND NOT EXISTS (
-                     SELECT 1 FROM b26_p2_provider_auth_consequence AS c
+                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
                       WHERE c.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM b26_p2_execution_quarantine AS q
+                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                       WHERE q.webhook_ingress_identity_id = i.id
                );
             RETURN QUERY
             SELECT 'xiii_partial_auth_authoritative'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
                AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND NOT EXISTS (
-                     SELECT 1 FROM b26_p2_provider_auth_consequence AS c
+                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
                       WHERE c.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM b26_p2_ingress_auth_witness AS w
+                     SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
                       WHERE w.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM b26_p2_execution_quarantine AS q
+                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                       WHERE q.webhook_ingress_identity_id = i.id
                );
-
+            -- XIV: internally complete but historically unverifiable:
+            -- authenticated with consequence + witness + legacy evidence
+            -- yet no immutable auth-root evidence identity and not
+            -- quarantined. This is the forged-XII survivor shape.
             RETURN QUERY
             SELECT 'xiv_complete_but_unverifiable'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
                AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND EXISTS (
-                     SELECT 1 FROM b26_p2_provider_auth_consequence AS c
+                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
                       WHERE c.webhook_ingress_identity_id = i.id
                )
                AND EXISTS (
-                     SELECT 1 FROM b26_p2_ingress_auth_witness AS w
+                     SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
                       WHERE w.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM b26_p2_auth_root_evidence AS r
+                     SELECT 1 FROM public.b26_p2_auth_root_evidence AS r
                       WHERE r.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM b26_p2_execution_quarantine AS q
+                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
                       WHERE q.webhook_ingress_identity_id = i.id
                );
             RETURN;
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_xiii_provision_ingress_topology() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6966,7 +7499,8 @@ CREATE FUNCTION public.b26_p2_xiii_provision_ingress_topology() RETURNS text
             GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
-
+            -- Dispatch (as app_user) reads the witness for the terminal
+            -- law; SELECT confers zero authorship.
             GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
@@ -6975,6 +7509,8 @@ CREATE FUNCTION public.b26_p2_xiii_provision_ingress_topology() RETURNS text
             REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM app_user;
             RETURN 'xiii_topology_provisioned';
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_xiii_topology_check() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -7021,6 +7557,8 @@ CREATE FUNCTION public.b26_p2_xiii_topology_check() RETURNS text
             END IF;
             RETURN 'xiii_topology_strict';
         END $$;
+
+
 
 CREATE FUNCTION public.b26_p2_xiv_provision_ingress_topology() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -7074,6 +7612,8 @@ CREATE FUNCTION public.b26_p2_xiv_provision_ingress_topology() RETURNS text
             RETURN 'xiv_topology_provisioned';
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_xiv_topology_check() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -7120,6 +7660,8 @@ CREATE FUNCTION public.b26_p2_xiv_topology_check() RETURNS text
             RETURN 'xiv_topology_strict';
         END $$;
 
+
+
 CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -7128,7 +7670,7 @@ CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(viola
             _canon text;
             _expected text;
         BEGIN
-
+            -- Tuple-bound witness mismatch on trusted rows.
             FOR task_ref, detail, _canon, _expected IN
                 SELECT ('ingress:' || i.id::text)::text,
                        ('ingress=' || i.id::text)::text,
@@ -7148,13 +7690,13 @@ CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(viola
                            || COALESCE(to_char(i.event_timestamp AT TIME ZONE 'UTC',
                                                'YYYY-MM-DD HH24:MI:SS.US'), ''),
                            'sha256'), 'hex')
-                  FROM webhook_ingress_identities AS i
-                  JOIN b26_p2_provider_auth_consequence AS c
+                  FROM public.webhook_ingress_identities AS i
+                  JOIN public.b26_p2_provider_auth_consequence AS c
                     ON c.webhook_ingress_identity_id = i.id
                    AND c.tenant_id = i.tenant_id
                  WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
             LOOP
-
+                -- Compare inside the loop against the stored witness.
                 PERFORM 1 FROM public.b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = split_part(task_ref, ':', 2)::uuid
                    AND w.witness_hash IS NOT DISTINCT FROM _expected;
@@ -7163,36 +7705,38 @@ CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(viola
                     RETURN NEXT;
                 END IF;
             END LOOP;
-
+            -- Regime drift: trusted rows outside the governed regime.
             RETURN QUERY
             SELECT 'xvii_regime_unverifiable_trusted'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND i.b26_p2_semantic_regime IS DISTINCT FROM 'xvii-sovereign-v1';
-
+            -- Duplicate canonical event lineages for one provider event.
             RETURN QUERY
             SELECT 'xvii_duplicate_canonical_event'::text,
                    ('tenant=' || i.tenant_id::text)::text,
                    ('event_ref=' || i.provider_native_event_reference)::text
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
              GROUP BY i.tenant_id, i.provider, i.provider_native_event_reference
             HAVING count(*) > 1;
-
+            -- Duplicate canonical financial facts for one commerce identity.
             RETURN QUERY
             SELECT 'xvii_duplicate_canonical_commerce'::text,
                    ('tenant=' || i.tenant_id::text)::text,
                    ('commerce=' || i.normalized_commerce_reference_kind
                     || ':' || i.normalized_commerce_reference_value)::text
-              FROM webhook_ingress_identities AS i
+              FROM public.webhook_ingress_identities AS i
              WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
              GROUP BY i.tenant_id, i.provider,
                       i.normalized_commerce_reference_kind,
                       i.normalized_commerce_reference_value
             HAVING count(*) > 1;
         END $$;
+
+
 
 CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
     LANGUAGE plpgsql
@@ -7215,7 +7759,7 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
             SELECT subject_type, subject_ref_hash, semantic_truth_hash, policy_state
               INTO issuance_subject_type, issuance_subject_ref_hash,
                    issuance_semantic_truth_hash, issuance_policy_state
-              FROM trust_final_issuance_identity
+              FROM public.trust_final_issuance_identity
              WHERE tenant_id = NEW.tenant_id
                AND envelope_hash = NEW.source_issuance_envelope_hash;
             IF NOT FOUND THEN
@@ -7234,7 +7778,8 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
                     NEW.source_issuance_envelope_hash
                     USING ERRCODE = '42501';
             END IF;
-
+            -- Authority monotonicity, physically: an explanation restates the
+            -- source policy state, it never re-grades it.
             IF NEW.policy_state IS DISTINCT FROM issuance_policy_state THEN
                 RAISE EXCEPTION
                     'b27_explanation_policy_state_not_conserved:% vs %',
@@ -7243,7 +7788,7 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
             END IF;
 
             SELECT r.registry_hash INTO registry_hash
-              FROM b27_narrative_template_registry AS r
+              FROM public.b27_narrative_template_registry AS r
              WHERE r.registry_hash = NEW.explanation_template_registry_hash;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -7259,6 +7804,11 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- The derivation law. Every sentence must be an instance of a
+            -- registered frame filled with a machine-grammar value, and the
+            -- narrative must be the exact join of those instances. Free prose
+            -- has no representable position, which is what makes this closed
+            -- under language the corpus has never seen.
             FOR claim IN SELECT * FROM jsonb_array_elements(NEW.claims)
             LOOP
                 claim_index := claim_index + 1;
@@ -7275,7 +7825,7 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
                 END IF;
                 SELECT t.claim_kind, t.source_path, t.template_text, t.value_pattern
                   INTO template_kind, template_path, template_body, template_pattern
-                  FROM b27_narrative_templates AS t
+                  FROM public.b27_narrative_templates AS t
                  WHERE t.template_id = claim ->> 'template_id';
                 IF NOT FOUND THEN
                     RAISE EXCEPTION
@@ -7318,6 +7868,8 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.b27_enforce_materialization_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -7330,11 +7882,11 @@ CREATE FUNCTION public.b27_enforce_materialization_immutability() RETURNS trigge
             column_name text;
         BEGIN
             SELECT rolsuper INTO principal_is_superuser
-              FROM pg_roles WHERE rolname = session_user;
+              FROM pg_catalog.pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_class WHERE oid = TG_RELID;
+              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
             IF COALESCE(principal_is_superuser, false)
-               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
             END IF;
@@ -7357,7 +7909,8 @@ CREATE FUNCTION public.b27_enforce_materialization_immutability() RETURNS trigge
                         USING ERRCODE = '42501';
                 END IF;
             END LOOP;
-
+            -- Staleness is one-way. An explanation superseded by newer Trust
+            -- cannot be revived into currency.
             IF OLD.stale AND NOT NEW.stale THEN
                 RAISE EXCEPTION
                     'b27_explanation_materialization_immutable:stale_reversal'
@@ -7366,6 +7919,8 @@ CREATE FUNCTION public.b27_enforce_materialization_immutability() RETURNS trigge
             RETURN NEW;
         END;
         $$;
+
+
 
 CREATE FUNCTION public.b27_supersede_stale_explanations() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -7384,6 +7939,8 @@ CREATE FUNCTION public.b27_supersede_stale_explanations() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+
+
 
 CREATE FUNCTION public.b28_adjudicate_sufficiency(p_channel_evidence jsonb) RETURNS TABLE(sufficient boolean, reasons text[], observed_channels integer, observed_conversions integer, observed_revenue_minor bigint)
     LANGUAGE plpgsql IMMUTABLE
@@ -7445,6 +8002,8 @@ CREATE FUNCTION public.b28_adjudicate_sufficiency(p_channel_evidence jsonb) RETU
         END;
         $$;
 
+
+
 CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_presented_token text, p_request_ref text, p_source_issuance_envelope_hash text, p_input_snapshot_hash text) RETURNS uuid
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -7467,9 +8026,9 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
             v_witness uuid;
         BEGIN
             SELECT COALESCE(rolsuper, false) INTO principal_is_trusted
-              FROM pg_roles WHERE rolname = session_user;
+              FROM pg_catalog.pg_roles WHERE rolname = session_user;
             principal_is_trusted := COALESCE(principal_is_trusted, false)
-                OR pg_has_role(
+                OR pg_catalog.pg_has_role(
                        session_user, 'migration_owner', 'USAGE'
                    );
             IF NOT principal_is_trusted
@@ -7505,11 +8064,13 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
               INTO v_credential_id, v_client_id, v_token_hash,
                    v_hash_algorithm, v_status, v_revoked_at,
                    v_expires_at, v_credential_tenant
-              FROM agent_service_credentials AS cred
+              FROM public.agent_service_credentials AS cred
              WHERE cred.tenant_id = p_tenant_id
                AND cred.token_prefix = v_prefix
              LIMIT 1;
 
+            -- A wrong prefix and a wrong secret are the same refusal on
+            -- purpose: a caller must not learn which prefixes exist.
             IF NOT FOUND
                OR COALESCE(v_hash_algorithm, 'sha256')
                       <> 'sha256'
@@ -7522,7 +8083,7 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
             END IF;
 
             IF EXISTS (
-                SELECT 1 FROM agent_token_revocations
+                SELECT 1 FROM public.agent_token_revocations
                  WHERE tenant_id = p_tenant_id AND token_prefix = v_prefix
             ) THEN
                 RAISE EXCEPTION
@@ -7545,7 +8106,7 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
             END IF;
 
             SELECT status, tenant_id INTO v_client_status, v_client_tenant
-              FROM agent_clients WHERE id = v_client_id;
+              FROM public.agent_clients WHERE id = v_client_id;
             IF NOT FOUND
                OR v_client_status IS DISTINCT FROM 'active'
                OR v_client_tenant IS DISTINCT FROM p_tenant_id
@@ -7574,6 +8135,8 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
             RETURN v_witness;
         END;
         $$;
+
+
 
 CREATE FUNCTION public.b28_canonical_input_material(p_source_envelope_id text, p_source_semantic_truth_hash text, p_total_budget_minor bigint, p_currency text, p_channel_evidence jsonb) RETURNS text
     LANGUAGE sql IMMUTABLE
@@ -7611,6 +8174,8 @@ CREATE FUNCTION public.b28_canonical_input_material(p_source_envelope_id text, p
                 || '}'
         $$;
 
+
+
 CREATE FUNCTION public.b28_enforce_allocation_conservation() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -7647,6 +8212,8 @@ CREATE FUNCTION public.b28_enforce_allocation_conservation() RETURNS trigger
         END;
         $_$;
 
+
+
 CREATE FUNCTION public.b28_enforce_downstream_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -7656,11 +8223,11 @@ CREATE FUNCTION public.b28_enforce_downstream_immutability() RETURNS trigger
             table_owner_oid oid;
         BEGIN
             SELECT rolsuper INTO principal_is_superuser
-              FROM pg_roles WHERE rolname = session_user;
+              FROM pg_catalog.pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_class WHERE oid = TG_RELID;
+              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
             IF COALESCE(principal_is_superuser, false)
-               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
             END IF;
@@ -7670,6 +8237,8 @@ CREATE FUNCTION public.b28_enforce_downstream_immutability() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.b28_enforce_final_source_identity() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -7678,7 +8247,7 @@ CREATE FUNCTION public.b28_enforce_final_source_identity() RETURNS trigger
           states text[] := ARRAY['blocked','read_only','simulation_only','proposal_required','approval_required'];
         BEGIN
           SELECT source_envelope_id,policy_state INTO source_id,source_policy
-            FROM trust_final_issuance_identity
+            FROM public.trust_final_issuance_identity
             WHERE tenant_id=NEW.tenant_id
               AND envelope_hash=NEW.source_issuance_envelope_hash;
           IF source_id IS NULL THEN
@@ -7690,7 +8259,7 @@ CREATE FUNCTION public.b28_enforce_final_source_identity() RETURNS trigger
               USING ERRCODE='42501';
           END IF;
           SELECT policy_state INTO current_policy
-            FROM trust_tenant_policy_events
+            FROM public.trust_tenant_policy_events
             WHERE tenant_id=NEW.tenant_id ORDER BY revision DESC LIMIT 1;
           IF COALESCE(current_policy,'read_only')
                NOT IN ('simulation_only','proposal_required','approval_required')
@@ -7701,6 +8270,8 @@ CREATE FUNCTION public.b28_enforce_final_source_identity() RETURNS trigger
           END IF;
           RETURN NEW;
         END $$;
+
+
 
 CREATE FUNCTION public.b28_enforce_proposal_consequence() RETURNS trigger
     LANGUAGE plpgsql
@@ -7715,11 +8286,11 @@ CREATE FUNCTION public.b28_enforce_proposal_consequence() RETURNS trigger
             table_owner_oid oid;
         BEGIN
             SELECT rolsuper INTO principal_is_trusted
-              FROM pg_roles WHERE rolname = session_user;
+              FROM pg_catalog.pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_class WHERE oid = TG_RELID;
+              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
             principal_is_trusted := COALESCE(principal_is_trusted, false)
-                OR pg_has_role(session_user, table_owner_oid, 'USAGE');
+                OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE');
 
             IF NOT principal_is_trusted THEN
                 IF session_user <> 'app_b28_solver' THEN
@@ -7732,7 +8303,7 @@ CREATE FUNCTION public.b28_enforce_proposal_consequence() RETURNS trigger
             SELECT tenant_id, source_envelope_id, action_authority, allocations
               INTO result_tenant_id, result_envelope_id,
                    result_action_authority, result_allocations
-              FROM b28_simulation_results
+              FROM public.b28_simulation_results
              WHERE id = NEW.result_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -7754,6 +8325,8 @@ CREATE FUNCTION public.b28_enforce_proposal_consequence() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+
+
 
 CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
     LANGUAGE plpgsql
@@ -7778,12 +8351,15 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
             adjudication record;
         BEGIN
             SELECT rolsuper INTO principal_is_trusted
-              FROM pg_roles WHERE rolname = session_user;
+              FROM pg_catalog.pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_class WHERE oid = TG_RELID;
+              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
             principal_is_trusted := COALESCE(principal_is_trusted, false)
-                OR pg_has_role(session_user, table_owner_oid, 'USAGE');
+                OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE');
 
+            -- Authority. A principal that can drop this trigger gains nothing
+            -- from being refused by it, so the owner and superuser skip the
+            -- principal check only; every derivation check below runs for them.
             IF NOT principal_is_trusted THEN
                 IF session_user <> 'app_b28_requester' THEN
                     RAISE EXCEPTION
@@ -7798,9 +8374,10 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Durable source Trust, unchanged from Corrective IV.
             SELECT semantic_truth_hash, policy_state
               INTO issuance_semantic_truth_hash, issuance_policy_state
-              FROM trust_final_issuance_identity
+              FROM public.trust_final_issuance_identity
              WHERE tenant_id = NEW.tenant_id
                AND envelope_hash = NEW.source_issuance_envelope_hash;
             IF NOT FOUND THEN
@@ -7817,7 +8394,10 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     NEW.source_issuance_envelope_hash
                     USING ERRCODE = '42501';
             END IF;
-
+            -- Written as a total predicate. `NULL = ANY(...)` is UNKNOWN, and
+            -- `IF UNKNOWN` takes the ELSE branch, so a NULL policy state would
+            -- otherwise be admitted by a guard that reads as though it refuses
+            -- it (Directive V H-RC-V-06).
             IF issuance_policy_state IS NULL
                OR NOT (issuance_policy_state = ANY(admissible))
             THEN
@@ -7835,10 +8415,12 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Corrective V, H-V-02. The requester is an authenticated principal
+            -- that really exists and is really live, not a string.
             SELECT tenant_id, agent_client_id, status, revoked_at, expires_at
               INTO credential_tenant, credential_client, credential_status,
                    credential_revoked, credential_expires
-              FROM agent_service_credentials
+              FROM public.agent_service_credentials
              WHERE id = NEW.requested_by_credential_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -7868,7 +8450,7 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
             SELECT tenant_id, status INTO client_tenant, client_status
-              FROM agent_clients
+              FROM public.agent_clients
              WHERE id = NEW.requested_by_agent_client_id;
             IF NOT FOUND
                OR client_tenant IS DISTINCT FROM NEW.tenant_id
@@ -7887,6 +8469,8 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Corrective V, H-V-06. The retained evidence is well formed, so the
+            -- canonical material is a total function of the stored row.
             IF NEW.solver_profile <> 'b25-p14-deterministic-largest-remainder-v1' THEN
                 RAISE EXCEPTION
                     'b28_request_solver_profile_ungoverned:%', NEW.solver_profile
@@ -7945,6 +8529,8 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Corrective V, H-V-06. The snapshot hash is the hash of the row's
+            -- own inputs or it is not admissible.
             expected_snapshot := public.b28_input_snapshot_hash(
                 NEW.source_envelope_id,
                 NEW.source_semantic_truth_hash,
@@ -7959,8 +8545,9 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Corrective V, H-V-05. Sufficiency is adjudicated here, durably.
             SELECT * INTO adjudication
-              FROM b28_adjudicate_sufficiency(NEW.channel_evidence);
+              FROM public.b28_adjudicate_sufficiency(NEW.channel_evidence);
             IF NEW.sufficiency_verdict IS DISTINCT FROM adjudication.sufficient
                OR NEW.sufficiency_reasons IS DISTINCT FROM adjudication.reasons
                OR NEW.observed_channels
@@ -7980,6 +8567,8 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
         END;
         $_$;
 
+
+
 CREATE FUNCTION public.b28_enforce_request_possession() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -7995,7 +8584,7 @@ CREATE FUNCTION public.b28_enforce_request_possession() RETURNS trigger
             SELECT tenant_id, agent_client_id, credential_id,
                    request_binding, authenticated_at
               INTO w_tenant, w_client, w_credential, w_binding, w_at
-              FROM b28_request_authentications
+              FROM public.b28_request_authentications
              WHERE id = NEW.request_authentication_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -8021,6 +8610,9 @@ CREATE FUNCTION public.b28_enforce_request_possession() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- The witness authorises this row and no other. Re-deriving the
+            -- binding here rather than comparing a stored copy means a witness
+            -- minted for a cheaper request cannot be spent on a richer one.
             expected_binding := public.b28_request_authentication_binding(
                 NEW.tenant_id,
                 NEW.request_ref,
@@ -8045,6 +8637,8 @@ CREATE FUNCTION public.b28_enforce_request_possession() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -8058,11 +8652,11 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
             table_owner_oid oid;
         BEGIN
             SELECT rolsuper INTO principal_is_trusted
-              FROM pg_roles WHERE rolname = session_user;
+              FROM pg_catalog.pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_class WHERE oid = TG_RELID;
+              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
             principal_is_trusted := COALESCE(principal_is_trusted, false)
-                OR pg_has_role(session_user, table_owner_oid, 'USAGE');
+                OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE');
 
             IF NOT principal_is_trusted THEN
                 IF session_user <> 'app_b28_solver' THEN
@@ -8073,7 +8667,7 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
             END IF;
 
             SELECT * INTO request_row
-              FROM b28_simulation_requests
+              FROM public.b28_simulation_requests
              WHERE id = NEW.request_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -8115,6 +8709,11 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Corrective V, Exit Gate 4's active falsifier. The comparison above
+            -- proves the result cites its request's snapshot; it does not prove
+            -- the request still *is* what it was admitted as. Re-deriving it
+            -- here makes a post-admission input change unrepresentable as a
+            -- consequence rather than merely detectable after the fact.
             IF request_row.input_snapshot_hash IS DISTINCT FROM
                public.b28_input_snapshot_hash(
                    request_row.source_envelope_id,
@@ -8129,6 +8728,8 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Corrective V, H-V-05. Sufficiency is a durable precondition of the
+            -- consequence, not a decision the writer reports having made.
             IF NOT request_row.sufficiency_verdict THEN
                 RAISE EXCEPTION
                     'b28_result_request_insufficient:%',
@@ -8136,6 +8737,12 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Corrective VI, Gate 3 Architecture B. The persisted vocabulary
+            -- names the proposition this guard actually establishes: the row is
+            -- the value of the governed deterministic function over the admitted
+            -- input. `solver_invocations` is gone because the database cannot
+            -- witness an execution and the schema must not claim what it cannot
+            -- prove.
             IF NEW.solver_consequence_kind
                    IS DISTINCT FROM 'governed_deterministic_consequence'
             THEN
@@ -8157,7 +8764,7 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
             END IF;
 
             SELECT policy_state INTO issuance_policy_state
-              FROM trust_final_issuance_identity
+              FROM public.trust_final_issuance_identity
              WHERE tenant_id = NEW.tenant_id
                AND envelope_hash = request_row.source_issuance_envelope_hash;
             IF NOT FOUND THEN
@@ -8182,6 +8789,8 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.b28_input_snapshot_hash(p_source_envelope_id text, p_source_semantic_truth_hash text, p_total_budget_minor bigint, p_currency text, p_channel_evidence jsonb) RETURNS text
     LANGUAGE sql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -8202,6 +8811,8 @@ CREATE FUNCTION public.b28_input_snapshot_hash(p_source_envelope_id text, p_sour
                 'hex'
             )
         $$;
+
+
 
 CREATE FUNCTION public.b28_recompute_allocation(p_channel_evidence jsonb, p_total_budget_minor bigint) RETURNS jsonb
     LANGUAGE plpgsql IMMUTABLE
@@ -8317,6 +8928,8 @@ CREATE FUNCTION public.b28_recompute_allocation(p_channel_evidence jsonb, p_tota
         END;
         $$;
 
+
+
 CREATE FUNCTION public.b28_request_authentication_binding(p_tenant_id uuid, p_request_ref text, p_source_issuance_envelope_hash text, p_input_snapshot_hash text) RETURNS text
     LANGUAGE sql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -8343,13 +8956,15 @@ CREATE FUNCTION public.b28_request_authentication_binding(p_tenant_id uuid, p_re
             )
         $$;
 
+
+
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1;
+            tolerance_cents INTEGER := 1; -- ±1 cent rounding tolerance
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
@@ -8368,6 +8983,11 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
             RETURN COALESCE(NEW, OLD);
         END;
         $$;
+
+
+
+
+
 
 CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
     LANGUAGE plpgsql
@@ -8422,6 +9042,11 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
         END;
         $$;
 
+
+
+
+
+
 CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -8474,6 +9099,11 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
             RETURN NULL;
         END;
         $$;
+
+
+
+
+
 
 CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
     LANGUAGE plpgsql
@@ -8532,6 +9162,11 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
         END;
         $$;
 
+
+
+
+
+
 CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delete integer DEFAULT 1000) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
@@ -8542,7 +9177,7 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delet
             BEGIN
                 WITH doomed AS (
                     SELECT id
-                    FROM attribution_commerce_identities
+                    FROM public.attribution_commerce_identities
                     WHERE last_observed_at < cutoff
                     ORDER BY last_observed_at ASC
                     LIMIT GREATEST(max_delete, 1)
@@ -8556,6 +9191,8 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delet
             END;
             $$;
 
+
+
 CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
@@ -8565,6 +9202,8 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()
                 RETURN NULL;
             END;
             $$;
+
+
 
 CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000) RETURNS TABLE(table_name text, deleted_rows integer)
     LANGUAGE plpgsql SECURITY DEFINER
@@ -8576,7 +9215,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
         BEGIN
             WITH doomed AS (
                 SELECT id
-                FROM b23_webhook_ingestion_logs
+                FROM public.b23_webhook_ingestion_logs
                 WHERE received_at < (now() - interval '365 days')
                 ORDER BY received_at
                 LIMIT effective_limit
@@ -8591,7 +9230,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
 
             WITH doomed AS (
                 SELECT id
-                FROM b23_exception_records
+                FROM public.b23_exception_records
                 WHERE raised_at < (now() - interval '1825 days')
                 ORDER BY raised_at
                 LIMIT effective_limit
@@ -8606,7 +9245,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
 
             WITH doomed AS (
                 SELECT id
-                FROM b23_match_verdicts
+                FROM public.b23_match_verdicts
                 WHERE created_at < (now() - interval '1825 days')
                 ORDER BY created_at
                 LIMIT effective_limit
@@ -8621,7 +9260,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
 
             WITH doomed AS (
                 SELECT id
-                FROM b23_revenue_events
+                FROM public.b23_revenue_events
                 WHERE event_occurred_at < (now() - interval '2555 days')
                 ORDER BY event_occurred_at
                 LIMIT effective_limit
@@ -8637,6 +9276,11 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
             RETURN;
         END;
         $$;
+
+
+
+
+
 
 CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
     LANGUAGE plpgsql
@@ -8676,7 +9320,7 @@ CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
 
             IF EXISTS (
                 SELECT 1
-                  FROM session_authority AS authority
+                  FROM public.session_authority AS authority
                  WHERE authority.tenant_id = NEW.tenant_id
                    AND authority.session_id = NEW.session_id
                    AND (
@@ -8692,6 +9336,11 @@ CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+
+
+
+
+
 
 CREATE FUNCTION public.fn_block_worker_ingestion_mutation() RETURNS trigger
     LANGUAGE plpgsql
@@ -8709,6 +9358,8 @@ BEGIN
 END;
 $$;
 
+
+
 CREATE FUNCTION public.fn_compliance_audit_ledger_append_only() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -8717,6 +9368,8 @@ CREATE FUNCTION public.fn_compliance_audit_ledger_append_only() RETURNS trigger
                 'compliance_audit_ledger is append-only; UPDATE and DELETE are forbidden';
         END;
         $$;
+
+
 
 CREATE FUNCTION public.fn_detect_pii_keys(payload jsonb) RETURNS boolean
     LANGUAGE plpgsql IMMUTABLE
@@ -8728,6 +9381,11 @@ CREATE FUNCTION public.fn_detect_pii_keys(payload jsonb) RETURNS boolean
             RETURN (jsonb_path_exists(payload, '$.**.email') OR jsonb_path_exists(payload, '$.**.email_address') OR jsonb_path_exists(payload, '$.**.phone') OR jsonb_path_exists(payload, '$.**.phone_number') OR jsonb_path_exists(payload, '$.**.ssn') OR jsonb_path_exists(payload, '$.**.social_security_number') OR jsonb_path_exists(payload, '$.**.ip_address') OR jsonb_path_exists(payload, '$.**.ip') OR jsonb_path_exists(payload, '$.**.first_name') OR jsonb_path_exists(payload, '$.**.last_name') OR jsonb_path_exists(payload, '$.**.full_name') OR jsonb_path_exists(payload, '$.**.address') OR jsonb_path_exists(payload, '$.**.street_address'));
         END;
         $_$;
+
+
+
+
+
 
 CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
     LANGUAGE plpgsql
@@ -8812,18 +9470,29 @@ CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
         END;
         $_$;
 
+
+
+
+
+
 CREATE FUNCTION public.fn_events_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-
+            -- Allow migration_owner for emergency repairs (optional)
             IF current_user = 'migration_owner' THEN
-                RETURN NULL;
+                RETURN NULL; -- Allow operation
             END IF;
 
+            -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'attribution_events is append-only; updates and deletes are not allowed. Use INSERT with correlation_id for corrections.';
         END;
         $$;
+
+
+
+
+
 
 CREATE FUNCTION public.fn_guard_attribution_events_payload_identity() RETURNS trigger
     LANGUAGE plpgsql
@@ -8853,18 +9522,29 @@ CREATE FUNCTION public.fn_guard_attribution_events_payload_identity() RETURNS tr
         END;
         $_$;
 
+
+
+
+
+
 CREATE FUNCTION public.fn_ledger_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-
+            -- Allow migration_owner for emergency repairs (optional)
             IF current_user = 'migration_owner' THEN
-                RETURN NULL;
+                RETURN NULL; -- Allow operation
             END IF;
 
+            -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'revenue_ledger is immutable; updates and deletes are not allowed. Use INSERT for corrections.';
         END;
         $$;
+
+
+
+
+
 
 CREATE FUNCTION public.fn_llm_call_audit_append_only() RETURNS trigger
     LANGUAGE plpgsql
@@ -8874,6 +9554,8 @@ CREATE FUNCTION public.fn_llm_call_audit_append_only() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
@@ -8881,9 +9563,10 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
             correction_by_val VARCHAR(255);
             correction_reason_val TEXT;
         BEGIN
-
+            -- Only log if the 'channel_code' column actually changed
             IF (NEW.channel_code IS DISTINCT FROM OLD.channel_code) THEN
-
+                -- Read session variables set by application layer
+                -- Fall back to 'system' if unset (indicates bypass attempt)
                 correction_by_val := COALESCE(
                     current_setting('app.correction_by', true),
                     'system'
@@ -8893,6 +9576,7 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
                     'No reason provided'
                 );
 
+                -- Insert audit record
                 INSERT INTO channel_assignment_corrections (
                     tenant_id,
                     entity_type,
@@ -8919,6 +9603,14 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
         END;
         $$;
 
+
+
+            Purpose: Ensure every post-ingestion assignment correction produces a corresponding audit row.
+            Invariant: No assignment correction without matching correction row.
+            Security: SECURITY DEFINER to bypass RLS during trigger execution (reads tenant_id from allocation, already RLS-protected).';
+
+
+
 CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
@@ -8926,9 +9618,10 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
             change_by_val VARCHAR(255);
             change_reason_val TEXT;
         BEGIN
-
+            -- Only log if the 'state' column actually changed
             IF (NEW.state IS DISTINCT FROM OLD.state) THEN
-
+                -- Read session variables set by application layer
+                -- Fall back to 'system' if unset (indicates bypass attempt)
                 change_by_val := COALESCE(
                     current_setting('app.channel_state_change_by', true),
                     'system'
@@ -8938,6 +9631,7 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
                     ''
                 );
 
+                -- Insert audit record
                 INSERT INTO channel_state_transitions (
                     channel_code,
                     from_state,
@@ -8959,6 +9653,14 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
             RETURN NEW;
         END;
         $$;
+
+
+
+            Purpose: Ensure every state change produces a corresponding audit row.
+            Invariant: No taxonomy state change without matching transition row.
+            Security: SECURITY DEFINER to ensure trigger can insert audit records.';
+
+
 
 CREATE FUNCTION public.fn_log_revenue_state_change() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -8985,6 +9687,14 @@ CREATE FUNCTION public.fn_log_revenue_state_change() RETURNS trigger
         END;
         $$;
 
+
+
+            Purpose: Ensure every state change produces a corresponding revenue_state_transitions row.
+            Invariant: No ledger state change without matching transition row.
+            Security: SECURITY DEFINER to bypass RLS on revenue_state_transitions during trigger execution.';
+
+
+
 CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
     LANGUAGE plpgsql
     AS $$
@@ -8993,13 +9703,13 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
             rec RECORD;
             detected_key_var TEXT;
         BEGIN
-
+            -- Scan attribution_events.raw_payload
             FOR rec IN
                 SELECT id, raw_payload
                 FROM attribution_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
-
+                -- Find first PII key
                 SELECT key INTO detected_key_var
                 FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
@@ -9024,18 +9734,19 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
                     'raw_payload',
                     rec.id,
                     detected_key_var,
-                    'Redacted for security'
+                    'Redacted for security'  -- Do not log actual PII values
                 );
 
                 finding_count := finding_count + 1;
             END LOOP;
 
+            -- Scan dead_events.raw_payload
             FOR rec IN
                 SELECT id, raw_payload
                 FROM dead_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
-
+                -- Find first PII key
                 SELECT key INTO detected_key_var
                 FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
@@ -9066,12 +9777,13 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
                 finding_count := finding_count + 1;
             END LOOP;
 
+            -- Scan revenue_ledger.metadata (only non-NULL)
             FOR rec IN
                 SELECT id, metadata
                 FROM revenue_ledger
                 WHERE metadata IS NOT NULL AND fn_detect_pii_keys(metadata)
             LOOP
-
+                -- Find first PII key
                 SELECT key INTO detected_key_var
                 FROM jsonb_object_keys(rec.metadata) key
                 WHERE key IN (
@@ -9106,6 +9818,11 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
         END;
         $$;
 
+
+
+
+
+
 CREATE FUNCTION public.reject_reserved_trust_action_scope() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -9124,12 +9841,16 @@ CREATE FUNCTION public.reject_reserved_trust_action_scope() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.skeldir_database_construction_revisions() RETURNS SETOF text
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-            SELECT version_num FROM alembic_version
+            SELECT version_num FROM public.alembic_version
         $$;
+
+
 
 CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigger
     LANGUAGE plpgsql
@@ -9141,9 +9862,9 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
             attempt record;
         BEGIN
             SELECT r.rolname INTO table_owner
-            FROM pg_class c
-            JOIN pg_roles r ON r.oid = c.relowner
-            WHERE c.oid = 'trust_access_log'::regclass;
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_roles r ON r.oid = c.relowner
+            WHERE c.oid = 'public.trust_access_log'::regclass;
             IF TG_OP = 'INSERT' THEN
                 IF (NEW.event_type = 'issuance' AND NEW.issuance_state <> 'authorized')
                    OR (NEW.event_type <> 'issuance'
@@ -9183,7 +9904,7 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
                     RAISE EXCEPTION 'trust_issuance_authority_violation:signer:%',
                         session_user USING ERRCODE = '42501';
                 END IF;
-                SELECT * INTO attempt FROM trust_issuance_attempts
+                SELECT * INTO attempt FROM public.trust_issuance_attempts
                 WHERE tenant_id = NEW.tenant_id AND audit_ref = NEW.audit_ref
                   AND id = NEW.issued_attempt_id
                   AND attempt_state = 'signature_known';
@@ -9197,7 +9918,7 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
                     RAISE EXCEPTION 'trust_issuance_authority_violation:issuer:%',
                         session_user USING ERRCODE = '42501';
                 END IF;
-                SELECT * INTO attempt FROM trust_issuance_attempts
+                SELECT * INTO attempt FROM public.trust_issuance_attempts
                 WHERE tenant_id = NEW.tenant_id AND audit_ref = NEW.audit_ref
                   AND id = OLD.issued_attempt_id
                   AND attempt_state = 'signature_known';
@@ -9248,6 +9969,8 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
         END;
         $$;
 
+
+
 CREATE FUNCTION public.trust_access_log_witness_immutability_guard() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -9262,13 +9985,17 @@ CREATE FUNCTION public.trust_access_log_witness_immutability_guard() RETURNS tri
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_roles
+              FROM pg_catalog.pg_roles
              WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_class WHERE oid = TG_RELID;
+              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
 
+            -- A superuser or the owning migration principal can drop this
+            -- trigger outright, so refusing them buys no authority. C20/C21
+            -- already assert that no runtime login reaches the owner, and the
+            -- canonical-schema gate detects the trigger's removal.
             IF COALESCE(principal_is_superuser, false)
-               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 RETURN NEW;
             END IF;
@@ -9276,6 +10003,10 @@ CREATE FUNCTION public.trust_access_log_witness_immutability_guard() RETURNS tri
             old_row := to_jsonb(OLD);
             new_row := to_jsonb(NEW);
 
+            -- Total over columns, including columns that do not exist yet. A
+            -- future migration that adds a truth-bearing column inherits the
+            -- fence by default and has to opt out deliberately, which is the
+            -- direction a fail-closed system needs.
             FOR column_name IN SELECT jsonb_object_keys(new_row)
             LOOP
                 IF column_name = ANY(mutable_columns) THEN
@@ -9292,6 +10023,8 @@ CREATE FUNCTION public.trust_access_log_witness_immutability_guard() RETURNS tri
         END;
         $$;
 
+
+
 CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -9301,7 +10034,14 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
             table_owner_oid oid;
             issuer_role_oid oid;
             caller_is_issuer boolean;
-
+            -- Scalars, not ``trust_access_log%ROWTYPE``. PL/pgSQL resolves a
+            -- %ROWTYPE declaration when the function is *created*, and pg_dump
+            -- emits functions before the tables they name -- which makes the
+            -- canonical schema artifact inapplicable to an empty database.
+            -- Corrective XVII found that exact class on this schema, and the R2
+            -- bootstrap already carries a reorder list because of it. Naming the
+            -- columns keeps the compile-time dependency out of the artifact
+            -- instead of adding another entry to that list.
             ledger_event_type text;
             ledger_status text;
             ledger_idempotency_key_hash text;
@@ -9325,22 +10065,30 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_roles
+              FROM pg_catalog.pg_roles
              WHERE rolname = session_user;
             SELECT relowner
               INTO table_owner_oid
-              FROM pg_class
+              FROM pg_catalog.pg_class
              WHERE oid = TG_RELID;
 
+            -- A superuser or the owning migration principal can drop this
+            -- trigger outright, so refusing them buys no authority. C20/C21
+            -- already assert that no runtime login reaches the owner.
             IF COALESCE(principal_is_superuser, false)
-               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 RETURN NEW;
             END IF;
 
+            -- Layer A: only the dedicated issuer may project a terminal
+            -- consequence.  The API principal may authorize an issuance, but
+            -- it cannot assert that signing happened: pairing an
+            -- ``authorized`` ledger row with a well-shaped terminal row is
+            -- not sufficient evidence of a completed consequence.
             SELECT oid
               INTO issuer_role_oid
-              FROM pg_roles
+              FROM pg_catalog.pg_roles
              WHERE rolname = 'app_trust_issuer';
             caller_is_issuer := issuer_role_oid IS NOT NULL
                 AND session_user = 'app_trust_issuer';
@@ -9352,6 +10100,10 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                     USING ERRCODE = '42501';
             END IF;
 
+            -- Layer B: the row must project a completed, signer-confirmed
+            -- issuance.  ``authorized`` is authorization to try, not evidence
+            -- of a consequence.  The source ledger and attempt therefore have
+            -- to be terminal and agree on the retained signature artifact.
             SELECT event_type, status, idempotency_key_hash, subject_type,
                    subject_ref_hash, envelope_hash, semantic_truth_hash,
                    policy_state, audit_hash, issuance_state, issued_attempt_id,
@@ -9364,7 +10116,7 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                    ledger_issuance_state, ledger_issued_attempt_id,
                    ledger_issued_signing_key_id, ledger_issued_signature_hash,
                    ledger_issued_signature, ledger_issued_envelope
-              FROM trust_access_log
+              FROM public.trust_access_log
              WHERE tenant_id = NEW.tenant_id
                AND audit_ref = NEW.access_audit_ref;
             IF NOT FOUND THEN
@@ -9394,7 +10146,7 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                    attempt.signed_envelope
               INTO attempt_state, attempt_signing_key_id, attempt_signature_hash,
                    attempt_signature, attempt_signed_envelope
-              FROM trust_issuance_attempts AS attempt
+              FROM public.trust_issuance_attempts AS attempt
              WHERE attempt.tenant_id = NEW.tenant_id
                AND attempt.audit_ref = NEW.access_audit_ref
                AND attempt.id = ledger_issued_attempt_id;
@@ -9434,6 +10186,8 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
         END;
         $$;
 
+
+
 CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -9444,15 +10198,18 @@ CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigge
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_roles
+              FROM pg_catalog.pg_roles
              WHERE rolname = session_user;
             SELECT relowner
               INTO table_owner_oid
-              FROM pg_class
+              FROM pg_catalog.pg_class
              WHERE oid = TG_RELID;
 
+            -- Superuser and the owning migration principal can drop this
+            -- trigger, so refusing them buys no authority; the owner branch is
+            -- also what keeps a governed tenant cascade working.
             IF COALESCE(principal_is_superuser, false)
-               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 IF TG_OP = 'DELETE' THEN
                     RETURN OLD;
@@ -9460,6 +10217,10 @@ CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigge
                 RETURN NEW;
             END IF;
 
+            -- Every row of this relation is terminal at INSERT: the status
+            -- CHECK admits only 'success', so a row exists exactly when a
+            -- cryptographic consequence was recorded. A later statement may
+            -- not restate what Skeldir durably claims it signed.
             RAISE EXCEPTION
                 'durable trust issuance history is immutable; % may not % '
                 'public.trust_envelope_issuance_log',
@@ -9468,6 +10229,8 @@ CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigge
         END;
         $$;
 
+
+
 CREATE FUNCTION public.trust_export_artifact_attempt_guard() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -9475,9 +10238,9 @@ CREATE FUNCTION public.trust_export_artifact_attempt_guard() RETURNS trigger
         DECLARE table_owner text;
         BEGIN
             SELECT r.rolname INTO table_owner
-            FROM pg_class c
-            JOIN pg_roles r ON r.oid = c.relowner
-            WHERE c.oid = 'trust_export_artifact_attempts'::regclass;
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_roles r ON r.oid = c.relowner
+            WHERE c.oid = 'public.trust_export_artifact_attempts'::regclass;
             IF TG_OP = 'INSERT' THEN
                 IF session_user NOT IN ('app_trust_issuer', table_owner)
                    OR NEW.attempt_state <> 'signing' THEN
@@ -9516,6 +10279,8 @@ CREATE FUNCTION public.trust_export_artifact_attempt_guard() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.trust_issuance_attempt_guard() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -9523,9 +10288,9 @@ CREATE FUNCTION public.trust_issuance_attempt_guard() RETURNS trigger
         DECLARE table_owner text;
         BEGIN
             SELECT r.rolname INTO table_owner
-            FROM pg_class c
-            JOIN pg_roles r ON r.oid = c.relowner
-            WHERE c.oid = 'trust_issuance_attempts'::regclass;
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_roles r ON r.oid = c.relowner
+            WHERE c.oid = 'public.trust_issuance_attempts'::regclass;
             IF TG_OP = 'INSERT' THEN
                 IF session_user NOT IN ('app_trust_issuer', table_owner)
                    OR NEW.attempt_state <> 'signing' THEN
@@ -9572,6 +10337,8 @@ CREATE FUNCTION public.trust_issuance_attempt_guard() RETURNS trigger
         END;
         $$;
 
+
+
 CREATE FUNCTION public.trust_tenant_policy_append_only() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -9582,6 +10349,8 @@ CREATE FUNCTION public.trust_tenant_policy_append_only() RETURNS trigger
           END IF;
           RAISE EXCEPTION 'trust_policy_append_only' USING ERRCODE='42501';
         END $$;
+
+
 
 CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETURNS TABLE(tenant_id uuid, tenant_updated_at timestamp with time zone, shopify_webhook_secret_ciphertext bytea, shopify_webhook_secret_key_id text, stripe_webhook_secret_ciphertext bytea, stripe_webhook_secret_key_id text, paypal_webhook_secret_ciphertext bytea, paypal_webhook_secret_key_id text, woocommerce_webhook_secret_ciphertext bytea, woocommerce_webhook_secret_key_id text)
     LANGUAGE sql SECURITY DEFINER
@@ -9598,10 +10367,16 @@ CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETUR
             t.paypal_webhook_secret_key_id,
             t.woocommerce_webhook_secret_ciphertext,
             t.woocommerce_webhook_secret_key_id
-          FROM tenants t
+          FROM public.tenants t
           WHERE t.api_key_hash = $1
           LIMIT 1
         $_$;
+
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
 
 CREATE TABLE public.agent_clients (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -9620,6 +10395,8 @@ CREATE TABLE public.agent_clients (
 
 ALTER TABLE ONLY public.agent_clients FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.agent_scope_grants (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -9631,6 +10408,8 @@ CREATE TABLE public.agent_scope_grants (
 );
 
 ALTER TABLE ONLY public.agent_scope_grants FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.agent_service_credentials (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -9651,6 +10430,8 @@ CREATE TABLE public.agent_service_credentials (
 
 ALTER TABLE ONLY public.agent_service_credentials FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.agent_token_revocations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -9663,9 +10444,13 @@ CREATE TABLE public.agent_token_revocations (
 
 ALTER TABLE ONLY public.agent_token_revocations FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.alembic_version (
     version_num character varying(32) NOT NULL
 );
+
+
 
 CREATE TABLE public.attribution_allocations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -9697,6 +10482,56 @@ CREATE TABLE public.attribution_allocations (
 
 ALTER TABLE ONLY public.attribution_allocations FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.attribution_commerce_identities (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -9714,6 +10549,11 @@ CREATE TABLE public.attribution_commerce_identities (
 );
 
 ALTER TABLE ONLY public.attribution_commerce_identities FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.attribution_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -9744,6 +10584,44 @@ CREATE TABLE public.attribution_events (
 
 ALTER TABLE ONLY public.attribution_events FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.attribution_recompute_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -9765,6 +10643,56 @@ CREATE TABLE public.attribution_recompute_jobs (
 
 ALTER TABLE ONLY public.attribution_recompute_jobs FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.auth_access_token_denylist (
     tenant_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -9776,6 +10704,8 @@ CREATE TABLE public.auth_access_token_denylist (
 );
 
 ALTER TABLE ONLY public.auth_access_token_denylist FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.auth_refresh_tokens (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -9794,6 +10724,8 @@ CREATE TABLE public.auth_refresh_tokens (
 
 ALTER TABLE ONLY public.auth_refresh_tokens FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.auth_user_token_cutoffs (
     tenant_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -9803,6 +10735,8 @@ CREATE TABLE public.auth_user_token_cutoffs (
 );
 
 ALTER TABLE ONLY public.auth_user_token_cutoffs FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b23_exception_records (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -9825,6 +10759,11 @@ CREATE TABLE public.b23_exception_records (
 );
 
 ALTER TABLE ONLY public.b23_exception_records FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.b23_match_task_dispatches (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -9859,6 +10798,11 @@ CREATE TABLE public.b23_match_task_dispatches (
 );
 
 ALTER TABLE ONLY public.b23_match_task_dispatches FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.b23_match_verdicts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -9914,6 +10858,29 @@ END)),
 );
 
 ALTER TABLE ONLY public.b23_match_verdicts FORCE ROW LEVEL SECURITY;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 CREATE TABLE public.b23_revenue_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -9971,6 +10938,29 @@ END) = 1))
 
 ALTER TABLE ONLY public.b23_revenue_events FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.b23_webhook_ingestion_logs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -9988,6 +10978,11 @@ CREATE TABLE public.b23_webhook_ingestion_logs (
 );
 
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.b24_active_execution_leases (
     tenant_id uuid NOT NULL,
@@ -10018,6 +11013,8 @@ CREATE TABLE public.b24_active_execution_leases (
 );
 
 ALTER TABLE ONLY public.b24_active_execution_leases FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b24_dirty_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10064,6 +11061,8 @@ CREATE TABLE public.b24_dirty_events (
 
 ALTER TABLE ONLY public.b24_dirty_events FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b24_feature_authority_build_outbox (
     tenant_id uuid NOT NULL,
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10095,6 +11094,8 @@ CREATE TABLE public.b24_feature_authority_build_outbox (
 );
 
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b24_feature_authority_build_requests (
     tenant_id uuid NOT NULL,
@@ -10129,6 +11130,8 @@ CREATE TABLE public.b24_feature_authority_build_requests (
 );
 
 ALTER TABLE ONLY public.b24_feature_authority_build_requests FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b24_fit_dispatch_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10187,6 +11190,8 @@ CREATE TABLE public.b24_fit_dispatch_outbox (
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b24_fit_planner_wakeups (
     tenant_id uuid NOT NULL,
     wakeup_revision bigint DEFAULT 1 NOT NULL,
@@ -10203,6 +11208,11 @@ CREATE TABLE public.b24_fit_planner_wakeups (
 );
 
 ALTER TABLE ONLY public.b24_fit_planner_wakeups FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.b24_fit_policy_replan_lineage (
     tenant_id uuid NOT NULL,
@@ -10225,6 +11235,8 @@ CREATE TABLE public.b24_fit_policy_replan_lineage (
 );
 
 ALTER TABLE ONLY public.b24_fit_policy_replan_lineage FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b24_fit_recovery_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10249,6 +11261,8 @@ CREATE TABLE public.b24_fit_recovery_outbox (
 
 ALTER TABLE ONLY public.b24_fit_recovery_outbox FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b24_inference_policy_registry (
     policy_bundle_hash character varying(64) NOT NULL,
     inference_profile_version character varying(128) NOT NULL,
@@ -10263,6 +11277,8 @@ CREATE TABLE public.b24_inference_policy_registry (
     registered_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_b24_policy_registry_hash CHECK (((policy_bundle_hash)::text ~ '^[0-9a-f]{64}$'::text))
 );
+
+
 
 CREATE TABLE public.b24_source_window_feature_authority (
     tenant_id uuid NOT NULL,
@@ -10294,6 +11310,8 @@ CREATE TABLE public.b24_source_window_feature_authority (
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b24_worker_process_authority (
     generation_id text NOT NULL,
     pid integer NOT NULL,
@@ -10312,6 +11330,8 @@ CREATE TABLE public.b24_worker_process_authority (
 
 ALTER TABLE ONLY public.b24_worker_process_authority FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b26_p2_adjustment_attestation (
     adjustment_evidence_id uuid NOT NULL,
     tenant_id uuid NOT NULL,
@@ -10327,6 +11347,8 @@ CREATE TABLE public.b26_p2_adjustment_attestation (
 );
 
 ALTER TABLE ONLY public.b26_p2_adjustment_attestation FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b26_p2_adjustment_evidence (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10348,6 +11370,8 @@ CREATE TABLE public.b26_p2_adjustment_evidence (
 );
 
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b26_p2_auth_root_evidence (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10371,12 +11395,16 @@ CREATE TABLE public.b26_p2_auth_root_evidence (
 
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b26_p2_authority_universe (
     id smallint DEFAULT 1 NOT NULL,
     universe uuid DEFAULT gen_random_uuid() NOT NULL,
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT b26_p2_authority_universe_id_check CHECK ((id = 1))
 );
+
+
 
 CREATE TABLE public.b26_p2_conduction_receipts (
     task_id character varying(155) NOT NULL,
@@ -10396,6 +11424,11 @@ CREATE TABLE public.b26_p2_conduction_receipts (
 
 ALTER TABLE ONLY public.b26_p2_conduction_receipts FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.b26_p2_evaluator_heartbeat (
     tenant_id uuid NOT NULL,
     last_tick timestamp with time zone DEFAULT now() NOT NULL,
@@ -10407,6 +11440,8 @@ CREATE TABLE public.b26_p2_evaluator_heartbeat (
 );
 
 ALTER TABLE ONLY public.b26_p2_evaluator_heartbeat FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b26_p2_execution_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10426,6 +11461,11 @@ CREATE TABLE public.b26_p2_execution_outbox (
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.b26_p2_execution_quarantine (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     source_relation text NOT NULL,
@@ -10444,6 +11484,11 @@ CREATE TABLE public.b26_p2_execution_quarantine (
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.b26_p2_history_integrity_observations (
     id bigint NOT NULL,
     observed_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -10453,6 +11498,8 @@ CREATE TABLE public.b26_p2_history_integrity_observations (
     author name DEFAULT SESSION_USER NOT NULL
 );
 
+
+
 ALTER TABLE public.b26_p2_history_integrity_observations ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.b26_p2_history_integrity_observations_id_seq
     START WITH 1
@@ -10461,6 +11508,8 @@ ALTER TABLE public.b26_p2_history_integrity_observations ALTER COLUMN id ADD GEN
     NO MAXVALUE
     CACHE 1
 );
+
+
 
 CREATE TABLE public.b26_p2_ingress_auth_witness (
     webhook_ingress_identity_id uuid NOT NULL,
@@ -10473,12 +11522,16 @@ CREATE TABLE public.b26_p2_ingress_auth_witness (
 
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b26_p2_operational_floor (
     id integer DEFAULT 1 NOT NULL,
     floor_revision text NOT NULL,
     policy text DEFAULT 'maintenance-only-downgrade'::text NOT NULL,
     CONSTRAINT b26_p2_floor_singleton CHECK ((id = 1))
 );
+
+
 
 CREATE TABLE public.b26_p2_provenance_evidence (
     webhook_ingress_identity_id uuid NOT NULL,
@@ -10490,6 +11543,8 @@ CREATE TABLE public.b26_p2_provenance_evidence (
 );
 
 ALTER TABLE ONLY public.b26_p2_provenance_evidence FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b26_p2_provider_auth_consequence (
     webhook_ingress_identity_id uuid NOT NULL,
@@ -10513,6 +11568,8 @@ CREATE TABLE public.b26_p2_provider_auth_consequence (
 
 ALTER TABLE ONLY public.b26_p2_provider_auth_consequence FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b26_p2_publication_history (
     law_kind text NOT NULL,
     law_id text NOT NULL,
@@ -10526,6 +11583,8 @@ CREATE TABLE public.b26_p2_publication_history (
     CONSTRAINT b26_p2_publication_hash_shape CHECK ((char_length(entry_hash) = 64))
 );
 
+
+
 CREATE TABLE public.b26_p2_scheduler_heartbeat (
     tenant_id uuid NOT NULL,
     last_tick timestamp with time zone DEFAULT now() NOT NULL,
@@ -10536,6 +11595,8 @@ CREATE TABLE public.b26_p2_scheduler_heartbeat (
 
 ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b26_p2_scope_policy_authority (
     scope_policy_version text NOT NULL,
     source_sha256 text NOT NULL,
@@ -10544,6 +11605,8 @@ CREATE TABLE public.b26_p2_scope_policy_authority (
 );
 
 ALTER TABLE ONLY public.b26_p2_scope_policy_authority FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.b26_p2_semantic_regime_registry (
     regime_id text NOT NULL,
@@ -10554,6 +11617,8 @@ CREATE TABLE public.b26_p2_semantic_regime_registry (
     registered_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT b26_p2_registry_digest_shape CHECK ((char_length(contract_digest) = 64))
 );
+
+
 
 CREATE TABLE public.b26_p2_source_money_attestation (
     webhook_ingress_identity_id uuid NOT NULL,
@@ -10576,6 +11641,8 @@ CREATE TABLE public.b26_p2_source_money_attestation (
 
 ALTER TABLE ONLY public.b26_p2_source_money_attestation FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b26_p2_task_authority_directory (
     task_id character varying(155) NOT NULL,
     tenant_id uuid NOT NULL,
@@ -10585,6 +11652,11 @@ CREATE TABLE public.b26_p2_task_authority_directory (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_b26_p2_directory_window_order CHECK ((window_start < window_end))
 );
+
+
+
+
+
 
 CREATE TABLE public.b26_p2_verdict_supersession_ledger (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10609,6 +11681,8 @@ CREATE TABLE public.b26_p2_verdict_supersession_ledger (
 
 ALTER TABLE ONLY public.b26_p2_verdict_supersession_ledger FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE SEQUENCE public.b26_p2_verdict_supersession_ledger_seq_seq
     START WITH 1
     INCREMENT BY 1
@@ -10616,7 +11690,11 @@ CREATE SEQUENCE public.b26_p2_verdict_supersession_ledger_seq_seq
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.b26_p2_verdict_supersession_ledger_seq_seq OWNED BY public.b26_p2_verdict_supersession_ledger.seq;
+
+
 
 CREATE TABLE public.b27_explanation_materializations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10657,11 +11735,15 @@ CREATE TABLE public.b27_explanation_materializations (
 
 ALTER TABLE ONLY public.b27_explanation_materializations FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.b27_narrative_template_registry (
     registry_version text NOT NULL,
     registry_hash text NOT NULL,
     CONSTRAINT ck_b27_template_registry_hash CHECK ((registry_hash ~ '^sha256:[0-9a-f]{64}$'::text))
 );
+
+
 
 CREATE TABLE public.b27_narrative_templates (
     template_id text NOT NULL,
@@ -10674,6 +11756,8 @@ CREATE TABLE public.b27_narrative_templates (
     CONSTRAINT ck_b27_template_no_fixed_numeral CHECK ((replace(template_text, '{value}'::text, ' '::text) !~ '[0-9]'::text)),
     CONSTRAINT ck_b27_template_single_variable CHECK (((template_text ~~ '%{value}%'::text) AND ((length(template_text) - length(replace(template_text, '{value}'::text, ''::text))) = (7 * 1))))
 );
+
+
 
 CREATE TABLE public.b28_proposals (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10694,6 +11778,38 @@ CREATE TABLE public.b28_proposals (
 
 ALTER TABLE ONLY public.b28_proposals FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.b28_request_authentications (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -10707,6 +11823,32 @@ CREATE TABLE public.b28_request_authentications (
 );
 
 ALTER TABLE ONLY public.b28_request_authentications FORCE ROW LEVEL SECURITY;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 CREATE TABLE public.b28_simulation_requests (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10746,6 +11888,80 @@ CREATE TABLE public.b28_simulation_requests (
 
 ALTER TABLE ONLY public.b28_simulation_requests FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.b28_simulation_results (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -10776,6 +11992,59 @@ CREATE TABLE public.b28_simulation_results (
 
 ALTER TABLE ONLY public.b28_simulation_results FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.bayesian_artifact_storage_quotas (
     tenant_id uuid NOT NULL,
     policy_version character varying(64) NOT NULL,
@@ -10798,6 +12067,8 @@ CREATE TABLE public.bayesian_artifact_storage_quotas (
 );
 
 ALTER TABLE ONLY public.bayesian_artifact_storage_quotas FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_artifacts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10844,6 +12115,11 @@ PARTITION BY HASH (tenant_id);
 
 ALTER TABLE ONLY public.bayesian_artifacts FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.bayesian_artifacts_p00 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -10887,6 +12163,8 @@ CREATE TABLE public.bayesian_artifacts_p00 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p00 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_artifacts_p01 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -10932,6 +12210,8 @@ CREATE TABLE public.bayesian_artifacts_p01 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p01 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_artifacts_p02 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -10975,6 +12255,8 @@ CREATE TABLE public.bayesian_artifacts_p02 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p02 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_artifacts_p03 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11020,6 +12302,8 @@ CREATE TABLE public.bayesian_artifacts_p03 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p03 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_artifacts_p04 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11063,6 +12347,8 @@ CREATE TABLE public.bayesian_artifacts_p04 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p04 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_artifacts_p05 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11108,6 +12394,8 @@ CREATE TABLE public.bayesian_artifacts_p05 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p05 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_artifacts_p06 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11151,6 +12439,8 @@ CREATE TABLE public.bayesian_artifacts_p06 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p06 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_artifacts_p07 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11196,6 +12486,8 @@ CREATE TABLE public.bayesian_artifacts_p07 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p07 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_artifacts_p08 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11239,6 +12531,8 @@ CREATE TABLE public.bayesian_artifacts_p08 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p08 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_artifacts_p09 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11284,6 +12578,8 @@ CREATE TABLE public.bayesian_artifacts_p09 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p09 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_artifacts_p10 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11327,6 +12623,8 @@ CREATE TABLE public.bayesian_artifacts_p10 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p10 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_artifacts_p11 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11372,6 +12670,8 @@ CREATE TABLE public.bayesian_artifacts_p11 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p11 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_artifacts_p12 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11415,6 +12715,8 @@ CREATE TABLE public.bayesian_artifacts_p12 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p12 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_artifacts_p13 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11460,6 +12762,8 @@ CREATE TABLE public.bayesian_artifacts_p13 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p13 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_artifacts_p14 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11504,6 +12808,8 @@ CREATE TABLE public.bayesian_artifacts_p14 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p14 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_artifacts_p15 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11547,6 +12853,8 @@ CREATE TABLE public.bayesian_artifacts_p15 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p15 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_model_fits (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11651,6 +12959,20 @@ PARTITION BY HASH (tenant_id);
 
 ALTER TABLE ONLY public.bayesian_model_fits FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.bayesian_model_fits_p00 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11753,6 +13075,8 @@ CREATE TABLE public.bayesian_model_fits_p00 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p00 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_model_fits_p01 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11857,6 +13181,8 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p01 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_model_fits_p02 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11959,6 +13285,8 @@ CREATE TABLE public.bayesian_model_fits_p02 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p02 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_model_fits_p03 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12063,6 +13391,8 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p03 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_model_fits_p04 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -12165,6 +13495,8 @@ CREATE TABLE public.bayesian_model_fits_p04 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p04 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_model_fits_p05 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12269,6 +13601,8 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p05 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_model_fits_p06 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -12371,6 +13705,8 @@ CREATE TABLE public.bayesian_model_fits_p06 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p06 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_model_fits_p07 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12475,6 +13811,8 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p07 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_model_fits_p08 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -12577,6 +13915,8 @@ CREATE TABLE public.bayesian_model_fits_p08 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p08 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_model_fits_p09 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12681,6 +14021,8 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p09 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_model_fits_p10 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -12783,6 +14125,8 @@ CREATE TABLE public.bayesian_model_fits_p10 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p10 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_model_fits_p11 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12887,6 +14231,8 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p11 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_model_fits_p12 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -12989,6 +14335,8 @@ CREATE TABLE public.bayesian_model_fits_p12 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p12 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_model_fits_p13 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13093,6 +14441,8 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p13 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.bayesian_model_fits_p14 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13195,6 +14545,8 @@ CREATE TABLE public.bayesian_model_fits_p14 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p14 FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.bayesian_model_fits_p15 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13299,6 +14651,8 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p15 FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.budget_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13324,6 +14678,11 @@ CREATE TABLE public.budget_jobs (
 
 ALTER TABLE ONLY public.budget_jobs FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.budget_optimization_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13341,6 +14700,11 @@ CREATE TABLE public.budget_optimization_jobs (
 
 ALTER TABLE ONLY public.budget_optimization_jobs FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.celery_taskmeta (
     id integer NOT NULL,
     task_id character varying(155) NOT NULL,
@@ -13355,6 +14719,8 @@ CREATE TABLE public.celery_taskmeta (
     retries integer
 );
 
+
+
 CREATE SEQUENCE public.celery_taskmeta_id_seq
     AS integer
     START WITH 1
@@ -13363,7 +14729,11 @@ CREATE SEQUENCE public.celery_taskmeta_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.celery_taskmeta_id_seq OWNED BY public.celery_taskmeta.id;
+
+
 
 CREATE TABLE public.celery_tasksetmeta (
     id integer NOT NULL,
@@ -13371,6 +14741,8 @@ CREATE TABLE public.celery_tasksetmeta (
     result bytea,
     date_done timestamp without time zone DEFAULT CURRENT_TIMESTAMP
 );
+
+
 
 CREATE SEQUENCE public.celery_tasksetmeta_id_seq
     AS integer
@@ -13380,7 +14752,11 @@ CREATE SEQUENCE public.celery_tasksetmeta_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.celery_tasksetmeta_id_seq OWNED BY public.celery_tasksetmeta.id;
+
+
 
 CREATE TABLE public.channel_assignment_corrections (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13398,6 +14774,41 @@ CREATE TABLE public.channel_assignment_corrections (
 
 ALTER TABLE ONLY public.channel_assignment_corrections FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.channel_state_transitions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     channel_code character varying(50) NOT NULL,
@@ -13409,6 +14820,35 @@ CREATE TABLE public.channel_state_transitions (
     metadata jsonb
 );
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.channel_taxonomy (
     code text NOT NULL,
     family text NOT NULL,
@@ -13419,6 +14859,35 @@ CREATE TABLE public.channel_taxonomy (
     state character varying(50) DEFAULT 'active'::character varying NOT NULL,
     CONSTRAINT channel_taxonomy_state_check CHECK (((state)::text = ANY ((ARRAY['draft'::character varying, 'active'::character varying, 'deprecated'::character varying, 'archived'::character varying])::text[])))
 );
+
+
+
+            All unmapped channels MUST be normalized to the ''unknown'' code. Purpose: Provide single source
+            of truth for channel codes, ensuring consistency across ingestion, allocation models, and UI.
+            Data class: Non-PII. Ownership: Attribution service.';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 CREATE TABLE public.compliance_audit_ledger (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13437,6 +14906,11 @@ CREATE TABLE public.compliance_audit_ledger (
 );
 
 ALTER TABLE ONLY public.compliance_audit_ledger FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.dead_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13464,6 +14938,44 @@ CREATE TABLE public.dead_events (
 
 ALTER TABLE ONLY public.dead_events FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.dead_events_quarantine (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid,
@@ -13481,6 +14993,8 @@ CREATE TABLE public.dead_events_quarantine (
 
 ALTER TABLE ONLY public.dead_events_quarantine FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.ephemeral_click_resolution (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13496,6 +15010,11 @@ CREATE TABLE public.ephemeral_click_resolution (
 );
 
 ALTER TABLE ONLY public.ephemeral_click_resolution FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.ephemeral_order_resolution (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13513,6 +15032,11 @@ CREATE TABLE public.ephemeral_order_resolution (
 
 ALTER TABLE ONLY public.ephemeral_order_resolution FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.explanation_cache (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13527,6 +15051,14 @@ CREATE TABLE public.explanation_cache (
 );
 
 ALTER TABLE ONLY public.explanation_cache FORCE ROW LEVEL SECURITY;
+
+
+
+
+
+
+
+
 
 CREATE TABLE public.investigation_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13557,6 +15089,20 @@ CREATE TABLE public.investigation_jobs (
 
 ALTER TABLE ONLY public.investigation_jobs FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.investigation_tool_calls (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13568,6 +15114,11 @@ CREATE TABLE public.investigation_tool_calls (
 );
 
 ALTER TABLE ONLY public.investigation_tool_calls FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.investigations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13587,6 +15138,11 @@ CREATE TABLE public.investigations (
 
 ALTER TABLE ONLY public.investigations FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.jwt_verification_cache (
     singleton_id smallint NOT NULL,
     jwks_json text,
@@ -13600,6 +15156,8 @@ CREATE TABLE public.jwt_verification_cache (
     CONSTRAINT jwt_verification_cache_singleton_id_check CHECK ((singleton_id = 1))
 );
 
+
+
 CREATE TABLE public.kombu_message (
     id integer NOT NULL,
     visible boolean DEFAULT true NOT NULL,
@@ -13609,6 +15167,8 @@ CREATE TABLE public.kombu_message (
     queue_id integer NOT NULL
 );
 
+
+
 CREATE SEQUENCE public.kombu_message_id_seq
     AS integer
     START WITH 1
@@ -13617,12 +15177,18 @@ CREATE SEQUENCE public.kombu_message_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.kombu_message_id_seq OWNED BY public.kombu_message.id;
+
+
 
 CREATE TABLE public.kombu_queue (
     id integer NOT NULL,
     name character varying(200) NOT NULL
 );
+
+
 
 CREATE SEQUENCE public.kombu_queue_id_seq
     AS integer
@@ -13632,7 +15198,11 @@ CREATE SEQUENCE public.kombu_queue_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.kombu_queue_id_seq OWNED BY public.kombu_queue.id;
+
+
 
 CREATE TABLE public.llm_api_calls (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13686,6 +15256,11 @@ CREATE TABLE public.llm_api_calls (
 
 ALTER TABLE ONLY public.llm_api_calls FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.llm_breaker_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13701,6 +15276,8 @@ CREATE TABLE public.llm_breaker_state (
 );
 
 ALTER TABLE ONLY public.llm_breaker_state FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.llm_budget_reservations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13720,6 +15297,8 @@ CREATE TABLE public.llm_budget_reservations (
 );
 
 ALTER TABLE ONLY public.llm_budget_reservations FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.llm_call_audit (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13742,6 +15321,20 @@ CREATE TABLE public.llm_call_audit (
 
 ALTER TABLE ONLY public.llm_call_audit FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.llm_hourly_shutoff_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13761,6 +15354,8 @@ CREATE TABLE public.llm_hourly_shutoff_state (
 
 ALTER TABLE ONLY public.llm_hourly_shutoff_state FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.llm_monthly_budget_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13777,6 +15372,8 @@ CREATE TABLE public.llm_monthly_budget_state (
 
 ALTER TABLE ONLY public.llm_monthly_budget_state FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.llm_monthly_costs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13791,6 +15388,11 @@ CREATE TABLE public.llm_monthly_costs (
 );
 
 ALTER TABLE ONLY public.llm_monthly_costs FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.llm_semantic_cache (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13818,6 +15420,8 @@ CREATE TABLE public.llm_semantic_cache (
 
 ALTER TABLE ONLY public.llm_semantic_cache FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.llm_validation_failures (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13830,6 +15434,11 @@ CREATE TABLE public.llm_validation_failures (
 
 ALTER TABLE ONLY public.llm_validation_failures FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE SEQUENCE public.message_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -13837,39 +15446,53 @@ CREATE SEQUENCE public.message_id_sequence
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
-CREATE MATERIALIZED VIEW mv_allocation_summary AS
- SELECT tenant_id,
-    event_id,
-    model_version,
-    sum(allocated_revenue_cents) AS total_allocated_cents,
-    revenue_cents AS event_revenue_cents,
+
+
+CREATE MATERIALIZED VIEW public.mv_allocation_summary AS
+ SELECT aa.tenant_id,
+    aa.event_id,
+    aa.model_version,
+    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
+    e.revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(allocated_revenue_cents) = revenue_cents)
+            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
+            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
         END AS drift_cents
-   FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON ((event_id = id)))
-  GROUP BY tenant_id, event_id, model_version, revenue_cents
+   FROM (public.attribution_allocations aa
+     LEFT JOIN public.attribution_events e ON ((aa.event_id = e.id)))
+  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
   WITH NO DATA;
 
-CREATE MATERIALIZED VIEW mv_channel_performance AS
- SELECT tenant_id,
-    channel_code,
-    date_trunc('day'::text, created_at) AS allocation_date,
-    count(DISTINCT event_id) AS total_conversions,
-    sum(allocated_revenue_cents) AS total_revenue_cents,
-    avg(confidence_score) AS avg_confidence_score,
+
+
+
+
+
+CREATE MATERIALIZED VIEW public.mv_channel_performance AS
+ SELECT attribution_allocations.tenant_id,
+    attribution_allocations.channel_code,
+    date_trunc('day'::text, attribution_allocations.created_at) AS allocation_date,
+    count(DISTINCT attribution_allocations.event_id) AS total_conversions,
+    sum(attribution_allocations.allocated_revenue_cents) AS total_revenue_cents,
+    avg(attribution_allocations.confidence_score) AS avg_confidence_score,
     count(*) AS total_allocations
-   FROM attribution_allocations
-  WHERE (created_at >= (CURRENT_DATE - '90 days'::interval))
-  GROUP BY tenant_id, channel_code, (date_trunc('day'::text, created_at))
+   FROM public.attribution_allocations
+  WHERE (attribution_allocations.created_at >= (CURRENT_DATE - '90 days'::interval))
+  GROUP BY attribution_allocations.tenant_id, attribution_allocations.channel_code, (date_trunc('day'::text, attribution_allocations.created_at))
   WITH NO DATA;
+
+
+
+
+
 
 CREATE TABLE public.revenue_ledger (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13907,26 +15530,86 @@ CREATE TABLE public.revenue_ledger (
 
 ALTER TABLE ONLY public.revenue_ledger FORCE ROW LEVEL SECURITY;
 
-CREATE MATERIALIZED VIEW mv_daily_revenue_summary AS
- SELECT tenant_id,
-    date_trunc('day'::text, verification_timestamp) AS revenue_date,
-    state,
-    currency,
-    sum(amount_cents) AS total_amount_cents,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CREATE MATERIALIZED VIEW public.mv_daily_revenue_summary AS
+ SELECT revenue_ledger.tenant_id,
+    date_trunc('day'::text, revenue_ledger.verification_timestamp) AS revenue_date,
+    revenue_ledger.state,
+    revenue_ledger.currency,
+    sum(revenue_ledger.amount_cents) AS total_amount_cents,
     count(*) AS transaction_count
-   FROM revenue_ledger
-  WHERE ((state)::text = ANY ((ARRAY['captured'::character varying, 'refunded'::character varying, 'chargeback'::character varying])::text[]))
-  GROUP BY tenant_id, (date_trunc('day'::text, verification_timestamp)), state, currency
+   FROM public.revenue_ledger
+  WHERE ((revenue_ledger.state)::text = ANY ((ARRAY['captured'::character varying, 'refunded'::character varying, 'chargeback'::character varying])::text[]))
+  GROUP BY revenue_ledger.tenant_id, (date_trunc('day'::text, revenue_ledger.verification_timestamp)), revenue_ledger.state, revenue_ledger.currency
   WITH NO DATA;
 
-CREATE MATERIALIZED VIEW mv_realtime_revenue AS
- SELECT tenant_id,
-    ((COALESCE(sum(COALESCE(amount_cents, revenue_cents)), (0)::bigint))::numeric / 100.0) AS total_revenue,
-    bool_or(COALESCE(is_verified, false)) AS verified,
-    (EXTRACT(epoch FROM (now() - max(updated_at))))::integer AS data_freshness_seconds
-   FROM revenue_ledger rl
-  GROUP BY tenant_id
+
+
+
+
+
+CREATE MATERIALIZED VIEW public.mv_realtime_revenue AS
+ SELECT rl.tenant_id,
+    ((COALESCE(sum(COALESCE(rl.amount_cents, rl.revenue_cents)), (0)::bigint))::numeric / 100.0) AS total_revenue,
+    bool_or(COALESCE(rl.is_verified, false)) AS verified,
+    (EXTRACT(epoch FROM (now() - max(rl.updated_at))))::integer AS data_freshness_seconds
+   FROM public.revenue_ledger rl
+  GROUP BY rl.tenant_id
   WITH NO DATA;
+
+
 
 CREATE TABLE public.reconciliation_runs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13943,17 +15626,24 @@ CREATE TABLE public.reconciliation_runs (
 
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
-CREATE MATERIALIZED VIEW mv_reconciliation_status AS
- SELECT tenant_id,
-    state,
-    last_run_at,
-    id AS reconciliation_run_id
-   FROM (reconciliation_runs rr
-     JOIN ( SELECT tenant_id,
-            max(last_run_at) AS max_last_run_at
-           FROM reconciliation_runs
-          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
+
+
+
+
+
+CREATE MATERIALIZED VIEW public.mv_reconciliation_status AS
+ SELECT rr.tenant_id,
+    rr.state,
+    rr.last_run_at,
+    rr.id AS reconciliation_run_id
+   FROM (public.reconciliation_runs rr
+     JOIN ( SELECT reconciliation_runs.tenant_id,
+            max(reconciliation_runs.last_run_at) AS max_last_run_at
+           FROM public.reconciliation_runs
+          GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
   WITH NO DATA;
+
+
 
 CREATE TABLE public.oauth_handshake_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13983,6 +15673,17 @@ CREATE TABLE public.oauth_handshake_sessions (
 
 ALTER TABLE ONLY public.oauth_handshake_sessions FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.pii_audit_findings (
     id bigint NOT NULL,
     table_name text NOT NULL,
@@ -13993,6 +15694,29 @@ CREATE TABLE public.pii_audit_findings (
     detected_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE SEQUENCE public.pii_audit_findings_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -14000,7 +15724,11 @@ CREATE SEQUENCE public.pii_audit_findings_id_seq
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.pii_audit_findings_id_seq OWNED BY public.pii_audit_findings.id;
+
+
 
 CREATE TABLE public.platform_connections (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14015,6 +15743,14 @@ CREATE TABLE public.platform_connections (
 );
 
 ALTER TABLE ONLY public.platform_connections FORCE ROW LEVEL SECURITY;
+
+
+
+
+
+
+
+
 
 CREATE TABLE public.platform_credentials (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14044,6 +15780,20 @@ CREATE TABLE public.platform_credentials (
 
 ALTER TABLE ONLY public.platform_credentials FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE SEQUENCE public.queue_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -14051,7 +15801,11 @@ CREATE SEQUENCE public.queue_id_sequence
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.queue_id_sequence OWNED BY public.kombu_queue.id;
+
+
 
 CREATE TABLE public.r4_crash_barriers (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14066,11 +15820,18 @@ CREATE TABLE public.r4_crash_barriers (
 
 ALTER TABLE ONLY public.r4_crash_barriers FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.r4_recovery_exclusions (
     scenario text NOT NULL,
     task_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
 
 CREATE TABLE public.r4_task_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14084,6 +15845,11 @@ CREATE TABLE public.r4_task_attempts (
 );
 
 ALTER TABLE ONLY public.r4_task_attempts FORCE ROW LEVEL SECURITY;
+
+
+
+
+
 
 CREATE TABLE public.raw_event_payloads (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14101,6 +15867,11 @@ CREATE TABLE public.raw_event_payloads (
 
 ALTER TABLE ONLY public.raw_event_payloads FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.revenue_cache_entries (
     tenant_id uuid NOT NULL,
     cache_key text NOT NULL,
@@ -14117,6 +15888,11 @@ CREATE TABLE public.revenue_cache_entries (
 
 ALTER TABLE ONLY public.revenue_cache_entries FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.revenue_state_transitions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     ledger_id uuid NOT NULL,
@@ -14129,6 +15905,29 @@ CREATE TABLE public.revenue_state_transitions (
 
 ALTER TABLE ONLY public.revenue_state_transitions FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.roles (
     code text NOT NULL,
     description text NOT NULL,
@@ -14136,6 +15935,8 @@ CREATE TABLE public.roles (
     CONSTRAINT ck_roles_code_lowercase CHECK ((code = lower(code))),
     CONSTRAINT ck_roles_code_not_empty CHECK ((length(TRIM(BOTH FROM code)) > 0))
 );
+
+
 
 CREATE TABLE public.session_authority (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14156,6 +15957,11 @@ CREATE TABLE public.session_authority (
 
 ALTER TABLE ONLY public.session_authority FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE SEQUENCE public.task_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -14163,7 +15969,11 @@ CREATE SEQUENCE public.task_id_sequence
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.task_id_sequence OWNED BY public.celery_taskmeta.id;
+
+
 
 CREATE SEQUENCE public.taskset_id_sequence
     START WITH 1
@@ -14172,7 +15982,11 @@ CREATE SEQUENCE public.taskset_id_sequence
     NO MAXVALUE
     CACHE 1;
 
+
+
 ALTER SEQUENCE public.taskset_id_sequence OWNED BY public.celery_tasksetmeta.id;
+
+
 
 CREATE TABLE public.tenant_membership_roles (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14185,6 +15999,8 @@ CREATE TABLE public.tenant_membership_roles (
 
 ALTER TABLE ONLY public.tenant_membership_roles FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.tenant_memberships (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14196,6 +16012,8 @@ CREATE TABLE public.tenant_memberships (
 );
 
 ALTER TABLE ONLY public.tenant_memberships FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.tenants (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14214,6 +16032,29 @@ CREATE TABLE public.tenants (
     woocommerce_webhook_secret_key_id text,
     CONSTRAINT ck_tenants_name_not_empty CHECK ((length(TRIM(BOTH FROM name)) > 0))
 );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 CREATE TABLE public.trust_access_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14265,6 +16106,8 @@ CREATE TABLE public.trust_access_log (
 
 ALTER TABLE ONLY public.trust_access_log FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.trust_envelope_issuance_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14284,6 +16127,8 @@ CREATE TABLE public.trust_envelope_issuance_log (
 );
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.trust_export_artifact_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14312,6 +16157,8 @@ CREATE TABLE public.trust_export_artifact_attempts (
 
 ALTER TABLE ONLY public.trust_export_artifact_attempts FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.trust_issuance_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14338,6 +16185,8 @@ CREATE TABLE public.trust_issuance_attempts (
 
 ALTER TABLE ONLY public.trust_issuance_attempts FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE VIEW public.trust_final_issuance_identity WITH (security_barrier='true') AS
  SELECT history.tenant_id,
     history.envelope_hash,
@@ -14351,10 +16200,15 @@ CREATE VIEW public.trust_final_issuance_identity WITH (security_barrier='true') 
     (attempt.signed_envelope ->> 'envelope_id'::text) AS source_envelope_id,
     ((attempt.signed_envelope -> 'policy_action_authority'::text) ->> 'policy_state'::text) AS policy_state,
     attempt.signed_envelope
-   FROM ((trust_envelope_issuance_log history
-     JOIN trust_access_log ledger ON (((ledger.tenant_id = history.tenant_id) AND (ledger.audit_ref = history.access_audit_ref))))
-     JOIN trust_issuance_attempts attempt ON (((attempt.tenant_id = ledger.tenant_id) AND (attempt.audit_ref = ledger.audit_ref) AND (attempt.id = ledger.issued_attempt_id))))
+   FROM ((public.trust_envelope_issuance_log history
+     JOIN public.trust_access_log ledger ON (((ledger.tenant_id = history.tenant_id) AND (ledger.audit_ref = history.access_audit_ref))))
+     JOIN public.trust_issuance_attempts attempt ON (((attempt.tenant_id = ledger.tenant_id) AND (attempt.audit_ref = ledger.audit_ref) AND (attempt.id = ledger.issued_attempt_id))))
   WHERE ((history.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (history.status = 'success'::text) AND (ledger.issuance_state = 'issued'::text) AND (attempt.attempt_state = 'issued'::text) AND (NOT (attempt.signed_envelope IS DISTINCT FROM ledger.issued_envelope)) AND (NOT (attempt.signature IS DISTINCT FROM ledger.issued_signature)) AND (NOT (attempt.signature_hash IS DISTINCT FROM ledger.issued_signature_hash)) AND (NOT (attempt.signing_key_id IS DISTINCT FROM ledger.issued_signing_key_id)));
+
+
+
+
+
 
 CREATE TABLE public.trust_rate_limit_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14372,6 +16226,8 @@ CREATE TABLE public.trust_rate_limit_state (
 
 ALTER TABLE ONLY public.trust_rate_limit_state FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.trust_replay_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14387,6 +16243,8 @@ CREATE TABLE public.trust_replay_events (
 
 ALTER TABLE ONLY public.trust_replay_events FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.trust_request_nonces (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14400,6 +16258,8 @@ CREATE TABLE public.trust_request_nonces (
 );
 
 ALTER TABLE ONLY public.trust_request_nonces FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.trust_scope_denial_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14422,6 +16282,8 @@ CREATE TABLE public.trust_scope_denial_events (
 
 ALTER TABLE ONLY public.trust_scope_denial_events FORCE ROW LEVEL SECURITY;
 
+
+
 CREATE TABLE public.trust_tenant_policy_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14437,6 +16299,8 @@ CREATE TABLE public.trust_tenant_policy_events (
 
 ALTER TABLE ONLY public.trust_tenant_policy_events FORCE ROW LEVEL SECURITY;
 
+
+
 ALTER TABLE public.trust_tenant_policy_events ALTER COLUMN revision ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.trust_tenant_policy_events_revision_seq
     START WITH 1
@@ -14445,6 +16309,8 @@ ALTER TABLE public.trust_tenant_policy_events ALTER COLUMN revision ADD GENERATE
     NO MAXVALUE
     CACHE 1
 );
+
+
 
 CREATE TABLE public.users (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14460,6 +16326,8 @@ CREATE TABLE public.users (
 );
 
 ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
+
+
 
 CREATE TABLE public.webhook_ingress_identities (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14488,6 +16356,11 @@ CREATE TABLE public.webhook_ingress_identities (
 
 ALTER TABLE ONLY public.webhook_ingress_identities FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
 CREATE TABLE public.worker_failed_jobs (
     id uuid NOT NULL,
     task_id character varying(155) NOT NULL,
@@ -14514,6 +16387,62 @@ CREATE TABLE public.worker_failed_jobs (
 
 ALTER TABLE ONLY public.worker_failed_jobs FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CREATE TABLE public.worker_side_effects (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14525,3367 +16454,6379 @@ CREATE TABLE public.worker_side_effects (
 
 ALTER TABLE ONLY public.worker_side_effects FORCE ROW LEVEL SECURITY;
 
+
+
+
+
+
+
+
+
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p00 FOR VALUES WITH (modulus 16, remainder 0);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p01 FOR VALUES WITH (modulus 16, remainder 1);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p02 FOR VALUES WITH (modulus 16, remainder 2);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p03 FOR VALUES WITH (modulus 16, remainder 3);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p04 FOR VALUES WITH (modulus 16, remainder 4);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p05 FOR VALUES WITH (modulus 16, remainder 5);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p06 FOR VALUES WITH (modulus 16, remainder 6);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p07 FOR VALUES WITH (modulus 16, remainder 7);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p08 FOR VALUES WITH (modulus 16, remainder 8);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p09 FOR VALUES WITH (modulus 16, remainder 9);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p10 FOR VALUES WITH (modulus 16, remainder 10);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p11 FOR VALUES WITH (modulus 16, remainder 11);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p12 FOR VALUES WITH (modulus 16, remainder 12);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p13 FOR VALUES WITH (modulus 16, remainder 13);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p14 FOR VALUES WITH (modulus 16, remainder 14);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p15 FOR VALUES WITH (modulus 16, remainder 15);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p00 FOR VALUES WITH (modulus 16, remainder 0);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p01 FOR VALUES WITH (modulus 16, remainder 1);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p02 FOR VALUES WITH (modulus 16, remainder 2);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p03 FOR VALUES WITH (modulus 16, remainder 3);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p04 FOR VALUES WITH (modulus 16, remainder 4);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p05 FOR VALUES WITH (modulus 16, remainder 5);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p06 FOR VALUES WITH (modulus 16, remainder 6);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p07 FOR VALUES WITH (modulus 16, remainder 7);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p08 FOR VALUES WITH (modulus 16, remainder 8);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p09 FOR VALUES WITH (modulus 16, remainder 9);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p10 FOR VALUES WITH (modulus 16, remainder 10);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p11 FOR VALUES WITH (modulus 16, remainder 11);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p12 FOR VALUES WITH (modulus 16, remainder 12);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p13 FOR VALUES WITH (modulus 16, remainder 13);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p14 FOR VALUES WITH (modulus 16, remainder 14);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p15 FOR VALUES WITH (modulus 16, remainder 15);
 
+
+
 ALTER TABLE ONLY public.b26_p2_verdict_supersession_ledger ALTER COLUMN seq SET DEFAULT nextval('public.b26_p2_verdict_supersession_ledger_seq_seq'::regclass);
+
+
 
 ALTER TABLE ONLY public.celery_taskmeta ALTER COLUMN id SET DEFAULT nextval('public.task_id_sequence'::regclass);
 
+
+
 ALTER TABLE ONLY public.celery_tasksetmeta ALTER COLUMN id SET DEFAULT nextval('public.taskset_id_sequence'::regclass);
+
+
 
 ALTER TABLE ONLY public.kombu_message ALTER COLUMN id SET DEFAULT nextval('public.message_id_sequence'::regclass);
 
+
+
 ALTER TABLE ONLY public.kombu_queue ALTER COLUMN id SET DEFAULT nextval('public.queue_id_sequence'::regclass);
 
+
+
 ALTER TABLE ONLY public.pii_audit_findings ALTER COLUMN id SET DEFAULT nextval('public.pii_audit_findings_id_seq'::regclass);
+
+
 
 ALTER TABLE ONLY public.agent_clients
     ADD CONSTRAINT agent_clients_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.agent_scope_grants
     ADD CONSTRAINT agent_scope_grants_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.agent_service_credentials
     ADD CONSTRAINT agent_service_credentials_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.agent_token_revocations
     ADD CONSTRAINT agent_token_revocations_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.alembic_version
     ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 
+
+
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT attribution_commerce_identities_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT attribution_events_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.attribution_recompute_jobs
     ADD CONSTRAINT attribution_recompute_jobs_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.b23_exception_records
     ADD CONSTRAINT b23_exception_records_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT b23_match_task_dispatches_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.b24_active_execution_leases
     ADD CONSTRAINT b24_active_execution_leases_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end);
+
+
 
 ALTER TABLE ONLY public.b24_dirty_events
     ADD CONSTRAINT b24_dirty_events_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT b24_feature_authority_build_outbox_pkey PRIMARY KEY (tenant_id, id);
+
+
 
 ALTER TABLE ONLY public.b24_feature_authority_build_requests
     ADD CONSTRAINT b24_feature_authority_build_requests_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
+
+
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_pkey PRIMARY KEY (tenant_id, id);
+
+
 
 ALTER TABLE ONLY public.b24_fit_planner_wakeups
     ADD CONSTRAINT b24_fit_planner_wakeups_pkey PRIMARY KEY (tenant_id);
 
+
+
 ALTER TABLE ONLY public.b24_fit_policy_replan_lineage
     ADD CONSTRAINT b24_fit_policy_replan_lineage_pkey PRIMARY KEY (tenant_id, fit_id, transition_sequence);
+
+
 
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT b24_fit_recovery_outbox_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.b24_inference_policy_registry
     ADD CONSTRAINT b24_inference_policy_registry_pkey PRIMARY KEY (policy_bundle_hash);
+
+
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
+
+
 ALTER TABLE ONLY public.b24_worker_process_authority
     ADD CONSTRAINT b24_worker_process_authority_pkey PRIMARY KEY (generation_id, pid);
+
+
 
 ALTER TABLE ONLY public.b26_p2_adjustment_attestation
     ADD CONSTRAINT b26_p2_adjustment_attestation_pkey PRIMARY KEY (adjustment_evidence_id);
 
+
+
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence
     ADD CONSTRAINT b26_p2_adjustment_evidence_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence
     ADD CONSTRAINT b26_p2_adjustment_evidence_tenant_id_provider_provider_nati_key UNIQUE (tenant_id, provider, provider_native_event_reference);
 
+
+
 ALTER TABLE ONLY public.b26_p2_authority_universe
     ADD CONSTRAINT b26_p2_authority_universe_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.b26_p2_conduction_receipts
     ADD CONSTRAINT b26_p2_conduction_receipts_pkey PRIMARY KEY (task_id);
 
+
+
 ALTER TABLE ONLY public.b26_p2_evaluator_heartbeat
     ADD CONSTRAINT b26_p2_evaluator_heartbeat_pkey PRIMARY KEY (tenant_id);
+
+
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT b26_p2_execution_outbox_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.b26_p2_execution_quarantine
     ADD CONSTRAINT b26_p2_execution_quarantine_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.b26_p2_history_integrity_observations
     ADD CONSTRAINT b26_p2_history_integrity_observations_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
     ADD CONSTRAINT b26_p2_ingress_auth_witness_pkey PRIMARY KEY (webhook_ingress_identity_id);
+
+
 
 ALTER TABLE ONLY public.b26_p2_operational_floor
     ADD CONSTRAINT b26_p2_operational_floor_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.b26_p2_provenance_evidence
     ADD CONSTRAINT b26_p2_provenance_evidence_pkey PRIMARY KEY (webhook_ingress_identity_id);
+
+
 
 ALTER TABLE ONLY public.b26_p2_publication_history
     ADD CONSTRAINT b26_p2_publication_history_pkey PRIMARY KEY (law_kind, law_id, law_version, entry_hash);
 
+
+
 ALTER TABLE ONLY public.b26_p2_publication_history
     ADD CONSTRAINT b26_p2_publication_identity_single_valued UNIQUE (law_kind, law_id, law_version);
+
+
 
 ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat
     ADD CONSTRAINT b26_p2_scheduler_heartbeat_pkey PRIMARY KEY (tenant_id);
 
+
+
 ALTER TABLE ONLY public.b26_p2_scope_policy_authority
     ADD CONSTRAINT b26_p2_scope_policy_authority_pkey PRIMARY KEY (scope_policy_version);
+
+
 
 ALTER TABLE ONLY public.b26_p2_semantic_regime_registry
     ADD CONSTRAINT b26_p2_semantic_regime_registry_pkey PRIMARY KEY (regime_id);
 
+
+
 ALTER TABLE ONLY public.b26_p2_source_money_attestation
     ADD CONSTRAINT b26_p2_source_money_attestation_pkey PRIMARY KEY (webhook_ingress_identity_id);
+
+
 
 ALTER TABLE ONLY public.b26_p2_task_authority_directory
     ADD CONSTRAINT b26_p2_task_authority_directory_pkey PRIMARY KEY (task_id);
 
+
+
 ALTER TABLE ONLY public.b26_p2_verdict_supersession_ledger
     ADD CONSTRAINT b26_p2_verdict_supersession_ledger_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.b27_explanation_materializations
     ADD CONSTRAINT b27_explanation_materializations_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.b27_narrative_template_registry
     ADD CONSTRAINT b27_narrative_template_registry_pkey PRIMARY KEY (registry_version);
+
+
 
 ALTER TABLE ONLY public.b27_narrative_templates
     ADD CONSTRAINT b27_narrative_templates_pkey PRIMARY KEY (template_id);
 
+
+
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT b28_proposals_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.b28_request_authentications
     ADD CONSTRAINT b28_request_authentications_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.b28_simulation_results
     ADD CONSTRAINT b28_simulation_results_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
     ADD CONSTRAINT bayesian_artifact_storage_quotas_pkey PRIMARY KEY (tenant_id);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p00
     ADD CONSTRAINT bayesian_artifacts_p00_pkey PRIMARY KEY (tenant_id, id);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts
     ADD CONSTRAINT uq_bayesian_artifacts_tenant_artifact_ref UNIQUE (tenant_id, artifact_ref);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p00
     ADD CONSTRAINT bayesian_artifacts_p00_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p01
     ADD CONSTRAINT bayesian_artifacts_p01_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p01
     ADD CONSTRAINT bayesian_artifacts_p01_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p02
     ADD CONSTRAINT bayesian_artifacts_p02_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p02
     ADD CONSTRAINT bayesian_artifacts_p02_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p03
     ADD CONSTRAINT bayesian_artifacts_p03_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p03
     ADD CONSTRAINT bayesian_artifacts_p03_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p04
     ADD CONSTRAINT bayesian_artifacts_p04_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p04
     ADD CONSTRAINT bayesian_artifacts_p04_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p05
     ADD CONSTRAINT bayesian_artifacts_p05_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p05
     ADD CONSTRAINT bayesian_artifacts_p05_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p06
     ADD CONSTRAINT bayesian_artifacts_p06_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p06
     ADD CONSTRAINT bayesian_artifacts_p06_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p07
     ADD CONSTRAINT bayesian_artifacts_p07_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p07
     ADD CONSTRAINT bayesian_artifacts_p07_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p08
     ADD CONSTRAINT bayesian_artifacts_p08_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p08
     ADD CONSTRAINT bayesian_artifacts_p08_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p09
     ADD CONSTRAINT bayesian_artifacts_p09_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p09
     ADD CONSTRAINT bayesian_artifacts_p09_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p10
     ADD CONSTRAINT bayesian_artifacts_p10_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p10
     ADD CONSTRAINT bayesian_artifacts_p10_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p11
     ADD CONSTRAINT bayesian_artifacts_p11_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p11
     ADD CONSTRAINT bayesian_artifacts_p11_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p12
     ADD CONSTRAINT bayesian_artifacts_p12_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p12
     ADD CONSTRAINT bayesian_artifacts_p12_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p13
     ADD CONSTRAINT bayesian_artifacts_p13_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p13
     ADD CONSTRAINT bayesian_artifacts_p13_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p14
     ADD CONSTRAINT bayesian_artifacts_p14_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p14
     ADD CONSTRAINT bayesian_artifacts_p14_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_artifacts_p15
     ADD CONSTRAINT bayesian_artifacts_p15_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_artifacts_p15
     ADD CONSTRAINT bayesian_artifacts_p15_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits
     ADD CONSTRAINT bayesian_model_fits_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p00
     ADD CONSTRAINT bayesian_model_fits_p00_pkey PRIMARY KEY (tenant_id, id);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits
     ADD CONSTRAINT uq_bayesian_model_fits_tenant_model_window_snapshot UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p00
     ADD CONSTRAINT bayesian_model_fits_p00_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p01
     ADD CONSTRAINT bayesian_model_fits_p01_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p01
     ADD CONSTRAINT bayesian_model_fits_p01_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p02
     ADD CONSTRAINT bayesian_model_fits_p02_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p02
     ADD CONSTRAINT bayesian_model_fits_p02_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p03
     ADD CONSTRAINT bayesian_model_fits_p03_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p03
     ADD CONSTRAINT bayesian_model_fits_p03_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p04
     ADD CONSTRAINT bayesian_model_fits_p04_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p04
     ADD CONSTRAINT bayesian_model_fits_p04_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p05
     ADD CONSTRAINT bayesian_model_fits_p05_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p05
     ADD CONSTRAINT bayesian_model_fits_p05_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p06
     ADD CONSTRAINT bayesian_model_fits_p06_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p06
     ADD CONSTRAINT bayesian_model_fits_p06_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p07
     ADD CONSTRAINT bayesian_model_fits_p07_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p07
     ADD CONSTRAINT bayesian_model_fits_p07_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p08
     ADD CONSTRAINT bayesian_model_fits_p08_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p08
     ADD CONSTRAINT bayesian_model_fits_p08_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p09
     ADD CONSTRAINT bayesian_model_fits_p09_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p09
     ADD CONSTRAINT bayesian_model_fits_p09_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p10
     ADD CONSTRAINT bayesian_model_fits_p10_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p10
     ADD CONSTRAINT bayesian_model_fits_p10_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p11
     ADD CONSTRAINT bayesian_model_fits_p11_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p11
     ADD CONSTRAINT bayesian_model_fits_p11_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p12
     ADD CONSTRAINT bayesian_model_fits_p12_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p12
     ADD CONSTRAINT bayesian_model_fits_p12_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p13
     ADD CONSTRAINT bayesian_model_fits_p13_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p13
     ADD CONSTRAINT bayesian_model_fits_p13_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p14
     ADD CONSTRAINT bayesian_model_fits_p14_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p14
     ADD CONSTRAINT bayesian_model_fits_p14_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.bayesian_model_fits_p15
     ADD CONSTRAINT bayesian_model_fits_p15_pkey PRIMARY KEY (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.bayesian_model_fits_p15
     ADD CONSTRAINT bayesian_model_fits_p15_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT budget_jobs_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.worker_failed_jobs
     ADD CONSTRAINT celery_task_failures_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.celery_taskmeta
     ADD CONSTRAINT celery_taskmeta_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.celery_taskmeta
     ADD CONSTRAINT celery_taskmeta_task_id_key UNIQUE (task_id);
 
+
+
 ALTER TABLE ONLY public.celery_tasksetmeta
     ADD CONSTRAINT celery_tasksetmeta_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.celery_tasksetmeta
     ADD CONSTRAINT celery_tasksetmeta_taskset_id_key UNIQUE (taskset_id);
 
+
+
 ALTER TABLE ONLY public.channel_assignment_corrections
     ADD CONSTRAINT channel_assignment_corrections_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.channel_state_transitions
     ADD CONSTRAINT channel_state_transitions_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.channel_taxonomy
     ADD CONSTRAINT channel_taxonomy_pkey PRIMARY KEY (code);
+
+
 
 ALTER TABLE public.b23_match_verdicts
     ADD CONSTRAINT ck_b23_match_verdicts_matched_requires_attribution_event CHECK ((((status)::text <> ALL ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) OR (attribution_event_id IS NOT NULL))) NOT VALID;
 
+
+
+
+
+
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_available_confidence_complete CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text <> ALL ((ARRAY['low'::character varying, 'medium'::character varying, 'high'::character varying])::text[])) OR (((status)::text = 'succeeded'::text) AND ((data_completeness_status)::text = 'complete'::text) AND (fallback_applied = false) AND ((diagnostic_status)::text = 'passed'::text) AND ((credible_interval_status)::text = 'available'::text) AND (artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL) AND (confidence_evidence_snapshot_hash IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND (confidence_currency_count <= 1) AND (confidence_classified_at IS NOT NULL) AND (confidence_classified_at >= source_read_completed_at) AND (source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at) AND (confidence_bucket_reason IS NOT NULL) AND ((((confidence_bucket)::text = 'high'::text) AND ((confidence_bucket_reason)::text = 'narrow_interval'::text)) OR (((confidence_bucket)::text = 'medium'::text) AND ((confidence_bucket_reason)::text = 'moderate_interval'::text)) OR (((confidence_bucket)::text = 'low'::text) AND ((confidence_bucket_reason)::text = 'wide_interval'::text)))))) NOT VALID;
+
+
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_available_policy_bundle CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text <> ALL (ARRAY['low'::text, 'medium'::text, 'high'::text])) OR ((inference_profile_version IS NOT NULL) AND (runtime_policy_version IS NOT NULL) AND (sampling_policy_version IS NOT NULL) AND (diagnostic_policy_version IS NOT NULL) AND (policy_bundle_hash IS NOT NULL) AND (char_length((policy_bundle_hash)::text) = 64) AND (authorized_chains IS NOT NULL) AND (authorized_posterior_draws_total IS NOT NULL) AND (n_chains IS NOT NULL) AND (n_samples_actual IS NOT NULL) AND (n_chains = authorized_chains) AND (n_samples_actual = authorized_posterior_draws_total)))) NOT VALID;
 
+
+
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_confidence_classification_state CHECK ((((confidence_bucket IS NULL) AND (confidence_bucket_reason IS NULL) AND (confidence_policy_version IS NULL) AND (confidence_semantics_version IS NULL) AND (confidence_classified_at IS NULL)) OR ((confidence_bucket IS NOT NULL) AND (confidence_bucket_reason IS NOT NULL) AND ((confidence_policy_version)::text = 'b24-p10-confidence-policy-v1'::text) AND ((confidence_semantics_version)::text = 'b24-p10-confidence-semantics-v1'::text) AND (confidence_classified_at IS NOT NULL)))) NOT VALID;
+
+
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_confidence_evidence_hash_sha256 CHECK (((confidence_evidence_snapshot_hash IS NULL) OR ((confidence_evidence_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))) NOT VALID;
 
+
+
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_confidence_evidence_tuple CHECK ((((confidence_evidence_snapshot_hash IS NULL) AND (confidence_deterministic_revenue_minor IS NULL) AND (confidence_deterministic_row_count IS NULL) AND (confidence_match_verdict_count IS NULL) AND (confidence_currency_count IS NULL)) OR ((confidence_evidence_snapshot_hash IS NOT NULL) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text)))) NOT VALID;
+
+
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_policy_replan_evidence CHECK ((((policy_replan_count = 0) AND (superseded_policy_bundle_hash IS NULL) AND (policy_replanned_at IS NULL)) OR ((policy_replan_count > 0) AND (superseded_policy_bundle_hash IS NOT NULL) AND (char_length((superseded_policy_bundle_hash)::text) = 64) AND (policy_replanned_at IS NOT NULL)))) NOT VALID;
 
+
+
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_source_read_pair_order CHECK ((((source_read_started_at IS NULL) AND (source_read_completed_at IS NULL)) OR ((source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at)))) NOT VALID;
+
+
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT compliance_audit_ledger_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.dead_events
     ADD CONSTRAINT dead_events_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.dead_events_quarantine
     ADD CONSTRAINT dead_events_quarantine_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT ephemeral_click_resolution_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.ephemeral_order_resolution
     ADD CONSTRAINT ephemeral_order_resolution_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_tenant_id_entity_type_entity_id_key UNIQUE (tenant_id, entity_type, entity_id);
 
+
+
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT investigation_jobs_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.investigation_tool_calls
     ADD CONSTRAINT investigation_tool_calls_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.jwt_verification_cache
     ADD CONSTRAINT jwt_verification_cache_pkey PRIMARY KEY (singleton_id);
 
+
+
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT kombu_message_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.kombu_queue
     ADD CONSTRAINT kombu_queue_name_key UNIQUE (name);
 
+
+
 ALTER TABLE ONLY public.kombu_queue
     ADD CONSTRAINT kombu_queue_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT llm_api_calls_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.llm_breaker_state
     ADD CONSTRAINT llm_breaker_state_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.llm_breaker_state
     ADD CONSTRAINT llm_breaker_state_tenant_id_user_id_breaker_key_key UNIQUE (tenant_id, user_id, breaker_key);
 
+
+
 ALTER TABLE ONLY public.llm_budget_reservations
     ADD CONSTRAINT llm_budget_reservations_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.llm_budget_reservations
     ADD CONSTRAINT llm_budget_reservations_tenant_id_user_id_endpoint_request__key UNIQUE (tenant_id, user_id, endpoint, request_id);
 
+
+
 ALTER TABLE ONLY public.llm_call_audit
     ADD CONSTRAINT llm_call_audit_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.llm_hourly_shutoff_state
     ADD CONSTRAINT llm_hourly_shutoff_state_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.llm_hourly_shutoff_state
     ADD CONSTRAINT llm_hourly_shutoff_state_tenant_id_user_id_hour_start_key UNIQUE (tenant_id, user_id, hour_start);
+
+
 
 ALTER TABLE ONLY public.llm_monthly_budget_state
     ADD CONSTRAINT llm_monthly_budget_state_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.llm_monthly_budget_state
     ADD CONSTRAINT llm_monthly_budget_state_tenant_id_user_id_month_key UNIQUE (tenant_id, user_id, month);
+
+
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT llm_monthly_costs_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.llm_semantic_cache
     ADD CONSTRAINT llm_semantic_cache_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.llm_semantic_cache
     ADD CONSTRAINT llm_semantic_cache_tenant_id_user_id_endpoint_cache_key_key UNIQUE (tenant_id, user_id, endpoint, cache_key);
 
+
+
 ALTER TABLE ONLY public.llm_validation_failures
     ADD CONSTRAINT llm_validation_failures_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT oauth_handshake_sessions_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.pii_audit_findings
     ADD CONSTRAINT pii_audit_findings_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.auth_access_token_denylist
     ADD CONSTRAINT pk_auth_access_token_denylist PRIMARY KEY (tenant_id, user_id, jti);
 
+
+
 ALTER TABLE ONLY public.auth_user_token_cutoffs
     ADD CONSTRAINT pk_auth_user_token_cutoffs PRIMARY KEY (tenant_id, user_id);
+
+
 
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence
     ADD CONSTRAINT pk_b26_p2_auth_root_evidence PRIMARY KEY (webhook_ingress_identity_id);
 
+
+
 ALTER TABLE ONLY public.b26_p2_provider_auth_consequence
     ADD CONSTRAINT pk_b26_p2_provider_auth_consequence PRIMARY KEY (webhook_ingress_identity_id);
+
+
 
 ALTER TABLE ONLY public.platform_connections
     ADD CONSTRAINT platform_connections_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.platform_credentials
     ADD CONSTRAINT platform_credentials_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.r4_crash_barriers
     ADD CONSTRAINT r4_crash_barriers_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.r4_recovery_exclusions
     ADD CONSTRAINT r4_recovery_exclusions_pkey PRIMARY KEY (scenario, task_id);
+
+
 
 ALTER TABLE ONLY public.r4_task_attempts
     ADD CONSTRAINT r4_task_attempts_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT raw_event_payloads_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.reconciliation_runs
     ADD CONSTRAINT reconciliation_runs_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.revenue_cache_entries
     ADD CONSTRAINT revenue_cache_entries_pkey PRIMARY KEY (tenant_id, cache_key);
+
+
 
 ALTER TABLE ONLY public.revenue_ledger
     ADD CONSTRAINT revenue_ledger_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_pkey PRIMARY KEY (code);
 
+
+
 ALTER TABLE ONLY public.session_authority
     ADD CONSTRAINT session_authority_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT tenant_memberships_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.tenants
     ADD CONSTRAINT tenants_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.trust_access_log
     ADD CONSTRAINT trust_access_log_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT trust_envelope_issuance_log_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.trust_export_artifact_attempts
     ADD CONSTRAINT trust_export_artifact_attempts_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT trust_issuance_attempts_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT trust_rate_limit_state_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.trust_replay_events
     ADD CONSTRAINT trust_replay_events_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.trust_request_nonces
     ADD CONSTRAINT trust_request_nonces_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.trust_scope_denial_events
     ADD CONSTRAINT trust_scope_denial_events_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.trust_tenant_policy_events
     ADD CONSTRAINT trust_tenant_policy_events_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.trust_tenant_policy_events
     ADD CONSTRAINT trust_tenant_policy_events_revision_key UNIQUE (revision);
 
+
+
 ALTER TABLE ONLY public.agent_clients
     ADD CONSTRAINT uq_agent_clients_tenant_name UNIQUE (tenant_id, client_name);
+
+
 
 ALTER TABLE ONLY public.agent_scope_grants
     ADD CONSTRAINT uq_agent_scope_grants_client_scope UNIQUE (tenant_id, agent_client_id, scope_value);
 
+
+
 ALTER TABLE ONLY public.agent_service_credentials
     ADD CONSTRAINT uq_agent_service_credentials_prefix UNIQUE (tenant_id, token_prefix);
+
+
 
 ALTER TABLE ONLY public.agent_token_revocations
     ADD CONSTRAINT uq_agent_token_revocations_prefix UNIQUE (tenant_id, token_prefix);
 
+
+
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT uq_attr_commerce_identity_tenant_event UNIQUE (tenant_id, attribution_event_id);
+
+
 
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT uq_attr_commerce_identity_tenant_provider_reference UNIQUE (tenant_id, provider, canonical_commerce_reference);
 
+
+
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT uq_attribution_events_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
+
+
 
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT uq_b23_dispatch_execution_tuple UNIQUE (task_id, tenant_id, webhook_ingress_identity_id);
 
+
+
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT uq_b23_match_task_dispatches_task_id UNIQUE (task_id);
+
+
 
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT uq_b23_match_task_dispatches_tenant_ingress UNIQUE (tenant_id, webhook_ingress_identity_id);
 
+
+
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT uq_b23_match_verdicts_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
+
+
 
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT uq_b23_revenue_events_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
 
+
+
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT uq_b24_feature_authority_build_outbox_candidate UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+
 
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT uq_b24_feature_authority_build_outbox_dispatch_key UNIQUE (tenant_id, dispatch_key);
 
+
+
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT uq_b24_fit_dispatch_outbox_dispatch_key UNIQUE (tenant_id, dispatch_key);
+
+
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT uq_b24_fit_dispatch_outbox_fit UNIQUE (tenant_id, fit_id);
 
+
+
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT uq_b24_fit_recovery_outbox_generation UNIQUE (tenant_id, dispatch_id, recovery_generation);
+
+
 
 ALTER TABLE ONLY public.b24_inference_policy_registry
     ADD CONSTRAINT uq_b24_policy_registry_tuple UNIQUE (policy_bundle_hash, inference_profile_version, runtime_policy_version, sampling_policy_version, diagnostic_policy_version);
 
+
+
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT uq_b26_p2_execution_outbox_task UNIQUE (dispatch_task_id);
+
+
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT uq_b26_p2_execution_outbox_tenant_ingress UNIQUE (tenant_id, webhook_ingress_identity_id);
 
+
+
 ALTER TABLE ONLY public.b27_explanation_materializations
     ADD CONSTRAINT uq_b27_cache_identity UNIQUE (tenant_id, cache_identity_hash);
+
+
 
 ALTER TABLE ONLY public.b27_narrative_templates
     ADD CONSTRAINT uq_b27_template_binding UNIQUE (claim_kind, source_path);
 
+
+
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT uq_b28_proposal_ref UNIQUE (tenant_id, proposal_ref);
+
+
 
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT uq_b28_request_ref UNIQUE (tenant_id, request_ref);
 
+
+
 ALTER TABLE ONLY public.b28_simulation_results
     ADD CONSTRAINT uq_b28_result_request UNIQUE (tenant_id, request_id);
+
+
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
 
+
+
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT uq_budget_optimization_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
+
+
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT uq_compliance_audit_ledger_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
 
+
+
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT uq_ephemeral_click_resolution_tenant_click UNIQUE (tenant_id, click_id);
+
+
 
 ALTER TABLE ONLY public.ephemeral_order_resolution
     ADD CONSTRAINT uq_ephemeral_order_resolution_tenant_order UNIQUE (tenant_id, order_id);
 
+
+
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT uq_investigation_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
+
+
 
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT uq_investigations_tenant_request_id UNIQUE (tenant_id, request_id);
 
+
+
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT uq_llm_api_calls_tenant_request_endpoint UNIQUE (tenant_id, request_id, endpoint);
+
+
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT uq_llm_monthly_costs_tenant_user_month UNIQUE (tenant_id, user_id, month);
 
+
+
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT uq_oauth_handshake_sessions_tenant_state_hash UNIQUE (tenant_id, state_nonce_hash);
+
+
 
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT uq_raw_event_payloads_tenant_event UNIQUE (tenant_id, event_id);
 
+
+
 ALTER TABLE ONLY public.session_authority
     ADD CONSTRAINT uq_session_authority_tenant_session_id UNIQUE (tenant_id, session_id);
+
+
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT uq_tenant_membership_roles_membership_role UNIQUE (membership_id, role_code);
 
+
+
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT uq_tenant_memberships_id_tenant UNIQUE (id, tenant_id);
+
+
 
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT uq_tenant_memberships_tenant_user UNIQUE (tenant_id, user_id);
 
+
+
 ALTER TABLE ONLY public.trust_access_log
     ADD CONSTRAINT uq_trust_access_log_audit_ref UNIQUE (tenant_id, audit_ref);
+
+
 
 ALTER TABLE ONLY public.trust_access_log
     ADD CONSTRAINT uq_trust_access_log_idempotency UNIQUE (tenant_id, event_type, idempotency_key_hash);
 
+
+
 ALTER TABLE ONLY public.trust_export_artifact_attempts
     ADD CONSTRAINT uq_trust_export_artifact_attempt UNIQUE (tenant_id, request_binding_hash, page_start, attempt_number);
+
+
 
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT uq_trust_issuance_attempt_identity UNIQUE (tenant_id, audit_ref, id);
 
+
+
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT uq_trust_issuance_attempt_number UNIQUE (tenant_id, audit_ref, attempt_number);
+
+
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT uq_trust_issuance_envelope UNIQUE (tenant_id, envelope_hash);
 
+
+
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT uq_trust_issuance_idempotency UNIQUE (tenant_id, idempotency_key_hash);
+
+
 
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT uq_trust_rate_limit_state_client_window UNIQUE (tenant_id, agent_client_id, window_started_at, window_ended_at);
 
+
+
 ALTER TABLE ONLY public.trust_replay_events
     ADD CONSTRAINT uq_trust_replay_event UNIQUE (tenant_id, idempotency_key_hash, original_audit_ref);
+
+
 
 ALTER TABLE ONLY public.trust_request_nonces
     ADD CONSTRAINT uq_trust_request_nonces_tenant_nonce UNIQUE (tenant_id, nonce_value);
 
+
+
 ALTER TABLE ONLY public.trust_scope_denial_events
     ADD CONSTRAINT uq_trust_scope_denial_idempotency UNIQUE (tenant_id, idempotency_key_hash);
+
+
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_event_id UNIQUE (event_id);
 
+
+
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_tenant_event UNIQUE (tenant_id, event_id);
+
+
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_tenant_id UNIQUE (tenant_id, id);
 
+
+
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_tenant_idempotency UNIQUE (tenant_id, idempotency_key);
+
+
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_login_identifier_hash_key UNIQUE (login_identifier_hash);
 
+
+
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_pkey PRIMARY KEY (id);
 
+
+
 ALTER TABLE ONLY public.worker_side_effects
     ADD CONSTRAINT worker_side_effects_pkey PRIMARY KEY (id);
 
+
+
 CREATE INDEX idx_bayesian_artifacts_tenant_artifact_hash ON ONLY public.bayesian_artifacts USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p00_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id, artifact_hash);
 
+
+
 CREATE INDEX idx_bayesian_artifacts_tenant_artifact_ref ON ONLY public.bayesian_artifacts USING btree (tenant_id, artifact_ref);
+
+
 
 CREATE INDEX bayesian_artifacts_p00_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX idx_bayesian_artifacts_tenant_fit ON ONLY public.bayesian_artifacts USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p00_tenant_id_fit_id_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id, fit_id);
 
+
+
 CREATE INDEX idx_bayesian_artifacts_tenant_id ON ONLY public.bayesian_artifacts USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p00_tenant_id_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p01_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p01_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p01_tenant_id_fit_id_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p01_tenant_id_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p02_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p02_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p02_tenant_id_fit_id_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p02_tenant_id_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p03_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p03_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p03_tenant_id_fit_id_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p03_tenant_id_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p04_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p04_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p04_tenant_id_fit_id_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p04_tenant_id_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p05_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p05_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p05_tenant_id_fit_id_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p05_tenant_id_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p06_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p06_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p06_tenant_id_fit_id_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p06_tenant_id_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p07_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p07_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p07_tenant_id_fit_id_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p07_tenant_id_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p08_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p08_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p08_tenant_id_fit_id_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p08_tenant_id_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p09_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p09_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p09_tenant_id_fit_id_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p09_tenant_id_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p10_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p10_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p10_tenant_id_fit_id_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p10_tenant_id_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p11_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p11_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p11_tenant_id_fit_id_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p11_tenant_id_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p12_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p12_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p12_tenant_id_fit_id_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p12_tenant_id_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p13_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p13_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p13_tenant_id_fit_id_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p13_tenant_id_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p14_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p14_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p14_tenant_id_fit_id_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p14_tenant_id_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_artifacts_p15_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id, artifact_hash);
+
+
 
 CREATE INDEX bayesian_artifacts_p15_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id, artifact_ref);
 
+
+
 CREATE INDEX bayesian_artifacts_p15_tenant_id_fit_id_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id, fit_id);
+
+
 
 CREATE INDEX bayesian_artifacts_p15_tenant_id_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id);
 
+
+
 CREATE INDEX idx_bayesian_model_fits_tenant_id ON ONLY public.bayesian_model_fits USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id);
 
+
+
 CREATE INDEX idx_bayesian_model_fits_tenant_model_eligibility ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
+
+
 CREATE INDEX idx_bayesian_model_fits_tenant_model_fallback ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
+
+
 CREATE INDEX idx_bayesian_model_fits_tenant_model_window ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
+
+
 CREATE INDEX idx_bayesian_model_fits_tenant_model_window_latest ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
+
+
 CREATE INDEX idx_bayesian_model_fits_tenant_source_snapshot_hash ON ONLY public.bayesian_model_fits USING btree (tenant_id, source_snapshot_hash);
+
+
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, source_snapshot_hash);
 
+
+
 CREATE INDEX idx_bayesian_model_fits_tenant_status ON ONLY public.bayesian_model_fits USING btree (tenant_id, status);
+
+
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_status_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, status);
 
+
+
 CREATE INDEX bayesian_model_fits_p01_tenant_id_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+
 
 CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
+
+
 CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p01_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, source_snapshot_hash);
 
+
+
 CREATE INDEX bayesian_model_fits_p01_tenant_id_status_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, status);
+
+
 
 CREATE INDEX bayesian_model_fits_p02_tenant_id_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
+
+
 CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+
 
 CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p02_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, source_snapshot_hash);
+
+
 
 CREATE INDEX bayesian_model_fits_p02_tenant_id_status_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, status);
 
+
+
 CREATE INDEX bayesian_model_fits_p03_tenant_id_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+
 
 CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
+
+
 CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p03_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, source_snapshot_hash);
 
+
+
 CREATE INDEX bayesian_model_fits_p03_tenant_id_status_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, status);
+
+
 
 CREATE INDEX bayesian_model_fits_p04_tenant_id_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
+
+
 CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+
 
 CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p04_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, source_snapshot_hash);
+
+
 
 CREATE INDEX bayesian_model_fits_p04_tenant_id_status_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, status);
 
+
+
 CREATE INDEX bayesian_model_fits_p05_tenant_id_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+
 
 CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
+
+
 CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p05_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, source_snapshot_hash);
 
+
+
 CREATE INDEX bayesian_model_fits_p05_tenant_id_status_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, status);
+
+
 
 CREATE INDEX bayesian_model_fits_p06_tenant_id_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
+
+
 CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+
 
 CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p06_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, source_snapshot_hash);
+
+
 
 CREATE INDEX bayesian_model_fits_p06_tenant_id_status_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, status);
 
+
+
 CREATE INDEX bayesian_model_fits_p07_tenant_id_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+
 
 CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
+
+
 CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p07_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, source_snapshot_hash);
 
+
+
 CREATE INDEX bayesian_model_fits_p07_tenant_id_status_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, status);
+
+
 
 CREATE INDEX bayesian_model_fits_p08_tenant_id_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
+
+
 CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+
 
 CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p08_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, source_snapshot_hash);
+
+
 
 CREATE INDEX bayesian_model_fits_p08_tenant_id_status_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, status);
 
+
+
 CREATE INDEX bayesian_model_fits_p09_tenant_id_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+
 
 CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
+
+
 CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p09_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, source_snapshot_hash);
 
+
+
 CREATE INDEX bayesian_model_fits_p09_tenant_id_status_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, status);
+
+
 
 CREATE INDEX bayesian_model_fits_p10_tenant_id_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
+
+
 CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+
 
 CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p10_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, source_snapshot_hash);
+
+
 
 CREATE INDEX bayesian_model_fits_p10_tenant_id_status_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, status);
 
+
+
 CREATE INDEX bayesian_model_fits_p11_tenant_id_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+
 
 CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
+
+
 CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p11_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, source_snapshot_hash);
 
+
+
 CREATE INDEX bayesian_model_fits_p11_tenant_id_status_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, status);
+
+
 
 CREATE INDEX bayesian_model_fits_p12_tenant_id_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
+
+
 CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+
 
 CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p12_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, source_snapshot_hash);
+
+
 
 CREATE INDEX bayesian_model_fits_p12_tenant_id_status_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, status);
 
+
+
 CREATE INDEX bayesian_model_fits_p13_tenant_id_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+
 
 CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
+
+
 CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p13_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, source_snapshot_hash);
 
+
+
 CREATE INDEX bayesian_model_fits_p13_tenant_id_status_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, status);
+
+
 
 CREATE INDEX bayesian_model_fits_p14_tenant_id_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id);
 
+
+
 CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
+
+
 CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+
 
 CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p14_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, source_snapshot_hash);
+
+
 
 CREATE INDEX bayesian_model_fits_p14_tenant_id_status_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, status);
 
+
+
 CREATE INDEX bayesian_model_fits_p15_tenant_id_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id);
+
+
 
 CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
+
+
 CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+
 
 CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
+
+
 CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+
 
 CREATE INDEX bayesian_model_fits_p15_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, source_snapshot_hash);
 
+
+
 CREATE INDEX bayesian_model_fits_p15_tenant_id_status_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, status);
+
+
 
 CREATE INDEX idx_agent_clients_tenant_status ON public.agent_clients USING btree (tenant_id, status, created_at DESC);
 
+
+
 CREATE INDEX idx_agent_scope_grants_lookup ON public.agent_scope_grants USING btree (tenant_id, agent_client_id, scope_value);
+
+
 
 CREATE INDEX idx_agent_service_credentials_client ON public.agent_service_credentials USING btree (tenant_id, agent_client_id, issued_at DESC);
 
+
+
 CREATE INDEX idx_agent_service_credentials_lookup ON public.agent_service_credentials USING btree (tenant_id, token_prefix, status);
+
+
 
 CREATE INDEX idx_agent_token_revocations_lookup ON public.agent_token_revocations USING btree (tenant_id, token_prefix);
 
+
+
 CREATE INDEX idx_allocations_channel_performance ON public.attribution_allocations USING btree (tenant_id, channel_code, created_at DESC) INCLUDE (allocated_revenue_cents, confidence_score);
+
+
 
 CREATE INDEX idx_allocations_tenant_projection_channel ON public.attribution_allocations USING btree (tenant_id, recompute_job_id, model_type, channel_code);
 
+
+
 CREATE INDEX idx_attr_commerce_identity_last_observed ON public.attribution_commerce_identities USING btree (last_observed_at);
+
+
 
 CREATE INDEX idx_attr_commerce_identity_tenant_last_observed ON public.attribution_commerce_identities USING btree (tenant_id, last_observed_at DESC);
 
+
+
 CREATE INDEX idx_attr_commerce_identity_tenant_provider_reference ON public.attribution_commerce_identities USING btree (tenant_id, provider, canonical_commerce_reference);
+
+
 
 CREATE INDEX idx_attribution_allocations_channel ON public.attribution_allocations USING btree (channel_code);
 
+
+
 CREATE INDEX idx_attribution_allocations_event_id ON public.attribution_allocations USING btree (event_id);
+
+
 
 CREATE INDEX idx_attribution_allocations_tenant_created_at ON public.attribution_allocations USING btree (tenant_id, created_at DESC);
 
+
+
 CREATE INDEX idx_attribution_allocations_tenant_event_model ON public.attribution_allocations USING btree (tenant_id, event_id, model_version);
+
+
+
+
+
 
 CREATE UNIQUE INDEX idx_attribution_allocations_tenant_event_model_channel ON public.attribution_allocations USING btree (tenant_id, event_id, model_version, channel_code) WHERE ((model_version IS NOT NULL) AND (recompute_job_id IS NULL));
 
+
+
 CREATE INDEX idx_attribution_allocations_tenant_event_projection ON public.attribution_allocations USING btree (tenant_id, event_id, recompute_job_id) WHERE (recompute_job_id IS NOT NULL);
+
+
+
+
+
 
 CREATE UNIQUE INDEX idx_attribution_allocations_tenant_event_projection_channel ON public.attribution_allocations USING btree (tenant_id, event_id, recompute_job_id, channel_code) WHERE (recompute_job_id IS NOT NULL);
 
+
+
 CREATE INDEX idx_attribution_allocations_tenant_model_version ON public.attribution_allocations USING btree (tenant_id, model_version);
+
+
+
+
+
 
 CREATE INDEX idx_attribution_events_session_id ON public.attribution_events USING btree (session_id) WHERE (session_id IS NOT NULL);
 
+
+
 CREATE INDEX idx_attribution_events_tenant_occurred_at ON public.attribution_events USING btree (tenant_id, occurred_at DESC);
+
+
 
 CREATE INDEX idx_attribution_recompute_jobs_tenant_created_at ON public.attribution_recompute_jobs USING btree (tenant_id, created_at DESC);
 
+
+
+
+
+
 CREATE INDEX idx_attribution_recompute_jobs_tenant_status ON public.attribution_recompute_jobs USING btree (tenant_id, status);
+
+
+
+
+
 
 CREATE UNIQUE INDEX idx_attribution_recompute_jobs_window_identity ON public.attribution_recompute_jobs USING btree (tenant_id, window_start, window_end, model_version);
 
+
+
+
+
+
 CREATE INDEX idx_auth_access_token_denylist_expires_at ON public.auth_access_token_denylist USING btree (expires_at DESC);
+
+
 
 CREATE INDEX idx_auth_access_token_denylist_jti ON public.auth_access_token_denylist USING btree (jti);
 
+
+
 CREATE INDEX idx_auth_access_token_denylist_tenant_user_revoked_at ON public.auth_access_token_denylist USING btree (tenant_id, user_id, revoked_at DESC);
+
+
 
 CREATE INDEX idx_auth_refresh_tokens_family_created_at ON public.auth_refresh_tokens USING btree (family_id, created_at DESC);
 
+
+
 CREATE INDEX idx_auth_refresh_tokens_tenant_created_at ON public.auth_refresh_tokens USING btree (tenant_id, created_at DESC);
+
+
 
 CREATE INDEX idx_auth_refresh_tokens_tenant_user_created_at ON public.auth_refresh_tokens USING btree (tenant_id, user_id, created_at DESC);
 
+
+
 CREATE INDEX idx_auth_user_token_cutoffs_tenant_user ON public.auth_user_token_cutoffs USING btree (tenant_id, user_id);
+
+
 
 CREATE INDEX idx_b23_dispatch_delivery_state ON public.b23_match_task_dispatches USING btree (delivery_state, dispatched_at);
 
+
+
 CREATE INDEX idx_b23_exception_records_tenant_provider_reference ON public.b23_exception_records USING btree (tenant_id, provider, canonical_commerce_reference);
+
+
 
 CREATE INDEX idx_b23_exception_records_tenant_status_severity ON public.b23_exception_records USING btree (tenant_id, status, severity, raised_at DESC);
 
+
+
 CREATE INDEX idx_b23_match_task_dispatches_ingress ON public.b23_match_task_dispatches USING btree (webhook_ingress_identity_id);
+
+
 
 CREATE INDEX idx_b23_match_task_dispatches_tenant_reference ON public.b23_match_task_dispatches USING btree (tenant_id, provider, provider_native_event_reference, normalized_commerce_reference_value);
 
+
+
 CREATE INDEX idx_b23_match_verdicts_tenant_discrepancy_band ON public.b23_match_verdicts USING btree (tenant_id, discrepancy_band, last_transition_at DESC);
+
+
 
 CREATE INDEX idx_b23_match_verdicts_tenant_discrepancy_ratio_bps ON public.b23_match_verdicts USING btree (tenant_id, discrepancy_ratio_bps, last_transition_at DESC);
 
+
+
 CREATE INDEX idx_b23_match_verdicts_tenant_provider_commerce_native ON public.b23_match_verdicts USING btree (tenant_id, provider, provider_native_commerce_reference);
+
+
 
 CREATE INDEX idx_b23_match_verdicts_tenant_provider_reference ON public.b23_match_verdicts USING btree (tenant_id, provider, canonical_commerce_reference);
 
+
+
 CREATE INDEX idx_b23_match_verdicts_tenant_state_timestamps ON public.b23_match_verdicts USING btree (tenant_id, pending_since, provisional_expires_at, confirmed_at, unmatched_marked_at, adjusted_at);
+
+
 
 CREATE INDEX idx_b23_match_verdicts_tenant_status_transition ON public.b23_match_verdicts USING btree (tenant_id, status, last_transition_at DESC);
 
+
+
 CREATE INDEX idx_b23_p4_attribution_event_tenant_id ON public.attribution_events USING btree (tenant_id, id);
+
+
 
 CREATE INDEX idx_b23_p4_attribution_order_ref_expr ON public.attribution_events USING btree (tenant_id, ((raw_payload ->> 'order_id'::text)), occurred_at DESC) WHERE (raw_payload ? 'order_id'::text);
 
+
+
 CREATE INDEX idx_b23_p4_match_rate_tenant_transition_status ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at DESC, status) WHERE ((status)::text = ANY ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying, 'unmatched'::character varying])::text[]));
+
+
 
 CREATE INDEX idx_b23_p4_verdict_webhook_identity ON public.b23_match_verdicts USING btree (tenant_id, webhook_ingress_identity_id) WHERE (webhook_ingress_identity_id IS NOT NULL);
 
+
+
 CREATE INDEX idx_b23_p4_webhook_failure_tenant_platform_time ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC) WHERE ((ingestion_status)::text = 'failed'::text);
+
+
 
 CREATE INDEX idx_b23_p4_webhook_identity_claim ON public.webhook_ingress_identities USING btree (tenant_id, verified_commerce_ingress_state, event_timestamp, id) WHERE ((verified_commerce_ingress_state)::text = 'authenticity_verified'::text);
 
+
+
 CREATE INDEX idx_b23_p4_worker_dlq_open_status_failed_at ON public.worker_failed_jobs USING btree (status, tenant_id, failed_at DESC) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying])::text[]));
+
+
 
 CREATE INDEX idx_b23_revenue_events_adjustment_evidence ON public.b23_revenue_events USING btree (tenant_id, b26_p2_adjustment_evidence_id);
 
+
+
 CREATE INDEX idx_b23_revenue_events_tenant_event_effect_sign ON public.b23_revenue_events USING btree (tenant_id, event_type, net_effect_sign, event_occurred_at DESC);
+
+
 
 CREATE INDEX idx_b23_revenue_events_tenant_event_type_recorded ON public.b23_revenue_events USING btree (tenant_id, event_type, recorded_at DESC);
 
+
+
 CREATE INDEX idx_b23_revenue_events_tenant_gross_capture_correction ON public.b23_revenue_events USING btree (tenant_id, match_verdict_id, is_gross_capture_correction, event_occurred_at DESC);
+
+
 
 CREATE INDEX idx_b23_revenue_events_tenant_provider_commerce_native ON public.b23_revenue_events USING btree (tenant_id, provider, provider_native_commerce_reference);
 
+
+
 CREATE INDEX idx_b23_revenue_events_tenant_provider_reference ON public.b23_revenue_events USING btree (tenant_id, provider, canonical_commerce_reference, event_occurred_at DESC);
+
+
 
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC);
 
+
+
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
+
+
 
 CREATE INDEX idx_b24_active_execution_canonical_profiling ON public.b24_active_execution_leases USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, status, leased_until) WHERE ((status)::text = 'profiling'::text);
 
+
+
 CREATE INDEX idx_b24_active_execution_superseded ON public.b24_active_execution_leases USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end) WHERE (needs_refit_after_current = true);
+
+
 
 CREATE INDEX idx_b24_active_execution_tenant_fit ON public.b24_active_execution_leases USING btree (tenant_id, fit_id) WHERE (fit_id IS NOT NULL);
 
+
+
 CREATE INDEX idx_b24_active_execution_tenant_status_lease ON public.b24_active_execution_leases USING btree (tenant_id, status, leased_until);
+
+
 
 CREATE INDEX idx_b24_dirty_events_authority_retry_ready ON public.b24_dirty_events USING btree (tenant_id, status, authority_retry_after_at, observed_at, id) WHERE ((status)::text = ANY ((ARRAY['authority_waiting'::character varying, 'authority_retry_ready'::character varying])::text[]));
 
+
+
 CREATE INDEX idx_b24_dirty_events_confidence_freshness ON public.b24_dirty_events USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, observed_at, source_snapshot_hash);
+
+
 
 CREATE INDEX idx_b24_dirty_events_staleness_overlap ON public.b24_dirty_events USING btree (tenant_id, model_type, source_window_start, source_window_end, observed_at);
 
+
+
 CREATE INDEX idx_b24_dirty_events_tenant_event_hash ON public.b24_dirty_events USING btree (tenant_id, event_hash) WHERE (event_hash IS NOT NULL);
+
+
 
 CREATE INDEX idx_b24_dirty_events_tenant_model_window_pending ON public.b24_dirty_events USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, observed_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'leased'::character varying])::text[]));
 
+
+
 CREATE INDEX idx_b24_dirty_events_tenant_status_observed ON public.b24_dirty_events USING btree (tenant_id, status, observed_at, id);
+
+
 
 CREATE INDEX idx_b24_feature_authority_build_outbox_due ON public.b24_feature_authority_build_outbox USING btree (tenant_id, status, next_attempt_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'failed_retryable'::character varying, 'stale_recovered'::character varying])::text[]));
 
+
+
 CREATE INDEX idx_b24_feature_authority_build_requests_due ON public.b24_feature_authority_build_requests USING btree (tenant_id, status, retry_after_at) WHERE ((status)::text = ANY ((ARRAY['authority_build_requested'::character varying, 'authority_waiting'::character varying, 'authority_retry_ready'::character varying])::text[]));
+
+
 
 CREATE INDEX idx_b24_feature_authority_tenant_model_window ON public.b24_source_window_feature_authority USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, computed_at DESC);
 
+
+
 CREATE INDEX idx_b24_fit_dispatch_outbox_dispatching ON public.b24_fit_dispatch_outbox USING btree (tenant_id, dispatching_started_at) WHERE ((status)::text = 'dispatching'::text);
+
+
 
 CREATE INDEX idx_b24_fit_dispatch_outbox_due ON public.b24_fit_dispatch_outbox USING btree (tenant_id, status, next_attempt_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'failed_retryable'::character varying, 'stale_recovered'::character varying])::text[]));
 
+
+
 CREATE INDEX idx_b24_fit_dispatch_outbox_recoverable ON public.b24_fit_dispatch_outbox USING btree (status, next_recovery_at, lease_expires_at) WHERE ((status)::text = ANY ((ARRAY['dispatched'::character varying, 'leased'::character varying, 'running'::character varying, 'failed_retryable'::character varying, 'stale_recovered'::character varying])::text[]));
+
+
 
 CREATE INDEX idx_b24_fit_recovery_outbox_due ON public.b24_fit_recovery_outbox USING btree (status, created_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'failed_retryable'::character varying])::text[]));
 
+
+
 CREATE INDEX idx_b24_p2_attribution_allocations_source_stream ON public.attribution_allocations USING btree (tenant_id, created_at, id) WHERE (verified = true);
+
+
 
 CREATE INDEX idx_b24_p2_attribution_events_source_stream ON public.attribution_events USING btree (tenant_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text));
 
+
+
 CREATE INDEX idx_b24_p2_match_verdicts_source_stream ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at, id) WHERE ((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[]));
+
+
 
 CREATE INDEX idx_b24_p2_revenue_events_source_stream ON public.b23_revenue_events USING btree (tenant_id, event_occurred_at, id) WHERE ((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[]));
 
+
+
 CREATE INDEX idx_b24_p3_attribution_allocations_source_stream_fallback ON public.attribution_allocations USING btree (tenant_id, created_at, id);
+
+
 
 CREATE INDEX idx_b24_p3_attribution_events_source_stream_fallback ON public.attribution_events USING btree (tenant_id, occurred_at, id);
 
+
+
 CREATE INDEX idx_b24_p3_match_verdicts_source_stream_fallback ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at, id);
+
+
 
 CREATE INDEX idx_b24_p3_revenue_events_source_stream_fallback ON public.b23_revenue_events USING btree (tenant_id, event_occurred_at, id);
 
+
+
 CREATE INDEX idx_b24_p4_attribution_events_campaign_cardinality ON public.attribution_events USING btree (tenant_id, campaign_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text) AND (campaign_id IS NOT NULL));
+
+
 
 CREATE INDEX idx_b24_p4_attribution_events_campaign_early_stop ON public.attribution_events USING btree (tenant_id, campaign_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text) AND (campaign_id IS NOT NULL) AND ((campaign_id)::text <> ''::text));
 
+
+
 CREATE INDEX idx_b24_p4_attribution_events_channel_early_stop ON public.attribution_events USING btree (tenant_id, channel, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text) AND (channel IS NOT NULL) AND ((channel)::text <> ''::text));
+
+
 
 CREATE INDEX idx_b24_p4_match_verdicts_provider_cardinality ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL));
 
+
+
 CREATE INDEX idx_b24_p4_match_verdicts_provider_early_stop ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL) AND ((provider)::text <> ''::text));
+
+
 
 CREATE INDEX idx_b24_p4_revenue_events_provider_cardinality ON public.b23_revenue_events USING btree (tenant_id, provider, event_occurred_at, id) WHERE (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (provider IS NOT NULL));
 
+
+
 CREATE INDEX idx_b24_p4_revenue_events_provider_early_stop ON public.b23_revenue_events USING btree (tenant_id, provider, event_occurred_at, id) WHERE (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (provider IS NOT NULL) AND ((provider)::text <> ''::text));
+
+
 
 CREATE INDEX idx_b24_worker_process_authority_active ON public.b24_worker_process_authority USING btree (expires_at, registered_at) WHERE ((status)::text = 'active'::text);
 
+
+
 CREATE INDEX idx_b26_p2_adjustment_evidence_verdict ON public.b26_p2_adjustment_evidence USING btree (tenant_id, verdict_id, event_timestamp DESC);
+
+
 
 CREATE INDEX idx_b26_p2_outbox_pending ON public.b26_p2_execution_outbox USING btree (state, next_retry_at);
 
+
+
 CREATE INDEX idx_b26_p2_source_money_attestation_tenant ON public.b26_p2_source_money_attestation USING btree (tenant_id, attested_at DESC);
+
+
 
 CREATE INDEX idx_b28_request_authentication_credential ON public.b28_request_authentications USING btree (tenant_id, credential_id);
 
+
+
 CREATE INDEX idx_b28_request_requester ON public.b28_simulation_requests USING btree (tenant_id, requested_by_agent_client_id);
+
+
 
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 
+
+
 CREATE INDEX idx_channel_assignment_corrections_channels ON public.channel_assignment_corrections USING btree (from_channel, to_channel, corrected_at DESC);
+
+
 
 CREATE INDEX idx_channel_assignment_corrections_entity ON public.channel_assignment_corrections USING btree (tenant_id, entity_type, entity_id, corrected_at DESC);
 
+
+
 CREATE INDEX idx_channel_assignment_corrections_tenant ON public.channel_assignment_corrections USING btree (tenant_id, corrected_at DESC);
+
+
 
 CREATE INDEX idx_channel_state_transitions_channel_changed_at ON public.channel_state_transitions USING btree (channel_code, changed_at DESC);
 
+
+
 CREATE INDEX idx_channel_state_transitions_to_state_changed_at ON public.channel_state_transitions USING btree (to_state, changed_at DESC);
+
+
 
 CREATE INDEX idx_compliance_audit_ledger_tenant_correlation ON public.compliance_audit_ledger USING btree (tenant_id, correlation_id);
 
+
+
 CREATE INDEX idx_compliance_audit_ledger_tenant_created ON public.compliance_audit_ledger USING btree (tenant_id, created_at DESC);
+
+
 
 CREATE INDEX idx_dead_events_error_code ON public.dead_events USING btree (error_code);
 
+
+
 CREATE INDEX idx_dead_events_quarantine_null_lane ON public.dead_events_quarantine USING btree (ingested_at DESC) WHERE (tenant_id IS NULL);
+
+
 
 CREATE INDEX idx_dead_events_quarantine_tenant_idempotency_key ON public.dead_events_quarantine USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
+
+
 CREATE INDEX idx_dead_events_quarantine_tenant_ingested_at ON public.dead_events_quarantine USING btree (tenant_id, ingested_at DESC);
+
+
 
 CREATE INDEX idx_dead_events_remediation ON public.dead_events USING btree (remediation_status, ingested_at DESC);
 
+
+
+
+
+
 CREATE INDEX idx_dead_events_source ON public.dead_events USING btree (source);
+
+
 
 CREATE INDEX idx_dead_events_tenant_idempotency_key ON public.dead_events USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
+
+
 CREATE INDEX idx_dead_events_tenant_ingested_at ON public.dead_events USING btree (tenant_id, ingested_at DESC);
+
+
 
 CREATE INDEX idx_ephemeral_click_resolution_tenant_click ON public.ephemeral_click_resolution USING btree (tenant_id, click_id);
 
+
+
 CREATE INDEX idx_ephemeral_click_resolution_tenant_expires ON public.ephemeral_click_resolution USING btree (tenant_id, expires_at);
+
+
 
 CREATE INDEX idx_ephemeral_order_resolution_tenant_expires ON public.ephemeral_order_resolution USING btree (tenant_id, expires_at);
 
+
+
 CREATE INDEX idx_ephemeral_order_resolution_tenant_order ON public.ephemeral_order_resolution USING btree (tenant_id, order_id);
+
+
 
 CREATE INDEX idx_events_processing_status ON public.attribution_events USING btree (processing_status, processed_at) WHERE ((processing_status)::text = 'pending'::text);
 
+
+
+
+
+
 CREATE INDEX idx_events_tenant_timestamp ON public.attribution_events USING btree (tenant_id, event_timestamp DESC);
+
+
+
+
+
 
 CREATE INDEX idx_explanation_cache_lookup ON public.explanation_cache USING btree (tenant_id, entity_type, entity_id);
 
+
+
 CREATE INDEX idx_investigation_jobs_min_hold ON public.investigation_jobs USING btree (min_hold_until) WHERE ((status)::text = 'PENDING'::text);
+
+
 
 CREATE INDEX idx_investigation_jobs_tenant_status ON public.investigation_jobs USING btree (tenant_id, status, created_at DESC);
 
+
+
 CREATE INDEX idx_investigations_tenant_status ON public.investigations USING btree (tenant_id, status, created_at DESC);
+
+
 
 CREATE INDEX idx_llm_api_calls_prompt_fingerprint ON public.llm_api_calls USING btree (tenant_id, prompt_fingerprint, created_at DESC);
 
+
+
 CREATE INDEX idx_llm_breaker_state_tenant_user_updated ON public.llm_breaker_state USING btree (tenant_id, user_id, updated_at DESC);
+
+
 
 CREATE INDEX idx_llm_budget_reservations_tenant_user_month ON public.llm_budget_reservations USING btree (tenant_id, user_id, month DESC);
 
+
+
 CREATE INDEX idx_llm_call_audit_decision ON public.llm_call_audit USING btree (decision, created_at DESC);
+
+
 
 CREATE INDEX idx_llm_call_audit_prompt_fingerprint ON public.llm_call_audit USING btree (tenant_id, prompt_fingerprint, created_at DESC);
 
+
+
 CREATE INDEX idx_llm_call_audit_request_id ON public.llm_call_audit USING btree (request_id);
+
+
 
 CREATE INDEX idx_llm_call_audit_tenant_created ON public.llm_call_audit USING btree (tenant_id, created_at DESC);
 
+
+
 CREATE INDEX idx_llm_call_audit_tenant_user_created ON public.llm_call_audit USING btree (tenant_id, user_id, created_at DESC);
+
+
 
 CREATE INDEX idx_llm_calls_tenant_created_at ON public.llm_api_calls USING btree (tenant_id, created_at DESC);
 
+
+
 CREATE INDEX idx_llm_calls_tenant_endpoint ON public.llm_api_calls USING btree (tenant_id, endpoint, created_at DESC);
+
+
 
 CREATE INDEX idx_llm_calls_tenant_user_created_at ON public.llm_api_calls USING btree (tenant_id, user_id, created_at DESC);
 
+
+
 CREATE INDEX idx_llm_failures_created_at ON public.llm_validation_failures USING btree (created_at DESC);
+
+
 
 CREATE INDEX idx_llm_failures_tenant_endpoint ON public.llm_validation_failures USING btree (tenant_id, endpoint, created_at DESC);
 
+
+
 CREATE INDEX idx_llm_hourly_shutoff_disabled_until ON public.llm_hourly_shutoff_state USING btree (tenant_id, user_id, disabled_until DESC);
+
+
 
 CREATE INDEX idx_llm_hourly_shutoff_tenant_user_hour ON public.llm_hourly_shutoff_state USING btree (tenant_id, user_id, hour_start DESC);
 
+
+
 CREATE INDEX idx_llm_monthly_budget_state_tenant_user_month ON public.llm_monthly_budget_state USING btree (tenant_id, user_id, month DESC);
+
+
 
 CREATE INDEX idx_llm_monthly_tenant_user_month ON public.llm_monthly_costs USING btree (tenant_id, user_id, month DESC);
 
+
+
 CREATE INDEX idx_llm_semantic_cache_tenant_user_endpoint ON public.llm_semantic_cache USING btree (tenant_id, user_id, endpoint, updated_at DESC);
+
+
 
 CREATE UNIQUE INDEX idx_mv_allocation_summary_key ON public.mv_allocation_summary USING btree (tenant_id, event_id, model_version);
 
+
+
+
+
+
 CREATE UNIQUE INDEX idx_mv_channel_performance_unique ON public.mv_channel_performance USING btree (tenant_id, channel_code, allocation_date);
+
+
 
 CREATE UNIQUE INDEX idx_mv_daily_revenue_summary_unique ON public.mv_daily_revenue_summary USING btree (tenant_id, revenue_date, state, currency);
 
+
+
 CREATE UNIQUE INDEX idx_mv_realtime_revenue_tenant_id ON public.mv_realtime_revenue USING btree (tenant_id);
+
+
 
 CREATE UNIQUE INDEX idx_mv_reconciliation_status_tenant_id ON public.mv_reconciliation_status USING btree (tenant_id);
 
+
+
 CREATE INDEX idx_oauth_handshake_sessions_expires_at ON public.oauth_handshake_sessions USING btree (expires_at DESC);
+
+
 
 CREATE INDEX idx_oauth_handshake_sessions_gc_after ON public.oauth_handshake_sessions USING btree (gc_after);
 
+
+
 CREATE INDEX idx_oauth_handshake_sessions_tenant_platform_user_created ON public.oauth_handshake_sessions USING btree (tenant_id, platform, user_id, created_at DESC);
+
+
 
 CREATE INDEX idx_oauth_handshake_sessions_tenant_state_lookup ON public.oauth_handshake_sessions USING btree (tenant_id, state_nonce_hash, status);
 
+
+
 CREATE INDEX idx_pii_audit_findings_detected_key ON public.pii_audit_findings USING btree (detected_key);
+
+
+
+
+
 
 CREATE INDEX idx_pii_audit_findings_table_detected_at ON public.pii_audit_findings USING btree (table_name, detected_at DESC);
 
+
+
+
+
+
 CREATE INDEX idx_platform_connections_tenant_platform_updated_at ON public.platform_connections USING btree (tenant_id, platform, updated_at DESC);
+
+
 
 CREATE INDEX idx_platform_credentials_refresh_due ON public.platform_credentials USING btree (tenant_id, lifecycle_status, next_refresh_due_at) WHERE (next_refresh_due_at IS NOT NULL);
 
+
+
 CREATE INDEX idx_platform_credentials_tenant_lifecycle_updated ON public.platform_credentials USING btree (tenant_id, lifecycle_status, updated_at DESC);
+
+
 
 CREATE INDEX idx_platform_credentials_tenant_platform_updated_at ON public.platform_credentials USING btree (tenant_id, platform, updated_at DESC);
 
+
+
 CREATE INDEX idx_platform_credentials_tenant_revoked_at ON public.platform_credentials USING btree (tenant_id, revoked_at DESC) WHERE (revoked_at IS NOT NULL);
+
+
 
 CREATE INDEX idx_r4_crash_barriers_scenario_wrote_at ON public.r4_crash_barriers USING btree (scenario, wrote_at DESC);
 
+
+
 CREATE INDEX idx_r4_task_attempts_scenario_created_at ON public.r4_task_attempts USING btree (scenario, created_at DESC);
+
+
 
 CREATE INDEX idx_r4_task_attempts_tenant_task ON public.r4_task_attempts USING btree (tenant_id, task_id);
 
+
+
 CREATE INDEX idx_raw_event_payloads_event_id ON public.raw_event_payloads USING btree (event_id);
+
+
 
 CREATE INDEX idx_raw_event_payloads_payload_json_gin ON public.raw_event_payloads USING gin (payload_json jsonb_path_ops);
 
+
+
 CREATE INDEX idx_raw_event_payloads_tenant_created ON public.raw_event_payloads USING btree (tenant_id, created_at DESC);
+
+
 
 CREATE INDEX idx_raw_event_payloads_tenant_lookup_hash ON public.raw_event_payloads USING btree (tenant_id, lookup_hash);
 
+
+
 CREATE INDEX idx_reconciliation_runs_state ON public.reconciliation_runs USING btree (state);
+
+
 
 CREATE INDEX idx_reconciliation_runs_tenant_last_run_at ON public.reconciliation_runs USING btree (tenant_id, last_run_at DESC);
 
+
+
 CREATE INDEX idx_revenue_cache_entries_error_cooldown ON public.revenue_cache_entries USING btree (error_cooldown_until);
+
+
 
 CREATE INDEX idx_revenue_cache_entries_expires_at ON public.revenue_cache_entries USING btree (expires_at);
 
+
+
 CREATE INDEX idx_revenue_ledger_is_verified ON public.revenue_ledger USING btree (is_verified) WHERE (is_verified = true);
+
+
 
 CREATE INDEX idx_revenue_ledger_state ON public.revenue_ledger USING btree (state);
 
+
+
+
+
+
 CREATE UNIQUE INDEX idx_revenue_ledger_tenant_allocation_id ON public.revenue_ledger USING btree (tenant_id, allocation_id) WHERE (allocation_id IS NOT NULL);
+
+
+
+
+
 
 CREATE INDEX idx_revenue_ledger_tenant_order_reconciliation ON public.revenue_ledger USING btree (tenant_id, order_id, created_at DESC) WHERE (order_id IS NOT NULL);
 
+
+
+
+
+
 CREATE INDEX idx_revenue_ledger_tenant_state ON public.revenue_ledger USING btree (tenant_id, state, created_at DESC);
+
+
+
+
+
 
 CREATE INDEX idx_revenue_ledger_tenant_updated_at ON public.revenue_ledger USING btree (tenant_id, updated_at DESC);
 
+
+
 CREATE UNIQUE INDEX idx_revenue_ledger_transaction_id ON public.revenue_ledger USING btree (transaction_id);
+
+
+
+
+
 
 CREATE INDEX idx_revenue_state_transitions_ledger_id ON public.revenue_state_transitions USING btree (ledger_id, transitioned_at DESC);
 
+
+
+
+
+
 CREATE INDEX idx_revenue_state_transitions_tenant_id ON public.revenue_state_transitions USING btree (tenant_id, transitioned_at DESC);
+
+
 
 CREATE INDEX idx_session_authority_active ON public.session_authority USING btree (tenant_id, session_id, expires_at DESC) WHERE (invalidated_at IS NULL);
 
+
+
 CREATE INDEX idx_session_authority_tenant_expires ON public.session_authority USING btree (tenant_id, expires_at DESC);
+
+
 
 CREATE INDEX idx_session_authority_tenant_last_seen ON public.session_authority USING btree (tenant_id, last_seen_at DESC);
 
+
+
 CREATE INDEX idx_tenant_membership_roles_tenant_created_at ON public.tenant_membership_roles USING btree (tenant_id, created_at DESC);
+
+
 
 CREATE INDEX idx_tenant_memberships_tenant_created_at ON public.tenant_memberships USING btree (tenant_id, created_at DESC);
 
+
+
 CREATE INDEX idx_tenant_memberships_user_created_at ON public.tenant_memberships USING btree (user_id, created_at DESC);
+
+
 
 CREATE UNIQUE INDEX idx_tenants_api_key_hash ON public.tenants USING btree (api_key_hash);
 
+
+
+
+
+
 CREATE INDEX idx_tenants_name ON public.tenants USING btree (name);
+
+
 
 CREATE INDEX idx_tool_calls_investigation ON public.investigation_tool_calls USING btree (investigation_id, created_at);
 
+
+
 CREATE INDEX idx_tool_calls_tenant ON public.investigation_tool_calls USING btree (tenant_id, created_at DESC);
+
+
 
 CREATE INDEX idx_trust_access_log_created ON public.trust_access_log USING btree (tenant_id, created_at DESC);
 
+
+
 CREATE INDEX idx_trust_access_log_subject ON public.trust_access_log USING btree (tenant_id, subject_type, subject_ref_hash);
+
+
 
 CREATE INDEX idx_trust_issuance_subject ON public.trust_envelope_issuance_log USING btree (tenant_id, subject_type, subject_ref_hash);
 
+
+
 CREATE INDEX idx_trust_rate_limit_state_lookup ON public.trust_rate_limit_state USING btree (tenant_id, agent_client_id, window_ended_at);
+
+
 
 CREATE INDEX idx_trust_replay_created ON public.trust_replay_events USING btree (tenant_id, created_at DESC);
 
+
+
 CREATE INDEX idx_trust_request_nonces_tenant_created ON public.trust_request_nonces USING btree (tenant_id, created_at DESC);
+
+
 
 CREATE INDEX idx_trust_request_nonces_tenant_expires ON public.trust_request_nonces USING btree (tenant_id, expires_at);
 
+
+
 CREATE INDEX idx_trust_scope_denial_created ON public.trust_scope_denial_events USING btree (tenant_id, created_at DESC);
+
+
 
 CREATE INDEX idx_webhook_ingress_identities_tenant_provider_created ON public.webhook_ingress_identities USING btree (tenant_id, provider, created_at DESC);
 
+
+
 CREATE INDEX idx_webhook_ingress_identities_tenant_reference ON public.webhook_ingress_identities USING btree (tenant_id, normalized_commerce_reference_kind, normalized_commerce_reference_value);
+
+
 
 CREATE INDEX idx_webhook_ingress_identities_tenant_verified_state ON public.webhook_ingress_identities USING btree (tenant_id, verified_commerce_ingress_state, event_timestamp DESC);
 
+
+
 CREATE INDEX idx_worker_failed_jobs_status ON public.worker_failed_jobs USING btree (status, failed_at);
+
+
 
 CREATE INDEX idx_worker_failed_jobs_task_name ON public.worker_failed_jobs USING btree (task_name);
 
+
+
 CREATE INDEX idx_worker_side_effects_tenant_created_at ON public.worker_side_effects USING btree (tenant_id, created_at DESC);
+
+
 
 CREATE INDEX ix_b24_fit_policy_replan_lineage_fit ON public.b24_fit_policy_replan_lineage USING btree (tenant_id, fit_id, transition_sequence);
 
+
+
 CREATE INDEX ix_b27_explanation_subject ON public.b27_explanation_materializations USING btree (tenant_id, subject_type, subject_ref_hash, stale);
+
+
 
 CREATE INDEX ix_celery_taskmeta_task_id ON public.celery_taskmeta USING btree (task_id);
 
+
+
 CREATE INDEX ix_celery_tasksetmeta_taskset_id ON public.celery_tasksetmeta USING btree (taskset_id);
+
+
 
 CREATE INDEX ix_kombu_message_timestamp_id ON public.kombu_message USING btree ("timestamp", id);
 
+
+
 CREATE INDEX ix_kombu_message_visible ON public.kombu_message USING btree (visible);
+
+
 
 CREATE INDEX ix_public_celery_task_failures_task_id ON public.worker_failed_jobs USING btree (task_id);
 
+
+
 CREATE INDEX ix_public_celery_task_failures_task_name ON public.worker_failed_jobs USING btree (task_name);
+
+
 
 CREATE INDEX ix_public_celery_task_failures_tenant_id ON public.worker_failed_jobs USING btree (tenant_id);
 
+
+
 CREATE INDEX ix_trust_access_log_issuance_state ON public.trust_access_log USING btree (tenant_id, issuance_state);
+
+
 
 CREATE INDEX ix_trust_export_artifact_attempts_lookup ON public.trust_export_artifact_attempts USING btree (tenant_id, request_binding_hash, page_start, attempt_number DESC);
 
+
+
 CREATE INDEX ix_trust_issuance_attempts_recovery ON public.trust_issuance_attempts USING btree (tenant_id, attempt_state, updated_at, id);
+
+
 
 CREATE INDEX ix_trust_issuance_attempts_tenant_audit ON public.trust_issuance_attempts USING btree (tenant_id, audit_ref, attempt_number DESC);
 
+
+
 CREATE INDEX ix_trust_tenant_policy_latest ON public.trust_tenant_policy_events USING btree (tenant_id, revision DESC);
+
+
 
 CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_exception_records USING btree (tenant_id, match_verdict_id) WHERE ((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying])::text[]));
 
+
+
 CREATE UNIQUE INDEX uq_b24_fit_dispatch_outbox_attempt ON public.b24_fit_dispatch_outbox USING btree (tenant_id, attempt_id);
+
+
 
 CREATE UNIQUE INDEX uq_b26_p2_xvii_commerce_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, normalized_commerce_reference_kind, normalized_commerce_reference_value) WHERE ((b26_p2_provenance_status = 'authenticated_known'::text) AND (b26_p2_demotion_reason IS NULL));
 
+
+
 CREATE UNIQUE INDEX uq_b26_p2_xvii_event_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, provider_native_event_reference) WHERE (b26_p2_provenance_status = 'authenticated_known'::text);
+
+
 
 CREATE UNIQUE INDEX uq_b28_request_authentication ON public.b28_simulation_requests USING btree (request_authentication_id);
 
+
+
 CREATE UNIQUE INDEX uq_platform_connections_tenant_platform_account ON public.platform_connections USING btree (tenant_id, platform, platform_account_id);
+
+
 
 CREATE UNIQUE INDEX uq_platform_credentials_tenant_platform_connection ON public.platform_credentials USING btree (tenant_id, platform, platform_connection_id);
 
+
+
 CREATE UNIQUE INDEX ux_r4_crash_barriers_tenant_task_attempt ON public.r4_crash_barriers USING btree (tenant_id, task_id, attempt_no);
+
+
 
 CREATE UNIQUE INDEX ux_r4_task_attempts_tenant_task_attempt ON public.r4_task_attempts USING btree (tenant_id, task_id, attempt_no);
 
+
+
 CREATE UNIQUE INDEX ux_worker_side_effects_tenant_task_id ON public.worker_side_effects USING btree (tenant_id, task_id);
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p00_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p01_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p02_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p03_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p04_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p05_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p06_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p07_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p08_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p09_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p10_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p11_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p12_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p13_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p14_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p15_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_artifact_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_artifact_ref_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_artifact_ref_key;
+
+
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_fit_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_idx;
+
+
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p00_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_eligibility_st_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_fallback_reaso_idx;
+
+
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_model_version__key;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_source_window__idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_source_window_idx1;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_source_snapshot_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_status_idx;
 
+
+
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p01_pkey;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_eligibility_st_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_fallback_reaso_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_model_version__key;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_source_window__idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_source_window_idx1;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_source_snapshot_hash_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_status_idx;
+
+
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p02_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_eligibility_st_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_fallback_reaso_idx;
+
+
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_model_version__key;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_source_window__idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_source_window_idx1;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_source_snapshot_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_status_idx;
 
+
+
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p03_pkey;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_eligibility_st_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_fallback_reaso_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_model_version__key;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_source_window__idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_source_window_idx1;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_source_snapshot_hash_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_status_idx;
+
+
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p04_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_eligibility_st_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_fallback_reaso_idx;
+
+
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_model_version__key;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_source_window__idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_source_window_idx1;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_source_snapshot_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_status_idx;
 
+
+
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p05_pkey;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_eligibility_st_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_fallback_reaso_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_model_version__key;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_source_window__idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_source_window_idx1;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_source_snapshot_hash_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_status_idx;
+
+
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p06_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_eligibility_st_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_fallback_reaso_idx;
+
+
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_model_version__key;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_source_window__idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_source_window_idx1;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_source_snapshot_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_status_idx;
 
+
+
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p07_pkey;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_eligibility_st_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_fallback_reaso_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_model_version__key;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_source_window__idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_source_window_idx1;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_source_snapshot_hash_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_status_idx;
+
+
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p08_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_eligibility_st_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_fallback_reaso_idx;
+
+
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_model_version__key;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_source_window__idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_source_window_idx1;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_source_snapshot_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_status_idx;
 
+
+
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p09_pkey;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_eligibility_st_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_fallback_reaso_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_model_version__key;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_source_window__idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_source_window_idx1;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_source_snapshot_hash_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_status_idx;
+
+
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p10_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_eligibility_st_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_fallback_reaso_idx;
+
+
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_model_version__key;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_source_window__idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_source_window_idx1;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_source_snapshot_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_status_idx;
 
+
+
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p11_pkey;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_eligibility_st_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_fallback_reaso_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_model_version__key;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_source_window__idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_source_window_idx1;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_source_snapshot_hash_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_status_idx;
+
+
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p12_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_eligibility_st_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_fallback_reaso_idx;
+
+
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_model_version__key;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_source_window__idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_source_window_idx1;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_source_snapshot_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_status_idx;
 
+
+
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p13_pkey;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_eligibility_st_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_fallback_reaso_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_model_version__key;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_source_window__idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_source_window_idx1;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_source_snapshot_hash_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_status_idx;
+
+
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p14_pkey;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_eligibility_st_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_fallback_reaso_idx;
+
+
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_model_version__key;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_source_window__idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_source_window_idx1;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_source_snapshot_hash_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_status_idx;
 
+
+
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p15_pkey;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_eligibility_st_idx;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_fallback_reaso_idx;
 
+
+
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_model_version__key;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_source_window__idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_source_window_idx1;
+
+
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_source_snapshot_hash_idx;
 
+
+
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_status_idx;
+
+
 
 CREATE TRIGGER trg_agent_scope_grants_reject_reserved BEFORE INSERT OR UPDATE OF scope_value ON public.agent_scope_grants FOR EACH ROW EXECUTE FUNCTION public.reject_reserved_trust_action_scope();
 
+
+
 CREATE TRIGGER trg_allocations_channel_correction_audit AFTER UPDATE OF channel_code ON public.attribution_allocations FOR EACH ROW WHEN ((old.channel_code IS DISTINCT FROM new.channel_code)) EXECUTE FUNCTION public.fn_log_channel_assignment_correction();
+
+
+
+            Purpose: Provide atomic audit trail for revenue reclassifications.
+            Fires: Only when channel_code column changes (not on other column updates).
+            Note: Does NOT fire on INSERT (corrections are post-ingestion only).';
+
+
 
 CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities AFTER INSERT OR UPDATE OF last_observed_at ON public.attribution_commerce_identities FOR EACH STATEMENT EXECUTE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger();
 
+
+
 CREATE TRIGGER trg_b23_project_allocation_verification BEFORE INSERT OR UPDATE OF tenant_id, event_id, verified, verification_source, verification_timestamp ON public.attribution_allocations FOR EACH ROW EXECUTE FUNCTION public.b23_project_allocation_verification();
+
+
 
 CREATE TRIGGER trg_b23_refresh_allocation_verification_insert AFTER INSERT ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b23_refresh_allocation_verification();
 
+
+
 CREATE TRIGGER trg_b23_refresh_allocation_verification_update AFTER UPDATE OF status, attribution_event_id, last_transition_at ON public.b23_match_verdicts FOR EACH ROW WHEN ((((old.status)::text IS DISTINCT FROM (new.status)::text) OR (old.attribution_event_id IS DISTINCT FROM new.attribution_event_id) OR (old.last_transition_at IS DISTINCT FROM new.last_transition_at))) EXECUTE FUNCTION public.b23_refresh_allocation_verification();
+
+
 
 CREATE TRIGGER trg_b23_verdict_authorship_insert BEFORE INSERT ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b23_enforce_verdict_authorship();
 
+
+
 CREATE TRIGGER trg_b23_verdict_authorship_update BEFORE UPDATE ON public.b23_match_verdicts FOR EACH ROW WHEN ((((old.status)::text IS DISTINCT FROM (new.status)::text) OR (old.confirmed_at IS DISTINCT FROM new.confirmed_at) OR (old.adjusted_at IS DISTINCT FROM new.adjusted_at) OR (old.unmatched_marked_at IS DISTINCT FROM new.unmatched_marked_at) OR ((old.match_quality)::text IS DISTINCT FROM (new.match_quality)::text) OR (old.attributed_amount_minor IS DISTINCT FROM new.attributed_amount_minor) OR (old.verified_amount_minor IS DISTINCT FROM new.verified_amount_minor) OR (old.canonical_expected_gross_amount_minor IS DISTINCT FROM new.canonical_expected_gross_amount_minor) OR (old.canonical_captured_gross_amount_minor IS DISTINCT FROM new.canonical_captured_gross_amount_minor) OR (old.canonical_net_verified_amount_minor IS DISTINCT FROM new.canonical_net_verified_amount_minor) OR (old.discrepancy_amount_minor IS DISTINCT FROM new.discrepancy_amount_minor) OR (old.discrepancy_ratio_bps IS DISTINCT FROM new.discrepancy_ratio_bps) OR ((old.discrepancy_band)::text IS DISTINCT FROM (new.discrepancy_band)::text))) EXECUTE FUNCTION public.b23_enforce_verdict_authorship();
+
+
 
 CREATE TRIGGER trg_b24_dirty_event_authority BEFORE UPDATE ON public.b24_dirty_events FOR EACH ROW WHEN (((new.tenant_id IS DISTINCT FROM old.tenant_id) OR ((new.model_type)::text IS DISTINCT FROM (old.model_type)::text) OR ((new.model_version)::text IS DISTINCT FROM (old.model_version)::text) OR (new.source_window_start IS DISTINCT FROM old.source_window_start) OR (new.source_window_end IS DISTINCT FROM old.source_window_end) OR ((new.dirty_reason)::text IS DISTINCT FROM (old.dirty_reason)::text) OR ((new.source_family)::text IS DISTINCT FROM (old.source_family)::text) OR ((new.event_hash)::text IS DISTINCT FROM (old.event_hash)::text) OR ((new.source_event_id)::text IS DISTINCT FROM (old.source_event_id)::text) OR (new.created_at IS DISTINCT FROM old.created_at) OR ((new.source_snapshot_hash)::text IS DISTINCT FROM (old.source_snapshot_hash)::text))) EXECUTE FUNCTION public.b24_enforce_dirty_event_authority();
 
+
+
 CREATE TRIGGER trg_b24_dispatch_fence_artifacts BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('artifact');
+
+
 
 CREATE TRIGGER trg_b24_dispatch_fence_fits BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('fit');
 
+
+
 CREATE TRIGGER trg_b24_enforce_artifact_lifecycle BEFORE UPDATE OF lifecycle_status ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_artifact_lifecycle();
+
+
 
 CREATE TRIGGER trg_b24_enforce_dirty_event_lifecycle BEFORE UPDATE ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dirty_event_lifecycle();
 
+
+
 CREATE TRIGGER trg_b24_evidence_temporal_plausibility BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_evidence_temporal_plausibility();
+
+
 
 CREATE TRIGGER trg_b24_invalidate_attribution_events_delete AFTER DELETE ON public.attribution_events REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_events_delete();
 
+
+
 CREATE TRIGGER trg_b24_invalidate_attribution_events_insert AFTER INSERT ON public.attribution_events REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_events_insert();
+
+
 
 CREATE TRIGGER trg_b24_invalidate_attribution_events_update AFTER UPDATE ON public.attribution_events REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_events_update();
 
+
+
 CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_delete AFTER DELETE ON public.b23_revenue_events REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_delete();
+
+
 
 CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_insert AFTER INSERT ON public.b23_revenue_events REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_insert();
 
+
+
 CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_update AFTER UPDATE ON public.b23_revenue_events REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_update();
+
+
 
 CREATE TRIGGER trg_b24_mark_allocation_financial_window_dirty AFTER INSERT OR DELETE OR UPDATE ON public.attribution_allocations FOR EACH ROW EXECUTE FUNCTION public.b24_mark_allocation_financial_window_dirty();
 
+
+
 CREATE TRIGGER trg_b24_mark_verdict_financial_window_dirty AFTER INSERT OR DELETE OR UPDATE ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b24_mark_verdict_financial_window_dirty();
+
+
 
 CREATE TRIGGER trg_b24_policy_registry_immutable BEFORE DELETE OR UPDATE ON public.b24_inference_policy_registry FOR EACH ROW EXECUTE FUNCTION public.b24_reject_policy_registry_rewrite();
 
+
+
 CREATE TRIGGER trg_b24_replan_lineage_append_only BEFORE DELETE OR UPDATE ON public.b24_fit_policy_replan_lineage FOR EACH ROW EXECUTE FUNCTION public.b24_reject_replan_lineage_mutation();
+
+
 
 CREATE TRIGGER trg_b24_signal_fit_planner_wakeup AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced();
 
+
+
 CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_terminal_fit_truth();
+
+
 
 CREATE TRIGGER trg_b26_p2_auth_consequence_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_auth_consequence_immutability();
 
+
+
 CREATE TRIGGER trg_b26_p2_auth_root_evidence_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_auth_root_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability();
+
+
 
 CREATE TRIGGER trg_b26_p2_conducted_effect_guard BEFORE UPDATE OF delivery_state ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_conducted_transition();
 
+
+
 CREATE TRIGGER trg_b26_p2_conducted_effect_guard BEFORE UPDATE OF state ON public.b26_p2_execution_outbox FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_conducted_transition();
+
+
 
 CREATE TRIGGER trg_b26_p2_directory_coherence BEFORE INSERT OR UPDATE ON public.b26_p2_task_authority_directory FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_directory_coherence();
 
+
+
 CREATE TRIGGER trg_b26_p2_dispatch_immutability BEFORE INSERT OR UPDATE ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_immutability();
+
+
 
 CREATE TRIGGER trg_b26_p2_dispatch_provenance BEFORE INSERT ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_provenance();
 
+
+
 CREATE TRIGGER trg_b26_p2_dispatch_quarantine_exclusion BEFORE INSERT OR UPDATE OF webhook_ingress_identity_id, tenant_id ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion();
+
+
 
 CREATE TRIGGER trg_b26_p2_dispatch_sovereign_window BEFORE INSERT OR UPDATE OF window_start, window_end, webhook_ingress_identity_id, tenant_id, provider ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window();
 
+
+
 CREATE TRIGGER trg_b26_p2_ingress_authority_transition BEFORE UPDATE OF b26_p2_provenance_status, b26_p2_semantic_regime, b26_p2_demotion_reason ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authority_transition();
+
+
 
 CREATE TRIGGER trg_b26_p2_ingress_duplicate_adoption BEFORE INSERT ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption();
 
+
+
 CREATE TRIGGER trg_b26_p2_ingress_event_chronology BEFORE INSERT ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_event_chronology();
+
+
 
 CREATE TRIGGER trg_b26_p2_ingress_provenance BEFORE INSERT OR UPDATE OF verified_commerce_ingress_state, b26_p2_provenance_status ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_provenance();
 
+
+
 CREATE TRIGGER trg_b26_p2_ingress_sovereign_custody BEFORE DELETE OR UPDATE OF event_timestamp, tenant_id, provider, verified_commerce_ingress_state, verified_amount_currency, verified_amount_minor ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody();
+
+
 
 CREATE TRIGGER trg_b26_p2_ingress_verified_authorship BEFORE INSERT OR UPDATE OF verified_commerce_ingress_state ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_verified_authorship();
 
+
+
 CREATE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability BEFORE UPDATE ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability();
+
+
 
 CREATE TRIGGER trg_b26_p2_observation_chronology BEFORE INSERT ON public.b26_p2_history_integrity_observations FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_observation_chronology();
 
+
+
 CREATE TRIGGER trg_b26_p2_outbox_issuance BEFORE INSERT ON public.b26_p2_execution_outbox FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_outbox_issuance();
+
+
 
 CREATE TRIGGER trg_b26_p2_outbox_transitions BEFORE UPDATE ON public.b26_p2_execution_outbox FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_outbox_transitions();
 
+
+
 CREATE TRIGGER trg_b26_p2_policy_immutability BEFORE UPDATE ON public.b26_p2_scope_policy_authority FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_policy_immutability();
+
+
 
 CREATE TRIGGER trg_b26_p2_receipt_effect_guard BEFORE INSERT OR UPDATE ON public.b26_p2_conduction_receipts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_conduction_receipt();
 
+
+
 CREATE TRIGGER trg_b26_p2_registry_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_semantic_regime_registry FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_registry_governance();
+
+
 
 CREATE TRIGGER trg_b26_p2_result_integrity BEFORE INSERT OR UPDATE OF status ON public.celery_taskmeta FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_result_integrity();
 
+
+
 CREATE TRIGGER trg_b26_p2_verdict_authority_guard BEFORE UPDATE OF b26_p2_source_authority_state, webhook_ingress_identity_id ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_verdict_authority_write();
+
+
 
 CREATE TRIGGER trg_b26_p2_verdict_authority_propagate AFTER UPDATE OF b26_p2_provenance_status, b26_p2_semantic_regime, b26_p2_demotion_reason ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_propagate_verdict_authority();
 
+
+
 CREATE TRIGGER trg_b26_p2_verdict_authority_stamp BEFORE INSERT ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_stamp_verdict_authority();
+
+
 
 CREATE TRIGGER trg_b26_p2_verdict_money_authority BEFORE UPDATE OF attributed_amount_minor, verified_amount_minor, canonical_expected_gross_amount_minor, canonical_captured_gross_amount_minor, canonical_net_verified_amount_minor ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_verdict_money_authority();
 
+
+
 CREATE TRIGGER trg_b26_p2_verdict_temporal_conservation BEFORE INSERT OR DELETE OR UPDATE OF status, webhook_ingress_identity_id, tenant_id, canonical_commerce_reference ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation();
+
+
 
 CREATE TRIGGER trg_b26_p2_xix_history_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_publication_history FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_history_immutability();
 
+
+
 CREATE TRIGGER trg_b26_p2_xix_ledger_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_verdict_supersession_ledger FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ledger_immutability();
+
+
 
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_consequence_loss AFTER DELETE ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('consequence-loss');
 
+
+
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_consequence_loss_update AFTER UPDATE ON public.b26_p2_provider_auth_consequence FOR EACH ROW WHEN (((old.b26_p2_event_family IS DISTINCT FROM new.b26_p2_event_family) AND (new.b26_p2_event_family IS NULL))) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('consequence-loss');
+
+
 
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_provenance_loss AFTER DELETE ON public.b26_p2_provenance_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('provenance-loss');
 
+
+
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_provenance_loss_update AFTER UPDATE ON public.b26_p2_provenance_evidence FOR EACH ROW WHEN ((old.evidence_witness_hash IS DISTINCT FROM new.evidence_witness_hash)) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('provenance-loss');
+
+
 
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_root_loss AFTER DELETE ON public.b26_p2_auth_root_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('root-loss');
 
+
+
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_root_loss_update AFTER UPDATE ON public.b26_p2_auth_root_evidence FOR EACH ROW WHEN (((old.body_sha256 IS DISTINCT FROM new.body_sha256) OR (old.signature_envelope_sha256 IS DISTINCT FROM new.signature_envelope_sha256))) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('root-loss');
+
+
 
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_witness_loss AFTER DELETE ON public.b26_p2_ingress_auth_witness FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('witness-loss');
 
+
+
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_witness_loss_update AFTER UPDATE ON public.b26_p2_ingress_auth_witness FOR EACH ROW WHEN ((old.witness_hash IS DISTINCT FROM new.witness_hash)) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('witness-loss');
+
+
 
 CREATE TRIGGER trg_b26_p2_xix_supersession_ledger AFTER UPDATE ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_record_verdict_supersession();
 
+
+
 CREATE TRIGGER trg_b26_p2_xx_consequence_family_coherence BEFORE INSERT OR UPDATE OF b26_p2_event_family, b26_p2_family_source ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_consequence_family_coherence();
+
+
 
 CREATE TRIGGER trg_b26_p2_xx_propagate_on_regime_change AFTER UPDATE OF status ON public.b26_p2_semantic_regime_registry FOR EACH ROW EXECUTE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change();
 
+
+
 CREATE TRIGGER trg_b26_p2_xx_supersession_chain BEFORE INSERT ON public.b26_p2_verdict_supersession_ledger FOR EACH ROW EXECUTE FUNCTION public.b26_p2_chain_verdict_supersession();
+
+
 
 CREATE TRIGGER trg_b27_explanation_consequence BEFORE INSERT ON public.b27_explanation_materializations FOR EACH ROW EXECUTE FUNCTION public.b27_enforce_explanation_consequence();
 
+
+
 CREATE TRIGGER trg_b27_materialization_immutable BEFORE DELETE OR UPDATE ON public.b27_explanation_materializations FOR EACH ROW EXECUTE FUNCTION public.b27_enforce_materialization_immutability();
+
+
 
 CREATE TRIGGER trg_b27_supersede_stale_explanations AFTER INSERT ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.b27_supersede_stale_explanations();
 
+
+
 CREATE TRIGGER trg_b28_allocation_conservation BEFORE INSERT OR UPDATE ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_allocation_conservation();
+
+
 
 CREATE TRIGGER trg_b28_final_source_identity BEFORE INSERT ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_final_source_identity();
 
+
+
 CREATE TRIGGER trg_b28_proposal_consequence BEFORE INSERT ON public.b28_proposals FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_proposal_consequence();
+
+
 
 CREATE TRIGGER trg_b28_proposals_immutable BEFORE DELETE OR UPDATE ON public.b28_proposals FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_downstream_immutability();
 
+
+
 CREATE TRIGGER trg_b28_request_consequence BEFORE INSERT ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_request_consequence();
+
+
 
 CREATE TRIGGER trg_b28_request_possession BEFORE INSERT ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_request_possession();
 
+
+
 CREATE TRIGGER trg_b28_result_consequence BEFORE INSERT ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_result_consequence();
+
+
 
 CREATE TRIGGER trg_b28_simulation_requests_immutable BEFORE DELETE OR UPDATE ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_downstream_immutability();
 
+
+
 CREATE TRIGGER trg_b28_simulation_results_immutable BEFORE DELETE OR UPDATE ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_downstream_immutability();
+
+
 
 CREATE TRIGGER trg_bind_session_authority_from_event BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_bind_session_authority_from_event();
 
+
+
 CREATE TRIGGER trg_block_worker_mutation_dead_events BEFORE INSERT OR DELETE OR UPDATE ON public.dead_events FOR EACH ROW EXECUTE FUNCTION public.fn_block_worker_ingestion_mutation();
+
+
 
 CREATE TRIGGER trg_block_worker_mutation_events BEFORE INSERT OR DELETE OR UPDATE ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_block_worker_ingestion_mutation();
 
+
+
 CREATE TRIGGER trg_channel_taxonomy_state_audit AFTER UPDATE OF state ON public.channel_taxonomy FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_channel_state_change();
+
+
+
+            Purpose: Provide atomic audit trail for channel lifecycle changes.
+            Fires: Only when state column changes (not on other column updates).';
+
+
 
 CREATE TRIGGER trg_check_allocation_sum AFTER INSERT ON public.attribution_allocations REFERENCING NEW TABLE AS newrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_insert();
 
+
+
+
+
+
 CREATE TRIGGER trg_check_allocation_sum_delete AFTER DELETE ON public.attribution_allocations REFERENCING OLD TABLE AS oldrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_delete();
+
+
+
+
+
 
 CREATE TRIGGER trg_check_allocation_sum_update AFTER UPDATE ON public.attribution_allocations REFERENCING OLD TABLE AS oldrows NEW TABLE AS newrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_update();
 
+
+
+
+
+
 CREATE TRIGGER trg_compliance_audit_ledger_append_only BEFORE DELETE OR UPDATE ON public.compliance_audit_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_compliance_audit_ledger_append_only();
+
+
 
 CREATE TRIGGER trg_events_prevent_mutation BEFORE DELETE OR UPDATE ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_events_prevent_mutation();
 
+
+
+
+
+
 CREATE TRIGGER trg_guard_attribution_events_payload_identity BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_guard_attribution_events_payload_identity();
+
+
+
+
+
 
 CREATE TRIGGER trg_ledger_prevent_mutation BEFORE DELETE OR UPDATE ON public.revenue_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ledger_prevent_mutation();
 
+
+
+
+
+
 CREATE TRIGGER trg_llm_call_audit_append_only BEFORE DELETE OR UPDATE ON public.llm_call_audit FOR EACH ROW EXECUTE FUNCTION public.fn_llm_call_audit_append_only();
+
+
 
 CREATE TRIGGER trg_pii_guardrail_attribution_events BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
 
+
+
+
+
+
 CREATE TRIGGER trg_pii_guardrail_dead_events BEFORE INSERT ON public.dead_events FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
+
+
+
+
+
 
 CREATE TRIGGER trg_pii_guardrail_revenue_ledger BEFORE INSERT ON public.revenue_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
 
+
+
+
+
+
 CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.revenue_ledger FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_revenue_state_change();
+
+
+
+            Purpose: Automatically log all state transitions to revenue_state_transitions table.
+            Fires: AFTER UPDATE OF state when state value changes.
+            Atomicity: Trigger execution is atomic within the same transaction as the UPDATE.';
+
+
 
 CREATE TRIGGER trg_trust_access_log_issuance_authority_guard BEFORE INSERT OR UPDATE ON public.trust_access_log FOR EACH ROW EXECUTE FUNCTION public.trust_access_log_issuance_authority_guard();
 
+
+
 CREATE TRIGGER trg_trust_access_log_witness_immutability BEFORE UPDATE ON public.trust_access_log FOR EACH ROW EXECUTE FUNCTION public.trust_access_log_witness_immutability_guard();
+
+
 
 CREATE TRIGGER trg_trust_export_artifact_attempt_guard BEFORE INSERT OR UPDATE ON public.trust_export_artifact_attempts FOR EACH ROW EXECUTE FUNCTION public.trust_export_artifact_attempt_guard();
 
+
+
 CREATE TRIGGER trg_trust_issuance_attempt_guard BEFORE INSERT OR UPDATE ON public.trust_issuance_attempts FOR EACH ROW EXECUTE FUNCTION public.trust_issuance_attempt_guard();
+
+
 
 CREATE TRIGGER trg_trust_issuance_consequence_authority BEFORE INSERT ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.trust_enforce_issuance_consequence_authority();
 
+
+
 CREATE TRIGGER trg_trust_issuance_history_immutable BEFORE DELETE OR UPDATE ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.trust_enforce_issuance_history_immutable();
+
+
 
 CREATE TRIGGER trg_trust_policy_append_only BEFORE DELETE OR UPDATE ON public.trust_tenant_policy_events FOR EACH ROW EXECUTE FUNCTION public.trust_tenant_policy_append_only();
 
+
+
 CREATE TRIGGER trg_y_b24_c11_policy_provenance BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_c11_policy_provenance();
 
+
+
 CREATE TRIGGER trg_z_b24_policy_bundle_write_authority BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_policy_bundle_write_authority();
+
+
 
 ALTER TABLE ONLY public.agent_clients
     ADD CONSTRAINT agent_clients_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.agent_scope_grants
     ADD CONSTRAINT agent_scope_grants_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.agent_scope_grants
     ADD CONSTRAINT agent_scope_grants_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.agent_service_credentials
     ADD CONSTRAINT agent_service_credentials_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.agent_service_credentials
     ADD CONSTRAINT agent_service_credentials_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.agent_token_revocations
     ADD CONSTRAINT agent_token_revocations_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.agent_token_revocations
     ADD CONSTRAINT agent_token_revocations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_recompute_job_id_fkey FOREIGN KEY (recompute_job_id) REFERENCES public.attribution_recompute_jobs(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT attribution_commerce_identities_attribution_event_id_fkey FOREIGN KEY (attribution_event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT attribution_commerce_identities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT attribution_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.attribution_recompute_jobs
     ADD CONSTRAINT attribution_recompute_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.auth_access_token_denylist
     ADD CONSTRAINT auth_access_token_denylist_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.auth_refresh_tokens(id) ON DELETE SET NULL;
 
+
+
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.auth_user_token_cutoffs
     ADD CONSTRAINT auth_user_token_cutoffs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b23_exception_records
     ADD CONSTRAINT b23_exception_records_match_verdict_id_fkey FOREIGN KEY (match_verdict_id) REFERENCES public.b23_match_verdicts(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b23_exception_records
     ADD CONSTRAINT b23_exception_records_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT b23_match_task_dispatches_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT b23_match_task_dispatches_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_attribution_event_id_fkey FOREIGN KEY (attribution_event_id) REFERENCES public.attribution_events(id) ON DELETE SET NULL;
 
+
+
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE SET NULL;
 
+
+
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_b26_p2_adjustment_evidence_id_fkey FOREIGN KEY (b26_p2_adjustment_evidence_id) REFERENCES public.b26_p2_adjustment_evidence(id) ON DELETE SET NULL;
+
+
 
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_match_verdict_id_fkey FOREIGN KEY (match_verdict_id) REFERENCES public.b23_match_verdicts(id) ON DELETE SET NULL;
 
+
+
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE SET NULL;
 
+
+
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b24_active_execution_leases
     ADD CONSTRAINT b24_active_execution_leases_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b24_dirty_events
     ADD CONSTRAINT b24_dirty_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT b24_feature_authority_build_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b24_feature_authority_build_requests
     ADD CONSTRAINT b24_feature_authority_build_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b24_fit_planner_wakeups
     ADD CONSTRAINT b24_fit_planner_wakeups_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_adjustment_attestation
     ADD CONSTRAINT b26_p2_adjustment_attestation_adjustment_evidence_id_fkey FOREIGN KEY (adjustment_evidence_id) REFERENCES public.b26_p2_adjustment_evidence(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence
     ADD CONSTRAINT b26_p2_adjustment_evidence_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence
     ADD CONSTRAINT b26_p2_adjustment_evidence_verdict_id_fkey FOREIGN KEY (verdict_id) REFERENCES public.b23_match_verdicts(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence
     ADD CONSTRAINT b26_p2_auth_root_evidence_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_conduction_receipts
     ADD CONSTRAINT b26_p2_conduction_receipts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_conduction_receipts
     ADD CONSTRAINT b26_p2_conduction_receipts_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_evaluator_heartbeat
     ADD CONSTRAINT b26_p2_evaluator_heartbeat_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT b26_p2_execution_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT b26_p2_execution_outbox_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine
     ADD CONSTRAINT b26_p2_execution_quarantine_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
 
+
+
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
     ADD CONSTRAINT b26_p2_ingress_auth_witness_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
     ADD CONSTRAINT b26_p2_ingress_auth_witness_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_provenance_evidence
     ADD CONSTRAINT b26_p2_provenance_evidence_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_provenance_evidence
     ADD CONSTRAINT b26_p2_provenance_evidence_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_provider_auth_consequence
     ADD CONSTRAINT b26_p2_provider_auth_consequence_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat
     ADD CONSTRAINT b26_p2_scheduler_heartbeat_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_source_money_attestation
     ADD CONSTRAINT b26_p2_source_money_attestatio_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_source_money_attestation
     ADD CONSTRAINT b26_p2_source_money_attestation_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_task_authority_directory
     ADD CONSTRAINT b26_p2_task_authority_director_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_task_authority_directory
     ADD CONSTRAINT b26_p2_task_authority_directory_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b27_explanation_materializations
     ADD CONSTRAINT b27_explanation_materializations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT b28_proposals_result_id_fkey FOREIGN KEY (result_id) REFERENCES public.b28_simulation_results(id) ON DELETE RESTRICT;
 
+
+
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT b28_proposals_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b28_request_authentications
     ADD CONSTRAINT b28_request_authentications_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE RESTRICT;
 
+
+
 ALTER TABLE ONLY public.b28_request_authentications
     ADD CONSTRAINT b28_request_authentications_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.agent_service_credentials(id) ON DELETE RESTRICT;
+
+
 
 ALTER TABLE ONLY public.b28_request_authentications
     ADD CONSTRAINT b28_request_authentications_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_request_authentication_id_fkey FOREIGN KEY (request_authentication_id) REFERENCES public.b28_request_authentications(id) ON DELETE RESTRICT;
+
+
 
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_requested_by_agent_client_id_fkey FOREIGN KEY (requested_by_agent_client_id) REFERENCES public.agent_clients(id) ON DELETE RESTRICT;
 
+
+
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_requested_by_credential_id_fkey FOREIGN KEY (requested_by_credential_id) REFERENCES public.agent_service_credentials(id) ON DELETE RESTRICT;
+
+
 
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b28_simulation_results
     ADD CONSTRAINT b28_simulation_results_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.b28_simulation_requests(id) ON DELETE RESTRICT;
+
+
 
 ALTER TABLE ONLY public.b28_simulation_results
     ADD CONSTRAINT b28_simulation_results_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
     ADD CONSTRAINT bayesian_artifact_storage_quotas_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT bayesian_model_fits_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT budget_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_authority_job_id_fkey FOREIGN KEY (authority_job_id) REFERENCES public.budget_jobs(id) ON DELETE SET NULL;
+
+
 
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.channel_assignment_corrections
     ADD CONSTRAINT channel_assignment_corrections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.channel_assignment_corrections
     ADD CONSTRAINT channel_assignment_corrections_to_channel_fkey FOREIGN KEY (to_channel) REFERENCES public.channel_taxonomy(code);
 
+
+
 ALTER TABLE ONLY public.channel_state_transitions
     ADD CONSTRAINT channel_state_transitions_channel_code_fkey FOREIGN KEY (channel_code) REFERENCES public.channel_taxonomy(code) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT compliance_audit_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.dead_events_quarantine
     ADD CONSTRAINT dead_events_quarantine_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
+
+
 
 ALTER TABLE ONLY public.dead_events
     ADD CONSTRAINT dead_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT ephemeral_click_resolution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.ephemeral_order_resolution
     ADD CONSTRAINT ephemeral_order_resolution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT fk_allocations_event_id_set_null FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE SET NULL;
 
+
+
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT fk_attribution_allocations_channel_code FOREIGN KEY (channel_code) REFERENCES public.channel_taxonomy(code);
+
+
 
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_channel FOREIGN KEY (channel) REFERENCES public.channel_taxonomy(code) ON UPDATE CASCADE ON DELETE RESTRICT;
 
+
+
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_session_authority FOREIGN KEY (tenant_id, session_id) REFERENCES public.session_authority(tenant_id, session_id) DEFERRABLE INITIALLY DEFERRED;
+
+
 
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT fk_b23_dispatch_tenant_ingress_composite FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b24_active_execution_leases
     ADD CONSTRAINT fk_b24_active_execution_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
+
+
 
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT fk_b24_feature_authority_build_outbox_request FOREIGN KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash) REFERENCES public.b24_feature_authority_build_requests(tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT fk_b24_fit_dispatch_outbox_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
+
+
 
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT fk_b24_fit_recovery_outbox_dispatch FOREIGN KEY (tenant_id, dispatch_id) REFERENCES public.b24_fit_dispatch_outbox(tenant_id, id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b24_fit_policy_replan_lineage
     ADD CONSTRAINT fk_b24_replan_lineage_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
+
+
 
 ALTER TABLE ONLY public.b26_p2_provider_auth_consequence
     ADD CONSTRAINT fk_b26_p2_auth_cons_tenant_ingress FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence
     ADD CONSTRAINT fk_b26_p2_auth_root_evidence_tenant_ingress FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_task_authority_directory
     ADD CONSTRAINT fk_b26_p2_directory_execution_tuple FOREIGN KEY (task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT fk_b26_p2_outbox_execution_tuple FOREIGN KEY (dispatch_task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b26_p2_conduction_receipts
     ADD CONSTRAINT fk_b26_p2_receipt_execution_tuple FOREIGN KEY (task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
     ADD CONSTRAINT fk_b26_p2_witness_tenant_ingress FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.b27_explanation_materializations
     ADD CONSTRAINT fk_b27_explanation_materializations_source_issuance FOREIGN KEY (tenant_id, source_issuance_envelope_hash) REFERENCES public.trust_envelope_issuance_log(tenant_id, envelope_hash);
 
+
+
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT fk_b28_simulation_requests_source_issuance FOREIGN KEY (tenant_id, source_issuance_envelope_hash) REFERENCES public.trust_envelope_issuance_log(tenant_id, envelope_hash);
+
+
 
 ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT fk_bayesian_artifacts_tenant_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
 
+
+
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT fk_kombu_message_queue FOREIGN KEY (queue_id) REFERENCES public.kombu_queue(id);
+
+
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT fk_tenant_membership_roles_membership_tenant FOREIGN KEY (membership_id, tenant_id) REFERENCES public.tenant_memberships(id, tenant_id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT fk_trust_issuance_attempt_audit FOREIGN KEY (tenant_id, audit_ref) REFERENCES public.trust_access_log(tenant_id, audit_ref) ON DELETE RESTRICT;
+
+
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT fk_trust_issuance_log_access_audit FOREIGN KEY (tenant_id, access_audit_ref) REFERENCES public.trust_access_log(tenant_id, audit_ref) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT investigation_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.investigation_tool_calls
     ADD CONSTRAINT investigation_tool_calls_investigation_id_fkey FOREIGN KEY (investigation_id) REFERENCES public.investigations(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.investigation_tool_calls
     ADD CONSTRAINT investigation_tool_calls_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_authority_job_id_fkey FOREIGN KEY (authority_job_id) REFERENCES public.investigation_jobs(id) ON DELETE SET NULL;
 
+
+
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT llm_api_calls_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.llm_breaker_state
     ADD CONSTRAINT llm_breaker_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.llm_budget_reservations
     ADD CONSTRAINT llm_budget_reservations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.llm_call_audit
     ADD CONSTRAINT llm_call_audit_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.llm_hourly_shutoff_state
     ADD CONSTRAINT llm_hourly_shutoff_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.llm_monthly_budget_state
     ADD CONSTRAINT llm_monthly_budget_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT llm_monthly_costs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.llm_semantic_cache
     ADD CONSTRAINT llm_semantic_cache_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.llm_validation_failures
     ADD CONSTRAINT llm_validation_failures_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT oauth_handshake_sessions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT oauth_handshake_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.platform_connections
     ADD CONSTRAINT platform_connections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.platform_credentials
     ADD CONSTRAINT platform_credentials_platform_connection_id_fkey FOREIGN KEY (platform_connection_id) REFERENCES public.platform_connections(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.platform_credentials
     ADD CONSTRAINT platform_credentials_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.r4_crash_barriers
     ADD CONSTRAINT r4_crash_barriers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.r4_task_attempts
     ADD CONSTRAINT r4_task_attempts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT raw_event_payloads_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT raw_event_payloads_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.reconciliation_runs
     ADD CONSTRAINT reconciliation_runs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.revenue_cache_entries
     ADD CONSTRAINT revenue_cache_entries_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.revenue_ledger
     ADD CONSTRAINT revenue_ledger_allocation_id_fkey FOREIGN KEY (allocation_id) REFERENCES public.attribution_allocations(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.revenue_ledger
     ADD CONSTRAINT revenue_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_ledger_id_fkey FOREIGN KEY (ledger_id) REFERENCES public.revenue_ledger(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.session_authority
     ADD CONSTRAINT session_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_role_code_fkey FOREIGN KEY (role_code) REFERENCES public.roles(code) ON DELETE RESTRICT;
+
+
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT tenant_memberships_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT tenant_memberships_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.trust_access_log
     ADD CONSTRAINT trust_access_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT trust_envelope_issuance_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.trust_export_artifact_attempts
     ADD CONSTRAINT trust_export_artifact_attempts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT trust_issuance_attempts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT trust_rate_limit_state_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT trust_rate_limit_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.trust_replay_events
     ADD CONSTRAINT trust_replay_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.trust_request_nonces
     ADD CONSTRAINT trust_request_nonces_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.trust_request_nonces
     ADD CONSTRAINT trust_request_nonces_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.trust_scope_denial_events
     ADD CONSTRAINT trust_scope_denial_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.trust_tenant_policy_events
     ADD CONSTRAINT trust_tenant_policy_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
 
 ALTER TABLE ONLY public.worker_side_effects
     ADD CONSTRAINT worker_side_effects_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+
+
 ALTER TABLE public.agent_clients ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.agent_scope_grants ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.agent_service_credentials ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.agent_token_revocations ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.attribution_allocations ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.attribution_commerce_identities ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.attribution_events ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.attribution_recompute_jobs ENABLE ROW LEVEL SECURITY;
 
+
 CREATE POLICY attribution_recompute_jobs_tenant_isolation ON public.attribution_recompute_jobs USING (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))) WITH CHECK (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true)));
+
+
+
+
+
 
 ALTER TABLE public.auth_access_token_denylist ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.auth_refresh_tokens ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.auth_user_token_cutoffs ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b23_exception_records ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b23_match_task_dispatches ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b23_match_verdicts ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b23_revenue_events ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b23_webhook_ingestion_logs ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b24_active_execution_leases ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b24_dirty_events ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b24_feature_authority_build_outbox ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b24_feature_authority_build_requests ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b24_fit_dispatch_outbox ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b24_fit_planner_wakeups ENABLE ROW LEVEL SECURITY;
+
 
 CREATE POLICY b24_fit_planner_wakeups_worker_only ON public.b24_fit_planner_wakeups USING ((CURRENT_USER = 'app_worker'::name)) WITH CHECK ((CURRENT_USER = 'app_worker'::name));
 
+
+
 ALTER TABLE public.b24_fit_policy_replan_lineage ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b24_fit_recovery_outbox ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b24_worker_process_authority ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b26_p2_adjustment_attestation ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b26_p2_adjustment_evidence ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b26_p2_auth_root_evidence ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b26_p2_conduction_receipts ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b26_p2_evaluator_heartbeat ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b26_p2_execution_outbox ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b26_p2_execution_quarantine ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b26_p2_ingress_auth_witness ENABLE ROW LEVEL SECURITY;
 
+
 CREATE POLICY b26_p2_policy_global_read ON public.b26_p2_scope_policy_authority FOR SELECT USING (true);
+
+
 
 ALTER TABLE public.b26_p2_provenance_evidence ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b26_p2_provider_auth_consequence ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b26_p2_scheduler_heartbeat ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b26_p2_scope_policy_authority ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b26_p2_source_money_attestation ENABLE ROW LEVEL SECURITY;
 
+
 CREATE POLICY b26_p2_supersession_ledger_owner_all ON public.b26_p2_verdict_supersession_ledger USING (true) WITH CHECK (true);
+
+
 
 ALTER TABLE public.b26_p2_verdict_supersession_ledger ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b27_explanation_materializations ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b28_proposals ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b28_request_authentications ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.b28_simulation_requests ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.b28_simulation_results ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_artifact_storage_quotas ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_artifacts ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_artifacts_p00 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_artifacts_p01 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_artifacts_p02 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_artifacts_p03 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_artifacts_p04 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_artifacts_p05 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_artifacts_p06 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_artifacts_p07 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_artifacts_p08 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_artifacts_p09 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_artifacts_p10 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_artifacts_p11 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_artifacts_p12 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_artifacts_p13 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_artifacts_p14 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_artifacts_p15 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_model_fits ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_model_fits_p00 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_model_fits_p01 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_model_fits_p02 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_model_fits_p03 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_model_fits_p04 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_model_fits_p05 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_model_fits_p06 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_model_fits_p07 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_model_fits_p08 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_model_fits_p09 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_model_fits_p10 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_model_fits_p11 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_model_fits_p12 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_model_fits_p13 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.bayesian_model_fits_p14 ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.bayesian_model_fits_p15 ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.budget_jobs ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.budget_optimization_jobs ENABLE ROW LEVEL SECURITY;
 
+
 CREATE POLICY c11_dispatch_publisher_select ON public.b24_fit_dispatch_outbox FOR SELECT USING ((SESSION_USER = 'app_dispatch_publisher'::name));
+
+
 
 CREATE POLICY c11_dispatch_publisher_update ON public.b24_fit_dispatch_outbox FOR UPDATE USING ((SESSION_USER = 'app_dispatch_publisher'::name)) WITH CHECK ((SESSION_USER = 'app_dispatch_publisher'::name));
 
+
+
 CREATE POLICY c11_trigger_insert_b24_fit_policy_replan_lineage ON public.b24_fit_policy_replan_lineage FOR INSERT WITH CHECK ((CURRENT_USER = pg_get_userbyid(( SELECT pg_class.relowner
    FROM pg_class
-  WHERE (pg_class.oid = ('b24_fit_policy_replan_lineage'::regclass)::oid)))));
+  WHERE (pg_class.oid = ('public.b24_fit_policy_replan_lineage'::regclass)::oid)))));
+
+
 
 CREATE POLICY c12_dispatch_internal_select ON public.b24_fit_dispatch_outbox FOR SELECT USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
 
+
+
 CREATE POLICY c12_dispatch_internal_update ON public.b24_fit_dispatch_outbox FOR UPDATE USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name))) WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+
 
 CREATE POLICY c12_recovery_internal_insert ON public.b24_fit_recovery_outbox FOR INSERT WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
 
+
+
 CREATE POLICY c12_recovery_internal_select ON public.b24_fit_recovery_outbox FOR SELECT USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+
 
 CREATE POLICY c12_recovery_internal_update ON public.b24_fit_recovery_outbox FOR UPDATE USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name))) WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
 
+
+
 CREATE POLICY c12_worker_authority_internal_insert ON public.b24_worker_process_authority FOR INSERT WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+
 
 CREATE POLICY c12_worker_authority_internal_select ON public.b24_worker_process_authority FOR SELECT USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = ANY (ARRAY['app_worker'::name, 'app_dispatch_publisher'::name]))));
 
+
+
 CREATE POLICY c12_worker_authority_internal_update ON public.b24_worker_process_authority FOR UPDATE USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name))) WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
+
+
 
 ALTER TABLE public.channel_assignment_corrections ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.compliance_audit_ledger ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.dead_events ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.dead_events_quarantine ENABLE ROW LEVEL SECURITY;
+
 
 CREATE POLICY deny_all_b24_worker_process_authority ON public.b24_worker_process_authority USING (false) WITH CHECK (false);
 
+
+
 ALTER TABLE public.ephemeral_click_resolution ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.ephemeral_order_resolution ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.investigation_jobs ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.investigation_tool_calls ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.investigations ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.llm_api_calls ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.llm_breaker_state ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.llm_budget_reservations ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.llm_call_audit ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.llm_hourly_shutoff_state ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.llm_monthly_budget_state ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.llm_monthly_costs ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.llm_semantic_cache ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.llm_validation_failures ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.oauth_handshake_sessions ENABLE ROW LEVEL SECURITY;
 
+
 CREATE POLICY ops_quarantine_select ON public.dead_events_quarantine FOR SELECT USING (((tenant_id IS NULL) AND (CURRENT_USER = 'app_ops'::name)));
+
+
 
 ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
+
 
 CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
 
+
+
 ALTER TABLE public.r4_crash_barriers ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.r4_task_attempts ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.raw_event_payloads ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.reconciliation_runs ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.revenue_cache_entries ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.revenue_ledger ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.revenue_state_transitions ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.session_authority ENABLE ROW LEVEL SECURITY;
 
+
 CREATE POLICY tenant_isolation_b24_fit_policy_replan_lineage ON public.b24_fit_policy_replan_lineage FOR SELECT USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_b26_p2_adjustment_attestation ON public.b26_p2_adjustment_attestation USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_b26_p2_adjustment_evidence ON public.b26_p2_adjustment_evidence USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_b26_p2_source_money_attestation ON public.b26_p2_source_money_attestation USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy ON public.attribution_allocations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.attribution_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.auth_access_token_denylist USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.auth_refresh_tokens USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.auth_user_token_cutoffs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.budget_jobs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy ON public.budget_optimization_jobs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.channel_assignment_corrections USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.dead_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_ro, app_rw, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+
+
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.investigation_tool_calls USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.investigations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.llm_api_calls USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.llm_breaker_state USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
+
+
+
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.llm_budget_reservations USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
+
+
 CREATE POLICY tenant_isolation_policy ON public.llm_call_audit USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
+
+
+
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.llm_hourly_shutoff_state USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.llm_monthly_budget_state USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.llm_monthly_costs USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.llm_semantic_cache USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.llm_validation_failures USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.oauth_handshake_sessions USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.platform_connections USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.platform_credentials USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.r4_crash_barriers TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy ON public.r4_task_attempts TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.reconciliation_runs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.revenue_cache_entries USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.revenue_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.revenue_state_transitions USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+            Purpose: Prevent cross-tenant access to audit trail.
+            Requires app.current_tenant_id to be set via set_config().';
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.session_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy ON public.tenant_membership_roles USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.tenant_memberships USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
+
+
+
 CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs USING (((tenant_id IS NULL) OR ((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))));
+
+
 
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_agent_clients ON public.agent_clients USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_agent_scope_grants ON public.agent_scope_grants USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_agent_service_credentials ON public.agent_service_credentials USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_agent_token_revocations ON public.agent_token_revocations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_attribution_commerce_identities ON public.attribution_commerce_identities USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b23_exception_records ON public.b23_exception_records USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b23_match_task_dispatches ON public.b23_match_task_dispatches USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b23_match_verdicts ON public.b23_match_verdicts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b23_revenue_events ON public.b23_revenue_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b23_webhook_ingestion_logs ON public.b23_webhook_ingestion_logs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b24_active_execution_leases ON public.b24_active_execution_leases USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b24_dirty_events ON public.b24_dirty_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b24_feature_authority_build_outbox ON public.b24_feature_authority_build_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b24_feature_authority_build_requests ON public.b24_feature_authority_build_requests USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b24_fit_recovery_outbox ON public.b24_fit_recovery_outbox USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b24_source_window_feature_authority ON public.b24_source_window_feature_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b26_p2_auth_root_evidence ON public.b26_p2_auth_root_evidence USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b26_p2_conduction_receipts ON public.b26_p2_conduction_receipts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b26_p2_evaluator_heartbeat ON public.b26_p2_evaluator_heartbeat USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b26_p2_execution_outbox ON public.b26_p2_execution_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b26_p2_execution_quarantine ON public.b26_p2_execution_quarantine USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b26_p2_ingress_auth_witness ON public.b26_p2_ingress_auth_witness USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b26_p2_provenance_evidence ON public.b26_p2_provenance_evidence USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b26_p2_provider_auth_consequence ON public.b26_p2_provider_auth_consequence USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b26_p2_scheduler_heartbeat ON public.b26_p2_scheduler_heartbeat USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b27_explanation_materializations ON public.b27_explanation_materializations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b28_proposals ON public.b28_proposals USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b28_request_authentications ON public.b28_request_authentications USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_b28_simulation_requests ON public.b28_simulation_requests USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_b28_simulation_results ON public.b28_simulation_results USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifact_storage_quotas ON public.bayesian_artifact_storage_quotas USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts ON public.bayesian_artifacts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p00 ON public.bayesian_artifacts_p00 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p01 ON public.bayesian_artifacts_p01 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p02 ON public.bayesian_artifacts_p02 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p03 ON public.bayesian_artifacts_p03 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p04 ON public.bayesian_artifacts_p04 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p05 ON public.bayesian_artifacts_p05 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p06 ON public.bayesian_artifacts_p06 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p07 ON public.bayesian_artifacts_p07 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p08 ON public.bayesian_artifacts_p08 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p09 ON public.bayesian_artifacts_p09 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p10 ON public.bayesian_artifacts_p10 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p11 ON public.bayesian_artifacts_p11 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p12 ON public.bayesian_artifacts_p12 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p13 ON public.bayesian_artifacts_p13 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p14 ON public.bayesian_artifacts_p14 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p15 ON public.bayesian_artifacts_p15 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits ON public.bayesian_model_fits USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p00 ON public.bayesian_model_fits_p00 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p01 ON public.bayesian_model_fits_p01 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p02 ON public.bayesian_model_fits_p02 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p03 ON public.bayesian_model_fits_p03 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p04 ON public.bayesian_model_fits_p04 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p05 ON public.bayesian_model_fits_p05 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p06 ON public.bayesian_model_fits_p06 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p07 ON public.bayesian_model_fits_p07 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p08 ON public.bayesian_model_fits_p08 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p09 ON public.bayesian_model_fits_p09 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p10 ON public.bayesian_model_fits_p10 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p11 ON public.bayesian_model_fits_p11 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p12 ON public.bayesian_model_fits_p12 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p13 ON public.bayesian_model_fits_p13 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p14 ON public.bayesian_model_fits_p14 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p15 ON public.bayesian_model_fits_p15 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_compliance_audit_ledger ON public.compliance_audit_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_ephemeral_click_resolution ON public.ephemeral_click_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_ephemeral_order_resolution ON public.ephemeral_order_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_raw_event_payloads ON public.raw_event_payloads USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_trust_access_log ON public.trust_access_log USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_trust_envelope_issuance_log ON public.trust_envelope_issuance_log USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_trust_export_artifact_attempts ON public.trust_export_artifact_attempts USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_trust_issuance_attempts ON public.trust_issuance_attempts USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_trust_rate_limit_state ON public.trust_rate_limit_state USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_trust_replay_events ON public.trust_replay_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_trust_request_nonces ON public.trust_request_nonces USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_trust_scope_denial_events ON public.trust_scope_denial_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_isolation_policy_trust_tenant_policy_events ON public.trust_tenant_policy_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
 
 CREATE POLICY tenant_isolation_policy_webhook_ingress_identities ON public.webhook_ingress_identities USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+
+
 CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_ro, app_rw, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+
+
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+
+
 
 ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.tenant_memberships ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.trust_access_log ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.trust_envelope_issuance_log ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.trust_export_artifact_attempts ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.trust_issuance_attempts ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.trust_rate_limit_state ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.trust_replay_events ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.trust_request_nonces ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.trust_scope_denial_events ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.trust_tenant_policy_events ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
 
 CREATE POLICY users_provision_insert_policy ON public.users FOR INSERT TO app_user WITH CHECK (((id IS NOT NULL) AND (length(TRIM(BOTH FROM login_identifier_hash)) > 0) AND (auth_provider = ANY (ARRAY['password'::text, 'oauth_google'::text, 'oauth_microsoft'::text, 'oauth_github'::text, 'sso'::text]))));
 
+
+
 CREATE POLICY users_self_select_policy ON public.users FOR SELECT USING ((id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid));
+
+
 
 CREATE POLICY users_self_update_policy ON public.users FOR UPDATE USING ((id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid)) WITH CHECK ((id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid));
 
+
+
 ALTER TABLE public.webhook_ingress_identities ENABLE ROW LEVEL SECURITY;
+
 
 ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 
+
 ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
+
+
+\unrestrict dlqArvvoDrSK7yG7Bgy3Jfkt22VmmOlpynUPliy19dbFLFuKer4UOAOhsfmyp6G
+

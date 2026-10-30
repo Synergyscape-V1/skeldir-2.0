@@ -124,6 +124,7 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${RUNTIME_USER} TO ${MIGRATION_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_ingress NOLOGIN;" || true
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_worker NOLOGIN;" || true
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_worker TO ${MIGRATION_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_trust_issuer NOLOGIN;" || true
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_relay NOLOGIN;" || true
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" || true
