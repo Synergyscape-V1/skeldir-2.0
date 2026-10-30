@@ -24,31 +24,9 @@ SET row_security = off;
 
 CREATE SCHEMA auth;
 
-
---
--- Name: security; Type: SCHEMA; Schema: -; Owner: -
---
-
 CREATE SCHEMA security;
 
-
---
--- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
---
-
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-
-
---
--- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
-
-
---
--- Name: lookup_user_auth_by_login_hash(text); Type: FUNCTION; Schema: auth; Owner: -
---
 
 CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
     LANGUAGE sql SECURITY DEFINER
@@ -59,15 +37,10 @@ CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text
                 u.is_active,
                 u.auth_provider,
                 u.password_hash
-            FROM public.users AS u
+            FROM users AS u
             WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
-
-
---
--- Name: lookup_user_by_login_hash(text); Type: FUNCTION; Schema: auth; Owner: -
---
 
 CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text)
     LANGUAGE sql SECURITY DEFINER
@@ -77,15 +50,10 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
                 u.id AS user_id,
                 u.is_active,
                 u.auth_provider
-            FROM public.users AS u
+            FROM users AS u
             WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
-
-
---
--- Name: b23_enforce_verdict_authorship(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
     LANGUAGE plpgsql
@@ -96,24 +64,18 @@ CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
             table_owner_oid oid;
             worker_role_oid oid;
         BEGIN
-            -- A superuser can drop this trigger, so refusing it buys no
-            -- authority and only breaks administrative provisioning.
+
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_catalog.pg_roles
+              FROM pg_roles
              WHERE rolname = session_user;
             IF COALESCE(principal_is_superuser, false) THEN
                 RETURN NEW;
             END IF;
 
-            -- The migration principal owns this relation and can drop the
-            -- trigger, so refusing it buys no authority either. It is already
-            -- a member of app_worker where that role exists; naming ownership
-            -- explicitly keeps provisioning working in the environments that
-            -- migrate before any runtime role is created.
             SELECT relowner
               INTO table_owner_oid
-              FROM pg_catalog.pg_class
+              FROM pg_class
              WHERE oid = TG_RELID;
             IF pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE') THEN
                 RETURN NEW;
@@ -121,10 +83,10 @@ CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
 
             SELECT oid
               INTO worker_role_oid
-              FROM pg_catalog.pg_roles
+              FROM pg_roles
              WHERE rolname = 'app_worker';
             IF worker_role_oid IS NOT NULL
-               AND pg_catalog.pg_has_role(session_user, worker_role_oid, 'USAGE')
+               AND pg_has_role(session_user, worker_role_oid, 'USAGE')
             THEN
                 RETURN NEW;
             END IF;
@@ -137,11 +99,6 @@ CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: b23_project_allocation_verification(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b23_project_allocation_verification() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -151,7 +108,7 @@ CREATE FUNCTION public.b23_project_allocation_verification() RETURNS trigger
         BEGIN
             SELECT verdict.*
               INTO authority
-              FROM public.b23_match_verdicts AS verdict
+              FROM b23_match_verdicts AS verdict
              WHERE verdict.tenant_id = NEW.tenant_id
                AND verdict.attribution_event_id = NEW.event_id
                AND verdict.status IN ('matched_confirmed', 'adjusted')
@@ -173,18 +130,6 @@ CREATE FUNCTION public.b23_project_allocation_verification() RETURNS trigger
             RETURN NEW;
         END;
         $$;
-
-
---
--- Name: FUNCTION b23_project_allocation_verification(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.b23_project_allocation_verification() IS 'C19: allocation verification is projected only from confirmed/adjusted B2.3 verdict authority.';
-
-
---
--- Name: b23_refresh_allocation_verification(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b23_refresh_allocation_verification() RETURNS trigger
     LANGUAGE plpgsql
@@ -228,18 +173,6 @@ CREATE FUNCTION public.b23_refresh_allocation_verification() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: FUNCTION b23_refresh_allocation_verification(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.b23_refresh_allocation_verification() IS 'C19: verdict transitions and allocation verification converge in one PostgreSQL transaction.';
-
-
---
--- Name: b24_assert_dispatch_publisher(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_assert_dispatch_publisher() RETURNS text
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -251,11 +184,6 @@ CREATE FUNCTION public.b24_assert_dispatch_publisher() RETURNS text
             RETURN session_user;
         END
         $$;
-
-
---
--- Name: b24_claim_fit_dispatch(uuid, uuid, text, uuid, text, text, integer, text, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_claim_fit_dispatch(p_dispatch_id uuid, p_fit_id uuid, p_task_name text, p_attempt_id uuid, p_payload_hash text, p_worker_generation text, p_worker_pid integer, p_worker_process_token text, p_recovery_generation integer DEFAULT 0, p_lease_seconds integer DEFAULT 330) RETURNS TABLE(outcome text, tenant_id uuid, fit_id uuid, dispatch_id uuid, attempt_id uuid, claim_epoch integer, lease_capability text, lease_expires_at timestamp with time zone)
     LANGUAGE plpgsql SECURITY DEFINER
@@ -275,13 +203,13 @@ BEGIN
 
     IF NOT EXISTS (
         SELECT 1
-        FROM public.b24_worker_process_authority auth
-        WHERE auth.generation_id = p_worker_generation
-          AND auth.pid = p_worker_pid
-          AND auth.process_token_digest = public.b24_sha256_text(p_worker_process_token)
-          AND auth.status = 'active'
-          AND auth.revoked_at IS NULL
-          AND auth.expires_at > now()
+        FROM b24_worker_process_authority auth
+        WHERE generation_id = p_worker_generation
+          AND pid = p_worker_pid
+          AND process_token_digest = b24_sha256_text(p_worker_process_token)
+          AND status = 'active'
+          AND revoked_at IS NULL
+          AND expires_at > now()
     ) THEN
         RETURN QUERY SELECT 'UNAUTHORIZED', NULL::uuid, NULL::uuid, NULL::uuid,
             NULL::uuid, NULL::integer, NULL::text, NULL::timestamptz;
@@ -290,7 +218,7 @@ BEGIN
 
     SELECT *
     INTO v_row
-    FROM public.b24_fit_dispatch_outbox outbox
+    FROM b24_fit_dispatch_outbox outbox
     WHERE outbox.id = p_dispatch_id
       AND outbox.fit_id = p_fit_id
     FOR UPDATE;
@@ -390,11 +318,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_complete_fit_dispatch(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_complete_fit_dispatch() RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -406,17 +329,12 @@ CREATE FUNCTION public.b24_complete_fit_dispatch() RETURNS void
                 terminal_reason = NULL,
                 updated_at = now()
             WHERE outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
-              AND public.b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
+              AND b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b24_dispatch_complete_fence_rejected';
             END IF;
         END
         $$;
-
-
---
--- Name: b24_complete_fit_planner_wakeup(uuid, text, bigint, boolean, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease_owner text, p_wakeup_revision bigint, p_succeeded boolean, p_quiet_period_seconds integer, p_max_wait_seconds integer) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -430,9 +348,7 @@ CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease
             IF session_user <> 'app_worker' THEN
                 RAISE EXCEPTION 'b24_worker_database_identity_required';
             END IF;
-            -- Residual authority is tenant truth read under FORCE RLS. The
-            -- caller must already have bound the tenant, so the obligation can
-            -- never be judged against another tenant's dirty state.
+
             IF current_setting('app.current_tenant_id', true)
                IS DISTINCT FROM p_tenant_id::text THEN
                 RAISE EXCEPTION 'b24_fit_planner_tenant_context_required';
@@ -454,7 +370,7 @@ CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease
 
             SELECT eligible_group_count, next_eligible_at
             INTO residual_eligible, residual_next
-            FROM public.b24_fit_planner_residual_obligation(
+            FROM b24_fit_planner_residual_obligation(
                 p_tenant_id, p_quiet_period_seconds, p_max_wait_seconds
             );
 
@@ -497,9 +413,6 @@ CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease
                 END IF;
             END IF;
 
-            -- Revision fence missed: newer evidence arrived while this pass ran.
-            -- Release any lease this owner still holds so the newer revision is
-            -- immediately runnable, and never delete it.
             UPDATE public.b24_fit_planner_wakeups
             SET status = 'pending', lease_owner = NULL,
                 lease_expires_at = NULL, next_eligible_at = NULL,
@@ -510,11 +423,6 @@ CREATE FUNCTION public.b24_complete_fit_planner_wakeup(p_tenant_id uuid, p_lease
             RETURN 'stale_revision';
         END
         $$;
-
-
---
--- Name: b24_create_fit_recovery_wakeups(integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 25) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
@@ -530,7 +438,7 @@ CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 2
 
             FOR v_row IN
                 SELECT *
-                FROM public.b24_fit_dispatch_outbox outbox
+                FROM b24_fit_dispatch_outbox outbox
                 WHERE outbox.status IN ('dispatched', 'leased', 'running', 'failed_retryable', 'stale_recovered')
                   AND outbox.next_recovery_at <= now()
                   AND (
@@ -589,35 +497,25 @@ CREATE FUNCTION public.b24_create_fit_recovery_wakeups(p_limit integer DEFAULT 2
         END
         $$;
 
-
---
--- Name: b24_current_dispatch_fence_valid(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_current_dispatch_fence_valid(p_tenant_id uuid, p_fit_id uuid) RETURNS boolean
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
             SELECT EXISTS (
                 SELECT 1
-                FROM public.b24_fit_dispatch_outbox outbox
+                FROM b24_fit_dispatch_outbox outbox
                 WHERE outbox.tenant_id = p_tenant_id
                   AND outbox.fit_id = p_fit_id
                   AND outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
                   AND outbox.attempt_id = NULLIF(current_setting('app.b24_attempt_id', true), '')::uuid
                   AND outbox.claim_epoch = NULLIF(current_setting('app.b24_claim_epoch', true), '')::integer
-                  AND outbox.lease_capability_digest = public.b24_sha256_text(
+                  AND outbox.lease_capability_digest = b24_sha256_text(
                         current_setting('app.b24_lease_capability', true)
                       )
                   AND outbox.lease_expires_at > now()
                   AND outbox.status IN ('leased', 'running')
             )
         $$;
-
-
---
--- Name: b24_due_fit_planner_tenants(text, integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_due_fit_planner_tenants(p_lease_owner text, p_limit integer DEFAULT 25) RETURNS TABLE(tenant_id uuid, wakeup_revision bigint)
     LANGUAGE plpgsql SECURITY DEFINER
@@ -633,7 +531,7 @@ CREATE FUNCTION public.b24_due_fit_planner_tenants(p_lease_owner text, p_limit i
             RETURN QUERY
             WITH due AS (
                 SELECT wakeup.tenant_id
-                FROM public.b24_fit_planner_wakeups wakeup
+                FROM b24_fit_planner_wakeups wakeup
                 WHERE (
                         wakeup.next_eligible_at IS NULL
                         OR wakeup.next_eligible_at <= now()
@@ -661,11 +559,6 @@ CREATE FUNCTION public.b24_due_fit_planner_tenants(p_lease_owner text, p_limit i
         END
         $$;
 
-
---
--- Name: b24_enforce_artifact_lifecycle(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_enforce_artifact_lifecycle() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -680,11 +573,6 @@ CREATE FUNCTION public.b24_enforce_artifact_lifecycle() RETURNS trigger
             RETURN NEW;
         END
         $$;
-
-
---
--- Name: b24_enforce_c11_policy_provenance(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -708,7 +596,7 @@ CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
                 END IF;
 
                 SELECT EXISTS (
-                    SELECT 1 FROM public.b24_inference_policy_registry registry
+                    SELECT 1 FROM b24_inference_policy_registry registry
                     WHERE registry.policy_bundle_hash = NEW.policy_bundle_hash
                       AND registry.inference_profile_version = NEW.inference_profile_version
                       AND registry.runtime_policy_version = NEW.runtime_policy_version
@@ -740,7 +628,7 @@ CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
 
             IF available_bucket THEN
                 SELECT EXISTS (
-                    SELECT 1 FROM public.b24_inference_policy_registry registry
+                    SELECT 1 FROM b24_inference_policy_registry registry
                     WHERE registry.policy_bundle_hash = NEW.policy_bundle_hash
                       AND registry.inference_profile_version = NEW.inference_profile_version
                       AND registry.runtime_policy_version = NEW.runtime_policy_version
@@ -757,11 +645,6 @@ CREATE FUNCTION public.b24_enforce_c11_policy_provenance() RETURNS trigger
         END
         $$;
 
-
---
--- Name: b24_enforce_dirty_event_authority(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_enforce_dirty_event_authority() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -772,30 +655,23 @@ CREATE FUNCTION public.b24_enforce_dirty_event_authority() RETURNS trigger
             planner_role_oid oid;
             caller_is_planner boolean;
         BEGIN
-            -- A superuser can drop this trigger, so refusing it buys no
-            -- authority and only breaks administrative provisioning.
+
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_catalog.pg_roles
+              FROM pg_roles
              WHERE rolname = session_user;
             IF COALESCE(principal_is_superuser, false) THEN
                 RETURN NEW;
             END IF;
 
-            -- Likewise the migration principal, which owns the relation and can
-            -- drop the trigger outright. C20 asserts, beside its own fence, that
-            -- no runtime login can reach that role; the same assertion carries
-            -- this one.
             SELECT relowner
               INTO table_owner_oid
-              FROM pg_catalog.pg_class
+              FROM pg_class
              WHERE oid = TG_RELID;
             IF pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE') THEN
                 RETURN NEW;
             END IF;
 
-            -- Identity of the invalidation evidence is written once, by the
-            -- producer, and is never restated by a lifecycle transition.
             IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
            OR NEW.model_type IS DISTINCT FROM OLD.model_type
            OR NEW.model_version IS DISTINCT FROM OLD.model_version
@@ -814,17 +690,14 @@ CREATE FUNCTION public.b24_enforce_dirty_event_authority() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- The resolved source snapshot has exactly one lawful writer and
-            -- exactly one lawful moment: the B2.4 planner binding it as a leased
-            -- obligation enters authority_waiting.
             IF NEW.source_snapshot_hash IS DISTINCT FROM OLD.source_snapshot_hash
             THEN
                 SELECT oid
                   INTO planner_role_oid
-                  FROM pg_catalog.pg_roles
+                  FROM pg_roles
                  WHERE rolname = 'app_worker';
                 caller_is_planner := planner_role_oid IS NOT NULL
-                    AND pg_catalog.pg_has_role(
+                    AND pg_has_role(
                         session_user, planner_role_oid, 'USAGE'
                     );
                 IF NOT caller_is_planner THEN
@@ -848,11 +721,6 @@ CREATE FUNCTION public.b24_enforce_dirty_event_authority() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: b24_enforce_dirty_event_lifecycle(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_enforce_dirty_event_lifecycle() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -872,11 +740,6 @@ CREATE FUNCTION public.b24_enforce_dirty_event_lifecycle() RETURNS trigger
         END
         $$;
 
-
---
--- Name: b24_enforce_dispatch_fence(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -895,10 +758,7 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
                        OR NEW.id IS DISTINCT FROM OLD.id THEN
                         RAISE EXCEPTION 'b24_dispatch_immutable_fit_authority';
                     END IF;
-                    -- B2.5-P13 C5: the planner owns fit creation and scheduling
-                    -- bookkeeping and never holds a dispatch lease. An update
-                    -- that changes no authority-bearing column changes nothing
-                    -- the fence exists to protect.
+
                     IF NOT (NEW.status IS DISTINCT FROM OLD.status
                OR NEW.source_snapshot_hash IS DISTINCT FROM OLD.source_snapshot_hash
                OR NEW.source_read_started_at IS DISTINCT FROM OLD.source_read_started_at
@@ -996,11 +856,6 @@ CREATE FUNCTION public.b24_enforce_dispatch_fence() RETURNS trigger
         END
         $$;
 
-
---
--- Name: b24_enforce_evidence_temporal_plausibility(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_enforce_evidence_temporal_plausibility() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1026,11 +881,6 @@ CREATE FUNCTION public.b24_enforce_evidence_temporal_plausibility() RETURNS trig
         END
         $$;
 
-
---
--- Name: b24_enforce_policy_bundle_write_authority(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_enforce_policy_bundle_write_authority() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1055,11 +905,6 @@ CREATE FUNCTION public.b24_enforce_policy_bundle_write_authority() RETURNS trigg
             RETURN NEW;
         END
         $$;
-
-
---
--- Name: b24_enforce_terminal_fit_truth(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
     LANGUAGE plpgsql
@@ -1115,21 +960,11 @@ CREATE FUNCTION public.b24_enforce_terminal_fit_truth() RETURNS trigger
         END
         $$;
 
-
---
--- Name: b24_evidence_future_skew_tolerance_seconds(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_evidence_future_skew_tolerance_seconds() RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
             SELECT 120
         $$;
-
-
---
--- Name: b24_fail_fit_dispatch_recoverable(text); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_fail_fit_dispatch_recoverable(p_reason text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1142,9 +977,9 @@ DECLARE
 BEGIN
     SELECT *
     INTO v_row
-    FROM public.b24_fit_dispatch_outbox outbox
+    FROM b24_fit_dispatch_outbox outbox
     WHERE outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
-      AND public.b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id)
+      AND b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id)
     FOR UPDATE;
 
     IF NOT FOUND THEN
@@ -1204,11 +1039,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_fail_fit_dispatch_terminal(text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_fail_fit_dispatch_terminal(p_reason text) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1220,17 +1050,12 @@ CREATE FUNCTION public.b24_fail_fit_dispatch_terminal(p_reason text) RETURNS voi
                 completed_at = now(),
                 updated_at = now()
             WHERE outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
-              AND public.b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
+              AND b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b24_dispatch_failure_fence_rejected';
             END IF;
         END
         $$;
-
-
---
--- Name: b24_fit_planner_residual_obligation(uuid, integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_fit_planner_residual_obligation(p_tenant_id uuid, p_quiet_period_seconds integer, p_max_wait_seconds integer) RETURNS TABLE(eligible_group_count integer, next_eligible_at timestamp with time zone)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -1242,7 +1067,7 @@ CREATE FUNCTION public.b24_fit_planner_residual_obligation(p_tenant_id uuid, p_q
                 SELECT
                     max(dirty.observed_at) AS last_observed_at,
                     min(dirty.observed_at) AS first_observed_at
-                FROM public.b24_dirty_events dirty
+                FROM b24_dirty_events dirty
                 WHERE dirty.tenant_id = p_tenant_id
                   AND (
                       dirty.status IN ('pending', 'authority_retry_ready')
@@ -1276,19 +1101,9 @@ CREATE FUNCTION public.b24_fit_planner_residual_obligation(p_tenant_id uuid, p_q
         END
         $$;
 
-
---
--- Name: b24_fit_status_is_terminal(text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_fit_status_is_terminal(p_status text) RETURNS boolean
     LANGUAGE sql IMMUTABLE
     AS $$ SELECT p_status IN ('succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled') $$;
-
-
---
--- Name: b24_invalidate_attribution_allocations_delete(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_invalidate_attribution_allocations_delete() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1328,11 +1143,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_invalidate_attribution_allocations_insert(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_invalidate_attribution_allocations_insert() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1370,11 +1180,6 @@ BEGIN
     RETURN NULL;
 END
 $$;
-
-
---
--- Name: b24_invalidate_attribution_allocations_update(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_invalidate_attribution_allocations_update() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1433,11 +1238,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_invalidate_attribution_events_delete(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_invalidate_attribution_events_delete() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1476,11 +1276,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_invalidate_attribution_events_insert(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_invalidate_attribution_events_insert() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1518,11 +1313,6 @@ BEGIN
     RETURN NULL;
 END
 $$;
-
-
---
--- Name: b24_invalidate_attribution_events_update(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_invalidate_attribution_events_update() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1581,11 +1371,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_invalidate_b23_match_verdicts_delete(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_invalidate_b23_match_verdicts_delete() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1624,11 +1409,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_invalidate_b23_match_verdicts_insert(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_invalidate_b23_match_verdicts_insert() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1666,11 +1446,6 @@ BEGIN
     RETURN NULL;
 END
 $$;
-
-
---
--- Name: b24_invalidate_b23_match_verdicts_update(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_invalidate_b23_match_verdicts_update() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1729,11 +1504,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_invalidate_b23_revenue_events_delete(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_invalidate_b23_revenue_events_delete() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1772,11 +1542,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_invalidate_b23_revenue_events_insert(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_invalidate_b23_revenue_events_insert() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -1814,11 +1579,6 @@ BEGIN
     RETURN NULL;
 END
 $$;
-
-
---
--- Name: b24_invalidate_b23_revenue_events_update(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_invalidate_b23_revenue_events_update() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -1877,11 +1637,6 @@ BEGIN
 END
 $$;
 
-
---
--- Name: b24_lease_fit_recovery_rows(integer, integer); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_lease_fit_recovery_rows(p_batch_size integer DEFAULT 25, p_stale_publishing_seconds integer DEFAULT 300) RETURNS TABLE(recovery_id uuid, tenant_id uuid, dispatch_id uuid, fit_id uuid, task_name text, attempt_id uuid, payload_hash text, recovery_generation integer, publish_attempt_count integer)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -1890,7 +1645,7 @@ CREATE FUNCTION public.b24_lease_fit_recovery_rows(p_batch_size integer DEFAULT 
             RETURN QUERY
             WITH due AS (
                 SELECT recovery.tenant_id, recovery.id, recovery.dispatch_id
-                FROM public.b24_fit_recovery_outbox recovery
+                FROM b24_fit_recovery_outbox recovery
                 WHERE (
                     recovery.status IN ('pending', 'failed_retryable')
                     OR (
@@ -1953,11 +1708,6 @@ CREATE FUNCTION public.b24_lease_fit_recovery_rows(p_batch_size integer DEFAULT 
         END
         $$;
 
-
---
--- Name: b24_mark_allocation_financial_window_dirty(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_mark_allocation_financial_window_dirty() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -2004,7 +1754,7 @@ BEGIN
 
     SELECT date_trunc('day', event.occurred_at)
       INTO financial_window_start
-      FROM public.attribution_events AS event
+      FROM attribution_events AS event
      WHERE event.tenant_id = source_row.tenant_id
        AND event.id = source_row.event_id
        AND event.processing_status IN ('pending', 'processed')
@@ -2037,18 +1787,6 @@ BEGIN
 END;
 $$;
 
-
---
--- Name: FUNCTION b24_mark_allocation_financial_window_dirty(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.b24_mark_allocation_financial_window_dirty() IS 'C19: allocation changes invalidate the governed window of the underlying financial event.';
-
-
---
--- Name: b24_mark_fit_dispatch_running(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -2059,17 +1797,12 @@ CREATE FUNCTION public.b24_mark_fit_dispatch_running() RETURNS void
                 last_heartbeat_at = now(),
                 updated_at = now()
             WHERE outbox.id = NULLIF(current_setting('app.b24_dispatch_id', true), '')::uuid
-              AND public.b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
+              AND b24_current_dispatch_fence_valid(outbox.tenant_id, outbox.fit_id);
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b24_dispatch_running_fence_rejected';
             END IF;
         END
         $$;
-
-
---
--- Name: b24_mark_fit_recovery_failed(uuid, uuid, uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_mark_fit_recovery_failed(p_tenant_id uuid, p_recovery_id uuid, p_dispatch_id uuid, p_error text, p_max_attempts integer DEFAULT 5) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2095,11 +1828,6 @@ CREATE FUNCTION public.b24_mark_fit_recovery_failed(p_tenant_id uuid, p_recovery
             RETURN v_count = 1;
         END
         $$;
-
-
---
--- Name: b24_mark_fit_recovery_published(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_mark_fit_recovery_published(p_tenant_id uuid, p_recovery_id uuid, p_dispatch_id uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2136,11 +1864,6 @@ CREATE FUNCTION public.b24_mark_fit_recovery_published(p_tenant_id uuid, p_recov
             RETURN true;
         END
         $$;
-
-
---
--- Name: b24_mark_verdict_financial_window_dirty(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_mark_verdict_financial_window_dirty() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2201,7 +1924,7 @@ BEGIN
 
     SELECT date_trunc('day', event.occurred_at)
       INTO financial_window_start
-      FROM public.attribution_events AS event
+      FROM attribution_events AS event
      WHERE event.tenant_id = source_row.tenant_id
        AND event.id = source_row.attribution_event_id
        AND event.processing_status IN ('pending', 'processed')
@@ -2234,18 +1957,6 @@ BEGIN
 END;
 $$;
 
-
---
--- Name: FUNCTION b24_mark_verdict_financial_window_dirty(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.b24_mark_verdict_financial_window_dirty() IS 'C19: verdict changes invalidate the governed window of the underlying financial event.';
-
-
---
--- Name: b24_next_active_worker_generation(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_next_active_worker_generation() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
@@ -2255,22 +1966,17 @@ CREATE FUNCTION public.b24_next_active_worker_generation() RETURNS text
         BEGIN
             PERFORM set_config('app.b24_worker_authority_access', 'on', true);
 
-            SELECT auth.generation_id
+            SELECT generation_id
             INTO v_generation
-            FROM public.b24_worker_process_authority auth
-            WHERE auth.status = 'active'
-              AND auth.revoked_at IS NULL
-              AND auth.expires_at > now()
-            ORDER BY auth.registered_at DESC, auth.generation_id DESC
+            FROM b24_worker_process_authority auth
+            WHERE status = 'active'
+              AND revoked_at IS NULL
+              AND expires_at > now()
+            ORDER BY registered_at DESC, generation_id DESC
             LIMIT 1;
             RETURN v_generation;
         END
         $$;
-
-
---
--- Name: b24_policy_lineage_complete(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uuid) RETURNS boolean
     LANGUAGE plpgsql STABLE
@@ -2279,14 +1985,10 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
         DECLARE
             v_complete boolean;
         BEGIN
-            -- plpgsql, not sql, so the body is resolved when it runs.
-            -- canonical_schema.sql emits functions before tables, and a
-            -- LANGUAGE sql body is resolved at CREATE, so this function
-            -- alone could not be applied to a bare database. The query is
-            -- unchanged.
+
             WITH fit AS (
                 SELECT policy_replan_count
-                FROM public.bayesian_model_fits
+                FROM bayesian_model_fits
                 WHERE tenant_id = p_tenant_id AND id = p_fit_id
             ), ordered AS (
                 SELECT transition_sequence,
@@ -2295,7 +1997,7 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
                        lag(to_policy_bundle_hash) OVER (
                            ORDER BY transition_sequence
                        ) AS prior_to
-                FROM public.b24_fit_policy_replan_lineage
+                FROM b24_fit_policy_replan_lineage
                 WHERE tenant_id = p_tenant_id AND fit_id = p_fit_id
             ), summary AS (
                 SELECT count(*)::integer AS row_count,
@@ -2324,11 +2026,6 @@ CREATE FUNCTION public.b24_policy_lineage_complete(p_tenant_id uuid, p_fit_id uu
             RETURN COALESCE(v_complete, false);
         END
         $$;
-
-
---
--- Name: b24_register_worker_process_authority(text, integer, integer, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_register_worker_process_authority(p_generation_id text, p_pid integer, p_parent_pid integer, p_topology_fingerprint text, p_process_token text, p_ttl_seconds integer DEFAULT 3600) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2382,11 +2079,6 @@ CREATE FUNCTION public.b24_register_worker_process_authority(p_generation_id tex
         END
         $_$;
 
-
---
--- Name: b24_reject_policy_registry_rewrite(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_reject_policy_registry_rewrite() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -2394,11 +2086,6 @@ CREATE FUNCTION public.b24_reject_policy_registry_rewrite() RETURNS trigger
             RAISE EXCEPTION 'b24_policy_registry_immutable';
         END
         $$;
-
-
---
--- Name: b24_reject_replan_lineage_mutation(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_reject_replan_lineage_mutation() RETURNS trigger
     LANGUAGE plpgsql
@@ -2408,21 +2095,11 @@ CREATE FUNCTION public.b24_reject_replan_lineage_mutation() RETURNS trigger
         END
         $$;
 
-
---
--- Name: b24_sha256_text(text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_sha256_text(value text) RETURNS text
     LANGUAGE sql IMMUTABLE
     AS $$
             SELECT encode(digest(value, 'sha256'), 'hex')
         $$;
-
-
---
--- Name: b24_signal_fit_planner_wakeup(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_signal_fit_planner_wakeup() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2449,11 +2126,6 @@ CREATE FUNCTION public.b24_signal_fit_planner_wakeup() RETURNS trigger
             RETURN NEW;
         END
         $$;
-
-
---
--- Name: b24_signal_fit_planner_wakeup_coalesced(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2490,28 +2162,11 @@ CREATE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced() RETURNS trigger
         END
         $$;
 
-
---
--- Name: b24_source_windows_overlap(timestamp with time zone, timestamp with time zone, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b24_source_windows_overlap(p_change_start timestamp with time zone, p_change_end timestamp with time zone, p_fit_start timestamp with time zone, p_fit_end timestamp with time zone) RETURNS boolean
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
     AS $$
             SELECT p_change_start < p_fit_end AND p_fit_start < p_change_end
         $$;
-
-
---
--- Name: FUNCTION b24_source_windows_overlap(p_change_start timestamp with time zone, p_change_end timestamp with time zone, p_fit_start timestamp with time zone, p_fit_end timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.b24_source_windows_overlap(p_change_start timestamp with time zone, p_change_end timestamp with time zone, p_fit_start timestamp with time zone, p_fit_end timestamp with time zone) IS 'B2.5-P13 C8 affected-fit relation. A source change scope stales a fit when the two half-open windows overlap. Equality was the C7 behaviour and could not stale a fit wider than one day.';
-
-
---
--- Name: b26_p2_ascii_strip(text); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_ascii_strip(p_value text) RETURNS text
     LANGUAGE sql IMMUTABLE
@@ -2521,11 +2176,6 @@ CREATE FUNCTION public.b26_p2_ascii_strip(p_value text) RETURNS text
                  regexp_replace(COALESCE(p_value, ''), '^[ \t\n\r\f\v]+', ''),
                '[ \t\n\r\f\v]+$', '')
         $_$;
-
-
---
--- Name: b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamp with time zone, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_kind text, p_ref text, p_financial_status text, p_cancelled_at timestamp with time zone, p_refunds_present boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2563,11 +2213,9 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-            -- Single ingress-boundary law (dynamic owner): only the
-            -- ingress credential, the table owner, and the cluster
-            -- superuser may attest.
+
             IF session_user IS DISTINCT FROM 'app_ingress'
-               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
+               AND session_user IS DISTINCT FROM b26_p2_table_owner(
                    'public.webhook_ingress_identities'::regclass)
                AND session_user IS DISTINCT FROM 'postgres' THEN
                 RAISE EXCEPTION 'b26_p2_evidence_caller_refused'
@@ -2605,7 +2253,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                    i.event_timestamp
               INTO _tenant, _idem, _state, _prov_status, _demotion, _row_provider,
                    _t_kind, _t_value, _t_amount, _t_ccy, _t_scale, _t_ts
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_evidence_ingress_missing'
@@ -2625,7 +2273,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                     USING ERRCODE = '42501';
             END IF;
             SELECT w.witness_hash INTO _witness
-              FROM public.b26_p2_ingress_auth_witness AS w
+              FROM b26_p2_ingress_auth_witness AS w
              WHERE w.webhook_ingress_identity_id = p_ingress;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_evidence_witness_missing'
@@ -2634,26 +2282,14 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
             SELECT c.provider, c.provider_event_reference, c.body_sha256,
                    c.signature_envelope_sha256, c.auth_method, c.auth_version
               INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
-              FROM public.b26_p2_provider_auth_consequence AS c
+              FROM b26_p2_provider_auth_consequence AS c
              WHERE c.webhook_ingress_identity_id = p_ingress
                AND c.tenant_id = _tenant;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_evidence_no_auth_consequence'
                     USING ERRCODE = '42501';
             END IF;
-            -- XXI: the re-attestation preimage is the atomic mint
-            -- preimage bit-for-bit (commerce suffix included); a shorter
-            -- recomputation could never match an atomically-minted
-            -- witness and would deaden genuine re-ingestion. Rows
-            -- bound by the legacy recorder path (which supplies no
-            -- commerce context) carry the short preimage instead: both
-            -- are accepted here because each stored witness dictates
-            -- which one must match -- a short witness never matches a
-            -- long-stored row and vice versa. Accepting the
-            -- recorder-bound form does NOT promote it: the XIV
-            -- promotion trigger still refuses the authenticated stamp
-            -- without auth-root evidence (provenance_promotion_refused),
-            -- which only the atomic creates.
+
             _t_ts_canon := to_char(_t_ts AT TIME ZONE 'UTC',
                                    'YYYY-MM-DD HH24:MI:SS.US');
             _expected := encode(digest(
@@ -2680,8 +2316,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 RAISE EXCEPTION 'b26_p2_evidence_witness_not_bound'
                     USING ERRCODE = '42501';
             END IF;
-            -- XIX family: an explicit allowlisted claim is required and
-            -- bound into the consequence row; absent claims are refused.
+
             BEGIN
                 _family := current_setting(
                     'app.b26_p2_event_family', true);
@@ -2689,7 +2324,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 _family := NULL;
             END;
             IF _family IS NULL
-               OR public.b26_p2_ascii_strip(_family) = '' THEN
+               OR b26_p2_ascii_strip(_family) = '' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -2752,9 +2387,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
-            -- XXI (H-XXI-03): contradiction-only lifecycle
-            -- re-check at re-attestation (the original mint
-            -- already established positive creation).
+
             PERFORM public.b26_p2_enforce_lifecycle_admission(
                 _row_provider, _family, p_financial_status,
                 p_cancelled_at, p_refunds_present,
@@ -2781,7 +2414,7 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                     evidence_ref = EXCLUDED.evidence_ref,
                     evidence_witness_hash = EXCLUDED.evidence_witness_hash,
                     attested_at = now();
-                -- XIX: the stamp carries no bearer mark (see atomic).
+
                 UPDATE public.webhook_ingress_identities AS i
                    SET b26_p2_provenance_status = 'authenticated_known',
                        b26_p2_semantic_regime = 'xvii-sovereign-v1',
@@ -2794,11 +2427,6 @@ CREATE FUNCTION public.b26_p2_attest_provenance_evidence_v2(p_ingress uuid, p_ki
                 RAISE;
             END;
         END $$;
-
-
---
--- Name: b26_p2_authenticate_ingress_atomic_v2(uuid, text, text, text, text, text, text, text, timestamp with time zone, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text, p_sig_envelope_sha256 text, p_method text, p_version text, p_financial_status text, p_cancelled_at timestamp with time zone, p_refunds_present boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -2845,19 +2473,15 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-            -- The ingress credential alone may invoke the transition;
-            -- the table owner (direct administration, any topology)
-            -- and the cluster superuser may also invoke it; every
-            -- other session role is refused at the function boundary.
+
             IF session_user IS DISTINCT FROM 'app_ingress'
-               AND session_user IS DISTINCT FROM public.b26_p2_table_owner(
+               AND session_user IS DISTINCT FROM b26_p2_table_owner(
                    'public.webhook_ingress_identities'::regclass)
                AND session_user IS DISTINCT FROM 'postgres' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_caller_refused'
                     USING ERRCODE = '42501';
             END IF;
-            -- XXI floor: a downgraded schema (floor row/table absent or
-            -- behind) cannot mint authority.
+
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
                  WHERE f.id = 1 AND f.floor_revision >= '202609300004';
@@ -2884,7 +2508,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
               INTO _tenant, _idem, _state, _row_provider, _prov,
                    _t_kind, _t_value, _t_cref, _t_amount, _t_ccy, _t_scale,
                    _t_ts, _sem_regime, _demotion
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.id = p_ingress
              FOR UPDATE;
             IF NOT FOUND THEN
@@ -2909,18 +2533,11 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                     USING ERRCODE = '42501';
             END IF;
             IF public.b26_p2_ascii_strip(COALESCE(p_event_ref, '')) = ''
-               OR public.b26_p2_ascii_strip(COALESCE(p_method, '')) = '' THEN
+               OR b26_p2_ascii_strip(COALESCE(p_method, '')) = '' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_blank_shape_refused'
                     USING ERRCODE = '42501';
             END IF;
-            -- XIX: sovereign event-family allowlist. The family's only
-            -- authority is this transition over provider + the
-            -- root-supplied explicit claim (transaction-local GUCs
-            -- app.b26_p2_event_family / app.b26_p2_event_family_source,
-            -- derived by the root from authenticated bytes or the
-            -- provider-transported topic): relay route selection cannot
-            -- confer it, and provider name alone cannot confer it. An
-            -- absent claim is REFUSED -- never defaulted.
+
             BEGIN
                 _family := current_setting(
                     'app.b26_p2_event_family', true);
@@ -2928,7 +2545,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 _family := NULL;
             END;
             IF _family IS NULL
-               OR public.b26_p2_ascii_strip(_family) = '' THEN
+               OR b26_p2_ascii_strip(_family) = '' THEN
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
@@ -2991,19 +2608,17 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 RAISE EXCEPTION 'b26_p2_atomic_family_unbound_refused'
                     USING ERRCODE = '42501';
             END IF;
-            -- XXI (H-XXI-03): lifecycle admission at the seam.
+
             PERFORM public.b26_p2_enforce_lifecycle_admission(
                 _fam_provider, _family, p_financial_status,
                 p_cancelled_at, p_refunds_present,
                 p_created_at, p_updated_at, true);
-            -- Serialize authentications of identical bytes.
+
             PERFORM pg_advisory_xact_lock(
                 hashtext('b26_p2_sovereign_bytes:' || _tenant::text),
                 hashtext(lower(p_body_sha256))
             );
-            -- Serialize authentications of the same provider event and
-            -- the same commerce identity, so concurrent conflicting
-            -- first-authentications cannot both pass the checks below.
+
             PERFORM pg_advisory_xact_lock(
                 hashtext('b26_p2_sovereign_event:' || _tenant::text
                          || '|' || COALESCE(p_provider, '')),
@@ -3016,8 +2631,8 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                          || '|' || COALESCE(_t_value, ''))
             );
             SELECT i.id INTO _dup_id
-              FROM public.webhook_ingress_identities AS i
-              JOIN public.b26_p2_provider_auth_consequence AS c
+              FROM webhook_ingress_identities AS i
+              JOIN b26_p2_provider_auth_consequence AS c
                 ON c.webhook_ingress_identity_id = i.id
                AND c.tenant_id = i.tenant_id
              WHERE i.tenant_id = _tenant
@@ -3031,8 +2646,8 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                     USING ERRCODE = '42501';
             END IF;
             SELECT i.id INTO _conflict_id
-              FROM public.webhook_ingress_identities AS i
-              JOIN public.b26_p2_provider_auth_consequence AS c
+              FROM webhook_ingress_identities AS i
+              JOIN b26_p2_provider_auth_consequence AS c
                 ON c.webhook_ingress_identity_id = i.id
                AND c.tenant_id = i.tenant_id
              WHERE i.tenant_id = _tenant
@@ -3046,41 +2661,14 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 RAISE EXCEPTION 'b26_p2_atomic_event_identity_conflict_refused'
                     USING ERRCODE = '42501';
             END IF;
-            -- XXV-2: commerce-identity collision and provider amendment are
-            -- two different things, and conflating them cost the phase its
-            -- positive obligation. Before this revision ANY second
-            -- authenticated event over one commerce identity was refused, so
-            -- a provider that amends a captured amount had no reachable way
-            -- to move the system's money: no lawful amount-changing source
-            -- existed, and with it went checkpoint growth, the crash window,
-            -- stale-issuance racing and the requalified second read
-            -- (directive XXV A2/A3/A7/A8/B10/B12).
-            --
-            -- An amendment is admitted only when the provider itself
-            -- distinguishes it from the event already holding authority:
-            --   * a different provider event reference (not a redelivery of
-            --     the same event),
-            --   * different signed bytes (not a replay of the same body),
-            --   * an event instant no earlier than the current authority's
-            --     (history moves forward, never backward),
-            --   * the same currency (an amendment corrects an amount, it
-            --     does not change the unit of the money), and
-            --   * the same event family (a cross-family claim on one
-            --     commerce identity is still a collision).
-            -- Anything else keeps the strict refusal.
-            --
-            -- The prior row is SUPERSEDED, never replaced: its authenticated
-            -- money and its attestation stay exactly as the provider sent
-            -- them, and it simply stops being the current authority. That is
-            -- what keeps this from becoming "arbitrary replacement of
-            -- original authenticated money", which the directive forbids.
+
             SELECT i.id, i.provider_native_event_reference,
                    i.verified_amount_currency, i.event_timestamp,
                    lower(c.body_sha256), c.b26_p2_event_family
               INTO _conflict_id, _amend_event_ref, _amend_ccy, _amend_ts,
                    _amend_body, _amend_family
-              FROM public.webhook_ingress_identities AS i
-              LEFT JOIN public.b26_p2_provider_auth_consequence AS c
+              FROM webhook_ingress_identities AS i
+              LEFT JOIN b26_p2_provider_auth_consequence AS c
                      ON c.webhook_ingress_identity_id = i.id
                     AND c.tenant_id = i.tenant_id
              WHERE i.tenant_id = _tenant
@@ -3121,7 +2709,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 SELECT c.provider, c.provider_event_reference, c.body_sha256,
                        c.signature_envelope_sha256, c.auth_method, c.auth_version
                   INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
-                  FROM public.b26_p2_provider_auth_consequence AS c
+                  FROM b26_p2_provider_auth_consequence AS c
                  WHERE c.webhook_ingress_identity_id = p_ingress;
                 IF NOT FOUND THEN
                     INSERT INTO public.b26_p2_provider_auth_consequence AS c (
@@ -3138,7 +2726,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                     SELECT c.provider, c.provider_event_reference, c.body_sha256,
                            c.signature_envelope_sha256, c.auth_method, c.auth_version
                       INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
-                      FROM public.b26_p2_provider_auth_consequence AS c
+                      FROM b26_p2_provider_auth_consequence AS c
                      WHERE c.webhook_ingress_identity_id = p_ingress;
                 ELSE
                     IF _c_provider IS DISTINCT FROM p_provider
@@ -3159,7 +2747,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                 _t_ts_canon := to_char(_t_ts AT TIME ZONE 'UTC',
                                        'YYYY-MM-DD HH24:MI:SS.US');
                 SELECT w.witness_hash INTO _witness
-                  FROM public.b26_p2_ingress_auth_witness AS w
+                  FROM b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = p_ingress;
                 _expected := encode(digest(
                         _tenant::text || '|' || p_ingress::text || '|'
@@ -3181,7 +2769,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                     VALUES (p_ingress, _tenant, _expected, session_user)
                     ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
                     SELECT w.witness_hash INTO _witness
-                      FROM public.b26_p2_ingress_auth_witness AS w
+                      FROM b26_p2_ingress_auth_witness AS w
                      WHERE w.webhook_ingress_identity_id = p_ingress;
                 ELSIF _witness IS DISTINCT FROM _expected THEN
                     UPDATE public.b26_p2_ingress_auth_witness AS w
@@ -3211,13 +2799,7 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
                         lower(_c_body), lower(_c_sig),
                         _c_method, COALESCE(_c_version, 'v1'))
                 ON CONFLICT (webhook_ingress_identity_id) DO NOTHING;
-                -- XIX: stamp the governed semantic regime and clear any
-                -- historical demotion reason. No bearer mark is set or
-                -- needed: this DEFINER transition executes as the owner,
-                -- which is exactly the context the guard admits.
-                -- (Reachable only for non-demoted rows: demoted rows
-                -- were refused above, so this stamp can never bless
-                -- stale money.)
+
                 UPDATE public.webhook_ingress_identities AS i
                    SET b26_p2_provenance_status = 'authenticated_known',
                        b26_p2_semantic_regime = 'xvii-sovereign-v1',
@@ -3231,21 +2813,11 @@ CREATE FUNCTION public.b26_p2_authenticate_ingress_atomic_v2(p_ingress uuid, p_p
             END;
         END $$;
 
-
---
--- Name: b26_p2_authority_universe(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_authority_universe() RETURNS uuid
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$ SELECT universe FROM public.b26_p2_authority_universe
               WHERE id = 1 $$;
-
-
---
--- Name: b26_p2_canonical_day_end(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_canonical_day_end(p_event_timestamp timestamp with time zone) RETURNS timestamp with time zone
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
@@ -3255,18 +2827,6 @@ CREATE FUNCTION public.b26_p2_canonical_day_end(p_event_timestamp timestamp with
                      AT TIME ZONE 'UTC') + interval '1 day')
         $$;
 
-
---
--- Name: FUNCTION b26_p2_canonical_day_end(p_event_timestamp timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.b26_p2_canonical_day_end(p_event_timestamp timestamp with time zone) IS 'B2.6-P2 Corrective VI sovereign UTC-day quantization end bound.';
-
-
---
--- Name: b26_p2_canonical_day_start(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_canonical_day_start(p_event_timestamp timestamp with time zone) RETURNS timestamp with time zone
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
     SET search_path TO 'pg_catalog', 'public'
@@ -3274,18 +2834,6 @@ CREATE FUNCTION public.b26_p2_canonical_day_start(p_event_timestamp timestamp wi
             SELECT (date_trunc('day', p_event_timestamp AT TIME ZONE 'UTC')
                     AT TIME ZONE 'UTC')
         $$;
-
-
---
--- Name: FUNCTION b26_p2_canonical_day_start(p_event_timestamp timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.b26_p2_canonical_day_start(p_event_timestamp timestamp with time zone) IS 'B2.6-P2 Corrective VI sovereign UTC-day quantization: SQL parity copy of app.core.day_window.quantize_utc_day (parity-oracle tested).';
-
-
---
--- Name: b26_p2_canonical_scope_identity_for_window(uuid, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid, p_ws timestamp with time zone, p_we timestamp with time zone) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -3310,7 +2858,7 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
             BEGIN
                 SELECT scope_policy_version, semantic_sha256
                   INTO _policy_version, _policy_semantic
-                  FROM public.b26_p2_scope_policy_authority
+                  FROM b26_p2_scope_policy_authority
                  ORDER BY scope_policy_version DESC LIMIT 1;
                 IF NOT FOUND
                    OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -3325,20 +2873,18 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
                          || '|' || 'source_verified_gross_not_canonical_net'
                          || '|' || 'b2.2_ingress_verified_amount_minor'
                          || '|' || 'b2.3_match_verdicts.canonical_net_verified_amount_minor_only';
-                -- XI: quarantined ingress is explicitly
-                -- non-authoritative and excluded from both the
-                -- blank-shape gate and the canonical aggregate.
+
                 IF EXISTS (
-                    SELECT 1 FROM public.webhook_ingress_identities AS i
+                    SELECT 1 FROM webhook_ingress_identities AS i
                      WHERE i.tenant_id = p_tenant
                        AND i.verified_commerce_ingress_state = 'authenticity_verified'
                        AND NOT EXISTS (
-                            SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                            SELECT 1 FROM b26_p2_execution_quarantine AS q
                              WHERE q.webhook_ingress_identity_id = i.id
                        )
-                       AND (public.b26_p2_ascii_strip(COALESCE(i.provider,'')) = ''
-                            OR public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,'')) = ''
-                            OR length(public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,''))) <> 3)
+                       AND (b26_p2_ascii_strip(COALESCE(i.provider,'')) = ''
+                            OR b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,'')) = ''
+                            OR length(b26_p2_ascii_strip(COALESCE(i.verified_amount_currency,''))) <> 3)
                 ) THEN
                     PERFORM set_config('app.current_tenant_id', COALESCE(_prev_guc,''), true);
                     RAISE EXCEPTION 'b26_p2_canonical_scope_blank_shape' USING ERRCODE='42501';
@@ -3346,15 +2892,15 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
                 SELECT string_agg(line, '|' ORDER BY line) INTO _lines FROM (
                     SELECT
                         i.id::text || ':' || _all._prov || ':' || _all._prov || ':' || _all._cur || ':' || _all._disp || ':' || _all._reason || ':' || i.verified_amount_minor::text AS line
-                    FROM public.webhook_ingress_identities AS i,
+                    FROM webhook_ingress_identities AS i,
                     LATERAL (SELECT public.b26_p2_strip_provider_token(i.provider) AS _prov,
                                     public.b26_p2_strip_currency_token(i.verified_amount_currency) AS _cur) AS _norm,
                     LATERAL (SELECT EXISTS (
-                            SELECT 1 FROM public.b23_match_verdicts AS v
+                            SELECT 1 FROM b23_match_verdicts AS v
                              WHERE v.tenant_id = p_tenant
                                AND v.webhook_ingress_identity_id = i.id
                                AND v.status IN ('matched_provisional','matched_confirmed','adjusted')
-                               AND public.b26_p2_ascii_strip(COALESCE(v.canonical_commerce_reference,'')) <> ''
+                               AND b26_p2_ascii_strip(COALESCE(v.canonical_commerce_reference,'')) <> ''
                         ) AS _has_ref) AS _r,
                     LATERAL (SELECT CASE
                                 WHEN _norm._prov NOT IN ('paypal','shopify','stripe','woocommerce') THEN 'EXCLUDED_PROVIDER'
@@ -3379,7 +2925,7 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
                     WHERE i.tenant_id = p_tenant
                       AND i.verified_commerce_ingress_state = 'authenticity_verified'
                       AND NOT EXISTS (
-                           SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                           SELECT 1 FROM b26_p2_execution_quarantine AS q
                             WHERE q.webhook_ingress_identity_id = i.id
                       )
                 ) AS sub;
@@ -3397,11 +2943,6 @@ CREATE FUNCTION public.b26_p2_canonical_scope_identity_for_window(p_tenant uuid,
             END;
         END $$;
 
-
---
--- Name: b26_p2_chain_verdict_supersession(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_chain_verdict_supersession() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -3412,7 +2953,7 @@ CREATE FUNCTION public.b26_p2_chain_verdict_supersession() RETURNS trigger
         BEGIN
             PERFORM pg_advisory_xact_lock(82173645, 300003);
             SELECT l.entry_hash INTO _prev
-              FROM public.b26_p2_verdict_supersession_ledger AS l
+              FROM b26_p2_verdict_supersession_ledger AS l
              ORDER BY l.seq DESC
              LIMIT 1;
             NEW.prev_entry_hash := _prev;
@@ -3428,11 +2969,6 @@ CREATE FUNCTION public.b26_p2_chain_verdict_supersession() RETURNS trigger
                 encode(digest(_preimage, 'sha256'), 'hex');
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_classify_candidate(uuid, text, text, timestamp with time zone, timestamp with time zone, timestamp with time zone, text, text); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_classify_candidate(p_tenant uuid, p_provider_raw text, p_currency_raw text, p_event_time timestamp with time zone, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_policy_version text, p_source_reference text) RETURNS TABLE(o_provider text, o_rail text, o_currency text, o_disposition text, o_reason text)
     LANGUAGE plpgsql IMMUTABLE
@@ -3502,11 +3038,6 @@ CREATE FUNCTION public.b26_p2_classify_candidate(p_tenant uuid, p_provider_raw t
             RETURN;
         END $$;
 
-
---
--- Name: b26_p2_current_verdict_for_adjustment(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_current_verdict_for_adjustment(p_tenant uuid, p_provider text, p_parent_commerce_reference text) RETURNS TABLE(verdict_id uuid, captured_amount_minor integer, currency_code character, commerce_reference text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -3520,7 +3051,7 @@ CREATE FUNCTION public.b26_p2_current_verdict_for_adjustment(p_tenant uuid, p_pr
                    v.canonical_captured_gross_amount_minor,
                    v.currency_code,
                    v.provider_native_commerce_reference::text
-              FROM public.b23_match_verdicts AS v
+              FROM b23_match_verdicts AS v
              WHERE v.tenant_id = p_tenant
                AND v.provider = lower(p_provider)
                AND (
@@ -3529,7 +3060,7 @@ CREATE FUNCTION public.b26_p2_current_verdict_for_adjustment(p_tenant uuid, p_pr
                    OR v.canonical_commerce_reference =
                        p_parent_commerce_reference
                )
-               AND public.b26_p2_ingress_has_current_authority(
+               AND b26_p2_ingress_has_current_authority(
                        v.webhook_ingress_identity_id)
              ORDER BY v.last_transition_at DESC, v.id DESC
              LIMIT 1;
@@ -3537,11 +3068,6 @@ CREATE FUNCTION public.b26_p2_current_verdict_for_adjustment(p_tenant uuid, p_pr
                 'app.current_tenant_id', COALESCE(_previous, ''), true
             );
         END $$;
-
-
---
--- Name: b26_p2_derive_verdict_authority(uuid); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_derive_verdict_authority(p_ingress uuid) RETURNS text
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -3556,11 +3082,6 @@ CREATE FUNCTION public.b26_p2_derive_verdict_authority(p_ingress uuid) RETURNS t
             END IF;
             RETURN 'historically_unverifiable';
         END $$;
-
-
---
--- Name: b26_p2_enforce_auth_consequence_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS trigger
     LANGUAGE plpgsql
@@ -3593,10 +3114,7 @@ CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS tr
                 RETURN NEW;
             END IF;
             IF TG_OP = 'DELETE' THEN
-                -- Fixture cleanup and lawful retention run as migration
-                -- admins; runtime principals can never delete evidence
-                -- (they hold no DELETE grant, and this gate refuses them
-                -- even where a grant exists).
+
                 IF session_user IS DISTINCT FROM 'migration_owner'
                    AND session_user IS DISTINCT FROM 'postgres' THEN
                     RAISE EXCEPTION 'b26_p2_auth_cons_delete_refused'
@@ -3607,11 +3125,6 @@ CREATE FUNCTION public.b26_p2_enforce_auth_consequence_immutability() RETURNS tr
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_auth_root_evidence_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3620,23 +3133,10 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
             _ctx text;
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                -- Lawful path 1: migration-admin maintenance (seeders /
-                -- provisioners running as migration_owner/postgres).
+
                 IF session_user IS DISTINCT FROM 'migration_owner'
                    AND session_user IS DISTINCT FROM 'postgres' THEN
-                    -- Lawful path 2: the single sovereign transition. The
-                    -- trigger fires inside the atomic's transaction, so
-                    -- PG_CONTEXT contains the atomic's exact frame. A
-                    -- substring test would also match wrappers,
-                    -- comments, or same-name overloads; the anchored
-                    -- expression below admits only the exact 12-argument
-                    -- v2 sovereign signature. The retired v1 signature
-                    -- no longer exists at this head, so no stale binary
-                    -- can present it. Any other SECURITY DEFINER
-                    -- routine (an administrator-authored deputy, a future
-                    -- helper, a confused deputy) carries its own frame
-                    -- instead and is refused here with
-                    -- b26_p2_auth_root_evidence_transition_refused.
+
                     GET DIAGNOSTICS _ctx = PG_CONTEXT;
                     IF _ctx IS NULL OR _ctx !~ 'PL/pgSQL function b26_p2_authenticate_ingress_atomic_v2\(uuid,text,text,text,text,text,text,text,timestamp with time zone,boolean,timestamp with time zone,timestamp with time zone\)' THEN
                         RAISE EXCEPTION 'b26_p2_auth_root_evidence_transition_refused'
@@ -3670,20 +3170,13 @@ CREATE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability() RETURNS 
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_authenticated_meaning_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
             IF TG_OP = 'UPDATE' THEN
-                -- Only authenticated rows are fenced. Pending precursors
-                -- (promotion pending -> verified) and non-authenticated
-                -- states pass through to the sibling guards.
+
                 IF OLD.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
                    OR OLD.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known' THEN
                     IF OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
@@ -3697,9 +3190,7 @@ CREATE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability() RETUR
                        OR OLD.verified_amount_scale IS DISTINCT FROM NEW.verified_amount_scale
                        OR OLD.event_timestamp IS DISTINCT FROM NEW.event_timestamp
                        OR OLD.idempotency_key IS DISTINCT FROM NEW.idempotency_key THEN
-                        -- NOTE: the Skeldir event_id link is intentionally
-                        -- not fenced: genuine duplicate re-ingestion rebinds
-                        -- it while financial meaning stays fixed.
+
                         RAISE EXCEPTION 'b26_p2_authenticated_meaning_immutable_refused'
                             USING ERRCODE = '42501';
                     END IF;
@@ -3709,19 +3200,12 @@ CREATE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability() RETUR
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_authority_transition(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_authority_transition() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
-            -- XIX: caller-supplied context (GUCs, headers, arguments)
-            -- transports facts; it never constitutes authority. Only
-            -- owner execution context may write authority state.
+
             IF current_setting('transaction_isolation', true)
                IS DISTINCT FROM 'read committed' THEN
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
@@ -3743,11 +3227,6 @@ CREATE FUNCTION public.b26_p2_enforce_authority_transition() RETURNS trigger
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_consequence_family_coherence(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_consequence_family_coherence() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -3766,11 +3245,6 @@ CREATE FUNCTION public.b26_p2_enforce_consequence_family_coherence() RETURNS tri
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_directory_coherence(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_directory_coherence() RETURNS trigger
     LANGUAGE plpgsql
@@ -3810,7 +3284,7 @@ CREATE FUNCTION public.b26_p2_enforce_directory_coherence() RETURNS trigger
             SELECT d.tenant_id, d.webhook_ingress_identity_id,
                    d.window_start, d.window_end
               INTO _d_tenant, _d_ingress, _d_ws, _d_we
-              FROM public.b23_match_task_dispatches AS d
+              FROM b23_match_task_dispatches AS d
              WHERE d.task_id = NEW.task_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_directory_no_canonical_execution'
@@ -3825,11 +3299,6 @@ CREATE FUNCTION public.b26_p2_enforce_directory_coherence() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_dispatch_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
     LANGUAGE plpgsql
@@ -3846,11 +3315,7 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
                     RAISE EXCEPTION 'b26_p2_conducted_requires_gate'
                         USING ERRCODE = '42501';
                 END IF;
-                -- The progress anchor is server-derived, never
-                -- caller-authored: a future-dated anchor at INSERT would
-                -- suppress the non-conduction signal before it starts.
-                -- Publication anchors at now(); pre-published rows carry
-                -- no anchor.
+
                 IF NEW.delivery_state = 'published' THEN
                     NEW.first_published_at := now();
                 ELSE
@@ -3923,11 +3388,7 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
                 RAISE EXCEPTION 'b26_p2_dispatch_attempts_regression'
                     USING ERRCODE = '42501';
             END IF;
-            -- The progress anchor is server-derived on every write, never
-            -- caller-preserved: a pre-set (e.g. future-dated) anchor on a
-            -- pending row is stripped here, and the publish transition
-            -- stamps now() unconditionally. No reachable UPDATE path can
-            -- carry a caller-authored anchor into published life.
+
             IF NEW.delivery_state = 'pending_publish' THEN
                 NEW.first_published_at := NULL;
             END IF;
@@ -3937,8 +3398,7 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
                     NEW.first_published_at := now();
                 ELSIF OLD.delivery_state = 'published'
                    AND NEW.delivery_state = 'conducted' THEN
-                    -- Corrective V gate law preserved: only the conduction
-                    -- gate (owner execution context) may assert conducted.
+
                     IF current_user NOT IN ('migration_owner', 'postgres') THEN
                         RAISE EXCEPTION 'b26_p2_conducted_requires_gate'
                             USING ERRCODE = '42501';
@@ -3957,11 +3417,6 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_immutability() RETURNS trigger
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_dispatch_provenance(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -3976,37 +3431,32 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_provenance() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
             SELECT c.b26_p2_event_family INTO _family
-              FROM public.b26_p2_provider_auth_consequence AS c
+              FROM b26_p2_provider_auth_consequence AS c
              WHERE c.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
                AND c.tenant_id = NEW.tenant_id;
             IF NOT FOUND OR _family IS NULL THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_family_unbound_refused' USING ERRCODE = '42501';
             END IF;
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                SELECT 1 FROM b26_p2_execution_quarantine AS q
                  WHERE q.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
             ) THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_quarantined_refused' USING ERRCODE = '42501';
             END IF;
             SELECT w.witness_hash INTO _witness
-              FROM public.b26_p2_ingress_auth_witness AS w
+              FROM b26_p2_ingress_auth_witness AS w
              WHERE w.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_witness_missing' USING ERRCODE = '42501';
             END IF;
             IF NOT EXISTS (
-                SELECT 1 FROM public.b26_p2_auth_root_evidence AS r
+                SELECT 1 FROM b26_p2_auth_root_evidence AS r
                  WHERE r.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
             ) THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_root_missing' USING ERRCODE = '42501';
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_dispatch_quarantine_exclusion(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion() RETURNS trigger
     LANGUAGE plpgsql
@@ -4015,14 +3465,14 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion() RETURNS tr
         BEGIN
             IF NEW.webhook_ingress_identity_id IS NOT NULL
                AND EXISTS (
-                    SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                    SELECT 1 FROM b26_p2_execution_quarantine AS q
                      WHERE q.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
                ) THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_quarantined_ingress_refused'
                     USING ERRCODE = '42501';
             END IF;
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                SELECT 1 FROM b26_p2_execution_quarantine AS q
                  WHERE q.task_id = NEW.task_id
             ) THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_quarantined_task_refused'
@@ -4030,11 +3480,6 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion() RETURNS tr
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_dispatch_sovereign_window(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigger
     LANGUAGE plpgsql
@@ -4049,18 +3494,12 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigge
             _exp_ws timestamptz;
             _exp_we timestamptz;
         BEGIN
-            -- Committed-state serialization (Corrective VII, P2-CA7-01):
-            -- lock the sovereign ingress row BEFORE validating. A concurrent
-            -- ingress UPDATE blocks here until this dispatch commits; the
-            -- reversed ordering blocks the dispatch until the ingress UPDATE
-            -- commits, then this SELECT sees the latest committed clock and
-            -- refuses a stale window. Plain SELECT cannot serialize; FOR
-            -- UPDATE makes the invariant unavoidable under READ COMMITTED.
+
             SELECT i.event_timestamp, i.tenant_id, i.provider,
                    i.verified_commerce_ingress_state, i.verified_amount_currency
               INTO _clock, _ingress_tenant, _ingress_provider, _ingress_state,
                    _ingress_currency
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.id = NEW.webhook_ingress_identity_id
              FOR UPDATE;
             IF NOT FOUND THEN
@@ -4075,8 +3514,7 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigge
                 RAISE EXCEPTION 'b26_p2_dispatch_sovereign_ingress_unverified'
                     USING ERRCODE = '42501';
             END IF;
-            -- Shape law mirrors scope_authority.classify INVALID set: blank
-            -- provider/currency can never be sovereign execution authority.
+
             IF btrim(COALESCE(_ingress_provider, '')) = '' THEN
                 RAISE EXCEPTION 'b26_p2_dispatch_provider_shape_refused:blank'
                     USING ERRCODE = '42501';
@@ -4102,7 +3540,7 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigge
                     USING ERRCODE = '42501';
             END IF;
             IF EXISTS (
-                SELECT 1 FROM public.celery_taskmeta AS m
+                SELECT 1 FROM celery_taskmeta AS m
                  WHERE m.task_id = NEW.task_id
                    AND m.status = 'FAILURE'
             ) THEN
@@ -4111,11 +3549,6 @@ CREATE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window() RETURNS trigge
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_history_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_history_immutability() RETURNS trigger
     LANGUAGE plpgsql
@@ -4135,11 +3568,6 @@ CREATE FUNCTION public.b26_p2_enforce_history_immutability() RETURNS trigger
                 USING ERRCODE = '42501';
         END $$;
 
-
---
--- Name: b26_p2_enforce_ingress_duplicate_adoption(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -4149,13 +3577,13 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption() RETURNS trigg
             _mismatch boolean := false;
         BEGIN
             SELECT * INTO _existing
-              FROM public.webhook_ingress_identities AS e
+              FROM webhook_ingress_identities AS e
              WHERE e.tenant_id = NEW.tenant_id
                AND e.idempotency_key = NEW.idempotency_key
              LIMIT 1;
             IF NOT FOUND THEN
                 SELECT * INTO _existing
-                  FROM public.webhook_ingress_identities AS e
+                  FROM webhook_ingress_identities AS e
                  WHERE e.tenant_id = NEW.tenant_id
                    AND e.event_id = NEW.event_id
                  LIMIT 1;
@@ -4191,11 +3619,6 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption() RETURNS trigg
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_ingress_event_chronology(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_ingress_event_chronology() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -4208,11 +3631,6 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_event_chronology() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_ingress_provenance(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
     LANGUAGE plpgsql
@@ -4240,33 +3658,27 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
                     IF NEW.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                        AND OLD.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known'
                        AND NOT EXISTS (
-                                SELECT 1 FROM public.b26_p2_provenance_evidence AS e
+                                SELECT 1 FROM b26_p2_provenance_evidence AS e
                                  WHERE e.webhook_ingress_identity_id = OLD.id
                                    AND e.evidence_witness_hash IS NOT NULL
                                    AND char_length(e.evidence_witness_hash) > 0
                                    AND EXISTS (
-                                        SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                                        SELECT 1 FROM b26_p2_ingress_auth_witness AS w
                                          WHERE w.webhook_ingress_identity_id = OLD.id
                                            AND w.witness_hash IS NOT DISTINCT FROM e.evidence_witness_hash
                                    )
                                    AND EXISTS (
-                                        SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
+                                        SELECT 1 FROM b26_p2_provider_auth_consequence AS c
                                          WHERE c.webhook_ingress_identity_id = OLD.id
                                    )
                             ) THEN
                         RAISE EXCEPTION 'b26_p2_provenance_promotion_refused' USING ERRCODE = '42501';
                     END IF;
-                    -- XIV: root-evidence binding. Even with full legacy
-                    -- evidence, promotion requires the immutable
-                    -- auth-root evidence identity created only by the
-                    -- single authoritative commit interface in the same
-                    -- transaction. Legacy paths without the atomic fail
-                    -- here; the atomic creates root evidence before this
-                    -- UPDATE fires, so it passes.
+
                     IF NEW.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                        AND OLD.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known'
                        AND NOT EXISTS (
-                                SELECT 1 FROM public.b26_p2_auth_root_evidence AS r
+                                SELECT 1 FROM b26_p2_auth_root_evidence AS r
                                  WHERE r.webhook_ingress_identity_id = OLD.id
                             ) THEN
                         RAISE EXCEPTION 'b26_p2_provenance_promotion_refused' USING ERRCODE = '42501';
@@ -4277,11 +3689,6 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_provenance() RETURNS trigger
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_ingress_sovereign_custody(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -4289,7 +3696,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody() RETURNS trigge
         BEGIN
             IF TG_OP = 'DELETE' THEN
                 IF EXISTS (
-                    SELECT 1 FROM public.b23_match_task_dispatches AS d
+                    SELECT 1 FROM b23_match_task_dispatches AS d
                     WHERE d.webhook_ingress_identity_id = OLD.id
                 ) THEN
                     RAISE EXCEPTION 'b26_p2_ingress_sovereign_delete_refused'
@@ -4298,7 +3705,7 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody() RETURNS trigge
                 RETURN OLD;
             END IF;
             IF EXISTS (
-                SELECT 1 FROM public.b23_match_task_dispatches AS d
+                SELECT 1 FROM b23_match_task_dispatches AS d
                 WHERE d.webhook_ingress_identity_id = NEW.id
             ) THEN
                 IF OLD.event_timestamp IS DISTINCT FROM NEW.event_timestamp THEN
@@ -4332,11 +3739,6 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody() RETURNS trigge
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_ingress_verified_authorship(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -4367,21 +3769,13 @@ CREATE FUNCTION public.b26_p2_enforce_ingress_verified_authorship() RETURNS trig
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_ledger_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_ledger_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                -- Owner execution context only (direct owner
-                -- administration or the sovereign DEFINER trigger that
-                -- appends supersessions), resolved live so every
-                -- deployment topology enforces the same law.
+
                 IF NOT public.b26_p2_sovereign_writer(
                        'public.b26_p2_verdict_supersession_ledger'::regclass
                    ) THEN
@@ -4393,11 +3787,6 @@ CREATE FUNCTION public.b26_p2_enforce_ledger_immutability() RETURNS trigger
             RAISE EXCEPTION 'b26_p2_ledger_history_immutable_refused'
                 USING ERRCODE = '42501';
         END $$;
-
-
---
--- Name: b26_p2_enforce_lifecycle_admission(text, text, text, timestamp with time zone, boolean, timestamp with time zone, timestamp with time zone, boolean); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_family text, p_financial_status text, p_cancelled_at timestamp with time zone, p_refunds_present boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone, p_require_creation_proof boolean) RETURNS void
     LANGUAGE plpgsql IMMUTABLE
@@ -4414,11 +3803,11 @@ CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_fam
             END IF;
             IF lower(public.b26_p2_ascii_strip(COALESCE(p_provider, '')))
                    = 'shopify'
-               AND lower(public.b26_p2_ascii_strip(COALESCE(p_family, '')))
+               AND lower(b26_p2_ascii_strip(COALESCE(p_family, '')))
                    = 'orders.create' THEN
                 IF p_require_creation_proof THEN
                     IF p_financial_status IS NULL
-                       OR lower(public.b26_p2_ascii_strip(p_financial_status))
+                       OR lower(b26_p2_ascii_strip(p_financial_status))
                           NOT IN ('pending', 'authorized', 'paid',
                                   'partially_paid') THEN
                         RAISE EXCEPTION
@@ -4431,7 +3820,7 @@ CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_fam
                     END IF;
                 ELSE
                     IF p_financial_status IS NOT NULL
-                       AND lower(public.b26_p2_ascii_strip(p_financial_status))
+                       AND lower(b26_p2_ascii_strip(p_financial_status))
                           NOT IN ('pending', 'authorized', 'paid',
                                   'partially_paid', 'voided', 'refunded',
                                   'partially_refunded') THEN
@@ -4457,11 +3846,6 @@ CREATE FUNCTION public.b26_p2_enforce_lifecycle_admission(p_provider text, p_fam
             RETURN;
         END $$;
 
-
---
--- Name: b26_p2_enforce_observation_chronology(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_observation_chronology() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -4474,11 +3858,6 @@ CREATE FUNCTION public.b26_p2_enforce_observation_chronology() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_outbox_issuance(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_outbox_issuance() RETURNS trigger
     LANGUAGE plpgsql
@@ -4495,11 +3874,6 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_issuance() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_outbox_transitions(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
     LANGUAGE plpgsql
@@ -4532,7 +3906,7 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
                     NULL;
                 ELSIF OLD.state = 'published'
                    AND NEW.state = 'conducted' THEN
-                    -- Corrective V: same gate law as dispatch above.
+
                     IF current_user NOT IN ('migration_owner', 'postgres') THEN
                         RAISE EXCEPTION 'b26_p2_conducted_requires_gate'
                             USING ERRCODE = '42501';
@@ -4546,21 +3920,13 @@ CREATE FUNCTION public.b26_p2_enforce_outbox_transitions() RETURNS trigger
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_policy_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_policy_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
             IF TG_OP = 'UPDATE' THEN
-                -- XIV: policy versions are append-only governance. New
-                -- versions arrive via INSERT; renaming a version in place
-                -- breaks the VERSION_BOUND disposition (receipts bind the
-                -- version string) and fails closed.
+
                 IF OLD.scope_policy_version IS DISTINCT FROM NEW.scope_policy_version THEN
                     RAISE EXCEPTION 'b26_p2_policy_version_immutable_refused'
                         USING ERRCODE = '42501';
@@ -4575,22 +3941,12 @@ CREATE FUNCTION public.b26_p2_enforce_policy_immutability() RETURNS trigger
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_enforce_registry_governance(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_registry_governance() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
-            -- XIX: publication law changes only by direct owner
-            -- administration (forward migration) or the cluster
-            -- superuser, resolved live from the catalog. A DEFINER
-            -- deputy (current_user = owner, session_user = caller)
-            -- satisfies neither disjunct; runtime roles satisfy
-            -- neither either.
+
             IF NOT (
                 (
                     public.b26_p2_table_owner(
@@ -4609,11 +3965,6 @@ CREATE FUNCTION public.b26_p2_enforce_registry_governance() RETURNS trigger
             RETURN COALESCE(NEW, OLD);
         END $$;
 
-
---
--- Name: b26_p2_enforce_registry_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_enforce_registry_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -4630,11 +3981,6 @@ CREATE FUNCTION public.b26_p2_enforce_registry_immutability() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_result_integrity(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
     LANGUAGE plpgsql
@@ -4654,7 +4000,7 @@ CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
                 RETURN NEW;
             END IF;
             SELECT EXISTS (
-                SELECT 1 FROM public.b26_p2_task_authority_directory AS dir
+                SELECT 1 FROM b26_p2_task_authority_directory AS dir
                  WHERE dir.task_id = NEW.task_id
             ) INTO _is_p2_task;
             IF NOT _is_p2_task THEN
@@ -4663,11 +4009,6 @@ CREATE FUNCTION public.b26_p2_enforce_result_integrity() RETURNS trigger
             RAISE EXCEPTION 'b26_p2_result_failure_forge_refused'
                 USING ERRCODE = '42501';
         END $$;
-
-
---
--- Name: b26_p2_enforce_verdict_money_authority(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -4685,15 +4026,15 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
             _owner oid;
         BEGIN
             IF session_user = 'postgres'
-               OR pg_catalog.pg_has_role(
+               OR pg_has_role(
                       session_user, 'migration_owner', 'USAGE') THEN
                 RETURN NEW;
             END IF;
             SELECT relowner INTO _owner
-              FROM pg_catalog.pg_class
+              FROM pg_class
              WHERE oid = TG_RELID;
             IF _owner IS NOT NULL
-               AND pg_catalog.pg_has_role(session_user, _owner, 'USAGE') THEN
+               AND pg_has_role(session_user, _owner, 'USAGE') THEN
                 RETURN NEW;
             END IF;
             IF current_setting('transaction_isolation', true)
@@ -4777,7 +4118,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
                 SELECT COALESCE(ae.conversion_value_cents,
                                 ae.revenue_cents, 0)
                   INTO _attribution_amount
-                  FROM public.attribution_events AS ae
+                  FROM attribution_events AS ae
                  WHERE ae.id = NEW.attribution_event_id
                    AND ae.tenant_id = NEW.tenant_id;
                 IF NOT FOUND THEN
@@ -4800,21 +4141,21 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
             IF _verified_changed THEN
                 IF NEW.webhook_ingress_identity_id IS NOT NULL THEN
                     SELECT i.verified_amount_minor INTO _source_amount
-                      FROM public.webhook_ingress_identities AS i
+                      FROM webhook_ingress_identities AS i
                      WHERE i.id = NEW.webhook_ingress_identity_id
                        AND i.tenant_id = NEW.tenant_id;
                     IF FOUND
                        AND _source_amount
                            IS NOT DISTINCT FROM NEW.verified_amount_minor
-                       AND public.b26_p2_ingress_has_current_authority(
+                       AND b26_p2_ingress_has_current_authority(
                                NEW.webhook_ingress_identity_id) THEN
                         _source_ok := true;
                     END IF;
                 END IF;
                 IF NOT _source_ok THEN
                     SELECT true INTO _source_ok
-                      FROM public.b23_revenue_events AS e
-                      JOIN public.webhook_ingress_identities AS i
+                      FROM b23_revenue_events AS e
+                      JOIN webhook_ingress_identities AS i
                         ON i.tenant_id = e.tenant_id
                        AND i.provider = e.provider
                        AND i.provider_native_event_reference =
@@ -4826,7 +4167,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
                            NEW.canonical_captured_gross_amount_minor
                        AND i.verified_amount_minor =
                            NEW.canonical_captured_gross_amount_minor
-                       AND public.b26_p2_ingress_has_current_authority(
+                       AND b26_p2_ingress_has_current_authority(
                                i.id)
                      LIMIT 1;
                 END IF;
@@ -4862,7 +4203,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
                                    ELSE 0
                                END), 0))
                   INTO _net
-                  FROM public.b23_revenue_events AS e
+                  FROM b23_revenue_events AS e
                  WHERE e.tenant_id = NEW.tenant_id
                    AND e.match_verdict_id = NEW.id;
                 IF NEW.canonical_net_verified_amount_minor
@@ -4875,11 +4216,6 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_money_authority() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_enforce_verdict_temporal_conservation(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS trigger
     LANGUAGE plpgsql
@@ -4903,7 +4239,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                                             'matched_confirmed', 'adjusted');
                 IF _new_qual AND _ingress IS NOT NULL THEN
                     IF EXISTS (
-                        SELECT 1 FROM public.b23_match_task_dispatches AS d
+                        SELECT 1 FROM b23_match_task_dispatches AS d
                          WHERE d.tenant_id = _tenant
                            AND d.webhook_ingress_identity_id = _ingress
                            AND d.delivery_state = 'conducted'
@@ -4921,7 +4257,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                                             'matched_confirmed', 'adjusted');
                 IF _old_qual AND _ingress IS NOT NULL THEN
                     IF EXISTS (
-                        SELECT 1 FROM public.b23_match_task_dispatches AS d
+                        SELECT 1 FROM b23_match_task_dispatches AS d
                          WHERE d.tenant_id = _tenant
                            AND d.webhook_ingress_identity_id = _ingress
                            AND d.delivery_state = 'conducted'
@@ -4944,13 +4280,6 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                 _new_ref_present := public.b26_p2_ascii_strip(COALESCE(NEW.canonical_commerce_reference, '')) <> '';
                 _ref_presence_flipped := _old_ref_present IS DISTINCT FROM _new_ref_present;
 
-                -- XXV-2 (A2/B10): a provider amendment may relink a conducted
-                -- verdict to its successor source. Every condition the
-                -- amendment admission enforced is re-checked here, and the old
-                -- source must name exactly the new source's event in its
-                -- supersession reason. The new source has no conducted
-                -- dispatch (it is not independently matched), which the next
-                -- branch still enforces.
                 _amendment_link :=
                     _link_moved
                     AND OLD.webhook_ingress_identity_id IS NOT NULL
@@ -4958,8 +4287,8 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                     AND OLD.tenant_id IS NOT DISTINCT FROM NEW.tenant_id
                     AND EXISTS (
                         SELECT 1
-                          FROM public.webhook_ingress_identities AS oldi
-                          JOIN public.webhook_ingress_identities AS newi
+                          FROM webhook_ingress_identities AS oldi
+                          JOIN webhook_ingress_identities AS newi
                             ON newi.id = NEW.webhook_ingress_identity_id
                            AND newi.tenant_id = OLD.tenant_id
                          WHERE oldi.id = OLD.webhook_ingress_identity_id
@@ -4978,14 +4307,14 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                                IS NOT DISTINCT FROM
                                oldi.verified_amount_currency
                            AND newi.event_timestamp >= oldi.event_timestamp
-                           AND public.b26_p2_ingress_has_current_authority(
+                           AND b26_p2_ingress_has_current_authority(
                                    newi.id)
                     );
                 IF ((_old_qual AND NOT _new_qual) OR (_old_qual AND _link_moved))
                    AND NOT _amendment_link THEN
                     IF OLD.webhook_ingress_identity_id IS NOT NULL THEN
                         IF EXISTS (
-                            SELECT 1 FROM public.b23_match_task_dispatches AS d
+                            SELECT 1 FROM b23_match_task_dispatches AS d
                              WHERE d.tenant_id = OLD.tenant_id
                                AND d.webhook_ingress_identity_id = OLD.webhook_ingress_identity_id
                                AND d.delivery_state = 'conducted'
@@ -5000,7 +4329,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                         OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
                         OR (NOT _old_qual)) THEN
                     IF EXISTS (
-                        SELECT 1 FROM public.b23_match_task_dispatches AS d
+                        SELECT 1 FROM b23_match_task_dispatches AS d
                          WHERE d.tenant_id = NEW.tenant_id
                            AND d.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
                            AND d.delivery_state = 'conducted'
@@ -5009,19 +4338,14 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                             USING ERRCODE = '42501';
                     END IF;
                 END IF;
-                -- XIV: conducted commerce-reference value rewrite. Presence
-                -- flips are refused below; a present-to-present value change
-                -- on a conducted lineage is an equal violation of the
-                -- UPDATE_REFUSED disposition and fails with the same
-                -- regression law. Non-conducted (B2.3-correctable) rows are
-                -- unaffected: the EXISTS test finds no conducted dispatch.
+
                 IF OLD.canonical_commerce_reference IS DISTINCT FROM NEW.canonical_commerce_reference
                    AND _old_qual AND _new_qual
                    AND _old_ref_present AND _new_ref_present
                    AND NOT _link_moved THEN
                     IF OLD.webhook_ingress_identity_id IS NOT NULL THEN
                         IF EXISTS (
-                            SELECT 1 FROM public.b23_match_task_dispatches AS d
+                            SELECT 1 FROM b23_match_task_dispatches AS d
                              WHERE d.tenant_id = OLD.tenant_id
                                AND d.webhook_ingress_identity_id = OLD.webhook_ingress_identity_id
                                AND d.delivery_state = 'conducted'
@@ -5034,7 +4358,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                 IF _ref_presence_flipped THEN
                     IF OLD.webhook_ingress_identity_id IS NOT NULL AND (_old_qual OR _new_qual) THEN
                         IF EXISTS (
-                            SELECT 1 FROM public.b23_match_task_dispatches AS d
+                            SELECT 1 FROM b23_match_task_dispatches AS d
                              WHERE d.tenant_id = OLD.tenant_id
                                AND d.webhook_ingress_identity_id = OLD.webhook_ingress_identity_id
                                AND d.delivery_state = 'conducted'
@@ -5047,7 +4371,7 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
                        AND (OLD.webhook_ingress_identity_id IS DISTINCT FROM NEW.webhook_ingress_identity_id
                             OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id) THEN
                         IF EXISTS (
-                            SELECT 1 FROM public.b23_match_task_dispatches AS d
+                            SELECT 1 FROM b23_match_task_dispatches AS d
                              WHERE d.tenant_id = NEW.tenant_id
                                AND d.webhook_ingress_identity_id = NEW.webhook_ingress_identity_id
                                AND d.delivery_state = 'conducted'
@@ -5061,11 +4385,6 @@ CREATE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() RETURNS tr
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_guard_conducted_transition(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -5109,7 +4428,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
             END IF;
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id
               INTO _tenant, _ingress
-              FROM public.b26_p2_task_authority_directory AS dir
+              FROM b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_conducted_effect_refused:no_authority'
@@ -5117,7 +4436,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
             END IF;
             SELECT scope_policy_version, source_sha256, semantic_sha256
               INTO _policy_version, _policy_source, _policy_semantic
-              FROM public.b26_p2_scope_policy_authority
+              FROM b26_p2_scope_policy_authority
              ORDER BY scope_policy_version DESC LIMIT 1;
             IF NOT FOUND
                OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -5135,7 +4454,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
             BEGIN
                 SELECT d.window_start, d.window_end
                   INTO _dispatch_ws, _dispatch_we
-                  FROM public.b23_match_task_dispatches AS d
+                  FROM b23_match_task_dispatches AS d
                  WHERE d.task_id = _task
                  FOR SHARE;
                 IF NOT FOUND THEN
@@ -5145,7 +4464,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state,
                        i.b26_p2_provenance_status
                   INTO _clock, _ingress_state, _ingress_prov
-                  FROM public.webhook_ingress_identities AS i
+                  FROM webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant
                  FOR SHARE;
@@ -5170,7 +4489,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
                 END IF;
                 SELECT count(*), max(r.p2_scope_identity), max(r.policy_semantic_sha256)
                   INTO _receipt_count, _receipt_scope, _receipt_sha
-                  FROM public.b26_p2_conduction_receipts AS r
+                  FROM b26_p2_conduction_receipts AS r
                  WHERE r.task_id = _task
                    AND r.tenant_id = _tenant
                    AND r.webhook_ingress_identity_id = _ingress;
@@ -5192,7 +4511,7 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
                         USING ERRCODE = '42501';
                 END IF;
                 SELECT count(*) INTO _verdict_count
-                  FROM public.b23_match_verdicts AS v
+                  FROM b23_match_verdicts AS v
                  WHERE v.tenant_id = _tenant
                    AND v.webhook_ingress_identity_id = _ingress
                    AND v.status IN ('matched_provisional',
@@ -5209,11 +4528,6 @@ CREATE FUNCTION public.b26_p2_guard_conducted_transition() RETURNS trigger
                 RAISE;
             END;
         END $_$;
-
-
---
--- Name: b26_p2_guard_conduction_receipt(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_guard_conduction_receipt() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -5242,7 +4556,7 @@ CREATE FUNCTION public.b26_p2_guard_conduction_receipt() RETURNS trigger
             END IF;
             SELECT scope_policy_version, source_sha256, semantic_sha256
               INTO _policy_version, _policy_source, _policy_semantic
-              FROM public.b26_p2_scope_policy_authority
+              FROM b26_p2_scope_policy_authority
              ORDER BY scope_policy_version DESC LIMIT 1;
             IF NOT FOUND
                OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -5266,7 +4580,7 @@ CREATE FUNCTION public.b26_p2_guard_conduction_receipt() RETURNS trigger
             BEGIN
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state
                   INTO _clock, _ingress_state
-                  FROM public.webhook_ingress_identities AS i
+                  FROM webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant
                  FOR SHARE;
@@ -5298,11 +4612,6 @@ CREATE FUNCTION public.b26_p2_guard_conduction_receipt() RETURNS trigger
             END;
         END $_$;
 
-
---
--- Name: b26_p2_guard_verdict_authority_write(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5318,16 +4627,14 @@ CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
                 RAISE EXCEPTION 'b26_p2_authority_snapshot_not_linearizable'
                     USING ERRCODE = '42501';
             END IF;
-            -- Relink re-derivation (lineage-bound, unchanged): a relink
-            -- is a lineage claim verified against the new source, and
-            -- the state is always recomputed -- never caller-asserted.
+
             IF NEW.webhook_ingress_identity_id
                    IS DISTINCT FROM OLD.webhook_ingress_identity_id THEN
                 IF NEW.webhook_ingress_identity_id IS NOT NULL THEN
                     SELECT i.tenant_id, i.provider,
                            i.provider_native_event_reference
                       INTO _link_tenant, _link_provider, _link_ref
-                      FROM public.webhook_ingress_identities AS i
+                      FROM webhook_ingress_identities AS i
                      WHERE i.id = NEW.webhook_ingress_identity_id;
                     IF NOT FOUND
                        OR _link_tenant IS DISTINCT FROM NEW.tenant_id
@@ -5344,11 +4651,7 @@ CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
                         NEW.webhook_ingress_identity_id);
                 RETURN NEW;
             END IF;
-            -- XIX: state-only writes are admitted iff they equal the
-            -- deterministic projection of the linked source. A forged
-            -- 'current' for a non-current source differs from the
-            -- derivation and is refused; asserting the true projection
-            -- is harmless. No identity token is consulted.
+
             _derived := public.b26_p2_derive_verdict_authority(
                 NEW.webhook_ingress_identity_id);
             IF NEW.b26_p2_source_authority_state
@@ -5358,11 +4661,6 @@ CREATE FUNCTION public.b26_p2_guard_verdict_authority_write() RETURNS trigger
             END IF;
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_ingress_has_current_authority(uuid); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETURNS boolean
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -5376,7 +4674,7 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             SELECT i.b26_p2_provenance_status, i.b26_p2_semantic_regime,
                    i.b26_p2_demotion_reason
               INTO _prov, _regime, _reason
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
                 RETURN FALSE;
@@ -5390,17 +4688,15 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             IF _reason IS NOT NULL THEN
                 RETURN FALSE;
             END IF;
-            -- XX: the bound regime must be live in the registry
-            -- (retirement ends currentness transactionally).
+
             IF NOT EXISTS (
-                SELECT 1 FROM public.b26_p2_semantic_regime_registry AS r
+                SELECT 1 FROM b26_p2_semantic_regime_registry AS r
                  WHERE r.regime_id = _regime
                    AND r.status = 'active'
             ) THEN
                 RETURN FALSE;
             END IF;
-            -- XX: the operational floor must hold at this revision
-            -- (downgrade ends current readability fail-closed).
+
             BEGIN
                 PERFORM 1 FROM public.b26_p2_operational_floor AS f
                  WHERE f.id = 1 AND f.floor_revision = '202609300004';
@@ -5410,26 +4706,22 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
             EXCEPTION WHEN undefined_table THEN
                 RETURN FALSE;
             END;
-            -- XX: every load-bearing justification must still exist.
+
             IF NOT EXISTS (
-                SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                SELECT 1 FROM b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = p_ingress
             ) THEN
                 RETURN FALSE;
             END IF;
             IF NOT EXISTS (
-                SELECT 1 FROM public.b26_p2_provenance_evidence AS e
+                SELECT 1 FROM b26_p2_provenance_evidence AS e
                  WHERE e.webhook_ingress_identity_id = p_ingress
             ) THEN
                 RETURN FALSE;
             END IF;
-            -- XX (H-XX-C): the bound family must rest on explicit
-            -- authenticated evidence. Grandfathered pre-XIX backfill rows
-            -- (xix-backfill:pre-xix-mint) keep their audit record but no
-            -- longer satisfy currentness: the migration assigned that
-            -- label, no provider evidence established the family.
+
             IF NOT EXISTS (
-                SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
+                SELECT 1 FROM b26_p2_provider_auth_consequence AS c
                  WHERE c.webhook_ingress_identity_id = p_ingress
                    AND c.b26_p2_event_family IN (
                        'payment_intent.succeeded', 'orders.create',
@@ -5443,18 +4735,13 @@ CREATE FUNCTION public.b26_p2_ingress_has_current_authority(p_ingress uuid) RETU
                 RETURN FALSE;
             END IF;
             IF NOT EXISTS (
-                SELECT 1 FROM public.b26_p2_auth_root_evidence AS r
+                SELECT 1 FROM b26_p2_auth_root_evidence AS r
                  WHERE r.webhook_ingress_identity_id = p_ingress
             ) THEN
                 RETURN FALSE;
             END IF;
             RETURN TRUE;
         END $$;
-
-
---
--- Name: b26_p2_lift_pre_xxv_demotion(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_lift_pre_xxv_demotion(p_tenant uuid, p_ingress uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
@@ -5468,8 +4755,8 @@ CREATE FUNCTION public.b26_p2_lift_pre_xxv_demotion(p_tenant uuid, p_ingress uui
             END IF;
             IF NOT EXISTS (
                 SELECT 1
-                  FROM public.webhook_ingress_identities AS i
-                  JOIN public.b26_p2_source_money_attestation AS a
+                  FROM webhook_ingress_identities AS i
+                  JOIN b26_p2_source_money_attestation AS a
                     ON a.webhook_ingress_identity_id = i.id
                    AND a.tenant_id = i.tenant_id
                  WHERE i.id = p_ingress
@@ -5499,11 +4786,6 @@ CREATE FUNCTION public.b26_p2_lift_pre_xxv_demotion(p_tenant uuid, p_ingress uui
                AND v.webhook_ingress_identity_id = p_ingress;
             RETURN true;
         END $$;
-
-
---
--- Name: b26_p2_mark_conducted(text); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -5548,7 +4830,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
             END IF;
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id
               INTO _tenant, _ingress
-              FROM public.b26_p2_task_authority_directory AS dir
+              FROM b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_conducted_no_authority'
@@ -5556,7 +4838,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
             END IF;
             SELECT scope_policy_version, source_sha256, semantic_sha256
               INTO _policy_version, _policy_source, _policy_semantic
-              FROM public.b26_p2_scope_policy_authority
+              FROM b26_p2_scope_policy_authority
              ORDER BY scope_policy_version DESC LIMIT 1;
             IF NOT FOUND
                OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -5574,7 +4856,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
             BEGIN
                 SELECT d.delivery_state, d.window_start, d.window_end, d.provider
                   INTO _dispatch_state, _dispatch_ws, _dispatch_we, _dispatch_provider
-                  FROM public.b23_match_task_dispatches AS d
+                  FROM b23_match_task_dispatches AS d
                  WHERE d.task_id = _task
                  FOR UPDATE;
                 IF NOT FOUND THEN
@@ -5582,7 +4864,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                         USING ERRCODE = '42501';
                 END IF;
                 SELECT o.state INTO _outbox_state
-                  FROM public.b26_p2_execution_outbox AS o
+                  FROM b26_p2_execution_outbox AS o
                  WHERE o.dispatch_task_id = _task
                  FOR UPDATE;
                 IF NOT FOUND THEN
@@ -5592,7 +4874,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state,
                        i.provider, i.verified_amount_currency
                   INTO _clock, _ingress_state, _ingress_provider, _ingress_currency
-                  FROM public.webhook_ingress_identities AS i
+                  FROM webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant
                  FOR SHARE;
@@ -5634,7 +4916,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                 SELECT count(*), max(r.window_start), max(r.window_end),
                        max(r.p2_scope_identity), max(r.policy_semantic_sha256)
                   INTO _receipt_count, _receipt_ws, _receipt_we, _receipt_scope, _receipt_sha
-                  FROM public.b26_p2_conduction_receipts AS r
+                  FROM b26_p2_conduction_receipts AS r
                  WHERE r.task_id = _task
                    AND r.tenant_id = _tenant
                    AND r.webhook_ingress_identity_id = _ingress;
@@ -5655,8 +4937,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                     RAISE EXCEPTION 'b26_p2_conducted_policy_semantic_not_bound'
                         USING ERRCODE = '42501';
                 END IF;
-                -- IX canonical binding: receipt scope must equal sovereign
-                -- recomputation for this tenant window at gate time.
+
                 _canonical := public.b26_p2_canonical_scope_identity_for_window(_tenant, _exp_ws, _exp_we);
                 IF _receipt_scope IS DISTINCT FROM _canonical THEN
                     RAISE EXCEPTION 'b26_p2_conducted_scope_not_canonical'
@@ -5667,7 +4948,7 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
                    AND v.webhook_ingress_identity_id = _ingress
                  FOR SHARE;
                 SELECT count(*) INTO _verdict_count
-                  FROM public.b23_match_verdicts AS v
+                  FROM b23_match_verdicts AS v
                  WHERE v.tenant_id = _tenant
                    AND v.webhook_ingress_identity_id = _ingress
                    AND v.status IN ('matched_provisional',
@@ -5698,11 +4979,6 @@ CREATE FUNCTION public.b26_p2_mark_conducted(p_task_id text) RETURNS text
             END;
         END $_$;
 
-
---
--- Name: b26_p2_normalize_currency(text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_normalize_currency(p_raw text) RETURNS text
     LANGUAGE plpgsql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -5726,11 +5002,6 @@ CREATE FUNCTION public.b26_p2_normalize_currency(p_raw text) RETURNS text
             RETURN _token;
         END $_$;
 
-
---
--- Name: b26_p2_normalize_provider(text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_normalize_provider(p_raw text) RETURNS text
     LANGUAGE plpgsql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -5750,11 +5021,6 @@ CREATE FUNCTION public.b26_p2_normalize_provider(p_raw text) RETURNS text
             RETURN _token;
         END $$;
 
-
---
--- Name: b26_p2_observe_history_integrity(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_observe_history_integrity() RETURNS TABLE(observation_id bigint, observed_at timestamp with time zone, ledger_count bigint, ledger_tip text, violations text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5768,21 +5034,21 @@ CREATE FUNCTION public.b26_p2_observe_history_integrity() RETURNS TABLE(observat
             _ts timestamptz;
         BEGIN
             FOR _v IN SELECT violation
-                        FROM public.b26_p2_verify_history_protection()
+                        FROM b26_p2_verify_history_protection()
             LOOP
                 _viol := _viol || _v || ';';
             END LOOP;
             FOR _v IN SELECT violation
-                        FROM public.b26_p2_verify_history_continuity()
+                        FROM b26_p2_verify_history_continuity()
             LOOP
                 _viol := _viol || _v || ';';
             END LOOP;
             SELECT count(*),
                    (SELECT l.entry_hash
-                      FROM public.b26_p2_verdict_supersession_ledger AS l
+                      FROM b26_p2_verdict_supersession_ledger AS l
                      ORDER BY l.seq DESC LIMIT 1)
               INTO _n, _tip
-              FROM public.b26_p2_verdict_supersession_ledger;
+              FROM b26_p2_verdict_supersession_ledger;
             INSERT INTO public.b26_p2_history_integrity_observations
                 (ledger_count, ledger_tip, observer_violations)
             VALUES (_n, _tip, _viol)
@@ -5797,11 +5063,6 @@ CREATE FUNCTION public.b26_p2_observe_history_integrity() RETURNS TABLE(observat
             RETURN NEXT;
             RETURN;
         END $$;
-
-
---
--- Name: b26_p2_operational_disposition(text, integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_after_seconds integer DEFAULT 300) RETURNS text
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -5835,7 +5096,7 @@ CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_af
             END IF;
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id
               INTO _tenant, _ingress
-              FROM public.b26_p2_task_authority_directory AS dir
+              FROM b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RETURN 'NOT_ACCEPTED';
@@ -5851,26 +5112,26 @@ CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_af
                        COALESCE(d.first_published_at, d.dispatched_at),
                        d.dispatched_at
                   INTO _dispatch_state, _anchor, _dispatched
-                  FROM public.b23_match_task_dispatches AS d
+                  FROM b23_match_task_dispatches AS d
                  WHERE d.task_id = _task;
                 IF NOT FOUND THEN
                     _result := 'DIVERGENT_ACTIONABLE';
                 ELSE
                     SELECT (o.state IS NOT NULL), o.state
                       INTO _has_outbox, _outbox_state
-                      FROM public.b26_p2_execution_outbox AS o
+                      FROM b26_p2_execution_outbox AS o
                      WHERE o.dispatch_task_id = _task;
                     _has_outbox := COALESCE(_has_outbox, false);
                     SELECT EXISTS (
-                        SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                        SELECT 1 FROM b26_p2_execution_quarantine AS q
                          WHERE q.task_id = _task
                     ) INTO _quarantined;
                     SELECT EXISTS (
-                        SELECT 1 FROM public.worker_failed_jobs AS w
+                        SELECT 1 FROM worker_failed_jobs AS w
                          WHERE w.task_id = _task
                     ) INTO _dlq;
                     SELECT EXISTS (
-                        SELECT 1 FROM public.celery_taskmeta AS m
+                        SELECT 1 FROM celery_taskmeta AS m
                          WHERE m.task_id = _task
                            AND m.status = 'FAILURE'
                     ) INTO _failed;
@@ -5886,10 +5147,7 @@ CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_af
                        AND _dispatch_state = 'pending_publish' THEN
                         _result := 'QUARANTINED_ACTIONABLE';
                     ELSIF _dispatch_state = 'pending_publish' THEN
-                        -- Finiteness law (P2-CA7-05): accepted pending beyond
-                        -- the governed horizon is actionable, never silent.
-                        -- Anchor is dispatched_at (immutable); non-progress
-                        -- metadata cannot extend it.
+
                         IF _dispatched < now() - (_threshold || ' seconds')::interval THEN
                             _result := 'PENDING_PUBLICATION_ACTIONABLE';
                         ELSE
@@ -5919,11 +5177,6 @@ CREATE FUNCTION public.b26_p2_operational_disposition(p_task_id text, p_stale_af
             END;
         END $$;
 
-
---
--- Name: b26_p2_propagate_verdict_authority(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_propagate_verdict_authority() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5948,11 +5201,6 @@ CREATE FUNCTION public.b26_p2_propagate_verdict_authority() RETURNS trigger
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_propagate_verdict_authority_on_regime_change(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -5966,19 +5214,14 @@ CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change() RET
             EXCEPTION WHEN OTHERS THEN
                 _prev_guc := NULL;
             END;
-            -- Driver is the tenant registry (no RLS): the ingress and
-            -- verdict tables enforce FORCE RLS, so listing affected
-            -- tenants from them would fail or silently empty under
-            -- owner administration without tenant context. Walk every
-            -- tenant with explicit transaction-local context; tenants
-            -- without affected rows update zero rows.
+
             FOR _t IN SELECT t.id FROM public.tenants AS t
             LOOP
                 PERFORM set_config('app.current_tenant_id', _t::text, true);
                 UPDATE public.b23_match_verdicts AS v
                    SET b26_p2_source_authority_state =
                        public.b26_p2_derive_verdict_authority(v.webhook_ingress_identity_id)
-                  FROM public.webhook_ingress_identities AS i
+                  FROM webhook_ingress_identities AS i
                  WHERE i.b26_p2_semantic_regime = NEW.regime_id
                    AND v.webhook_ingress_identity_id = i.id
                    AND v.tenant_id = i.tenant_id
@@ -5990,11 +5233,6 @@ CREATE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change() RET
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_read_history_continuity(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_read_history_continuity() RETURNS TABLE(n bigint, tip text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -6002,18 +5240,13 @@ CREATE FUNCTION public.b26_p2_read_history_continuity() RETURNS TABLE(n bigint, 
         BEGIN
             SELECT count(*),
                    (SELECT l.entry_hash
-                      FROM public.b26_p2_verdict_supersession_ledger AS l
+                      FROM b26_p2_verdict_supersession_ledger AS l
                      ORDER BY l.seq DESC LIMIT 1)
               INTO n, tip
-              FROM public.b26_p2_verdict_supersession_ledger;
+              FROM b26_p2_verdict_supersession_ledger;
             RETURN NEXT;
             RETURN;
         END $$;
-
-
---
--- Name: b26_p2_read_history_entry_hash(bigint); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_read_history_entry_hash(p_seq bigint) RETURNS text
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -6023,15 +5256,10 @@ CREATE FUNCTION public.b26_p2_read_history_entry_hash(p_seq bigint) RETURNS text
             _hash text;
         BEGIN
             SELECT entry_hash INTO _hash
-              FROM public.b26_p2_verdict_supersession_ledger
+              FROM b26_p2_verdict_supersession_ledger
              WHERE seq = p_seq;
             RETURN _hash;
         END $$;
-
-
---
--- Name: b26_p2_read_history_prefix_digest(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_read_history_prefix_digest() RETURNS text
     LANGUAGE sql STABLE SECURITY DEFINER
@@ -6050,13 +5278,8 @@ CREATE FUNCTION public.b26_p2_read_history_prefix_digest() RETURNS text
             ),
             'hex'
         )
-          FROM public.b26_p2_verdict_supersession_ledger AS l
+          FROM b26_p2_verdict_supersession_ledger AS l
         $$;
-
-
---
--- Name: b26_p2_read_history_snapshot(bigint); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_read_history_snapshot(p_prior_tip_seq bigint DEFAULT NULL::bigint) RETURNS TABLE(n bigint, tip_seq bigint, tip_hash text, prefix_digest text, violations text, authority_universe uuid, prior_tip_hash text)
     LANGUAGE sql STABLE SECURITY DEFINER
@@ -6073,13 +5296,8 @@ CREATE FUNCTION public.b26_p2_read_history_snapshot(p_prior_tip_seq bigint DEFAU
                        ELSE public.b26_p2_read_history_entry_hash(
                            p_prior_tip_seq)
                    END
-              FROM public.b26_p2_read_history_witness_state() AS state
+              FROM b26_p2_read_history_witness_state() AS state
         $$;
-
-
---
--- Name: b26_p2_read_history_violations(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_read_history_violations() RETURNS text
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -6090,22 +5308,17 @@ CREATE FUNCTION public.b26_p2_read_history_violations() RETURNS text
             _v text;
         BEGIN
             FOR _v IN SELECT violation
-                        FROM public.b26_p2_verify_history_protection()
+                        FROM b26_p2_verify_history_protection()
             LOOP
                 _viol := _viol || _v || ';';
             END LOOP;
             FOR _v IN SELECT violation
-                        FROM public.b26_p2_verify_history_continuity()
+                        FROM b26_p2_verify_history_continuity()
             LOOP
                 _viol := _viol || _v || ';';
             END LOOP;
             RETURN _viol;
         END $$;
-
-
---
--- Name: b26_p2_read_history_witness_state(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_read_history_witness_state() RETURNS TABLE(n bigint, tip_seq bigint, tip_hash text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -6115,18 +5328,13 @@ CREATE FUNCTION public.b26_p2_read_history_witness_state() RETURNS TABLE(n bigin
             SELECT count(*),
                    max(l.seq),
                    (SELECT entry_hash
-                      FROM public.b26_p2_verdict_supersession_ledger
+                      FROM b26_p2_verdict_supersession_ledger
                      ORDER BY seq DESC LIMIT 1)
               INTO n, tip_seq, tip_hash
-              FROM public.b26_p2_verdict_supersession_ledger AS l;
+              FROM b26_p2_verdict_supersession_ledger AS l;
             RETURN NEXT;
             RETURN;
         END $$;
-
-
---
--- Name: b26_p2_record_conduction_receipt(text, text, integer, text); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_identity text, p_processed_count integer DEFAULT 0, p_policy_semantic_sha256 text DEFAULT NULL::text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6179,7 +5387,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
             END IF;
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id
               INTO _tenant, _ingress
-              FROM public.b26_p2_task_authority_directory AS dir
+              FROM b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_conducted_no_authority'
@@ -6187,7 +5395,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
             END IF;
             SELECT scope_policy_version, source_sha256, semantic_sha256
               INTO _policy_version, _policy_source, _policy_semantic
-              FROM public.b26_p2_scope_policy_authority
+              FROM b26_p2_scope_policy_authority
              ORDER BY scope_policy_version DESC LIMIT 1;
             IF NOT FOUND
                OR _policy_version IS DISTINCT FROM 'b2.6-p2-scope-policy-v2'
@@ -6209,7 +5417,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
             BEGIN
                 SELECT d.window_start, d.window_end
                   INTO _dispatch_ws, _dispatch_we
-                  FROM public.b23_match_task_dispatches AS d
+                  FROM b23_match_task_dispatches AS d
                  WHERE d.task_id = _task;
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'b26_p2_conducted_no_dispatch'
@@ -6218,7 +5426,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state,
                        i.provider, i.verified_amount_currency
                   INTO _clock, _ingress_state, _ingress_provider, _ingress_currency
-                  FROM public.webhook_ingress_identities AS i
+                  FROM webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant
                  FOR SHARE;
@@ -6246,8 +5454,7 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
                     RAISE EXCEPTION 'b26_p2_dispatch_window_not_sovereign'
                         USING ERRCODE = '42501';
                 END IF;
-                -- IX canonical consequence binding: caller scope must equal
-                -- sovereign recomputation for this tenant window.
+
                 _canonical := public.b26_p2_canonical_scope_identity_for_window(_tenant, _exp_ws, _exp_we);
                 IF _scope IS DISTINCT FROM _canonical THEN
                     RAISE EXCEPTION 'b26_p2_receipt_scope_not_canonical'
@@ -6268,9 +5475,9 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
                     p2_scope_identity = EXCLUDED.p2_scope_identity,
                     policy_semantic_sha256 = EXCLUDED.policy_semantic_sha256,
                     ix_meaning_status = 'canonically_bound'
-                 WHERE public.b26_p2_conduction_receipts.task_id = EXCLUDED.task_id
+                 WHERE b26_p2_conduction_receipts.task_id = EXCLUDED.task_id
                    AND NOT EXISTS (
-                       SELECT 1 FROM public.b23_match_task_dispatches AS d
+                       SELECT 1 FROM b23_match_task_dispatches AS d
                         WHERE d.task_id = EXCLUDED.task_id
                           AND d.delivery_state = 'conducted'
                    );
@@ -6283,11 +5490,6 @@ CREATE FUNCTION public.b26_p2_record_conduction_receipt(p_task_id text, p_scope_
                 RAISE;
             END;
         END $_$;
-
-
---
--- Name: b26_p2_record_evaluator_heartbeat(integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds integer DEFAULT 300) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6325,17 +5527,15 @@ CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds i
                 RAISE EXCEPTION 'b26_p2_heartbeat_tenant_malformed'
                     USING ERRCODE = '42501';
             END;
-            -- The counts below are recomputed from the live tables on
-            -- every call: the row is evaluation evidence, never a bare
-            -- timestamp the caller chose.
+
             SELECT count(*) INTO _pending_actionable
-              FROM public.b23_match_task_dispatches AS d
+              FROM b23_match_task_dispatches AS d
              WHERE d.tenant_id = _tenant
                AND d.delivery_state = 'pending_publish'
                AND d.dispatched_at < now() - (_threshold || ' seconds')::interval;
             SELECT count(*) INTO _stale
-              FROM public.b23_match_task_dispatches AS d
-              JOIN public.b26_p2_execution_outbox AS o
+              FROM b23_match_task_dispatches AS d
+              JOIN b26_p2_execution_outbox AS o
                 ON o.dispatch_task_id = d.task_id
                AND o.tenant_id = d.tenant_id
                AND o.webhook_ingress_identity_id = d.webhook_ingress_identity_id
@@ -6345,7 +5545,7 @@ CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds i
                AND COALESCE(d.first_published_at, d.dispatched_at)
                    < now() - (_threshold || ' seconds')::interval;
             SELECT count(*) INTO _quarantine
-              FROM public.b26_p2_execution_quarantine AS q
+              FROM b26_p2_execution_quarantine AS q
              WHERE q.tenant_id = _tenant;
             INSERT INTO public.b26_p2_evaluator_heartbeat AS h (
                 tenant_id, last_tick, tick_count, updated_at,
@@ -6364,11 +5564,6 @@ CREATE FUNCTION public.b26_p2_record_evaluator_heartbeat(p_stale_after_seconds i
             RETURN 'evaluated';
         END $$;
 
-
---
--- Name: b26_p2_record_ingress_auth_witness(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -6378,11 +5573,6 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid) RETURN
                 USING ERRCODE = '42501';
             RETURN NULL;
         END $$;
-
-
---
--- Name: b26_p2_record_ingress_auth_witness(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6411,7 +5601,7 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
             SELECT i.tenant_id, i.idempotency_key,
                    i.verified_commerce_ingress_state, i.provider
               INTO _tenant, _idem, _state, _row_provider
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_witness_ingress_missing'
@@ -6425,14 +5615,11 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
                 RAISE EXCEPTION 'b26_p2_witness_blank_shape_refused'
                     USING ERRCODE = '42501';
             END IF;
-            -- The predecessor event must exist independently of this
-            -- call: a consequence row authored by the API application
-            -- principal in the HMAC-verified path, binding the same
-            -- tenant/provider/event/body.
+
             SELECT c.provider, c.provider_event_reference, c.body_sha256,
                    c.signature_envelope_sha256, c.auth_method, c.auth_version
               INTO _c_provider, _c_event, _c_body, _c_sig, _c_method, _c_version
-              FROM public.b26_p2_provider_auth_consequence AS c
+              FROM b26_p2_provider_auth_consequence AS c
              WHERE c.webhook_ingress_identity_id = p_ingress
                AND c.tenant_id = _tenant;
             IF NOT FOUND THEN
@@ -6456,7 +5643,7 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
                     USING ERRCODE = '42501';
             END IF;
             SELECT w.witness_hash INTO _existing
-              FROM public.b26_p2_ingress_auth_witness AS w
+              FROM b26_p2_ingress_auth_witness AS w
              WHERE w.webhook_ingress_identity_id = p_ingress;
             IF FOUND THEN
                 RETURN _existing;
@@ -6483,7 +5670,7 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
                     'app.current_tenant_id', COALESCE(_prev_guc, ''), true
                 );
                 SELECT w.witness_hash INTO _existing
-                  FROM public.b26_p2_ingress_auth_witness AS w
+                  FROM b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = p_ingress;
                 RETURN _existing;
             EXCEPTION WHEN OTHERS THEN
@@ -6493,11 +5680,6 @@ CREATE FUNCTION public.b26_p2_record_ingress_auth_witness(p_ingress uuid, p_prov
                 RAISE;
             END;
         END $$;
-
-
---
--- Name: b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p_provider text, p_event_ref text, p_body_sha256 text, p_sig_envelope_sha256 text, p_method text, p_version text DEFAULT 'v1'::text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6516,9 +5698,7 @@ CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p
             _existing_version text;
             _prev_guc text;
         BEGIN
-            -- Only the dedicated authentication trust root may record
-            -- the predecessor event. The generic application principal
-            -- is physically incapable (grant + this gate).
+
             IF session_user IS DISTINCT FROM 'app_ingress'
                AND session_user IS DISTINCT FROM 'migration_owner'
                AND session_user IS DISTINCT FROM 'postgres' THEN
@@ -6548,27 +5728,23 @@ CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p
             SELECT i.tenant_id, i.idempotency_key,
                    i.verified_commerce_ingress_state, i.provider
               INTO _tenant, _idem, _state, _row_provider
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.id = p_ingress;
             IF NOT FOUND THEN
                 RAISE EXCEPTION 'b26_p2_auth_cons_ingress_missing'
                     USING ERRCODE = '42501';
             END IF;
-            -- Provider binding: a PayPal consequence on a Stripe row
-            -- is structurally refused (NULL-safe).
+
             IF p_provider IS DISTINCT FROM _row_provider THEN
                 RAISE EXCEPTION 'b26_p2_auth_cons_provider_mismatch'
                     USING ERRCODE = '42501';
             END IF;
-            -- Immutability: an existing consequence is authoritative
-            -- evidence and cannot be rewritten by its author. Identical
-            -- re-record is idempotent; any digest/event/method drift
-            -- is refused (prevents post-witness substitution).
+
             SELECT c.provider, c.provider_event_reference, c.body_sha256,
                    c.signature_envelope_sha256, c.auth_method, c.auth_version
               INTO _existing_provider, _existing_event, _existing_body,
                    _existing_sig, _existing_method, _existing_version
-              FROM public.b26_p2_provider_auth_consequence AS c
+              FROM b26_p2_provider_auth_consequence AS c
              WHERE c.webhook_ingress_identity_id = p_ingress;
             IF FOUND THEN
                 IF _existing_provider IS DISTINCT FROM p_provider
@@ -6610,11 +5786,6 @@ CREATE FUNCTION public.b26_p2_record_provider_auth_consequence(p_ingress uuid, p
                 RAISE;
             END;
         END $$;
-
-
---
--- Name: b26_p2_record_scheduler_heartbeat(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_record_scheduler_heartbeat() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6671,11 +5842,6 @@ CREATE FUNCTION public.b26_p2_record_scheduler_heartbeat() RETURNS text
             RETURN 'scheduled';
         END $$;
 
-
---
--- Name: b26_p2_record_verdict_supersession(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_record_verdict_supersession() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -6714,11 +5880,6 @@ CREATE FUNCTION public.b26_p2_record_verdict_supersession() RETURNS trigger
             RETURN NEW;
         END $$;
 
-
---
--- Name: b26_p2_resolve_dispatch_authority(text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS TABLE(tenant_id uuid, webhook_ingress_identity_id uuid, window_start timestamp with time zone, window_end timestamp with time zone)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -6746,7 +5907,7 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
             SELECT dir.tenant_id, dir.webhook_ingress_identity_id,
                    dir.window_start, dir.window_end
               INTO _tenant, _ingress, _dir_ws, _dir_we
-              FROM public.b26_p2_task_authority_directory AS dir
+              FROM b26_p2_task_authority_directory AS dir
              WHERE dir.task_id = _task;
             IF NOT FOUND THEN
                 RETURN;
@@ -6760,7 +5921,7 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
             BEGIN
                 SELECT d.window_start, d.window_end
                   INTO _dispatch_ws, _dispatch_we
-                  FROM public.b23_match_task_dispatches AS d
+                  FROM b23_match_task_dispatches AS d
                  WHERE d.task_id = _task;
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'b26_p2_dispatch_authority_missing'
@@ -6774,7 +5935,7 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
                 SELECT i.event_timestamp, i.verified_commerce_ingress_state,
                        i.b26_p2_provenance_status, i.b26_p2_semantic_regime
                   INTO _clock, _ingress_state, _ingress_prov, _ingress_regime
-                  FROM public.webhook_ingress_identities AS i
+                  FROM webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = _tenant;
                 IF NOT FOUND THEN
@@ -6815,11 +5976,6 @@ CREATE FUNCTION public.b26_p2_resolve_dispatch_authority(p_task_id text) RETURNS
             END;
         END $$;
 
-
---
--- Name: b26_p2_revoke_authority_on_evidence_loss(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -6845,11 +6001,6 @@ CREATE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss() RETURNS trigge
             RETURN COALESCE(NEW, OLD);
         END $$;
 
-
---
--- Name: b26_p2_sovereign_writer(regclass); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_sovereign_writer(p_table regclass) RETURNS boolean
     LANGUAGE sql STABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -6857,14 +6008,9 @@ CREATE FUNCTION public.b26_p2_sovereign_writer(p_table regclass) RETURNS boolean
             SELECT pg_get_userbyid(c.relowner) = current_user
                    OR (current_user = session_user
                        AND session_user = 'postgres')
-              FROM pg_catalog.pg_class AS c
+              FROM pg_class AS c
              WHERE c.oid = p_table
         $$;
-
-
---
--- Name: b26_p2_stale_unconducted(integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DEFAULT 300) RETURNS TABLE(task_id character varying, tenant_id uuid, state character varying, age_seconds double precision, updated_at timestamp with time zone)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -6883,8 +6029,8 @@ CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DE
                    EXTRACT(EPOCH FROM (now() - COALESCE(
                        d.first_published_at, d.dispatched_at)))::double precision,
                    COALESCE(d.first_published_at, d.dispatched_at)
-            FROM public.b23_match_task_dispatches AS d
-            JOIN public.b26_p2_execution_outbox AS o
+            FROM b23_match_task_dispatches AS d
+            JOIN b26_p2_execution_outbox AS o
               ON o.dispatch_task_id = d.task_id
              AND o.tenant_id = d.tenant_id
              AND o.webhook_ingress_identity_id = d.webhook_ingress_identity_id
@@ -6892,18 +6038,14 @@ CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DE
               AND o.state = 'published'
               AND COALESCE(d.first_published_at, d.dispatched_at)
                   < now() - (_threshold || ' seconds')::interval
-              -- Terminal task failure is actionable ONLY when both
-              -- telemetry channels agree (DLQ row AND result FAILURE).
-              -- Either channel alone never silences never-consumed work:
-              -- disagreement stays visible here (actionable), never
-              -- invisible everywhere.
+
               AND NOT (
                     EXISTS (
-                        SELECT 1 FROM public.worker_failed_jobs AS w
+                        SELECT 1 FROM worker_failed_jobs AS w
                          WHERE w.task_id = d.task_id
                     )
                 AND EXISTS (
-                        SELECT 1 FROM public.celery_taskmeta AS m
+                        SELECT 1 FROM celery_taskmeta AS m
                          WHERE m.task_id = d.task_id
                            AND m.status = 'FAILURE'
                     )
@@ -6911,28 +6053,17 @@ CREATE FUNCTION public.b26_p2_stale_unconducted(p_stale_after_seconds integer DE
             ORDER BY COALESCE(d.first_published_at, d.dispatched_at) ASC;
         END $$;
 
-
---
--- Name: b26_p2_stamp_verdict_authority(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_stamp_verdict_authority() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
-            -- Authority state is never caller-asserted: every INSERT
-            -- is stamped from the central predicate in this transition.
+
             NEW.b26_p2_source_authority_state :=
                 public.b26_p2_derive_verdict_authority(
                     NEW.webhook_ingress_identity_id);
             RETURN NEW;
         END $$;
-
-
---
--- Name: b26_p2_state_eligible_for_p3(text, uuid); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uuid) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
@@ -6967,7 +6098,7 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
             SELECT d.tenant_id, d.webhook_ingress_identity_id,
                    d.window_start, d.window_end
               INTO _tenant, _ingress, _ws, _we
-              FROM public.b23_match_task_dispatches AS d
+              FROM b23_match_task_dispatches AS d
              WHERE d.task_id = p_task_id;
             IF NOT FOUND THEN
                 PERFORM set_config(
@@ -6982,11 +6113,11 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 RETURN FALSE;
             END IF;
             END;
-            -- Authenticated, witnessed, regime-governed provenance.
+
             BEGIN
             SELECT i.b26_p2_provenance_status, i.b26_p2_semantic_regime
               INTO _prov, _regime
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.id = _ingress;
             IF _prov IS DISTINCT FROM 'authenticated_known' THEN
                 PERFORM set_config(
@@ -7001,7 +6132,7 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 RETURN FALSE;
             END IF;
             IF NOT EXISTS (
-                SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                SELECT 1 FROM b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = _ingress
             ) THEN
                 PERFORM set_config(
@@ -7009,32 +6140,28 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 );
                 RETURN FALSE;
             END IF;
-            -- XX (H-XX-A): the bound source must satisfy the complete
-            -- canonical currentness law -- demotion, family-source,
-            -- quarantine-adjacent evidence, registry, and floor -- not
-            -- just the three clauses above.
+
             IF NOT public.b26_p2_ingress_has_current_authority(_ingress) THEN
                 PERFORM set_config(
                     'app.current_tenant_id', COALESCE(_prev_guc, ''), true
                 );
                 RETURN FALSE;
             END IF;
-            -- Tenant identity valid.
+
             IF _tenant IS NULL
                OR NOT EXISTS (
-                    SELECT 1 FROM public.tenants AS t WHERE t.id = _tenant
+                    SELECT 1 FROM tenants AS t WHERE t.id = _tenant
                ) THEN
                 PERFORM set_config(
                     'app.current_tenant_id', COALESCE(_prev_guc, ''), true
                 );
                 RETURN FALSE;
             END IF;
-            -- Canonical execution identity valid: receipt bound, current,
-            -- canonically meaningful, policy-current.
+
             SELECT r.p2_scope_identity, r.policy_semantic_sha256,
                    r.ix_meaning_status
               INTO _receipt_identity, _receipt_policy, _receipt_meaning
-              FROM public.b26_p2_conduction_receipts AS r
+              FROM b26_p2_conduction_receipts AS r
              WHERE r.task_id = p_task_id;
             IF NOT FOUND THEN
                 PERFORM set_config(
@@ -7072,9 +6199,9 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 );
                 RETURN FALSE;
             END IF;
-            -- Historical state not quarantined/stale.
+
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                SELECT 1 FROM b26_p2_execution_quarantine AS q
                  WHERE q.task_id = p_task_id
             ) THEN
                 PERFORM set_config(
@@ -7083,7 +6210,7 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
                 RETURN FALSE;
             END IF;
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                SELECT 1 FROM b26_p2_execution_quarantine AS q
                  WHERE q.webhook_ingress_identity_id = _ingress
             ) THEN
                 PERFORM set_config(
@@ -7107,64 +6234,39 @@ CREATE FUNCTION public.b26_p2_state_eligible_for_p3(p_task_id text, p_tenant uui
             RETURN FALSE;
         END $$;
 
-
---
--- Name: b26_p2_strip_currency_token(text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_strip_currency_token(p_raw text) RETURNS text
     LANGUAGE sql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-        SELECT upper(public.b26_p2_ascii_strip(p_raw))
+        SELECT upper(b26_p2_ascii_strip(p_raw))
         $$;
-
-
---
--- Name: b26_p2_strip_provider_token(text); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_strip_provider_token(p_raw text) RETURNS text
     LANGUAGE sql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-        SELECT lower(public.b26_p2_ascii_strip(p_raw))
+        SELECT lower(b26_p2_ascii_strip(p_raw))
         $$;
-
-
---
--- Name: b26_p2_table_owner(regclass); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_table_owner(p_table regclass) RETURNS name
     LANGUAGE sql STABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
             SELECT pg_get_userbyid(c.relowner)
-              FROM pg_catalog.pg_class AS c
+              FROM pg_class AS c
              WHERE c.oid = p_table
         $$;
-
-
---
--- Name: b26_p2_verdict_has_current_authority(uuid); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_verdict_has_current_authority(p_verdict uuid) RETURNS boolean
     LANGUAGE sql STABLE
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-          SELECT public.b26_p2_ingress_has_current_authority(
+          SELECT b26_p2_ingress_has_current_authority(
             (SELECT v.webhook_ingress_identity_id
-               FROM public.b23_match_verdicts AS v
+               FROM b23_match_verdicts AS v
               WHERE v.id = p_verdict)
           );
         $$;
-
-
---
--- Name: b26_p2_verify_history_continuity(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violation text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -7172,7 +6274,7 @@ CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violatio
     AS $_$
         BEGIN
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
+                SELECT 1 FROM b26_p2_verdict_supersession_ledger AS l
                  WHERE l.entry_hash IS NULL
                     OR l.entry_hash !~ '^[0-9a-f]{64}$'
             ) THEN
@@ -7184,7 +6286,7 @@ CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violatio
                     SELECT l.seq,
                            l.prev_entry_hash,
                            lag(l.entry_hash) OVER (ORDER BY l.seq) AS prior
-                      FROM public.b26_p2_verdict_supersession_ledger AS l
+                      FROM b26_p2_verdict_supersession_ledger AS l
                 )
                 SELECT 1 FROM ordered
                  WHERE (prior IS NULL AND prev_entry_hash IS NOT NULL)
@@ -7197,11 +6299,6 @@ CREATE FUNCTION public.b26_p2_verify_history_continuity() RETURNS TABLE(violatio
             RETURN;
         END $_$;
 
-
---
--- Name: b26_p2_verify_history_protection(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violation text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -7210,9 +6307,7 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
             _role text;
             _missing text;
         BEGIN
-            -- 6a. Protection triggers must exist and be enabled. A
-            -- non-superuser owner disabling one is the exact F-D vector;
-            -- the disable itself is catalog-visible here.
+
             FOR _missing IN SELECT unnest(ARRAY[
                 'trg_b26_p2_xix_supersession_ledger|b23_match_verdicts',
                 'trg_b26_p2_xix_ledger_immutable|b26_p2_verdict_supersession_ledger',
@@ -7246,8 +6341,7 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                     RETURN NEXT;
                 END IF;
             END LOOP;
-            -- 6b. No runtime principal may hold mutating privilege on
-            -- either ledger or the publication history.
+
             FOREACH _role IN ARRAY ARRAY[
                 'app_user', 'app_ingress', 'app_worker', 'app_relay',
                 'app_beat', 'app_dispatch_publisher', 'app_trust_issuer',
@@ -7279,11 +6373,9 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                     RETURN NEXT;
                 END IF;
             END LOOP;
-            -- 6c. Publication-chain linkage: genesis anchors at NULL
-            -- prev; every other row's prev must equal a strictly older
-            -- row's entry hash; entry hashes must be 64-hex shaped.
+
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_publication_history AS h
+                SELECT 1 FROM b26_p2_publication_history AS h
                  WHERE h.entry_hash IS NULL
                     OR h.entry_hash !~ '^[0-9a-f]{64}$'
             ) THEN
@@ -7296,27 +6388,26 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                 RETURN NEXT;
             END IF;
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_publication_history AS h
+                SELECT 1 FROM b26_p2_publication_history AS h
                  WHERE h.prev_entry_hash IS NOT NULL
                    AND NOT EXISTS (
-                       SELECT 1 FROM public.b26_p2_publication_history AS p
+                       SELECT 1 FROM b26_p2_publication_history AS p
                         WHERE p.entry_hash = h.prev_entry_hash
                    )
             ) THEN
                 violation := 'publication_chain_linkage_broken';
                 RETURN NEXT;
             END IF;
-            -- 6d. Supersession-chain recomputation: every chained row
-            -- must equal the documented preimage digest.
+
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
+                SELECT 1 FROM b26_p2_verdict_supersession_ledger AS l
                  WHERE l.entry_hash IS NULL
             ) THEN
                 violation := 'supersession_chain_unchained_row';
                 RETURN NEXT;
             END IF;
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
+                SELECT 1 FROM b26_p2_verdict_supersession_ledger AS l
                  WHERE l.entry_hash IS DISTINCT FROM encode(digest(
                        COALESCE(l.verdict_id::text, '')
                        || '|' || COALESCE(l.prior_attributed_amount_minor::text, 'NULL')
@@ -7331,12 +6422,12 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
                 violation := 'supersession_chain_digest_mismatch';
                 RETURN NEXT;
             END IF;
-            -- 6e. Supersession linkage: non-genesis prev must resolve.
+
             IF EXISTS (
-                SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS l
+                SELECT 1 FROM b26_p2_verdict_supersession_ledger AS l
                  WHERE l.prev_entry_hash IS NOT NULL
                    AND NOT EXISTS (
-                       SELECT 1 FROM public.b26_p2_verdict_supersession_ledger AS p
+                       SELECT 1 FROM b26_p2_verdict_supersession_ledger AS p
                         WHERE p.entry_hash = l.prev_entry_hash
                    )
             ) THEN
@@ -7345,11 +6436,6 @@ CREATE FUNCTION public.b26_p2_verify_history_protection() RETURNS TABLE(violatio
             END IF;
             RETURN;
         END $_$;
-
-
---
--- Name: b26_p2_verify_source_money_conservation(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid, p_verdict_id uuid) RETURNS TABLE(violation text)
     LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -7372,7 +6458,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                    v.verified_amount_minor,
                    v.attributed_amount_minor
               INTO _ingress, _verified, _attributed
-              FROM public.b23_match_verdicts AS v
+              FROM b23_match_verdicts AS v
              WHERE v.tenant_id = p_tenant_id
                AND v.id = p_verdict_id;
             IF NOT FOUND THEN
@@ -7381,11 +6467,6 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                 RETURN;
             END IF;
 
-            -- XXIV (A6): agreement between the verdict and the ingress
-            -- is not source authority when both are rewritable. The
-            -- ingress must still hold current P2 authority, and the
-            -- independently written attribution event must carry the
-            -- same amount and currency as the ingress envelope.
             IF _ingress IS NOT NULL THEN
                 IF NOT public.b26_p2_ingress_has_current_authority(_ingress)
                 THEN
@@ -7399,8 +6480,8 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                        e.currency
                   INTO _ingress_amount, _ingress_currency,
                        _event_amount, _event_currency
-                  FROM public.webhook_ingress_identities AS i
-                  JOIN public.attribution_events AS e
+                  FROM webhook_ingress_identities AS i
+                  JOIN attribution_events AS e
                     ON e.id = i.event_id
                    AND e.tenant_id = i.tenant_id
                  WHERE i.id = _ingress
@@ -7422,7 +6503,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             END IF;
 
             SELECT count(*) INTO _count
-              FROM public.b26_p2_verdict_supersession_ledger AS l
+              FROM b26_p2_verdict_supersession_ledger AS l
              WHERE l.tenant_id = p_tenant_id
                AND l.verdict_id = p_verdict_id;
 
@@ -7437,7 +6518,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                     RETURN;
                 END IF;
                 SELECT i.verified_amount_minor INTO _ingress_amount
-                  FROM public.webhook_ingress_identities AS i
+                  FROM webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = p_tenant_id;
                 IF NOT FOUND THEN
@@ -7446,13 +6527,11 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                     RETURN;
                 END IF;
                 IF _verified IS DISTINCT FROM _ingress_amount THEN
-                    -- A gross-capture correction may bind a provider
-                    -- event whose authenticated ingress carries the new
-                    -- amount. Nothing else may diverge from the source.
+
                     IF NOT EXISTS (
                         SELECT 1
-                          FROM public.b23_revenue_events AS e
-                          JOIN public.webhook_ingress_identities AS i
+                          FROM b23_revenue_events AS e
+                          JOIN webhook_ingress_identities AS i
                             ON i.tenant_id = e.tenant_id
                            AND i.provider = e.provider
                            AND i.provider_native_event_reference =
@@ -7462,7 +6541,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                            AND e.is_gross_capture_correction = true
                            AND e.captured_amount_minor = _verified
                            AND i.verified_amount_minor = _verified
-                           AND public.b26_p2_ingress_has_current_authority(
+                           AND b26_p2_ingress_has_current_authority(
                                    i.id)
                     ) THEN
                         violation := 'conservation_source_amount_diverged';
@@ -7479,20 +6558,16 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             END IF;
 
             SELECT l.* INTO _first
-              FROM public.b26_p2_verdict_supersession_ledger AS l
+              FROM b26_p2_verdict_supersession_ledger AS l
              WHERE l.tenant_id = p_tenant_id
                AND l.verdict_id = p_verdict_id
              ORDER BY l.seq ASC
              LIMIT 1;
 
             IF _first.prior_source_ingress IS NULL THEN
-                -- A verdict may exist before its ingress link. Anchor
-                -- the first predecessor to the current authenticated
-                -- source instead of assuming the link transition was
-                -- amount-preserving; later corrections remain governed
-                -- by the chain and final source checks below.
+
                 SELECT i.verified_amount_minor INTO _ingress_amount
-                  FROM public.webhook_ingress_identities AS i
+                  FROM webhook_ingress_identities AS i
                  WHERE i.id = _ingress
                    AND i.tenant_id = p_tenant_id;
                 IF NOT FOUND THEN
@@ -7508,7 +6583,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                 END IF;
             ELSE
                 SELECT i.verified_amount_minor INTO _ingress_amount
-                  FROM public.webhook_ingress_identities AS i
+                  FROM webhook_ingress_identities AS i
                  WHERE i.id = _first.prior_source_ingress
                    AND i.tenant_id = p_tenant_id;
                 IF NOT FOUND THEN
@@ -7526,7 +6601,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             _prev := NULL;
             FOR _row IN
                 SELECT l.*
-                  FROM public.b26_p2_verdict_supersession_ledger AS l
+                  FROM b26_p2_verdict_supersession_ledger AS l
                  WHERE l.tenant_id = p_tenant_id
                    AND l.verdict_id = p_verdict_id
                  ORDER BY l.seq ASC
@@ -7553,7 +6628,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             END IF;
 
             SELECT i.verified_amount_minor INTO _ingress_amount
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.id = _ingress
                AND i.tenant_id = p_tenant_id;
             IF NOT FOUND THEN
@@ -7564,8 +6639,8 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             IF _verified IS DISTINCT FROM _ingress_amount THEN
                 IF NOT EXISTS (
                     SELECT 1
-                      FROM public.b23_revenue_events AS e
-                      JOIN public.webhook_ingress_identities AS i
+                      FROM b23_revenue_events AS e
+                      JOIN webhook_ingress_identities AS i
                         ON i.tenant_id = e.tenant_id
                        AND i.provider = e.provider
                        AND i.provider_native_event_reference =
@@ -7575,7 +6650,7 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
                        AND e.is_gross_capture_correction = true
                        AND e.captured_amount_minor = _verified
                        AND i.verified_amount_minor = _verified
-                       AND public.b26_p2_ingress_has_current_authority(i.id)
+                       AND b26_p2_ingress_has_current_authority(i.id)
                 ) THEN
                     violation := 'conservation_source_amount_diverged';
                     RETURN NEXT;
@@ -7584,82 +6659,73 @@ CREATE FUNCTION public.b26_p2_verify_source_money_conservation(p_tenant_id uuid,
             RETURN;
         END $$;
 
-
---
--- Name: b26_p2_xi_invariant_oracle(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_xi_invariant_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
         BEGIN
-            -- D-A: authenticated foundation without a witness can found
-            -- no new truth (dispatch-bearing or dispatchless: the
-            -- identity aggregate reads dispatchless verified rows).
+
             RETURN QUERY
             SELECT 'xi_witnessless_authenticated_foundation'::text,
                    COALESCE(d.task_id::text, 'ingress:' || i.id::text),
                    ('ingress=' || i.id::text)::text
-              FROM public.webhook_ingress_identities AS i
-              LEFT JOIN public.b23_match_task_dispatches AS d
+              FROM webhook_ingress_identities AS i
+              LEFT JOIN b23_match_task_dispatches AS d
                 ON d.webhook_ingress_identity_id = i.id
                AND d.tenant_id = i.tenant_id
              WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
                AND i.b26_p2_provenance_status = 'authenticated_known'
                AND NOT EXISTS (
-                    SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                    SELECT 1 FROM b26_p2_ingress_auth_witness AS w
                      WHERE w.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                    SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                    SELECT 1 FROM b26_p2_execution_quarantine AS q
                      WHERE q.webhook_ingress_identity_id = i.id
                );
-            -- D-B: blank-shape authenticated foundation.
+
             RETURN QUERY
             SELECT 'xi_blank_authenticated_foundation'::text,
                    COALESCE(d.task_id::text, 'ingress:' || i.id::text),
                    ('ingress=' || i.id::text)::text
-              FROM public.webhook_ingress_identities AS i
-              LEFT JOIN public.b23_match_task_dispatches AS d
+              FROM webhook_ingress_identities AS i
+              LEFT JOIN b23_match_task_dispatches AS d
                 ON d.webhook_ingress_identity_id = i.id
                AND d.tenant_id = i.tenant_id
              WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
                AND i.b26_p2_provenance_status = 'authenticated_known'
-               AND (public.b26_p2_ascii_strip(COALESCE(i.provider, '')) = ''
-                    OR public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, '')) = ''
-                    OR length(public.b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, ''))) <> 3)
+               AND (b26_p2_ascii_strip(COALESCE(i.provider, '')) = ''
+                    OR b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, '')) = ''
+                    OR length(b26_p2_ascii_strip(COALESCE(i.verified_amount_currency, ''))) <> 3)
                AND NOT EXISTS (
-                    SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                    SELECT 1 FROM b26_p2_execution_quarantine AS q
                      WHERE q.webhook_ingress_identity_id = i.id
                );
-            -- D-C: divergent terminal twins (conducted dispatch beside
-            -- a non-conducted outbox twin, or vice versa).
+
             RETURN QUERY
             SELECT 'xi_divergent_terminal_twins'::text, d.task_id::text,
                    ('dispatch=' || d.delivery_state::text || ',outbox=' || COALESCE(o.state::text, 'missing'))::text
-              FROM public.b23_match_task_dispatches AS d
-              LEFT JOIN public.b26_p2_execution_outbox AS o
+              FROM b23_match_task_dispatches AS d
+              LEFT JOIN b26_p2_execution_outbox AS o
                 ON o.dispatch_task_id = d.task_id
              WHERE (d.delivery_state = 'conducted'
                     AND COALESCE(o.state::text, 'missing') IS DISTINCT FROM 'conducted')
                 OR (o.state = 'conducted'
                     AND d.delivery_state IS DISTINCT FROM 'conducted');
-            -- D-D: garbage policy-sha receipt stamped canonically bound.
+
             RETURN QUERY
             SELECT 'xi_garbage_policy_receipt'::text, r.task_id::text,
                    ('policy_sha=' || COALESCE(r.policy_semantic_sha256, 'null'))::text
-              FROM public.b26_p2_conduction_receipts AS r
+              FROM b26_p2_conduction_receipts AS r
              WHERE r.ix_meaning_status = 'canonically_bound'
                AND r.policy_semantic_sha256 IS DISTINCT FROM
                    'fc1c3647f49fbf560a90b6f01568fc70cd2393418800781e2b9d979abe6c1f99';
-            -- D-E: stale terminal binding (receipt disagrees with live
-            -- canonical identity).
+
             RETURN QUERY
             SELECT 'xi_stale_terminal_binding'::text, r.task_id::text,
                    'receipt_identity_not_current'::text
-              FROM public.b26_p2_conduction_receipts AS r
-              JOIN public.b23_match_task_dispatches AS d
+              FROM b26_p2_conduction_receipts AS r
+              JOIN b23_match_task_dispatches AS d
                 ON d.task_id = r.task_id
              WHERE d.delivery_state = 'conducted'
                AND r.ix_meaning_status = 'canonically_bound'
@@ -7667,34 +6733,29 @@ CREATE FUNCTION public.b26_p2_xi_invariant_oracle() RETURNS TABLE(violation_kind
                    public.b26_p2_canonical_scope_identity_for_window(
                        r.tenant_id, r.window_start, r.window_end
                    );
-            -- D-F: conducted without a canonically bound consequence.
+
             RETURN QUERY
             SELECT 'xi_conducted_without_consequence'::text, d.task_id::text,
                    'missing_canonically_bound_receipt'::text
-              FROM public.b23_match_task_dispatches AS d
+              FROM b23_match_task_dispatches AS d
              WHERE d.delivery_state = 'conducted'
                AND NOT EXISTS (
-                    SELECT 1 FROM public.b26_p2_conduction_receipts AS r
+                    SELECT 1 FROM b26_p2_conduction_receipts AS r
                      WHERE r.task_id = d.task_id
                        AND r.ix_meaning_status = 'canonically_bound'
                );
-            -- D-G: unknown-provenance truth-capable dispatch.
+
             RETURN QUERY
             SELECT 'xi_unknown_provenance_truth'::text, d.task_id::text,
                    ('ingress=' || i.id::text)::text
-              FROM public.b23_match_task_dispatches AS d
-              JOIN public.webhook_ingress_identities AS i
+              FROM b23_match_task_dispatches AS d
+              JOIN webhook_ingress_identities AS i
                 ON i.id = d.webhook_ingress_identity_id
                AND i.tenant_id = d.tenant_id
              WHERE d.delivery_state IN ('published', 'conducted', 'pending_publish')
                AND i.b26_p2_provenance_status IS DISTINCT FROM 'authenticated_known';
             RETURN;
         END $$;
-
-
---
--- Name: b26_p2_xii_invariant_oracle(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_xii_invariant_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
     LANGUAGE plpgsql SECURITY DEFINER
@@ -7705,26 +6766,21 @@ CREATE FUNCTION public.b26_p2_xii_invariant_oracle() RETURNS TABLE(violation_kin
             SELECT 'xii_witness_without_consequence'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM public.webhook_ingress_identities AS i
-              JOIN public.b26_p2_ingress_auth_witness AS w
+              FROM webhook_ingress_identities AS i
+              JOIN b26_p2_ingress_auth_witness AS w
                 ON w.webhook_ingress_identity_id = i.id
               WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
                 AND i.b26_p2_provenance_status = 'authenticated_known'
                 AND NOT EXISTS (
-                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
+                     SELECT 1 FROM b26_p2_provider_auth_consequence AS c
                       WHERE c.webhook_ingress_identity_id = i.id
                 )
                 AND NOT EXISTS (
-                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                     SELECT 1 FROM b26_p2_execution_quarantine AS q
                       WHERE q.webhook_ingress_identity_id = i.id
                 );
             RETURN;
         END $$;
-
-
---
--- Name: b26_p2_xii_provision_ingress_topology(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -7739,12 +6795,7 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             END IF;
             GRANT USAGE ON SCHEMA public TO app_ingress;
             GRANT SELECT, INSERT ON TABLE public.webhook_ingress_identities TO app_ingress;
-            -- XXI: no table-level UPDATE (XXI-1 least privilege).
-            -- Operational columns are re-granted from the live
-            -- catalog with the authority columns excluded, exactly
-            -- reproducing the migration posture idempotently: a
-            -- table-level UPDATE here would re-open the authority
-            -- columns the XX composition gate censuses.
+
             FOR _col IN
                 SELECT column_name
                   FROM information_schema.columns
@@ -7769,22 +6820,12 @@ CREATE FUNCTION public.b26_p2_xii_provision_ingress_topology() RETURNS text
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) TO app_ingress;
-            -- XXI: the XX-era body revoked the consequence recorder
-            -- from app_ingress here; XIII (root-of-trust closure)
-            -- deliberately re-granted it (record path needs ingress
-            -- authorship, canonical_authority (consequence)), so the
-            -- revoke is dropped: re-asserting it would clobber live
-            -- posture and break every ingress record path.
+
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence_v2(uuid, text, text, text, timestamptz, boolean, timestamptz, timestamptz) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_ingress_auth_witness(uuid, text, text, text) FROM app_user;
             RETURN 'xii_topology_provisioned';
         END $$;
-
-
---
--- Name: b26_p2_xii_topology_check(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_xii_topology_check() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -7816,11 +6857,6 @@ CREATE FUNCTION public.b26_p2_xii_topology_check() RETURNS text
             RETURN 'xii_topology_strict';
         END $$;
 
-
---
--- Name: b26_p2_xiii_invariant_oracle(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_xiii_invariant_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -7830,72 +6866,64 @@ CREATE FUNCTION public.b26_p2_xiii_invariant_oracle() RETURNS TABLE(violation_ki
             SELECT 'xiii_witness_without_consequence'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM public.webhook_ingress_identities AS i
-              JOIN public.b26_p2_ingress_auth_witness AS w
+              FROM webhook_ingress_identities AS i
+              JOIN b26_p2_ingress_auth_witness AS w
                 ON w.webhook_ingress_identity_id = i.id
              WHERE i.verified_commerce_ingress_state = 'authenticity_verified'
                AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND NOT EXISTS (
-                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
+                     SELECT 1 FROM b26_p2_provider_auth_consequence AS c
                       WHERE c.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                     SELECT 1 FROM b26_p2_execution_quarantine AS q
                       WHERE q.webhook_ingress_identity_id = i.id
                );
             RETURN QUERY
             SELECT 'xiii_partial_auth_authoritative'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
                AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND NOT EXISTS (
-                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
+                     SELECT 1 FROM b26_p2_provider_auth_consequence AS c
                       WHERE c.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                     SELECT 1 FROM b26_p2_ingress_auth_witness AS w
                       WHERE w.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                     SELECT 1 FROM b26_p2_execution_quarantine AS q
                       WHERE q.webhook_ingress_identity_id = i.id
                );
-            -- XIV: internally complete but historically unverifiable:
-            -- authenticated with consequence + witness + legacy evidence
-            -- yet no immutable auth-root evidence identity and not
-            -- quarantined. This is the forged-XII survivor shape.
+
             RETURN QUERY
             SELECT 'xiv_complete_but_unverifiable'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.verified_commerce_ingress_state IS NOT DISTINCT FROM 'authenticity_verified'
                AND i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND EXISTS (
-                     SELECT 1 FROM public.b26_p2_provider_auth_consequence AS c
+                     SELECT 1 FROM b26_p2_provider_auth_consequence AS c
                       WHERE c.webhook_ingress_identity_id = i.id
                )
                AND EXISTS (
-                     SELECT 1 FROM public.b26_p2_ingress_auth_witness AS w
+                     SELECT 1 FROM b26_p2_ingress_auth_witness AS w
                       WHERE w.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM public.b26_p2_auth_root_evidence AS r
+                     SELECT 1 FROM b26_p2_auth_root_evidence AS r
                       WHERE r.webhook_ingress_identity_id = i.id
                )
                AND NOT EXISTS (
-                     SELECT 1 FROM public.b26_p2_execution_quarantine AS q
+                     SELECT 1 FROM b26_p2_execution_quarantine AS q
                       WHERE q.webhook_ingress_identity_id = i.id
                );
             RETURN;
         END $$;
-
-
---
--- Name: b26_p2_xiii_provision_ingress_topology(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_xiii_provision_ingress_topology() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -7938,8 +6966,7 @@ CREATE FUNCTION public.b26_p2_xiii_provision_ingress_topology() RETURNS text
             GRANT EXECUTE ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
             GRANT EXECUTE ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) TO app_ingress;
-            -- Dispatch (as app_user) reads the witness for the terminal
-            -- law; SELECT confers zero authorship.
+
             GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM app_user;
             REVOKE ALL ON FUNCTION public.b26_p2_attest_provenance_evidence(uuid, text, text) FROM app_user;
@@ -7948,11 +6975,6 @@ CREATE FUNCTION public.b26_p2_xiii_provision_ingress_topology() RETURNS text
             REVOKE ALL ON FUNCTION public.b26_p2_authenticate_ingress_atomic(uuid, text, text, text, text, text, text) FROM app_user;
             RETURN 'xiii_topology_provisioned';
         END $$;
-
-
---
--- Name: b26_p2_xiii_topology_check(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_xiii_topology_check() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -7999,11 +7021,6 @@ CREATE FUNCTION public.b26_p2_xiii_topology_check() RETURNS text
             END IF;
             RETURN 'xiii_topology_strict';
         END $$;
-
-
---
--- Name: b26_p2_xiv_provision_ingress_topology(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b26_p2_xiv_provision_ingress_topology() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -8057,11 +7074,6 @@ CREATE FUNCTION public.b26_p2_xiv_provision_ingress_topology() RETURNS text
             RETURN 'xiv_topology_provisioned';
         END $$;
 
-
---
--- Name: b26_p2_xiv_topology_check(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_xiv_topology_check() RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -8108,11 +7120,6 @@ CREATE FUNCTION public.b26_p2_xiv_topology_check() RETURNS text
             RETURN 'xiv_topology_strict';
         END $$;
 
-
---
--- Name: b26_p2_xvii_semantic_binding_oracle(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(violation_kind text, task_ref text, detail text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -8121,7 +7128,7 @@ CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(viola
             _canon text;
             _expected text;
         BEGIN
-            -- Tuple-bound witness mismatch on trusted rows.
+
             FOR task_ref, detail, _canon, _expected IN
                 SELECT ('ingress:' || i.id::text)::text,
                        ('ingress=' || i.id::text)::text,
@@ -8141,13 +7148,13 @@ CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(viola
                            || COALESCE(to_char(i.event_timestamp AT TIME ZONE 'UTC',
                                                'YYYY-MM-DD HH24:MI:SS.US'), ''),
                            'sha256'), 'hex')
-                  FROM public.webhook_ingress_identities AS i
-                  JOIN public.b26_p2_provider_auth_consequence AS c
+                  FROM webhook_ingress_identities AS i
+                  JOIN b26_p2_provider_auth_consequence AS c
                     ON c.webhook_ingress_identity_id = i.id
                    AND c.tenant_id = i.tenant_id
                  WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
             LOOP
-                -- Compare inside the loop against the stored witness.
+
                 PERFORM 1 FROM public.b26_p2_ingress_auth_witness AS w
                  WHERE w.webhook_ingress_identity_id = split_part(task_ref, ':', 2)::uuid
                    AND w.witness_hash IS NOT DISTINCT FROM _expected;
@@ -8156,41 +7163,36 @@ CREATE FUNCTION public.b26_p2_xvii_semantic_binding_oracle() RETURNS TABLE(viola
                     RETURN NEXT;
                 END IF;
             END LOOP;
-            -- Regime drift: trusted rows outside the governed regime.
+
             RETURN QUERY
             SELECT 'xvii_regime_unverifiable_trusted'::text,
                    ('ingress:' || i.id::text)::text,
                    ('ingress=' || i.id::text)::text
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
                AND i.b26_p2_semantic_regime IS DISTINCT FROM 'xvii-sovereign-v1';
-            -- Duplicate canonical event lineages for one provider event.
+
             RETURN QUERY
             SELECT 'xvii_duplicate_canonical_event'::text,
                    ('tenant=' || i.tenant_id::text)::text,
                    ('event_ref=' || i.provider_native_event_reference)::text
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
              GROUP BY i.tenant_id, i.provider, i.provider_native_event_reference
             HAVING count(*) > 1;
-            -- Duplicate canonical financial facts for one commerce identity.
+
             RETURN QUERY
             SELECT 'xvii_duplicate_canonical_commerce'::text,
                    ('tenant=' || i.tenant_id::text)::text,
                    ('commerce=' || i.normalized_commerce_reference_kind
                     || ':' || i.normalized_commerce_reference_value)::text
-              FROM public.webhook_ingress_identities AS i
+              FROM webhook_ingress_identities AS i
              WHERE i.b26_p2_provenance_status IS NOT DISTINCT FROM 'authenticated_known'
              GROUP BY i.tenant_id, i.provider,
                       i.normalized_commerce_reference_kind,
                       i.normalized_commerce_reference_value
             HAVING count(*) > 1;
         END $$;
-
-
---
--- Name: b27_enforce_explanation_consequence(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
     LANGUAGE plpgsql
@@ -8213,7 +7215,7 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
             SELECT subject_type, subject_ref_hash, semantic_truth_hash, policy_state
               INTO issuance_subject_type, issuance_subject_ref_hash,
                    issuance_semantic_truth_hash, issuance_policy_state
-              FROM public.trust_final_issuance_identity
+              FROM trust_final_issuance_identity
              WHERE tenant_id = NEW.tenant_id
                AND envelope_hash = NEW.source_issuance_envelope_hash;
             IF NOT FOUND THEN
@@ -8232,8 +7234,7 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
                     NEW.source_issuance_envelope_hash
                     USING ERRCODE = '42501';
             END IF;
-            -- Authority monotonicity, physically: an explanation restates the
-            -- source policy state, it never re-grades it.
+
             IF NEW.policy_state IS DISTINCT FROM issuance_policy_state THEN
                 RAISE EXCEPTION
                     'b27_explanation_policy_state_not_conserved:% vs %',
@@ -8242,7 +7243,7 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
             END IF;
 
             SELECT r.registry_hash INTO registry_hash
-              FROM public.b27_narrative_template_registry AS r
+              FROM b27_narrative_template_registry AS r
              WHERE r.registry_hash = NEW.explanation_template_registry_hash;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -8258,11 +7259,6 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- The derivation law. Every sentence must be an instance of a
-            -- registered frame filled with a machine-grammar value, and the
-            -- narrative must be the exact join of those instances. Free prose
-            -- has no representable position, which is what makes this closed
-            -- under language the corpus has never seen.
             FOR claim IN SELECT * FROM jsonb_array_elements(NEW.claims)
             LOOP
                 claim_index := claim_index + 1;
@@ -8279,7 +7275,7 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
                 END IF;
                 SELECT t.claim_kind, t.source_path, t.template_text, t.value_pattern
                   INTO template_kind, template_path, template_body, template_pattern
-                  FROM public.b27_narrative_templates AS t
+                  FROM b27_narrative_templates AS t
                  WHERE t.template_id = claim ->> 'template_id';
                 IF NOT FOUND THEN
                     RAISE EXCEPTION
@@ -8322,11 +7318,6 @@ CREATE FUNCTION public.b27_enforce_explanation_consequence() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: b27_enforce_materialization_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b27_enforce_materialization_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -8339,11 +7330,11 @@ CREATE FUNCTION public.b27_enforce_materialization_immutability() RETURNS trigge
             column_name text;
         BEGIN
             SELECT rolsuper INTO principal_is_superuser
-              FROM pg_catalog.pg_roles WHERE rolname = session_user;
+              FROM pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
+              FROM pg_class WHERE oid = TG_RELID;
             IF COALESCE(principal_is_superuser, false)
-               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
             END IF;
@@ -8366,8 +7357,7 @@ CREATE FUNCTION public.b27_enforce_materialization_immutability() RETURNS trigge
                         USING ERRCODE = '42501';
                 END IF;
             END LOOP;
-            -- Staleness is one-way. An explanation superseded by newer Trust
-            -- cannot be revived into currency.
+
             IF OLD.stale AND NOT NEW.stale THEN
                 RAISE EXCEPTION
                     'b27_explanation_materialization_immutable:stale_reversal'
@@ -8376,11 +7366,6 @@ CREATE FUNCTION public.b27_enforce_materialization_immutability() RETURNS trigge
             RETURN NEW;
         END;
         $$;
-
-
---
--- Name: b27_supersede_stale_explanations(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b27_supersede_stale_explanations() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -8399,11 +7384,6 @@ CREATE FUNCTION public.b27_supersede_stale_explanations() RETURNS trigger
             RETURN NEW;
         END;
         $$;
-
-
---
--- Name: b28_adjudicate_sufficiency(jsonb); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b28_adjudicate_sufficiency(p_channel_evidence jsonb) RETURNS TABLE(sufficient boolean, reasons text[], observed_channels integer, observed_conversions integer, observed_revenue_minor bigint)
     LANGUAGE plpgsql IMMUTABLE
@@ -8465,11 +7445,6 @@ CREATE FUNCTION public.b28_adjudicate_sufficiency(p_channel_evidence jsonb) RETU
         END;
         $$;
 
-
---
--- Name: b28_authenticate_request_possession(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_presented_token text, p_request_ref text, p_source_issuance_envelope_hash text, p_input_snapshot_hash text) RETURNS uuid
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -8492,9 +7467,9 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
             v_witness uuid;
         BEGIN
             SELECT COALESCE(rolsuper, false) INTO principal_is_trusted
-              FROM pg_catalog.pg_roles WHERE rolname = session_user;
+              FROM pg_roles WHERE rolname = session_user;
             principal_is_trusted := COALESCE(principal_is_trusted, false)
-                OR pg_catalog.pg_has_role(
+                OR pg_has_role(
                        session_user, 'migration_owner', 'USAGE'
                    );
             IF NOT principal_is_trusted
@@ -8530,13 +7505,11 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
               INTO v_credential_id, v_client_id, v_token_hash,
                    v_hash_algorithm, v_status, v_revoked_at,
                    v_expires_at, v_credential_tenant
-              FROM public.agent_service_credentials AS cred
+              FROM agent_service_credentials AS cred
              WHERE cred.tenant_id = p_tenant_id
                AND cred.token_prefix = v_prefix
              LIMIT 1;
 
-            -- A wrong prefix and a wrong secret are the same refusal on
-            -- purpose: a caller must not learn which prefixes exist.
             IF NOT FOUND
                OR COALESCE(v_hash_algorithm, 'sha256')
                       <> 'sha256'
@@ -8549,7 +7522,7 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
             END IF;
 
             IF EXISTS (
-                SELECT 1 FROM public.agent_token_revocations
+                SELECT 1 FROM agent_token_revocations
                  WHERE tenant_id = p_tenant_id AND token_prefix = v_prefix
             ) THEN
                 RAISE EXCEPTION
@@ -8572,7 +7545,7 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
             END IF;
 
             SELECT status, tenant_id INTO v_client_status, v_client_tenant
-              FROM public.agent_clients WHERE id = v_client_id;
+              FROM agent_clients WHERE id = v_client_id;
             IF NOT FOUND
                OR v_client_status IS DISTINCT FROM 'active'
                OR v_client_tenant IS DISTINCT FROM p_tenant_id
@@ -8601,11 +7574,6 @@ CREATE FUNCTION public.b28_authenticate_request_possession(p_tenant_id uuid, p_p
             RETURN v_witness;
         END;
         $$;
-
-
---
--- Name: b28_canonical_input_material(text, text, bigint, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b28_canonical_input_material(p_source_envelope_id text, p_source_semantic_truth_hash text, p_total_budget_minor bigint, p_currency text, p_channel_evidence jsonb) RETURNS text
     LANGUAGE sql IMMUTABLE
@@ -8643,11 +7611,6 @@ CREATE FUNCTION public.b28_canonical_input_material(p_source_envelope_id text, p
                 || '}'
         $$;
 
-
---
--- Name: b28_enforce_allocation_conservation(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b28_enforce_allocation_conservation() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -8684,11 +7647,6 @@ CREATE FUNCTION public.b28_enforce_allocation_conservation() RETURNS trigger
         END;
         $_$;
 
-
---
--- Name: b28_enforce_downstream_immutability(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b28_enforce_downstream_immutability() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -8698,11 +7656,11 @@ CREATE FUNCTION public.b28_enforce_downstream_immutability() RETURNS trigger
             table_owner_oid oid;
         BEGIN
             SELECT rolsuper INTO principal_is_superuser
-              FROM pg_catalog.pg_roles WHERE rolname = session_user;
+              FROM pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
+              FROM pg_class WHERE oid = TG_RELID;
             IF COALESCE(principal_is_superuser, false)
-               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
             END IF;
@@ -8712,11 +7670,6 @@ CREATE FUNCTION public.b28_enforce_downstream_immutability() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: b28_enforce_final_source_identity(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b28_enforce_final_source_identity() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -8725,7 +7678,7 @@ CREATE FUNCTION public.b28_enforce_final_source_identity() RETURNS trigger
           states text[] := ARRAY['blocked','read_only','simulation_only','proposal_required','approval_required'];
         BEGIN
           SELECT source_envelope_id,policy_state INTO source_id,source_policy
-            FROM public.trust_final_issuance_identity
+            FROM trust_final_issuance_identity
             WHERE tenant_id=NEW.tenant_id
               AND envelope_hash=NEW.source_issuance_envelope_hash;
           IF source_id IS NULL THEN
@@ -8737,7 +7690,7 @@ CREATE FUNCTION public.b28_enforce_final_source_identity() RETURNS trigger
               USING ERRCODE='42501';
           END IF;
           SELECT policy_state INTO current_policy
-            FROM public.trust_tenant_policy_events
+            FROM trust_tenant_policy_events
             WHERE tenant_id=NEW.tenant_id ORDER BY revision DESC LIMIT 1;
           IF COALESCE(current_policy,'read_only')
                NOT IN ('simulation_only','proposal_required','approval_required')
@@ -8748,11 +7701,6 @@ CREATE FUNCTION public.b28_enforce_final_source_identity() RETURNS trigger
           END IF;
           RETURN NEW;
         END $$;
-
-
---
--- Name: b28_enforce_proposal_consequence(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b28_enforce_proposal_consequence() RETURNS trigger
     LANGUAGE plpgsql
@@ -8767,11 +7715,11 @@ CREATE FUNCTION public.b28_enforce_proposal_consequence() RETURNS trigger
             table_owner_oid oid;
         BEGIN
             SELECT rolsuper INTO principal_is_trusted
-              FROM pg_catalog.pg_roles WHERE rolname = session_user;
+              FROM pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
+              FROM pg_class WHERE oid = TG_RELID;
             principal_is_trusted := COALESCE(principal_is_trusted, false)
-                OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE');
+                OR pg_has_role(session_user, table_owner_oid, 'USAGE');
 
             IF NOT principal_is_trusted THEN
                 IF session_user <> 'app_b28_solver' THEN
@@ -8784,7 +7732,7 @@ CREATE FUNCTION public.b28_enforce_proposal_consequence() RETURNS trigger
             SELECT tenant_id, source_envelope_id, action_authority, allocations
               INTO result_tenant_id, result_envelope_id,
                    result_action_authority, result_allocations
-              FROM public.b28_simulation_results
+              FROM b28_simulation_results
              WHERE id = NEW.result_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -8806,11 +7754,6 @@ CREATE FUNCTION public.b28_enforce_proposal_consequence() RETURNS trigger
             RETURN NEW;
         END;
         $$;
-
-
---
--- Name: b28_enforce_request_consequence(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
     LANGUAGE plpgsql
@@ -8835,15 +7778,12 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
             adjudication record;
         BEGIN
             SELECT rolsuper INTO principal_is_trusted
-              FROM pg_catalog.pg_roles WHERE rolname = session_user;
+              FROM pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
+              FROM pg_class WHERE oid = TG_RELID;
             principal_is_trusted := COALESCE(principal_is_trusted, false)
-                OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE');
+                OR pg_has_role(session_user, table_owner_oid, 'USAGE');
 
-            -- Authority. A principal that can drop this trigger gains nothing
-            -- from being refused by it, so the owner and superuser skip the
-            -- principal check only; every derivation check below runs for them.
             IF NOT principal_is_trusted THEN
                 IF session_user <> 'app_b28_requester' THEN
                     RAISE EXCEPTION
@@ -8858,10 +7798,9 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Durable source Trust, unchanged from Corrective IV.
             SELECT semantic_truth_hash, policy_state
               INTO issuance_semantic_truth_hash, issuance_policy_state
-              FROM public.trust_final_issuance_identity
+              FROM trust_final_issuance_identity
              WHERE tenant_id = NEW.tenant_id
                AND envelope_hash = NEW.source_issuance_envelope_hash;
             IF NOT FOUND THEN
@@ -8878,10 +7817,7 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     NEW.source_issuance_envelope_hash
                     USING ERRCODE = '42501';
             END IF;
-            -- Written as a total predicate. `NULL = ANY(...)` is UNKNOWN, and
-            -- `IF UNKNOWN` takes the ELSE branch, so a NULL policy state would
-            -- otherwise be admitted by a guard that reads as though it refuses
-            -- it (Directive V H-RC-V-06).
+
             IF issuance_policy_state IS NULL
                OR NOT (issuance_policy_state = ANY(admissible))
             THEN
@@ -8899,12 +7835,10 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Corrective V, H-V-02. The requester is an authenticated principal
-            -- that really exists and is really live, not a string.
             SELECT tenant_id, agent_client_id, status, revoked_at, expires_at
               INTO credential_tenant, credential_client, credential_status,
                    credential_revoked, credential_expires
-              FROM public.agent_service_credentials
+              FROM agent_service_credentials
              WHERE id = NEW.requested_by_credential_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -8934,7 +7868,7 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
             SELECT tenant_id, status INTO client_tenant, client_status
-              FROM public.agent_clients
+              FROM agent_clients
              WHERE id = NEW.requested_by_agent_client_id;
             IF NOT FOUND
                OR client_tenant IS DISTINCT FROM NEW.tenant_id
@@ -8953,8 +7887,6 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Corrective V, H-V-06. The retained evidence is well formed, so the
-            -- canonical material is a total function of the stored row.
             IF NEW.solver_profile <> 'b25-p14-deterministic-largest-remainder-v1' THEN
                 RAISE EXCEPTION
                     'b28_request_solver_profile_ungoverned:%', NEW.solver_profile
@@ -9013,8 +7945,6 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Corrective V, H-V-06. The snapshot hash is the hash of the row's
-            -- own inputs or it is not admissible.
             expected_snapshot := public.b28_input_snapshot_hash(
                 NEW.source_envelope_id,
                 NEW.source_semantic_truth_hash,
@@ -9029,9 +7959,8 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Corrective V, H-V-05. Sufficiency is adjudicated here, durably.
             SELECT * INTO adjudication
-              FROM public.b28_adjudicate_sufficiency(NEW.channel_evidence);
+              FROM b28_adjudicate_sufficiency(NEW.channel_evidence);
             IF NEW.sufficiency_verdict IS DISTINCT FROM adjudication.sufficient
                OR NEW.sufficiency_reasons IS DISTINCT FROM adjudication.reasons
                OR NEW.observed_channels
@@ -9051,11 +7980,6 @@ CREATE FUNCTION public.b28_enforce_request_consequence() RETURNS trigger
         END;
         $_$;
 
-
---
--- Name: b28_enforce_request_possession(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b28_enforce_request_possession() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -9071,7 +7995,7 @@ CREATE FUNCTION public.b28_enforce_request_possession() RETURNS trigger
             SELECT tenant_id, agent_client_id, credential_id,
                    request_binding, authenticated_at
               INTO w_tenant, w_client, w_credential, w_binding, w_at
-              FROM public.b28_request_authentications
+              FROM b28_request_authentications
              WHERE id = NEW.request_authentication_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -9097,9 +8021,6 @@ CREATE FUNCTION public.b28_enforce_request_possession() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- The witness authorises this row and no other. Re-deriving the
-            -- binding here rather than comparing a stored copy means a witness
-            -- minted for a cheaper request cannot be spent on a richer one.
             expected_binding := public.b28_request_authentication_binding(
                 NEW.tenant_id,
                 NEW.request_ref,
@@ -9124,11 +8045,6 @@ CREATE FUNCTION public.b28_enforce_request_possession() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: b28_enforce_result_consequence(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -9142,11 +8058,11 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
             table_owner_oid oid;
         BEGIN
             SELECT rolsuper INTO principal_is_trusted
-              FROM pg_catalog.pg_roles WHERE rolname = session_user;
+              FROM pg_roles WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
+              FROM pg_class WHERE oid = TG_RELID;
             principal_is_trusted := COALESCE(principal_is_trusted, false)
-                OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE');
+                OR pg_has_role(session_user, table_owner_oid, 'USAGE');
 
             IF NOT principal_is_trusted THEN
                 IF session_user <> 'app_b28_solver' THEN
@@ -9157,7 +8073,7 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
             END IF;
 
             SELECT * INTO request_row
-              FROM public.b28_simulation_requests
+              FROM b28_simulation_requests
              WHERE id = NEW.request_id;
             IF NOT FOUND THEN
                 RAISE EXCEPTION
@@ -9199,11 +8115,6 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Corrective V, Exit Gate 4's active falsifier. The comparison above
-            -- proves the result cites its request's snapshot; it does not prove
-            -- the request still *is* what it was admitted as. Re-deriving it
-            -- here makes a post-admission input change unrepresentable as a
-            -- consequence rather than merely detectable after the fact.
             IF request_row.input_snapshot_hash IS DISTINCT FROM
                public.b28_input_snapshot_hash(
                    request_row.source_envelope_id,
@@ -9218,8 +8129,6 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Corrective V, H-V-05. Sufficiency is a durable precondition of the
-            -- consequence, not a decision the writer reports having made.
             IF NOT request_row.sufficiency_verdict THEN
                 RAISE EXCEPTION
                     'b28_result_request_insufficient:%',
@@ -9227,12 +8136,6 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Corrective VI, Gate 3 Architecture B. The persisted vocabulary
-            -- names the proposition this guard actually establishes: the row is
-            -- the value of the governed deterministic function over the admitted
-            -- input. `solver_invocations` is gone because the database cannot
-            -- witness an execution and the schema must not claim what it cannot
-            -- prove.
             IF NEW.solver_consequence_kind
                    IS DISTINCT FROM 'governed_deterministic_consequence'
             THEN
@@ -9254,7 +8157,7 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
             END IF;
 
             SELECT policy_state INTO issuance_policy_state
-              FROM public.trust_final_issuance_identity
+              FROM trust_final_issuance_identity
              WHERE tenant_id = NEW.tenant_id
                AND envelope_hash = request_row.source_issuance_envelope_hash;
             IF NOT FOUND THEN
@@ -9279,11 +8182,6 @@ CREATE FUNCTION public.b28_enforce_result_consequence() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: b28_input_snapshot_hash(text, text, bigint, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b28_input_snapshot_hash(p_source_envelope_id text, p_source_semantic_truth_hash text, p_total_budget_minor bigint, p_currency text, p_channel_evidence jsonb) RETURNS text
     LANGUAGE sql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -9304,11 +8202,6 @@ CREATE FUNCTION public.b28_input_snapshot_hash(p_source_envelope_id text, p_sour
                 'hex'
             )
         $$;
-
-
---
--- Name: b28_recompute_allocation(jsonb, bigint); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.b28_recompute_allocation(p_channel_evidence jsonb, p_total_budget_minor bigint) RETURNS jsonb
     LANGUAGE plpgsql IMMUTABLE
@@ -9424,11 +8317,6 @@ CREATE FUNCTION public.b28_recompute_allocation(p_channel_evidence jsonb, p_tota
         END;
         $$;
 
-
---
--- Name: b28_request_authentication_binding(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.b28_request_authentication_binding(p_tenant_id uuid, p_request_ref text, p_source_issuance_envelope_hash text, p_input_snapshot_hash text) RETURNS text
     LANGUAGE sql IMMUTABLE
     SET search_path TO 'pg_catalog', 'public'
@@ -9455,18 +8343,13 @@ CREATE FUNCTION public.b28_request_authentication_binding(p_tenant_id uuid, p_re
             )
         $$;
 
-
---
--- Name: check_allocation_sum(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1; -- ±1 cent rounding tolerance
+            tolerance_cents INTEGER := 1;
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
@@ -9485,18 +8368,6 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
             RETURN COALESCE(NEW, OLD);
         END;
         $$;
-
-
---
--- Name: FUNCTION check_allocation_sum(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.check_allocation_sum() IS 'Validates that allocations sum to event revenue per (event_id, model_version) with ±1 cent tolerance. Purpose: Enforce sum-equality invariant for deterministic revenue accounting. Raises exception if sum mismatch exceeds tolerance.';
-
-
---
--- Name: check_allocation_sum_stmt_delete(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
     LANGUAGE plpgsql
@@ -9551,18 +8422,6 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: FUNCTION check_allocation_sum_stmt_delete(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.check_allocation_sum_stmt_delete() IS 'STATEMENT-level validation for DELETE: allocations sum to event revenue per (tenant_id, event_id, model_version) with ±1 cent tolerance. Uses transition tables to avoid per-row amplification.';
-
-
---
--- Name: check_allocation_sum_stmt_insert(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -9615,18 +8474,6 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
             RETURN NULL;
         END;
         $$;
-
-
---
--- Name: FUNCTION check_allocation_sum_stmt_insert(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.check_allocation_sum_stmt_insert() IS 'STATEMENT-level validation for INSERT: allocations sum to event revenue per (tenant_id, event_id, model_version) with ±1 cent tolerance. Uses transition tables to avoid per-row amplification.';
-
-
---
--- Name: check_allocation_sum_stmt_update(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
     LANGUAGE plpgsql
@@ -9685,18 +8532,6 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: FUNCTION check_allocation_sum_stmt_update(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.check_allocation_sum_stmt_update() IS 'STATEMENT-level validation for UPDATE: allocations sum to event revenue per (tenant_id, event_id, model_version) with ±1 cent tolerance. Uses transition tables to avoid per-row amplification.';
-
-
---
--- Name: fn_b23_p0_prune_attribution_commerce_identities(integer); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delete integer DEFAULT 1000) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
@@ -9707,7 +8542,7 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delet
             BEGIN
                 WITH doomed AS (
                     SELECT id
-                    FROM public.attribution_commerce_identities
+                    FROM attribution_commerce_identities
                     WHERE last_observed_at < cutoff
                     ORDER BY last_observed_at ASC
                     LIMIT GREATEST(max_delete, 1)
@@ -9721,11 +8556,6 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delet
             END;
             $$;
 
-
---
--- Name: fn_b23_p0_prune_attribution_commerce_identities_trigger(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
@@ -9735,11 +8565,6 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()
                 RETURN NULL;
             END;
             $$;
-
-
---
--- Name: fn_b23_p1_apply_lifecycle(integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000) RETURNS TABLE(table_name text, deleted_rows integer)
     LANGUAGE plpgsql SECURITY DEFINER
@@ -9751,7 +8576,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
         BEGIN
             WITH doomed AS (
                 SELECT id
-                FROM public.b23_webhook_ingestion_logs
+                FROM b23_webhook_ingestion_logs
                 WHERE received_at < (now() - interval '365 days')
                 ORDER BY received_at
                 LIMIT effective_limit
@@ -9766,7 +8591,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
 
             WITH doomed AS (
                 SELECT id
-                FROM public.b23_exception_records
+                FROM b23_exception_records
                 WHERE raised_at < (now() - interval '1825 days')
                 ORDER BY raised_at
                 LIMIT effective_limit
@@ -9781,7 +8606,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
 
             WITH doomed AS (
                 SELECT id
-                FROM public.b23_match_verdicts
+                FROM b23_match_verdicts
                 WHERE created_at < (now() - interval '1825 days')
                 ORDER BY created_at
                 LIMIT effective_limit
@@ -9796,7 +8621,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
 
             WITH doomed AS (
                 SELECT id
-                FROM public.b23_revenue_events
+                FROM b23_revenue_events
                 WHERE event_occurred_at < (now() - interval '2555 days')
                 ORDER BY event_occurred_at
                 LIMIT effective_limit
@@ -9812,18 +8637,6 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
             RETURN;
         END;
         $$;
-
-
---
--- Name: FUNCTION fn_b23_p1_apply_lifecycle(max_delete integer); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer) IS 'B2.3-P1 database-native lifecycle retention enforcement for verdicts, exceptions, revenue events, and ingestion logs.';
-
-
---
--- Name: fn_bind_session_authority_from_event(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
     LANGUAGE plpgsql
@@ -9863,7 +8676,7 @@ CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
 
             IF EXISTS (
                 SELECT 1
-                  FROM public.session_authority AS authority
+                  FROM session_authority AS authority
                  WHERE authority.tenant_id = NEW.tenant_id
                    AND authority.session_id = NEW.session_id
                    AND (
@@ -9879,18 +8692,6 @@ CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
             RETURN NEW;
         END;
         $$;
-
-
---
--- Name: FUNCTION fn_bind_session_authority_from_event(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_bind_session_authority_from_event() IS 'C19: session authority is adjudicated in the event-time domain, including bounded legitimate backfill.';
-
-
---
--- Name: fn_block_worker_ingestion_mutation(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_block_worker_ingestion_mutation() RETURNS trigger
     LANGUAGE plpgsql
@@ -9908,11 +8709,6 @@ BEGIN
 END;
 $$;
 
-
---
--- Name: fn_compliance_audit_ledger_append_only(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_compliance_audit_ledger_append_only() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -9921,11 +8717,6 @@ CREATE FUNCTION public.fn_compliance_audit_ledger_append_only() RETURNS trigger
                 'compliance_audit_ledger is append-only; UPDATE and DELETE are forbidden';
         END;
         $$;
-
-
---
--- Name: fn_detect_pii_keys(jsonb); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_detect_pii_keys(payload jsonb) RETURNS boolean
     LANGUAGE plpgsql IMMUTABLE
@@ -9937,18 +8728,6 @@ CREATE FUNCTION public.fn_detect_pii_keys(payload jsonb) RETURNS boolean
             RETURN (jsonb_path_exists(payload, '$.**.email') OR jsonb_path_exists(payload, '$.**.email_address') OR jsonb_path_exists(payload, '$.**.phone') OR jsonb_path_exists(payload, '$.**.phone_number') OR jsonb_path_exists(payload, '$.**.ssn') OR jsonb_path_exists(payload, '$.**.social_security_number') OR jsonb_path_exists(payload, '$.**.ip_address') OR jsonb_path_exists(payload, '$.**.ip') OR jsonb_path_exists(payload, '$.**.first_name') OR jsonb_path_exists(payload, '$.**.last_name') OR jsonb_path_exists(payload, '$.**.full_name') OR jsonb_path_exists(payload, '$.**.address') OR jsonb_path_exists(payload, '$.**.street_address'));
         END;
         $_$;
-
-
---
--- Name: FUNCTION fn_detect_pii_keys(payload jsonb); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_detect_pii_keys(payload jsonb) IS 'PII detection function (Layer 2 guardrail). Returns TRUE if any PII key is detected in JSONB payload. Scope: Key-based detection only (not value scanning). Performance: IMMUTABLE function using ? operator for fast key checks. Blocklist: email, email_address, phone, phone_number, ssn, social_security_number, ip_address, ip, first_name, last_name, full_name, address, street_address. Reference: ADR-003-PII-Defense-Strategy.md.';
-
-
---
--- Name: fn_enforce_pii_guardrail(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
     LANGUAGE plpgsql
@@ -10033,43 +8812,18 @@ CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
         END;
         $_$;
 
-
---
--- Name: FUNCTION fn_enforce_pii_guardrail(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_enforce_pii_guardrail() IS 'PII enforcement trigger function (Layer 2 guardrail). Raises EXCEPTION if PII key detected in JSONB payload. Scope: attribution_events.raw_payload, dead_events.raw_payload, revenue_ledger.metadata. Behavior: BEFORE INSERT trigger blocks write with detailed error message. Performance: <1ms overhead per INSERT. Limitation: Key-based detection only (not value scanning). Reference: ADR-003-PII-Defense-Strategy.md.';
-
-
---
--- Name: fn_events_prevent_mutation(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_events_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-            -- Allow migration_owner for emergency repairs (optional)
+
             IF current_user = 'migration_owner' THEN
-                RETURN NULL; -- Allow operation
+                RETURN NULL;
             END IF;
 
-            -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'attribution_events is append-only; updates and deletes are not allowed. Use INSERT with correlation_id for corrections.';
         END;
         $$;
-
-
---
--- Name: FUNCTION fn_events_prevent_mutation(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_events_prevent_mutation() IS 'Prevents UPDATE/DELETE operations on attribution_events table. Purpose: Defense-in-depth enforcement of events immutability. Allows migration_owner for emergency repairs only. Raises exception for all other roles attempting UPDATE/DELETE.';
-
-
---
--- Name: fn_guard_attribution_events_payload_identity(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_guard_attribution_events_payload_identity() RETURNS trigger
     LANGUAGE plpgsql
@@ -10099,43 +8853,18 @@ CREATE FUNCTION public.fn_guard_attribution_events_payload_identity() RETURNS tr
         END;
         $_$;
 
-
---
--- Name: FUNCTION fn_guard_attribution_events_payload_identity(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_guard_attribution_events_payload_identity() IS 'B1.4-P0 payload authority lock. Blocks identity-proxy and raw-envelope keys from immutable attribution_events.raw_payload.';
-
-
---
--- Name: fn_ledger_prevent_mutation(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_ledger_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-            -- Allow migration_owner for emergency repairs (optional)
+
             IF current_user = 'migration_owner' THEN
-                RETURN NULL; -- Allow operation
+                RETURN NULL;
             END IF;
 
-            -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'revenue_ledger is immutable; updates and deletes are not allowed. Use INSERT for corrections.';
         END;
         $$;
-
-
---
--- Name: FUNCTION fn_ledger_prevent_mutation(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_ledger_prevent_mutation() IS 'Prevents UPDATE/DELETE operations on revenue_ledger table. Purpose: Defense-in-depth enforcement of ledger immutability. Allows migration_owner for emergency repairs only. Raises exception for all other roles attempting UPDATE/DELETE.';
-
-
---
--- Name: fn_llm_call_audit_append_only(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_llm_call_audit_append_only() RETURNS trigger
     LANGUAGE plpgsql
@@ -10145,11 +8874,6 @@ CREATE FUNCTION public.fn_llm_call_audit_append_only() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: fn_log_channel_assignment_correction(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
@@ -10157,10 +8881,9 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
             correction_by_val VARCHAR(255);
             correction_reason_val TEXT;
         BEGIN
-            -- Only log if the 'channel_code' column actually changed
+
             IF (NEW.channel_code IS DISTINCT FROM OLD.channel_code) THEN
-                -- Read session variables set by application layer
-                -- Fall back to 'system' if unset (indicates bypass attempt)
+
                 correction_by_val := COALESCE(
                     current_setting('app.correction_by', true),
                     'system'
@@ -10170,7 +8893,6 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
                     'No reason provided'
                 );
 
-                -- Insert audit record
                 INSERT INTO channel_assignment_corrections (
                     tenant_id,
                     entity_type,
@@ -10197,21 +8919,6 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: FUNCTION fn_log_channel_assignment_correction(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_log_channel_assignment_correction() IS 'Trigger function to log attribution_allocations channel_code corrections to channel_assignment_corrections table.
-            Purpose: Ensure every post-ingestion assignment correction produces a corresponding audit row.
-            Invariant: No assignment correction without matching correction row.
-            Security: SECURITY DEFINER to bypass RLS during trigger execution (reads tenant_id from allocation, already RLS-protected).';
-
-
---
--- Name: fn_log_channel_state_change(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
@@ -10219,10 +8926,9 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
             change_by_val VARCHAR(255);
             change_reason_val TEXT;
         BEGIN
-            -- Only log if the 'state' column actually changed
+
             IF (NEW.state IS DISTINCT FROM OLD.state) THEN
-                -- Read session variables set by application layer
-                -- Fall back to 'system' if unset (indicates bypass attempt)
+
                 change_by_val := COALESCE(
                     current_setting('app.channel_state_change_by', true),
                     'system'
@@ -10232,7 +8938,6 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
                     ''
                 );
 
-                -- Insert audit record
                 INSERT INTO channel_state_transitions (
                     channel_code,
                     from_state,
@@ -10254,21 +8959,6 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
             RETURN NEW;
         END;
         $$;
-
-
---
--- Name: FUNCTION fn_log_channel_state_change(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_log_channel_state_change() IS 'Trigger function to log channel_taxonomy state transitions to channel_state_transitions table.
-            Purpose: Ensure every state change produces a corresponding audit row.
-            Invariant: No taxonomy state change without matching transition row.
-            Security: SECURITY DEFINER to ensure trigger can insert audit records.';
-
-
---
--- Name: fn_log_revenue_state_change(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_log_revenue_state_change() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -10295,21 +8985,6 @@ CREATE FUNCTION public.fn_log_revenue_state_change() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: FUNCTION fn_log_revenue_state_change(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_log_revenue_state_change() IS 'Trigger function for atomic audit logging of revenue_ledger state changes.
-            Purpose: Ensure every state change produces a corresponding revenue_state_transitions row.
-            Invariant: No ledger state change without matching transition row.
-            Security: SECURITY DEFINER to bypass RLS on revenue_state_transitions during trigger execution.';
-
-
---
--- Name: fn_scan_pii_contamination(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
     LANGUAGE plpgsql
     AS $$
@@ -10318,13 +8993,13 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
             rec RECORD;
             detected_key_var TEXT;
         BEGIN
-            -- Scan attribution_events.raw_payload
+
             FOR rec IN
                 SELECT id, raw_payload
                 FROM attribution_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
-                -- Find first PII key
+
                 SELECT key INTO detected_key_var
                 FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
@@ -10349,19 +9024,18 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
                     'raw_payload',
                     rec.id,
                     detected_key_var,
-                    'Redacted for security'  -- Do not log actual PII values
+                    'Redacted for security'
                 );
 
                 finding_count := finding_count + 1;
             END LOOP;
 
-            -- Scan dead_events.raw_payload
             FOR rec IN
                 SELECT id, raw_payload
                 FROM dead_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
-                -- Find first PII key
+
                 SELECT key INTO detected_key_var
                 FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
@@ -10392,13 +9066,12 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
                 finding_count := finding_count + 1;
             END LOOP;
 
-            -- Scan revenue_ledger.metadata (only non-NULL)
             FOR rec IN
                 SELECT id, metadata
                 FROM revenue_ledger
                 WHERE metadata IS NOT NULL AND fn_detect_pii_keys(metadata)
             LOOP
-                -- Find first PII key
+
                 SELECT key INTO detected_key_var
                 FROM jsonb_object_keys(rec.metadata) key
                 WHERE key IN (
@@ -10433,18 +9106,6 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
         END;
         $$;
 
-
---
--- Name: FUNCTION fn_scan_pii_contamination(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.fn_scan_pii_contamination() IS 'PII contamination scanning function (Layer 3 operations audit). Returns: Count of PII findings detected. Scope: Scans all three JSONB surfaces (attribution_events.raw_payload, dead_events.raw_payload, revenue_ledger.metadata). Behavior: Inserts findings into pii_audit_findings table for each detected PII key. Performance: Batch operation, intended for periodic scheduled execution (not per-transaction). Security: Does not log actual PII values, only record IDs and key names. Reference: ADR-003-PII-Defense-Strategy.md Section "Layer 3 (Operations)".';
-
-
---
--- Name: reject_reserved_trust_action_scope(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.reject_reserved_trust_action_scope() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -10463,22 +9124,12 @@ CREATE FUNCTION public.reject_reserved_trust_action_scope() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: skeldir_database_construction_revisions(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.skeldir_database_construction_revisions() RETURNS SETOF text
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
-            SELECT version_num FROM public.alembic_version
+            SELECT version_num FROM alembic_version
         $$;
-
-
---
--- Name: trust_access_log_issuance_authority_guard(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigger
     LANGUAGE plpgsql
@@ -10490,9 +9141,9 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
             attempt record;
         BEGIN
             SELECT r.rolname INTO table_owner
-            FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_roles r ON r.oid = c.relowner
-            WHERE c.oid = 'public.trust_access_log'::regclass;
+            FROM pg_class c
+            JOIN pg_roles r ON r.oid = c.relowner
+            WHERE c.oid = 'trust_access_log'::regclass;
             IF TG_OP = 'INSERT' THEN
                 IF (NEW.event_type = 'issuance' AND NEW.issuance_state <> 'authorized')
                    OR (NEW.event_type <> 'issuance'
@@ -10532,7 +9183,7 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
                     RAISE EXCEPTION 'trust_issuance_authority_violation:signer:%',
                         session_user USING ERRCODE = '42501';
                 END IF;
-                SELECT * INTO attempt FROM public.trust_issuance_attempts
+                SELECT * INTO attempt FROM trust_issuance_attempts
                 WHERE tenant_id = NEW.tenant_id AND audit_ref = NEW.audit_ref
                   AND id = NEW.issued_attempt_id
                   AND attempt_state = 'signature_known';
@@ -10546,7 +9197,7 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
                     RAISE EXCEPTION 'trust_issuance_authority_violation:issuer:%',
                         session_user USING ERRCODE = '42501';
                 END IF;
-                SELECT * INTO attempt FROM public.trust_issuance_attempts
+                SELECT * INTO attempt FROM trust_issuance_attempts
                 WHERE tenant_id = NEW.tenant_id AND audit_ref = NEW.audit_ref
                   AND id = OLD.issued_attempt_id
                   AND attempt_state = 'signature_known';
@@ -10597,11 +9248,6 @@ CREATE FUNCTION public.trust_access_log_issuance_authority_guard() RETURNS trigg
         END;
         $$;
 
-
---
--- Name: trust_access_log_witness_immutability_guard(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.trust_access_log_witness_immutability_guard() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -10616,17 +9262,13 @@ CREATE FUNCTION public.trust_access_log_witness_immutability_guard() RETURNS tri
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_catalog.pg_roles
+              FROM pg_roles
              WHERE rolname = session_user;
             SELECT relowner INTO table_owner_oid
-              FROM pg_catalog.pg_class WHERE oid = TG_RELID;
+              FROM pg_class WHERE oid = TG_RELID;
 
-            -- A superuser or the owning migration principal can drop this
-            -- trigger outright, so refusing them buys no authority. C20/C21
-            -- already assert that no runtime login reaches the owner, and the
-            -- canonical-schema gate detects the trigger's removal.
             IF COALESCE(principal_is_superuser, false)
-               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 RETURN NEW;
             END IF;
@@ -10634,10 +9276,6 @@ CREATE FUNCTION public.trust_access_log_witness_immutability_guard() RETURNS tri
             old_row := to_jsonb(OLD);
             new_row := to_jsonb(NEW);
 
-            -- Total over columns, including columns that do not exist yet. A
-            -- future migration that adds a truth-bearing column inherits the
-            -- fence by default and has to opt out deliberately, which is the
-            -- direction a fail-closed system needs.
             FOR column_name IN SELECT jsonb_object_keys(new_row)
             LOOP
                 IF column_name = ANY(mutable_columns) THEN
@@ -10654,11 +9292,6 @@ CREATE FUNCTION public.trust_access_log_witness_immutability_guard() RETURNS tri
         END;
         $$;
 
-
---
--- Name: trust_enforce_issuance_consequence_authority(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -10668,14 +9301,7 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
             table_owner_oid oid;
             issuer_role_oid oid;
             caller_is_issuer boolean;
-            -- Scalars, not ``trust_access_log%ROWTYPE``. PL/pgSQL resolves a
-            -- %ROWTYPE declaration when the function is *created*, and pg_dump
-            -- emits functions before the tables they name -- which makes the
-            -- canonical schema artifact inapplicable to an empty database.
-            -- Corrective XVII found that exact class on this schema, and the R2
-            -- bootstrap already carries a reorder list because of it. Naming the
-            -- columns keeps the compile-time dependency out of the artifact
-            -- instead of adding another entry to that list.
+
             ledger_event_type text;
             ledger_status text;
             ledger_idempotency_key_hash text;
@@ -10699,30 +9325,22 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_catalog.pg_roles
+              FROM pg_roles
              WHERE rolname = session_user;
             SELECT relowner
               INTO table_owner_oid
-              FROM pg_catalog.pg_class
+              FROM pg_class
              WHERE oid = TG_RELID;
 
-            -- A superuser or the owning migration principal can drop this
-            -- trigger outright, so refusing them buys no authority. C20/C21
-            -- already assert that no runtime login reaches the owner.
             IF COALESCE(principal_is_superuser, false)
-               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 RETURN NEW;
             END IF;
 
-            -- Layer A: only the dedicated issuer may project a terminal
-            -- consequence.  The API principal may authorize an issuance, but
-            -- it cannot assert that signing happened: pairing an
-            -- ``authorized`` ledger row with a well-shaped terminal row is
-            -- not sufficient evidence of a completed consequence.
             SELECT oid
               INTO issuer_role_oid
-              FROM pg_catalog.pg_roles
+              FROM pg_roles
              WHERE rolname = 'app_trust_issuer';
             caller_is_issuer := issuer_role_oid IS NOT NULL
                 AND session_user = 'app_trust_issuer';
@@ -10734,10 +9352,6 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                     USING ERRCODE = '42501';
             END IF;
 
-            -- Layer B: the row must project a completed, signer-confirmed
-            -- issuance.  ``authorized`` is authorization to try, not evidence
-            -- of a consequence.  The source ledger and attempt therefore have
-            -- to be terminal and agree on the retained signature artifact.
             SELECT event_type, status, idempotency_key_hash, subject_type,
                    subject_ref_hash, envelope_hash, semantic_truth_hash,
                    policy_state, audit_hash, issuance_state, issued_attempt_id,
@@ -10750,7 +9364,7 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                    ledger_issuance_state, ledger_issued_attempt_id,
                    ledger_issued_signing_key_id, ledger_issued_signature_hash,
                    ledger_issued_signature, ledger_issued_envelope
-              FROM public.trust_access_log
+              FROM trust_access_log
              WHERE tenant_id = NEW.tenant_id
                AND audit_ref = NEW.access_audit_ref;
             IF NOT FOUND THEN
@@ -10780,7 +9394,7 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
                    attempt.signed_envelope
               INTO attempt_state, attempt_signing_key_id, attempt_signature_hash,
                    attempt_signature, attempt_signed_envelope
-              FROM public.trust_issuance_attempts AS attempt
+              FROM trust_issuance_attempts AS attempt
              WHERE attempt.tenant_id = NEW.tenant_id
                AND attempt.audit_ref = NEW.access_audit_ref
                AND attempt.id = ledger_issued_attempt_id;
@@ -10820,11 +9434,6 @@ CREATE FUNCTION public.trust_enforce_issuance_consequence_authority() RETURNS tr
         END;
         $$;
 
-
---
--- Name: trust_enforce_issuance_history_immutable(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -10835,18 +9444,15 @@ CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigge
         BEGIN
             SELECT rolsuper
               INTO principal_is_superuser
-              FROM pg_catalog.pg_roles
+              FROM pg_roles
              WHERE rolname = session_user;
             SELECT relowner
               INTO table_owner_oid
-              FROM pg_catalog.pg_class
+              FROM pg_class
              WHERE oid = TG_RELID;
 
-            -- Superuser and the owning migration principal can drop this
-            -- trigger, so refusing them buys no authority; the owner branch is
-            -- also what keeps a governed tenant cascade working.
             IF COALESCE(principal_is_superuser, false)
-               OR pg_catalog.pg_has_role(session_user, table_owner_oid, 'USAGE')
+               OR pg_has_role(session_user, table_owner_oid, 'USAGE')
             THEN
                 IF TG_OP = 'DELETE' THEN
                     RETURN OLD;
@@ -10854,10 +9460,6 @@ CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigge
                 RETURN NEW;
             END IF;
 
-            -- Every row of this relation is terminal at INSERT: the status
-            -- CHECK admits only 'success', so a row exists exactly when a
-            -- cryptographic consequence was recorded. A later statement may
-            -- not restate what Skeldir durably claims it signed.
             RAISE EXCEPTION
                 'durable trust issuance history is immutable; % may not % '
                 'public.trust_envelope_issuance_log',
@@ -10866,11 +9468,6 @@ CREATE FUNCTION public.trust_enforce_issuance_history_immutable() RETURNS trigge
         END;
         $$;
 
-
---
--- Name: trust_export_artifact_attempt_guard(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.trust_export_artifact_attempt_guard() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -10878,9 +9475,9 @@ CREATE FUNCTION public.trust_export_artifact_attempt_guard() RETURNS trigger
         DECLARE table_owner text;
         BEGIN
             SELECT r.rolname INTO table_owner
-            FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_roles r ON r.oid = c.relowner
-            WHERE c.oid = 'public.trust_export_artifact_attempts'::regclass;
+            FROM pg_class c
+            JOIN pg_roles r ON r.oid = c.relowner
+            WHERE c.oid = 'trust_export_artifact_attempts'::regclass;
             IF TG_OP = 'INSERT' THEN
                 IF session_user NOT IN ('app_trust_issuer', table_owner)
                    OR NEW.attempt_state <> 'signing' THEN
@@ -10919,11 +9516,6 @@ CREATE FUNCTION public.trust_export_artifact_attempt_guard() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: trust_issuance_attempt_guard(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.trust_issuance_attempt_guard() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -10931,9 +9523,9 @@ CREATE FUNCTION public.trust_issuance_attempt_guard() RETURNS trigger
         DECLARE table_owner text;
         BEGIN
             SELECT r.rolname INTO table_owner
-            FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_roles r ON r.oid = c.relowner
-            WHERE c.oid = 'public.trust_issuance_attempts'::regclass;
+            FROM pg_class c
+            JOIN pg_roles r ON r.oid = c.relowner
+            WHERE c.oid = 'trust_issuance_attempts'::regclass;
             IF TG_OP = 'INSERT' THEN
                 IF session_user NOT IN ('app_trust_issuer', table_owner)
                    OR NEW.attempt_state <> 'signing' THEN
@@ -10980,11 +9572,6 @@ CREATE FUNCTION public.trust_issuance_attempt_guard() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: trust_tenant_policy_append_only(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.trust_tenant_policy_append_only() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public'
@@ -10995,11 +9582,6 @@ CREATE FUNCTION public.trust_tenant_policy_append_only() RETURNS trigger
           END IF;
           RAISE EXCEPTION 'trust_policy_append_only' USING ERRCODE='42501';
         END $$;
-
-
---
--- Name: resolve_tenant_webhook_secrets(text); Type: FUNCTION; Schema: security; Owner: -
---
 
 CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETURNS TABLE(tenant_id uuid, tenant_updated_at timestamp with time zone, shopify_webhook_secret_ciphertext bytea, shopify_webhook_secret_key_id text, stripe_webhook_secret_ciphertext bytea, stripe_webhook_secret_key_id text, paypal_webhook_secret_ciphertext bytea, paypal_webhook_secret_key_id text, woocommerce_webhook_secret_ciphertext bytea, woocommerce_webhook_secret_key_id text)
     LANGUAGE sql SECURITY DEFINER
@@ -11016,19 +9598,10 @@ CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETUR
             t.paypal_webhook_secret_key_id,
             t.woocommerce_webhook_secret_ciphertext,
             t.woocommerce_webhook_secret_key_id
-          FROM public.tenants t
+          FROM tenants t
           WHERE t.api_key_hash = $1
           LIMIT 1
         $_$;
-
-
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
---
--- Name: agent_clients; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.agent_clients (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11047,11 +9620,6 @@ CREATE TABLE public.agent_clients (
 
 ALTER TABLE ONLY public.agent_clients FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: agent_scope_grants; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.agent_scope_grants (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11063,11 +9631,6 @@ CREATE TABLE public.agent_scope_grants (
 );
 
 ALTER TABLE ONLY public.agent_scope_grants FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: agent_service_credentials; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.agent_service_credentials (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11088,11 +9651,6 @@ CREATE TABLE public.agent_service_credentials (
 
 ALTER TABLE ONLY public.agent_service_credentials FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: agent_token_revocations; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.agent_token_revocations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11105,19 +9663,9 @@ CREATE TABLE public.agent_token_revocations (
 
 ALTER TABLE ONLY public.agent_token_revocations FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: alembic_version; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.alembic_version (
     version_num character varying(32) NOT NULL
 );
-
-
---
--- Name: attribution_allocations; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.attribution_allocations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11149,123 +9697,6 @@ CREATE TABLE public.attribution_allocations (
 
 ALTER TABLE ONLY public.attribution_allocations FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE attribution_allocations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.attribution_allocations IS 'Stores attribution model allocations (channel credit assignments). Purpose: Store channel credit for attribution calculations. Data class: Non-PII. Ownership: Attribution service. RLS enabled for tenant isolation. AUDIT TRAIL: Allocations persist even when source events are deleted (event_id becomes NULL).';
-
-
---
--- Name: COLUMN attribution_allocations.event_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.event_id IS 'Foreign key to attribution_events table. Purpose: Link allocation to source event for context. Data class: Non-PII. NULLABLE: event_id = NULL means event was deleted but allocation preserved for audit trail. ON DELETE SET NULL preserves financial records.';
-
-
---
--- Name: COLUMN attribution_allocations.channel_code; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.channel_code IS 'Canonical channel code (FK to channel_taxonomy.code). Purpose: Identify attribution channel using canonical taxonomy. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_allocations.correlation_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.correlation_id IS 'Correlation ID from X-Correlation-ID header. Purpose: Distributed tracing and event stitching across tables. Links attribution_allocations, attribution_events, and dead_events. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_allocations.allocation_ratio; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.allocation_ratio IS 'Allocation ratio (0.0 to 1.0) representing the proportion of event revenue allocated to this channel. Purpose: Enable deterministic revenue accounting and sum-equality validation. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_allocations.model_version; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.model_version IS 'Attribution model version (semantic version string). Purpose: Track which model version generated this allocation, enabling model rollups and sum-equality validation per model version. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_allocations.model_type; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.model_type IS 'Type of attribution model used (e.g., last_touch, linear, bayesian). INVARIANT: analytics_important. Purpose: Identify attribution methodology for model comparison. Data class: Non-PII. Required for: B2.1 attribution model selection and analysis.';
-
-
---
--- Name: COLUMN attribution_allocations.confidence_score; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.confidence_score IS 'Statistical confidence score of the allocation (0.0 to 1.0). INVARIANT: analytics_important. Purpose: Quantify uncertainty in attribution. Data class: Non-PII. Required for: B2.1 Bayesian attribution, confidence-weighted reporting. Must be between 0 and 1.';
-
-
---
--- Name: COLUMN attribution_allocations.credible_interval_lower_cents; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.credible_interval_lower_cents IS 'Lower bound of the credible interval for allocated revenue (Bayesian). INVARIANT: analytics_important. Purpose: Quantify uncertainty bounds for revenue allocation. Data class: Non-PII. Required for: B2.1 Bayesian attribution uncertainty quantification.';
-
-
---
--- Name: COLUMN attribution_allocations.credible_interval_upper_cents; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.credible_interval_upper_cents IS 'Upper bound of the credible interval for allocated revenue (Bayesian). INVARIANT: analytics_important. Purpose: Quantify uncertainty bounds for revenue allocation. Data class: Non-PII. Required for: B2.1 Bayesian attribution uncertainty quantification.';
-
-
---
--- Name: COLUMN attribution_allocations.convergence_r_hat; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.convergence_r_hat IS 'R-hat statistic for MCMC convergence diagnostics (Gelman-Rubin). INVARIANT: analytics_important. Purpose: Validate MCMC chain convergence. Data class: Non-PII. Required for: B2.1 Bayesian model quality assurance. Values near 1.0 indicate convergence.';
-
-
---
--- Name: COLUMN attribution_allocations.effective_sample_size; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.effective_sample_size IS 'Effective sample size for MCMC diagnostics. INVARIANT: analytics_important. Purpose: Assess MCMC sampling efficiency. Data class: Non-PII. Required for: B2.1 Bayesian model quality assurance.';
-
-
---
--- Name: COLUMN attribution_allocations.verified; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.verified IS 'Whether the allocation has been verified against ground truth. INVARIANT: analytics_important. Purpose: Flag allocations that have been reconciled. Data class: Non-PII. Required for: B2.4 revenue verification and reconciliation.';
-
-
---
--- Name: COLUMN attribution_allocations.verification_source; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.verification_source IS 'Source of verification (e.g., manual, reconciliation_run, stripe_webhook). INVARIANT: analytics_important. Purpose: Track verification provenance. Data class: Non-PII. Required for: B2.4 reconciliation audit trail.';
-
-
---
--- Name: COLUMN attribution_allocations.verification_timestamp; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_allocations.verification_timestamp IS 'Timestamp when the allocation was verified. INVARIANT: analytics_important. Purpose: Track verification timing. Data class: Non-PII. Required for: B2.4 reconciliation audit trail.';
-
-
---
--- Name: CONSTRAINT ck_allocations_confidence_score ON attribution_allocations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT ck_allocations_confidence_score ON public.attribution_allocations IS 'Ensures confidence_score is between 0 and 1. Purpose: Enforce valid probability bounds. Required for: B2.1 statistical attribution.';
-
-
---
--- Name: attribution_commerce_identities; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.attribution_commerce_identities (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11283,18 +9714,6 @@ CREATE TABLE public.attribution_commerce_identities (
 );
 
 ALTER TABLE ONLY public.attribution_commerce_identities FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE attribution_commerce_identities; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.attribution_commerce_identities IS 'B2.3-P0 allowed delayed-arrival topology: durable tenant-scoped non-PII commerce-grain identity substrate used to resolve late verified revenue without session extension or cross-session identity reconstruction.';
-
-
---
--- Name: attribution_events; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.attribution_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11325,95 +9744,6 @@ CREATE TABLE public.attribution_events (
 
 ALTER TABLE ONLY public.attribution_events FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE attribution_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.attribution_events IS 'Stores attribution events for revenue tracking. Purpose: Event ingestion and attribution calculations. Data class: Non-PII (PII stripped from raw_payload). Ownership: Attribution service. RLS enabled for tenant isolation. Append-only: No UPDATE/DELETE for app roles; corrections via new events only.';
-
-
---
--- Name: COLUMN attribution_events.correlation_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.correlation_id IS 'Correlation ID from X-Correlation-ID header. Purpose: Distributed tracing and event stitching across tables. Links attribution_events, dead_events, and future attribution_allocations. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_events.idempotency_key; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.idempotency_key IS 'Unique key to prevent duplicate event ingestion. INVARIANT: idempotency_critical. Purpose: Ensure exactly-once event processing. Data class: Non-PII. Required for: B0.4 ingestion deduplication. Must be unique across all tenants.';
-
-
---
--- Name: COLUMN attribution_events.event_type; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.event_type IS 'Categorization of the event (click, impression, purchase, etc.). INVARIANT: idempotency_critical. Purpose: Enable event-type specific processing and analytics. Data class: Non-PII. Required for: B0.4 ingestion routing, B0.5 worker queue.';
-
-
---
--- Name: COLUMN attribution_events.channel; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.channel IS 'Marketing channel associated with the event (FK to channel_taxonomy.code). INVARIANT: idempotency_critical. Purpose: Enable channel-level attribution and reporting with DB-enforced canonical codes. Data class: Non-PII. Required for: B0.4 ingestion, B2.1 attribution models.';
-
-
---
--- Name: COLUMN attribution_events.campaign_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.campaign_id IS 'Campaign identifier for attribution tracking. INVARIANT: analytics_important. Purpose: Link events to campaigns for attribution. Data class: Non-PII. Required for: B2.1 attribution models.';
-
-
---
--- Name: COLUMN attribution_events.conversion_value_cents; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.conversion_value_cents IS 'Monetary value of the conversion event in cents. INVARIANT: financial_critical. Purpose: Track revenue associated with events. Data class: Non-PII. Required for: B2.1 attribution models, revenue allocation.';
-
-
---
--- Name: COLUMN attribution_events.currency; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.currency IS 'ISO 4217 currency code (e.g., USD, EUR). INVARIANT: financial_critical. Purpose: Support multi-currency revenue tracking. Data class: Non-PII. Required for: B2.3 currency conversion.';
-
-
---
--- Name: COLUMN attribution_events.event_timestamp; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.event_timestamp IS 'Timestamp when the event occurred. INVARIANT: idempotency_critical. Purpose: Temporal ordering and time-series analysis. Data class: Non-PII. Required for: B0.5 event processing, B2.1 attribution models.';
-
-
---
--- Name: COLUMN attribution_events.processed_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.processed_at IS 'Timestamp when the event was processed. INVARIANT: analytics_important. Purpose: Track processing latency and audit trail. Data class: Non-PII. Required for: B0.5 worker monitoring.';
-
-
---
--- Name: COLUMN attribution_events.processing_status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.processing_status IS 'Current processing status (pending, processed, failed). INVARIANT: idempotency_critical. Purpose: Enable worker queue and retry logic. Data class: Non-PII. Required for: B0.5 worker queue, error handling.';
-
-
---
--- Name: COLUMN attribution_events.retry_count; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_events.retry_count IS 'Number of times processing has been retried. INVARIANT: analytics_important. Purpose: Track retry attempts for failed events. Data class: Non-PII. Required for: B0.5 retry logic, dead event handling.';
-
-
---
--- Name: attribution_recompute_jobs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.attribution_recompute_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11435,123 +9765,6 @@ CREATE TABLE public.attribution_recompute_jobs (
 
 ALTER TABLE ONLY public.attribution_recompute_jobs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE attribution_recompute_jobs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.attribution_recompute_jobs IS 'Tracks attribution recompute job execution at window boundary level. Purpose: Enforce window-scoped idempotency to prevent duplicate derived outputs when rerunning the same attribution window. Data class: Non-PII. Ownership: Attribution service. RLS enabled for tenant isolation.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.id IS 'Primary key UUID. Purpose: Unique job identifier. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.tenant_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.tenant_id IS 'Tenant identifier. Purpose: Multi-tenant isolation. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.window_start; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.window_start IS 'Attribution window start boundary (inclusive). Purpose: Window identity component - defines temporal scope of recompute job. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.window_end; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.window_end IS 'Attribution window end boundary (exclusive). Purpose: Window identity component - defines temporal scope of recompute job. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.model_version; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.model_version IS 'Attribution model version (semantic version string). Purpose: Window identity component - different model versions can have different outputs for same window. Enables model A/B testing and safe rollouts. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.status IS 'Job execution status. Purpose: Operational visibility and workflow management. Valid values: pending, running, succeeded, failed. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.run_count; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.run_count IS 'Number of times this window was recomputed. Purpose: Observability metric - indicates rerun frequency (should be low in steady state). Monotonically increasing. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.last_correlation_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.last_correlation_id IS 'Correlation ID from most recent execution. Purpose: Distributed tracing and debugging. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.created_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.created_at IS 'Record creation timestamp. Purpose: Audit trail - when this window identity was first scheduled. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.updated_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.updated_at IS 'Record update timestamp. Purpose: Audit trail - when this job last changed state. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.started_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.started_at IS 'Job execution start timestamp. Purpose: SLA monitoring - when the job actually began processing. NULL if never started. Data class: Non-PII.';
-
-
---
--- Name: COLUMN attribution_recompute_jobs.finished_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.attribution_recompute_jobs.finished_at IS 'Job execution finish timestamp. Purpose: SLA monitoring - when the job completed (success or failure). NULL if still running or never started. Data class: Non-PII.';
-
-
---
--- Name: CONSTRAINT ck_attribution_recompute_jobs_run_count_positive ON attribution_recompute_jobs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT ck_attribution_recompute_jobs_run_count_positive ON public.attribution_recompute_jobs IS 'Validates run_count is non-negative. Purpose: Prevent invalid negative counts. Data class: Non-PII.';
-
-
---
--- Name: CONSTRAINT ck_attribution_recompute_jobs_status_valid ON attribution_recompute_jobs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT ck_attribution_recompute_jobs_status_valid ON public.attribution_recompute_jobs IS 'Validates status enum. Purpose: Enforce valid status transitions and prevent typos. Data class: Non-PII.';
-
-
---
--- Name: CONSTRAINT ck_attribution_recompute_jobs_window_bounds_valid ON attribution_recompute_jobs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT ck_attribution_recompute_jobs_window_bounds_valid ON public.attribution_recompute_jobs IS 'Validates window_end > window_start. Purpose: Prevent invalid zero or negative time windows. Data class: Non-PII.';
-
-
---
--- Name: auth_access_token_denylist; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.auth_access_token_denylist (
     tenant_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -11563,11 +9776,6 @@ CREATE TABLE public.auth_access_token_denylist (
 );
 
 ALTER TABLE ONLY public.auth_access_token_denylist FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: auth_refresh_tokens; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.auth_refresh_tokens (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11586,11 +9794,6 @@ CREATE TABLE public.auth_refresh_tokens (
 
 ALTER TABLE ONLY public.auth_refresh_tokens FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: auth_user_token_cutoffs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.auth_user_token_cutoffs (
     tenant_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -11600,11 +9803,6 @@ CREATE TABLE public.auth_user_token_cutoffs (
 );
 
 ALTER TABLE ONLY public.auth_user_token_cutoffs FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b23_exception_records; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b23_exception_records (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11627,18 +9825,6 @@ CREATE TABLE public.b23_exception_records (
 );
 
 ALTER TABLE ONLY public.b23_exception_records FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE b23_exception_records; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b23_exception_records IS 'B2.3-P1 first-class exception workflow records for deterministic discrepancy handling.';
-
-
---
--- Name: b23_match_task_dispatches; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b23_match_task_dispatches (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11673,18 +9859,6 @@ CREATE TABLE public.b23_match_task_dispatches (
 );
 
 ALTER TABLE ONLY public.b23_match_task_dispatches FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE b23_match_task_dispatches; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b23_match_task_dispatches IS 'B2.3-P6 durable lineage trace linking verified webhook ingress identities to naturally emitted b23_match_engine tasks.';
-
-
---
--- Name: b23_match_verdicts; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b23_match_verdicts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11740,60 +9914,6 @@ END)),
 );
 
 ALTER TABLE ONLY public.b23_match_verdicts FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE b23_match_verdicts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b23_match_verdicts IS 'B2.3-P1 authoritative tenant-scoped deterministic match verdict substrate (no raw payload authority, no PII).';
-
-
---
--- Name: COLUMN b23_match_verdicts.canonical_expected_gross_amount_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_match_verdicts.canonical_expected_gross_amount_minor IS 'Canonical attribution-side expected gross amount in integer minor units.';
-
-
---
--- Name: COLUMN b23_match_verdicts.canonical_captured_gross_amount_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_match_verdicts.canonical_captured_gross_amount_minor IS 'Canonical B2.2-ingress verified captured gross amount in integer minor units.';
-
-
---
--- Name: COLUMN b23_match_verdicts.canonical_net_verified_amount_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_match_verdicts.canonical_net_verified_amount_minor IS 'Canonical verified net amount after adjustment events in integer minor units.';
-
-
---
--- Name: COLUMN b23_match_verdicts.discrepancy_amount_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_match_verdicts.discrepancy_amount_minor IS 'Absolute attribution discrepancy in minor units, computed from expected gross versus captured gross only.';
-
-
---
--- Name: COLUMN b23_match_verdicts.discrepancy_ratio_bps; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_match_verdicts.discrepancy_ratio_bps IS 'Absolute attribution discrepancy ratio in basis points, computed from expected gross versus captured gross only.';
-
-
---
--- Name: COLUMN b23_match_verdicts.discrepancy_band; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_match_verdicts.discrepancy_band IS 'Canonical discrepancy class for indexed operational filtering.';
-
-
---
--- Name: b23_revenue_events; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b23_revenue_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -11851,60 +9971,6 @@ END) = 1))
 
 ALTER TABLE ONLY public.b23_revenue_events FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE b23_revenue_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b23_revenue_events IS 'B2.3-P1 append-only post-capture revenue event ledger primitives with tenant-scoped provider idempotency.';
-
-
---
--- Name: COLUMN b23_revenue_events.captured_amount_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_revenue_events.captured_amount_minor IS 'Absolute captured amount operand for payment_capture events (minor units).';
-
-
---
--- Name: COLUMN b23_revenue_events.refund_amount_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_revenue_events.refund_amount_minor IS 'Absolute refund amount operand for partial_refund/full_refund events (minor units).';
-
-
---
--- Name: COLUMN b23_revenue_events.chargeback_amount_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_revenue_events.chargeback_amount_minor IS 'Absolute chargeback amount operand for chargeback_* events (minor units).';
-
-
---
--- Name: COLUMN b23_revenue_events.reversal_amount_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_revenue_events.reversal_amount_minor IS 'Absolute reversal/restoration amount operand for reversal events (minor units).';
-
-
---
--- Name: COLUMN b23_revenue_events.net_effect_sign; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_revenue_events.net_effect_sign IS 'Deterministic net effect sign on verified net revenue: +1 credit, -1 debit, 0 pending/no net effect.';
-
-
---
--- Name: COLUMN b23_revenue_events.is_gross_capture_correction; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b23_revenue_events.is_gross_capture_correction IS 'True only when the event corrects original gross capture authority; false for normal refunds, returns, chargebacks, and net adjustments.';
-
-
---
--- Name: b23_webhook_ingestion_logs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b23_webhook_ingestion_logs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -11922,18 +9988,6 @@ CREATE TABLE public.b23_webhook_ingestion_logs (
 );
 
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE b23_webhook_ingestion_logs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b23_webhook_ingestion_logs IS 'B2.3-P1 SQL-queryable webhook ingestion telemetry substrate; operational only and not first-authority payload storage.';
-
-
---
--- Name: b24_active_execution_leases; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b24_active_execution_leases (
     tenant_id uuid NOT NULL,
@@ -11964,11 +10018,6 @@ CREATE TABLE public.b24_active_execution_leases (
 );
 
 ALTER TABLE ONLY public.b24_active_execution_leases FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b24_dirty_events; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b24_dirty_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12015,11 +10064,6 @@ CREATE TABLE public.b24_dirty_events (
 
 ALTER TABLE ONLY public.b24_dirty_events FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b24_feature_authority_build_outbox; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b24_feature_authority_build_outbox (
     tenant_id uuid NOT NULL,
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12051,11 +10095,6 @@ CREATE TABLE public.b24_feature_authority_build_outbox (
 );
 
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b24_feature_authority_build_requests; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b24_feature_authority_build_requests (
     tenant_id uuid NOT NULL,
@@ -12090,11 +10129,6 @@ CREATE TABLE public.b24_feature_authority_build_requests (
 );
 
 ALTER TABLE ONLY public.b24_feature_authority_build_requests FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b24_fit_dispatch_outbox; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b24_fit_dispatch_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12153,11 +10187,6 @@ CREATE TABLE public.b24_fit_dispatch_outbox (
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b24_fit_planner_wakeups; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b24_fit_planner_wakeups (
     tenant_id uuid NOT NULL,
     wakeup_revision bigint DEFAULT 1 NOT NULL,
@@ -12174,18 +10203,6 @@ CREATE TABLE public.b24_fit_planner_wakeups (
 );
 
 ALTER TABLE ONLY public.b24_fit_planner_wakeups FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: COLUMN b24_fit_planner_wakeups.next_eligible_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b24_fit_planner_wakeups.next_eligible_at IS 'NULL means immediately runnable. A timestamp means the tenant has residual dirty work whose debounce quiet period has not matured; the obligation is retained, not destroyed.';
-
-
---
--- Name: b24_fit_policy_replan_lineage; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b24_fit_policy_replan_lineage (
     tenant_id uuid NOT NULL,
@@ -12208,11 +10225,6 @@ CREATE TABLE public.b24_fit_policy_replan_lineage (
 );
 
 ALTER TABLE ONLY public.b24_fit_policy_replan_lineage FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b24_fit_recovery_outbox; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b24_fit_recovery_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12237,11 +10249,6 @@ CREATE TABLE public.b24_fit_recovery_outbox (
 
 ALTER TABLE ONLY public.b24_fit_recovery_outbox FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b24_inference_policy_registry; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b24_inference_policy_registry (
     policy_bundle_hash character varying(64) NOT NULL,
     inference_profile_version character varying(128) NOT NULL,
@@ -12256,11 +10263,6 @@ CREATE TABLE public.b24_inference_policy_registry (
     registered_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_b24_policy_registry_hash CHECK (((policy_bundle_hash)::text ~ '^[0-9a-f]{64}$'::text))
 );
-
-
---
--- Name: b24_source_window_feature_authority; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b24_source_window_feature_authority (
     tenant_id uuid NOT NULL,
@@ -12292,11 +10294,6 @@ CREATE TABLE public.b24_source_window_feature_authority (
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b24_worker_process_authority; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b24_worker_process_authority (
     generation_id text NOT NULL,
     pid integer NOT NULL,
@@ -12315,11 +10312,6 @@ CREATE TABLE public.b24_worker_process_authority (
 
 ALTER TABLE ONLY public.b24_worker_process_authority FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b26_p2_adjustment_attestation; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_adjustment_attestation (
     adjustment_evidence_id uuid NOT NULL,
     tenant_id uuid NOT NULL,
@@ -12335,11 +10327,6 @@ CREATE TABLE public.b26_p2_adjustment_attestation (
 );
 
 ALTER TABLE ONLY public.b26_p2_adjustment_attestation FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b26_p2_adjustment_evidence; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_adjustment_evidence (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12361,11 +10348,6 @@ CREATE TABLE public.b26_p2_adjustment_evidence (
 );
 
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b26_p2_auth_root_evidence; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_auth_root_evidence (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12389,22 +10371,12 @@ CREATE TABLE public.b26_p2_auth_root_evidence (
 
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b26_p2_authority_universe; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_authority_universe (
     id smallint DEFAULT 1 NOT NULL,
     universe uuid DEFAULT gen_random_uuid() NOT NULL,
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT b26_p2_authority_universe_id_check CHECK ((id = 1))
 );
-
-
---
--- Name: b26_p2_conduction_receipts; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_conduction_receipts (
     task_id character varying(155) NOT NULL,
@@ -12424,18 +10396,6 @@ CREATE TABLE public.b26_p2_conduction_receipts (
 
 ALTER TABLE ONLY public.b26_p2_conduction_receipts FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE b26_p2_conduction_receipts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b26_p2_conduction_receipts IS 'B2.6-P2 Corrective V conduction receipts: task-specific operational provenance (B2.3 count + P2 scope identity) required by the conducted gate. Operational state only; never financial truth.';
-
-
---
--- Name: b26_p2_evaluator_heartbeat; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_evaluator_heartbeat (
     tenant_id uuid NOT NULL,
     last_tick timestamp with time zone DEFAULT now() NOT NULL,
@@ -12447,11 +10407,6 @@ CREATE TABLE public.b26_p2_evaluator_heartbeat (
 );
 
 ALTER TABLE ONLY public.b26_p2_evaluator_heartbeat FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b26_p2_execution_outbox; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_execution_outbox (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12471,18 +10426,6 @@ CREATE TABLE public.b26_p2_execution_outbox (
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE b26_p2_execution_outbox; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b26_p2_execution_outbox IS 'B2.6-P2 Corrective III durable execution intent: stable logical task identity with recoverable pending/published delivery state. Transport intent only; never financial truth.';
-
-
---
--- Name: b26_p2_execution_quarantine; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_execution_quarantine (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     source_relation text NOT NULL,
@@ -12501,18 +10444,6 @@ CREATE TABLE public.b26_p2_execution_quarantine (
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE b26_p2_execution_quarantine; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b26_p2_execution_quarantine IS 'B2.6-P2 Corrective V durable quarantine: incoherent execution projections removed by migration with full provenance. Operational/audit state only; never financial truth.';
-
-
---
--- Name: b26_p2_history_integrity_observations; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_history_integrity_observations (
     id bigint NOT NULL,
     observed_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -12522,11 +10453,6 @@ CREATE TABLE public.b26_p2_history_integrity_observations (
     author name DEFAULT SESSION_USER NOT NULL
 );
 
-
---
--- Name: b26_p2_history_integrity_observations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 ALTER TABLE public.b26_p2_history_integrity_observations ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.b26_p2_history_integrity_observations_id_seq
     START WITH 1
@@ -12535,11 +10461,6 @@ ALTER TABLE public.b26_p2_history_integrity_observations ALTER COLUMN id ADD GEN
     NO MAXVALUE
     CACHE 1
 );
-
-
---
--- Name: b26_p2_ingress_auth_witness; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_ingress_auth_witness (
     webhook_ingress_identity_id uuid NOT NULL,
@@ -12552,22 +10473,12 @@ CREATE TABLE public.b26_p2_ingress_auth_witness (
 
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b26_p2_operational_floor; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_operational_floor (
     id integer DEFAULT 1 NOT NULL,
     floor_revision text NOT NULL,
     policy text DEFAULT 'maintenance-only-downgrade'::text NOT NULL,
     CONSTRAINT b26_p2_floor_singleton CHECK ((id = 1))
 );
-
-
---
--- Name: b26_p2_provenance_evidence; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_provenance_evidence (
     webhook_ingress_identity_id uuid NOT NULL,
@@ -12579,11 +10490,6 @@ CREATE TABLE public.b26_p2_provenance_evidence (
 );
 
 ALTER TABLE ONLY public.b26_p2_provenance_evidence FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b26_p2_provider_auth_consequence; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_provider_auth_consequence (
     webhook_ingress_identity_id uuid NOT NULL,
@@ -12607,11 +10513,6 @@ CREATE TABLE public.b26_p2_provider_auth_consequence (
 
 ALTER TABLE ONLY public.b26_p2_provider_auth_consequence FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b26_p2_publication_history; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_publication_history (
     law_kind text NOT NULL,
     law_id text NOT NULL,
@@ -12625,11 +10526,6 @@ CREATE TABLE public.b26_p2_publication_history (
     CONSTRAINT b26_p2_publication_hash_shape CHECK ((char_length(entry_hash) = 64))
 );
 
-
---
--- Name: b26_p2_scheduler_heartbeat; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_scheduler_heartbeat (
     tenant_id uuid NOT NULL,
     last_tick timestamp with time zone DEFAULT now() NOT NULL,
@@ -12640,11 +10536,6 @@ CREATE TABLE public.b26_p2_scheduler_heartbeat (
 
 ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b26_p2_scope_policy_authority; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_scope_policy_authority (
     scope_policy_version text NOT NULL,
     source_sha256 text NOT NULL,
@@ -12653,11 +10544,6 @@ CREATE TABLE public.b26_p2_scope_policy_authority (
 );
 
 ALTER TABLE ONLY public.b26_p2_scope_policy_authority FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: b26_p2_semantic_regime_registry; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_semantic_regime_registry (
     regime_id text NOT NULL,
@@ -12668,11 +10554,6 @@ CREATE TABLE public.b26_p2_semantic_regime_registry (
     registered_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT b26_p2_registry_digest_shape CHECK ((char_length(contract_digest) = 64))
 );
-
-
---
--- Name: b26_p2_source_money_attestation; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_source_money_attestation (
     webhook_ingress_identity_id uuid NOT NULL,
@@ -12695,11 +10576,6 @@ CREATE TABLE public.b26_p2_source_money_attestation (
 
 ALTER TABLE ONLY public.b26_p2_source_money_attestation FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b26_p2_task_authority_directory; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b26_p2_task_authority_directory (
     task_id character varying(155) NOT NULL,
     tenant_id uuid NOT NULL,
@@ -12709,18 +10585,6 @@ CREATE TABLE public.b26_p2_task_authority_directory (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_b26_p2_directory_window_order CHECK ((window_start < window_end))
 );
-
-
---
--- Name: TABLE b26_p2_task_authority_directory; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b26_p2_task_authority_directory IS 'B2.6-P2 Corrective III GUC-independent admission directory: stable task identity to authoritative tenant binding. No RLS by design (exact task_id lookup only; IDs unguessable). Producer-written, worker-read.';
-
-
---
--- Name: b26_p2_verdict_supersession_ledger; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b26_p2_verdict_supersession_ledger (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12745,11 +10609,6 @@ CREATE TABLE public.b26_p2_verdict_supersession_ledger (
 
 ALTER TABLE ONLY public.b26_p2_verdict_supersession_ledger FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b26_p2_verdict_supersession_ledger_seq_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.b26_p2_verdict_supersession_ledger_seq_seq
     START WITH 1
     INCREMENT BY 1
@@ -12757,17 +10616,7 @@ CREATE SEQUENCE public.b26_p2_verdict_supersession_ledger_seq_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: b26_p2_verdict_supersession_ledger_seq_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.b26_p2_verdict_supersession_ledger_seq_seq OWNED BY public.b26_p2_verdict_supersession_ledger.seq;
-
-
---
--- Name: b27_explanation_materializations; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b27_explanation_materializations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12808,21 +10657,11 @@ CREATE TABLE public.b27_explanation_materializations (
 
 ALTER TABLE ONLY public.b27_explanation_materializations FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: b27_narrative_template_registry; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b27_narrative_template_registry (
     registry_version text NOT NULL,
     registry_hash text NOT NULL,
     CONSTRAINT ck_b27_template_registry_hash CHECK ((registry_hash ~ '^sha256:[0-9a-f]{64}$'::text))
 );
-
-
---
--- Name: b27_narrative_templates; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b27_narrative_templates (
     template_id text NOT NULL,
@@ -12835,11 +10674,6 @@ CREATE TABLE public.b27_narrative_templates (
     CONSTRAINT ck_b27_template_no_fixed_numeral CHECK ((replace(template_text, '{value}'::text, ' '::text) !~ '[0-9]'::text)),
     CONSTRAINT ck_b27_template_single_variable CHECK (((template_text ~~ '%{value}%'::text) AND ((length(template_text) - length(replace(template_text, '{value}'::text, ''::text))) = (7 * 1))))
 );
-
-
---
--- Name: b28_proposals; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b28_proposals (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -12860,81 +10694,6 @@ CREATE TABLE public.b28_proposals (
 
 ALTER TABLE ONLY public.b28_proposals FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: COLUMN b28_proposals.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.id IS 'PROVENANCE REFERENCE. surrogate identity of this durable proposal.';
-
-
---
--- Name: COLUMN b28_proposals.tenant_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.tenant_id IS 'AUTHORITY IDENTITY. the tenant boundary this proposal belongs to.';
-
-
---
--- Name: COLUMN b28_proposals.result_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.result_id IS 'PROVENANCE REFERENCE. the durable result this proposal projects.';
-
-
---
--- Name: COLUMN b28_proposals.proposal_ref; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.proposal_ref IS 'PROVENANCE REFERENCE. caller-visible reference, unique per result.';
-
-
---
--- Name: COLUMN b28_proposals.source_envelope_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.source_envelope_id IS 'PROVENANCE REFERENCE. conserved from the result.';
-
-
---
--- Name: COLUMN b28_proposals.action_authority; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.action_authority IS 'DERIVED VALUE. equal to the result''s action_authority; a proposal cannot strengthen the authority it projects.';
-
-
---
--- Name: COLUMN b28_proposals.requires_human_approval; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.requires_human_approval IS 'DERIVED VALUE. constant true; P14 emits no auto-executable proposal.';
-
-
---
--- Name: COLUMN b28_proposals.authority_class; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.authority_class IS 'DERIVED VALUE. constant non_authoritative_proposal.';
-
-
---
--- Name: COLUMN b28_proposals.allocations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.allocations IS 'DERIVED VALUE. equal to the result''s allocations.';
-
-
---
--- Name: COLUMN b28_proposals.created_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_proposals.created_at IS 'OBSERVED EVENT. Database wall-clock row construction time; not transaction start or commit time.';
-
-
---
--- Name: b28_request_authentications; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b28_request_authentications (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -12948,67 +10707,6 @@ CREATE TABLE public.b28_request_authentications (
 );
 
 ALTER TABLE ONLY public.b28_request_authentications FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE b28_request_authentications; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.b28_request_authentications IS 'B2.5-P14 Corrective VI. One row = one verified proof that a caller held a machine credential''s plaintext secret, bound to one exact request. Written only by b28_authenticate_request_possession(); no principal holds INSERT.';
-
-
---
--- Name: COLUMN b28_request_authentications.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_request_authentications.id IS 'PROVENANCE REFERENCE. surrogate identity of this possession witness.';
-
-
---
--- Name: COLUMN b28_request_authentications.tenant_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_request_authentications.tenant_id IS 'AUTHORITY IDENTITY. the tenant boundary the proven credential belongs to.';
-
-
---
--- Name: COLUMN b28_request_authentications.agent_client_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_request_authentications.agent_client_id IS 'AUTHORITY IDENTITY. read out of the credential row the presented secret resolved to; never supplied by the caller.';
-
-
---
--- Name: COLUMN b28_request_authentications.credential_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_request_authentications.credential_id IS 'AUTHORITY IDENTITY. the credential row whose stored token_hash equals sha256 of the secret the caller presented.';
-
-
---
--- Name: COLUMN b28_request_authentications.request_binding; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_request_authentications.request_binding IS 'DERIVED VALUE. b28_request_authentication_binding over the tenant, request_ref, source issuance hash and input snapshot hash the caller committed to.';
-
-
---
--- Name: COLUMN b28_request_authentications.authenticated_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_request_authentications.authenticated_at IS 'OBSERVED EVENT. Database wall-clock row construction time; not transaction start or commit time.';
-
-
---
--- Name: COLUMN b28_request_authentications.authenticated_by_principal; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_request_authentications.authenticated_by_principal IS 'AUTHORITY IDENTITY. session_user at verification time; SET ROLE cannot change it.';
-
-
---
--- Name: b28_simulation_requests; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.b28_simulation_requests (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13048,179 +10746,6 @@ CREATE TABLE public.b28_simulation_requests (
 
 ALTER TABLE ONLY public.b28_simulation_requests FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: COLUMN b28_simulation_requests.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.id IS 'PROVENANCE REFERENCE. surrogate identity of this durable request.';
-
-
---
--- Name: COLUMN b28_simulation_requests.tenant_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.tenant_id IS 'AUTHORITY IDENTITY. the tenant boundary this request belongs to.';
-
-
---
--- Name: COLUMN b28_simulation_requests.request_ref; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.request_ref IS 'PROVENANCE REFERENCE. caller-visible reference, unique per tenant.';
-
-
---
--- Name: COLUMN b28_simulation_requests.requested_by; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.requested_by IS 'AUTHORITY IDENTITY. re-derived by the guard as agent_client: || requested_by_agent_client_id; never writer-chosen text.';
-
-
---
--- Name: COLUMN b28_simulation_requests.source_envelope_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.source_envelope_id IS 'PROVENANCE REFERENCE. the source TrustEnvelope identity.';
-
-
---
--- Name: COLUMN b28_simulation_requests.source_semantic_truth_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.source_semantic_truth_hash IS 'PROVENANCE REFERENCE. conserved from the source Trust; the guard requires equality with trust_envelope_issuance_log.';
-
-
---
--- Name: COLUMN b28_simulation_requests.input_snapshot_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.input_snapshot_hash IS 'DERIVED VALUE. b28_input_snapshot_hash over this row''s own retained inputs; the guard refuses any other value.';
-
-
---
--- Name: COLUMN b28_simulation_requests.total_budget_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.total_budget_minor IS 'OBSERVED EVENT. the budget the authenticated requester committed to; covered by input_snapshot_hash and by the possession binding.';
-
-
---
--- Name: COLUMN b28_simulation_requests.currency; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.currency IS 'OBSERVED EVENT. the currency the authenticated requester committed to; covered by input_snapshot_hash and by the possession binding.';
-
-
---
--- Name: COLUMN b28_simulation_requests.channel_count; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.channel_count IS 'DERIVED VALUE. jsonb_array_length(channel_evidence), CHECK-enforced.';
-
-
---
--- Name: COLUMN b28_simulation_requests.sufficiency_policy_version; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.sufficiency_policy_version IS 'PROVENANCE REFERENCE. names the governed sufficiency policy.';
-
-
---
--- Name: COLUMN b28_simulation_requests.requested_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.requested_at IS 'OBSERVED EVENT. Database wall-clock row construction time; not transaction start or commit time.';
-
-
---
--- Name: COLUMN b28_simulation_requests.source_issuance_envelope_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.source_issuance_envelope_hash IS 'PROVENANCE REFERENCE. names the durable issuance record this request is bound to.';
-
-
---
--- Name: COLUMN b28_simulation_requests.requested_by_agent_client_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.requested_by_agent_client_id IS 'AUTHORITY IDENTITY. a live agent_clients row, re-checked by the guard and equal to the client the possession witness resolved to.';
-
-
---
--- Name: COLUMN b28_simulation_requests.requested_by_credential_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.requested_by_credential_id IS 'AUTHORITY IDENTITY. a live agent_service_credentials row whose plaintext secret was verified by b28_authenticate_request_possession.';
-
-
---
--- Name: COLUMN b28_simulation_requests.request_authority_principal; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.request_authority_principal IS 'AUTHORITY IDENTITY. session_user of the writing session; the guard refuses any other value.';
-
-
---
--- Name: COLUMN b28_simulation_requests.channel_evidence; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.channel_evidence IS 'OBSERVED EVENT. the exact governed evidence the requester committed to, retained verbatim so the admitted input is reconstructible from this row alone.';
-
-
---
--- Name: COLUMN b28_simulation_requests.solver_profile; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.solver_profile IS 'PROVENANCE REFERENCE. names the governed deterministic profile.';
-
-
---
--- Name: COLUMN b28_simulation_requests.sufficiency_verdict; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.sufficiency_verdict IS 'DERIVED VALUE. b28_adjudicate_sufficiency over channel_evidence; the guard refuses any other value.';
-
-
---
--- Name: COLUMN b28_simulation_requests.sufficiency_reasons; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.sufficiency_reasons IS 'DERIVED VALUE. b28_adjudicate_sufficiency over channel_evidence, reason for reason.';
-
-
---
--- Name: COLUMN b28_simulation_requests.observed_channels; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.observed_channels IS 'DERIVED VALUE. b28_adjudicate_sufficiency over channel_evidence.';
-
-
---
--- Name: COLUMN b28_simulation_requests.observed_conversions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.observed_conversions IS 'DERIVED VALUE. b28_adjudicate_sufficiency over channel_evidence.';
-
-
---
--- Name: COLUMN b28_simulation_requests.observed_revenue_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.observed_revenue_minor IS 'DERIVED VALUE. b28_adjudicate_sufficiency over channel_evidence.';
-
-
---
--- Name: COLUMN b28_simulation_requests.request_authentication_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_requests.request_authentication_id IS 'OBSERVED EVENT. the possession verification that physically occurred: a caller presented the plaintext secret and the database recomputed its sha256. Single-use by UNIQUE index and bound to this exact request.';
-
-
---
--- Name: b28_simulation_results; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.b28_simulation_results (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13251,130 +10776,6 @@ CREATE TABLE public.b28_simulation_results (
 
 ALTER TABLE ONLY public.b28_simulation_results FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: COLUMN b28_simulation_results.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.id IS 'PROVENANCE REFERENCE. surrogate identity of this durable result.';
-
-
---
--- Name: COLUMN b28_simulation_results.tenant_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.tenant_id IS 'AUTHORITY IDENTITY. the tenant boundary this result belongs to.';
-
-
---
--- Name: COLUMN b28_simulation_results.request_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.request_id IS 'PROVENANCE REFERENCE. the possession-verified request that authorised this consequence.';
-
-
---
--- Name: COLUMN b28_simulation_results.source_envelope_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.source_envelope_id IS 'PROVENANCE REFERENCE. conserved from the request.';
-
-
---
--- Name: COLUMN b28_simulation_results.source_semantic_truth_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.source_semantic_truth_hash IS 'PROVENANCE REFERENCE. conserved from the request.';
-
-
---
--- Name: COLUMN b28_simulation_results.projection_profile_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.projection_profile_hash IS 'PROVENANCE REFERENCE. names the governed projection profile the source was read through.';
-
-
---
--- Name: COLUMN b28_simulation_results.input_snapshot_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.input_snapshot_hash IS 'PROVENANCE REFERENCE. cites the request''s derived snapshot; the guard re-derives the request''s own hash so a post-admission input change is unrepresentable as a consequence.';
-
-
---
--- Name: COLUMN b28_simulation_results.solver_profile; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.solver_profile IS 'PROVENANCE REFERENCE. names the governed deterministic profile.';
-
-
---
--- Name: COLUMN b28_simulation_results.total_budget_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.total_budget_minor IS 'PROVENANCE REFERENCE. conserved from the request.';
-
-
---
--- Name: COLUMN b28_simulation_results.allocated_total_minor; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.allocated_total_minor IS 'DERIVED VALUE. sum of allocations; conservation is CHECK-enforced against total_budget_minor.';
-
-
---
--- Name: COLUMN b28_simulation_results.currency; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.currency IS 'PROVENANCE REFERENCE. conserved from the request.';
-
-
---
--- Name: COLUMN b28_simulation_results.action_authority; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.action_authority IS 'DERIVED VALUE. derived from the source issuance policy_state, bounded above by proposal_required; the guard refuses any other value.';
-
-
---
--- Name: COLUMN b28_simulation_results.authority_class; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.authority_class IS 'DERIVED VALUE. constant class of a P14 simulation artifact.';
-
-
---
--- Name: COLUMN b28_simulation_results.llm_authority_over_allocation; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.llm_authority_over_allocation IS 'DERIVED VALUE. constant none; no model has authority over money in P14.';
-
-
---
--- Name: COLUMN b28_simulation_results.allocations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.allocations IS 'DERIVED VALUE. b28_recompute_allocation over the request''s retained evidence, line for line including weights and order.';
-
-
---
--- Name: COLUMN b28_simulation_results.created_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.created_at IS 'OBSERVED EVENT. Database wall-clock row construction time; not transaction start or commit time.';
-
-
---
--- Name: COLUMN b28_simulation_results.solver_consequence_kind; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.b28_simulation_results.solver_consequence_kind IS 'DERIVED VALUE. asserts exactly this and nothing more: allocations is the value of b28_recompute_allocation over the request''s retained evidence, verified inside this trigger. It is NOT a claim that any particular process executed a solver -- no execution witness exists and none is claimed (Directive VI section 18, Architecture B).';
-
-
---
--- Name: bayesian_artifact_storage_quotas; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifact_storage_quotas (
     tenant_id uuid NOT NULL,
     policy_version character varying(64) NOT NULL,
@@ -13397,11 +10798,6 @@ CREATE TABLE public.bayesian_artifact_storage_quotas (
 );
 
 ALTER TABLE ONLY public.bayesian_artifact_storage_quotas FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_artifacts; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_artifacts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13448,18 +10844,6 @@ PARTITION BY HASH (tenant_id);
 
 ALTER TABLE ONLY public.bayesian_artifacts FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE bayesian_artifacts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.bayesian_artifacts IS 'B2.4-P1 tenant-scoped Bayesian artifact authority records. Final physical table family: HASH partitioned by tenant_id with 16 initial partitions. Lifecycle jobs and artifact generation are intentionally out of scope.';
-
-
---
--- Name: bayesian_artifacts_p00; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifacts_p00 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13503,11 +10887,6 @@ CREATE TABLE public.bayesian_artifacts_p00 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p00 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_artifacts_p01; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_artifacts_p01 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13553,11 +10932,6 @@ CREATE TABLE public.bayesian_artifacts_p01 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p01 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_artifacts_p02; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifacts_p02 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13601,11 +10975,6 @@ CREATE TABLE public.bayesian_artifacts_p02 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p02 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_artifacts_p03; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_artifacts_p03 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13651,11 +11020,6 @@ CREATE TABLE public.bayesian_artifacts_p03 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p03 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_artifacts_p04; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifacts_p04 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13699,11 +11063,6 @@ CREATE TABLE public.bayesian_artifacts_p04 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p04 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_artifacts_p05; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_artifacts_p05 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13749,11 +11108,6 @@ CREATE TABLE public.bayesian_artifacts_p05 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p05 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_artifacts_p06; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifacts_p06 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13797,11 +11151,6 @@ CREATE TABLE public.bayesian_artifacts_p06 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p06 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_artifacts_p07; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_artifacts_p07 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13847,11 +11196,6 @@ CREATE TABLE public.bayesian_artifacts_p07 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p07 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_artifacts_p08; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifacts_p08 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13895,11 +11239,6 @@ CREATE TABLE public.bayesian_artifacts_p08 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p08 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_artifacts_p09; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_artifacts_p09 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -13945,11 +11284,6 @@ CREATE TABLE public.bayesian_artifacts_p09 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p09 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_artifacts_p10; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifacts_p10 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -13993,11 +11327,6 @@ CREATE TABLE public.bayesian_artifacts_p10 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p10 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_artifacts_p11; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_artifacts_p11 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14043,11 +11372,6 @@ CREATE TABLE public.bayesian_artifacts_p11 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p11 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_artifacts_p12; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifacts_p12 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14091,11 +11415,6 @@ CREATE TABLE public.bayesian_artifacts_p12 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p12 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_artifacts_p13; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_artifacts_p13 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14141,11 +11460,6 @@ CREATE TABLE public.bayesian_artifacts_p13 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p13 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_artifacts_p14; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifacts_p14 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14190,11 +11504,6 @@ CREATE TABLE public.bayesian_artifacts_p14 (
 
 ALTER TABLE ONLY public.bayesian_artifacts_p14 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_artifacts_p15; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_artifacts_p15 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14238,11 +11547,6 @@ CREATE TABLE public.bayesian_artifacts_p15 (
 );
 
 ALTER TABLE ONLY public.bayesian_artifacts_p15 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_model_fits; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_model_fits (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14347,39 +11651,6 @@ PARTITION BY HASH (tenant_id);
 
 ALTER TABLE ONLY public.bayesian_model_fits FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE bayesian_model_fits; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.bayesian_model_fits IS 'B2.4-P1 tenant-scoped Bayesian fit authority records. Final physical table family: HASH partitioned by tenant_id with 16 initial partitions; child partitions carry fillfactor=90 for lifecycle updates. Defines persistence only; no statistical runtime, source snapshot computation, diagnostics computation, projection, or public API behavior.';
-
-
---
--- Name: COLUMN bayesian_model_fits.interval_shape; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.bayesian_model_fits.interval_shape IS 'B2.4-P7 bounded interval shape metadata only; no posterior samples or trace arrays.';
-
-
---
--- Name: COLUMN bayesian_model_fits.diagnostic_status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.bayesian_model_fits.diagnostic_status IS 'B2.4-P7 diagnostic validity state. Orthogonal to fit execution lifecycle status.';
-
-
---
--- Name: COLUMN bayesian_model_fits.diagnostic_failure_reason; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.bayesian_model_fits.diagnostic_failure_reason IS 'B2.4-P7 governed diagnostic or interval conditionality failure reason.';
-
-
---
--- Name: bayesian_model_fits_p00; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_model_fits_p00 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14482,11 +11753,6 @@ CREATE TABLE public.bayesian_model_fits_p00 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p00 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_model_fits_p01; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_model_fits_p01 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14591,11 +11857,6 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p01 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_model_fits_p02; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_model_fits_p02 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14698,11 +11959,6 @@ CREATE TABLE public.bayesian_model_fits_p02 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p02 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_model_fits_p03; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_model_fits_p03 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -14807,11 +12063,6 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p03 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_model_fits_p04; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_model_fits_p04 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -14914,11 +12165,6 @@ CREATE TABLE public.bayesian_model_fits_p04 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p04 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_model_fits_p05; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_model_fits_p05 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -15023,11 +12269,6 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p05 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_model_fits_p06; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_model_fits_p06 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -15130,11 +12371,6 @@ CREATE TABLE public.bayesian_model_fits_p06 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p06 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_model_fits_p07; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_model_fits_p07 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -15239,11 +12475,6 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p07 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_model_fits_p08; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_model_fits_p08 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -15346,11 +12577,6 @@ CREATE TABLE public.bayesian_model_fits_p08 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p08 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_model_fits_p09; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_model_fits_p09 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -15455,11 +12681,6 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p09 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_model_fits_p10; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_model_fits_p10 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -15562,11 +12783,6 @@ CREATE TABLE public.bayesian_model_fits_p10 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p10 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_model_fits_p11; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_model_fits_p11 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -15671,11 +12887,6 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p11 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_model_fits_p12; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_model_fits_p12 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -15778,11 +12989,6 @@ CREATE TABLE public.bayesian_model_fits_p12 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p12 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_model_fits_p13; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_model_fits_p13 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -15887,11 +13093,6 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p13 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: bayesian_model_fits_p14; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.bayesian_model_fits_p14 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -15994,11 +13195,6 @@ CREATE TABLE public.bayesian_model_fits_p14 (
 WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p14 FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: bayesian_model_fits_p15; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.bayesian_model_fits_p15 (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -16103,11 +13299,6 @@ WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits_p15 FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: budget_jobs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.budget_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -16133,18 +13324,6 @@ CREATE TABLE public.budget_jobs (
 
 ALTER TABLE ONLY public.budget_jobs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE budget_jobs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.budget_jobs IS 'B1.5 public lifecycle authority for budget recommendation review workflows.';
-
-
---
--- Name: budget_optimization_jobs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.budget_optimization_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -16162,18 +13341,6 @@ CREATE TABLE public.budget_optimization_jobs (
 
 ALTER TABLE ONLY public.budget_optimization_jobs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE budget_optimization_jobs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.budget_optimization_jobs IS 'Internal-only compute trace for budget workers. Not a public lifecycle authority.';
-
-
---
--- Name: celery_taskmeta; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.celery_taskmeta (
     id integer NOT NULL,
     task_id character varying(155) NOT NULL,
@@ -16188,11 +13355,6 @@ CREATE TABLE public.celery_taskmeta (
     retries integer
 );
 
-
---
--- Name: celery_taskmeta_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.celery_taskmeta_id_seq
     AS integer
     START WITH 1
@@ -16201,17 +13363,7 @@ CREATE SEQUENCE public.celery_taskmeta_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: celery_taskmeta_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.celery_taskmeta_id_seq OWNED BY public.celery_taskmeta.id;
-
-
---
--- Name: celery_tasksetmeta; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.celery_tasksetmeta (
     id integer NOT NULL,
@@ -16219,11 +13371,6 @@ CREATE TABLE public.celery_tasksetmeta (
     result bytea,
     date_done timestamp without time zone DEFAULT CURRENT_TIMESTAMP
 );
-
-
---
--- Name: celery_tasksetmeta_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
 
 CREATE SEQUENCE public.celery_tasksetmeta_id_seq
     AS integer
@@ -16233,17 +13380,7 @@ CREATE SEQUENCE public.celery_tasksetmeta_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: celery_tasksetmeta_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.celery_tasksetmeta_id_seq OWNED BY public.celery_tasksetmeta.id;
-
-
---
--- Name: channel_assignment_corrections; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.channel_assignment_corrections (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -16261,88 +13398,6 @@ CREATE TABLE public.channel_assignment_corrections (
 
 ALTER TABLE ONLY public.channel_assignment_corrections FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE channel_assignment_corrections; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.channel_assignment_corrections IS 'Audit log of all post-ingestion channel assignment corrections. Purpose: Provide immutable audit trail for revenue reclassifications, enabling reconciliation and dispute resolution. Data class: Non-PII. Ownership: Data Governance.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.id IS 'Primary key for correction record. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.tenant_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.tenant_id IS 'Tenant whose data was corrected (FK to tenants.id). Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.entity_type; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.entity_type IS 'Type of entity corrected: ''event'' or ''allocation''. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.entity_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.entity_id IS 'ID of corrected entity (references attribution_events.id or attribution_allocations.id). Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.from_channel; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.from_channel IS 'Previous channel assignment. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.to_channel; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.to_channel IS 'New channel assignment (FK to channel_taxonomy.code). Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.corrected_by; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.corrected_by IS 'User/service that made correction (e.g., support@skeldir.com). Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.corrected_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.corrected_at IS 'Timestamp when correction occurred. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.reason; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.reason IS 'Mandatory explanation for correction. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_assignment_corrections.metadata; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_assignment_corrections.metadata IS 'Additional context (e.g., ticket reference). Data class: Non-PII.';
-
-
---
--- Name: channel_state_transitions; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.channel_state_transitions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     channel_code character varying(50) NOT NULL,
@@ -16354,74 +13409,6 @@ CREATE TABLE public.channel_state_transitions (
     metadata jsonb
 );
 
-
---
--- Name: TABLE channel_state_transitions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.channel_state_transitions IS 'Audit log of all channel_taxonomy state transitions. Purpose: Provide immutable audit trail for channel lifecycle changes, enabling compliance and PE-readiness. Data class: Non-PII. Ownership: Data Governance.';
-
-
---
--- Name: COLUMN channel_state_transitions.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_state_transitions.id IS 'Primary key for transition record. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_state_transitions.channel_code; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_state_transitions.channel_code IS 'Channel that transitioned (FK to channel_taxonomy.code). Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_state_transitions.from_state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_state_transitions.from_state IS 'Previous state (NULL for first assignment). Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_state_transitions.to_state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_state_transitions.to_state IS 'New state after transition. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_state_transitions.changed_by; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_state_transitions.changed_by IS 'User/service that triggered transition (e.g., admin@skeldir.com, migration:20251117). Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_state_transitions.changed_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_state_transitions.changed_at IS 'Timestamp when transition occurred. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_state_transitions.reason; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_state_transitions.reason IS 'Human-readable explanation for transition (optional but recommended). Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_state_transitions.metadata; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_state_transitions.metadata IS 'Additional context (e.g., ticket reference, migration ID). Data class: Non-PII.';
-
-
---
--- Name: channel_taxonomy; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.channel_taxonomy (
     code text NOT NULL,
     family text NOT NULL,
@@ -16432,70 +13419,6 @@ CREATE TABLE public.channel_taxonomy (
     state character varying(50) DEFAULT 'active'::character varying NOT NULL,
     CONSTRAINT channel_taxonomy_state_check CHECK (((state)::text = ANY ((ARRAY['draft'::character varying, 'active'::character varying, 'deprecated'::character varying, 'archived'::character varying])::text[])))
 );
-
-
---
--- Name: TABLE channel_taxonomy; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.channel_taxonomy IS 'Canonical channel taxonomy for attribution. Guarantees all allocation channel codes are valid.
-            All unmapped channels MUST be normalized to the ''unknown'' code. Purpose: Provide single source
-            of truth for channel codes, ensuring consistency across ingestion, allocation models, and UI.
-            Data class: Non-PII. Ownership: Attribution service.';
-
-
---
--- Name: COLUMN channel_taxonomy.code; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_taxonomy.code IS 'Canonical channel identifier used throughout system. Primary key. Must match values referenced by attribution_allocations.channel_code FK. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_taxonomy.family; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_taxonomy.family IS 'Normalized family grouping for higher-level reporting (e.g., "paid_social", "paid_search", "organic", "referral"). Purpose: Enable family-level aggregation and analysis. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_taxonomy.is_paid; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_taxonomy.is_paid IS 'Indicates whether spend is expected for this channel. Purpose: Enable paid vs organic channel segmentation. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_taxonomy.display_name; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_taxonomy.display_name IS 'Human-friendly label for UI display. Purpose: Provide user-facing channel name. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_taxonomy.is_active; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_taxonomy.is_active IS 'Used to soft-deprecate channels without breaking existing rows. Purpose: Allow channel retirement while preserving historical data. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_taxonomy.created_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_taxonomy.created_at IS 'Timestamp when channel was added to taxonomy. Purpose: Audit trail for channel lifecycle. Data class: Non-PII.';
-
-
---
--- Name: COLUMN channel_taxonomy.state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.channel_taxonomy.state IS 'Channel lifecycle state: draft (testing), active (production), deprecated (soft retirement), archived (hard retirement). Purpose: Enable state machine governance and auditability. Data class: Non-PII.';
-
-
---
--- Name: compliance_audit_ledger; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.compliance_audit_ledger (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -16514,18 +13437,6 @@ CREATE TABLE public.compliance_audit_ledger (
 );
 
 ALTER TABLE ONLY public.compliance_audit_ledger FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE compliance_audit_ledger; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.compliance_audit_ledger IS 'Append-only audit artifacts proving deterministic privacy erasure without mutating attribution_events.';
-
-
---
--- Name: dead_events; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.dead_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -16553,95 +13464,6 @@ CREATE TABLE public.dead_events (
 
 ALTER TABLE ONLY public.dead_events FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE dead_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.dead_events IS 'Dead-letter queue for invalid/unparseable webhook payloads. Purpose: Store failed ingestion attempts for operator triage. Data class: Non-PII (PII stripped from raw_payload). Ownership: Ingestion service. RLS enabled for tenant isolation.';
-
-
---
--- Name: COLUMN dead_events.correlation_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.correlation_id IS 'Correlation ID from X-Correlation-ID header. Purpose: Distributed tracing and event stitching across tables. Links dead_events, attribution_events, and future attribution_allocations. Data class: Non-PII.';
-
-
---
--- Name: COLUMN dead_events.event_type; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.event_type IS 'Type of event that failed processing. INVARIANT: processing_critical. Purpose: Enable event-type specific remediation workflows. Data class: Non-PII. Required for: B0.5 error handling, remediation routing.';
-
-
---
--- Name: COLUMN dead_events.error_type; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.error_type IS 'Categorization of the error (e.g., validation_error, network_error, data_corruption). INVARIANT: processing_critical. Purpose: Enable error-type specific remediation and alerting. Data class: Non-PII. Required for: B0.5 error classification, alert routing.';
-
-
---
--- Name: COLUMN dead_events.error_message; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.error_message IS 'Detailed error message describing what went wrong. INVARIANT: processing_critical. Purpose: Provide diagnostic information for remediation. Data class: Non-PII (may contain limited technical data). Required for: B0.5 error debugging, remediation.';
-
-
---
--- Name: COLUMN dead_events.error_traceback; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.error_traceback IS 'Stack trace of the error for debugging. INVARIANT: processing_critical. Purpose: Provide detailed technical context for engineering investigation. Data class: Non-PII. Required for: B0.5 error debugging.';
-
-
---
--- Name: COLUMN dead_events.retry_count; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.retry_count IS 'Number of times processing has been retried. INVARIANT: processing_critical. Purpose: Track retry attempts to prevent infinite loops. Data class: Non-PII. Required for: B0.5 retry logic, dead event detection.';
-
-
---
--- Name: COLUMN dead_events.last_retry_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.last_retry_at IS 'Timestamp of the last retry attempt. INVARIANT: processing_critical. Purpose: Track retry timing for backoff logic and monitoring. Data class: Non-PII. Required for: B0.5 exponential backoff, retry monitoring.';
-
-
---
--- Name: COLUMN dead_events.remediation_status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.remediation_status IS 'Status of the remediation effort (pending, in_progress, resolved, ignored). INVARIANT: processing_critical. Purpose: Track remediation workflow state. Data class: Non-PII. Required for: B0.5 remediation queue, SLA tracking.';
-
-
---
--- Name: COLUMN dead_events.remediation_notes; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.remediation_notes IS 'Notes on remediation actions taken by engineers. INVARIANT: processing_critical. Purpose: Document remediation history for knowledge base. Data class: Non-PII. Required for: B0.5 remediation documentation, postmortem analysis.';
-
-
---
--- Name: COLUMN dead_events.resolved_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.dead_events.resolved_at IS 'Timestamp when the dead event was successfully resolved. INVARIANT: processing_critical. Purpose: Track resolution timing for SLA and metrics. Data class: Non-PII. Required for: B0.5 remediation SLA tracking, metrics.';
-
-
---
--- Name: CONSTRAINT ck_dead_events_retry_count_positive ON dead_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT ck_dead_events_retry_count_positive ON public.dead_events IS 'Ensures retry_count is non-negative. Purpose: Prevent invalid retry counts. Required for: B0.5 retry logic.';
-
-
---
--- Name: dead_events_quarantine; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.dead_events_quarantine (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid,
@@ -16659,11 +13481,6 @@ CREATE TABLE public.dead_events_quarantine (
 
 ALTER TABLE ONLY public.dead_events_quarantine FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: ephemeral_click_resolution; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.ephemeral_click_resolution (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -16679,18 +13496,6 @@ CREATE TABLE public.ephemeral_click_resolution (
 );
 
 ALTER TABLE ONLY public.ephemeral_click_resolution FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE ephemeral_click_resolution; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.ephemeral_click_resolution IS 'B1.4-P3 terminal corrective ephemeral substrate: 24h click->session continuity cache for write-time deterministic rebinding without durable click persistence.';
-
-
---
--- Name: ephemeral_order_resolution; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.ephemeral_order_resolution (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -16708,18 +13513,6 @@ CREATE TABLE public.ephemeral_order_resolution (
 
 ALTER TABLE ONLY public.ephemeral_order_resolution FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE ephemeral_order_resolution; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.ephemeral_order_resolution IS 'B1.4-P3 terminal corrective ephemeral substrate: 24h order->session continuity cache for write-time session-local rebinding.';
-
-
---
--- Name: explanation_cache; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.explanation_cache (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -16734,25 +13527,6 @@ CREATE TABLE public.explanation_cache (
 );
 
 ALTER TABLE ONLY public.explanation_cache FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE explanation_cache; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.explanation_cache IS 'Cached explanations for fast RAG retrieval (<500ms p95 latency target). Purpose: Enable sub-second explanation delivery via cache. Data class: Non-PII. Ownership: LLM service. RLS enabled for tenant isolation.';
-
-
---
--- Name: COLUMN explanation_cache.ci_validation_test; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.explanation_cache.ci_validation_test IS 'Test column to validate CI-exclusive schema deployment';
-
-
---
--- Name: investigation_jobs; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.investigation_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -16783,39 +13557,6 @@ CREATE TABLE public.investigation_jobs (
 
 ALTER TABLE ONLY public.investigation_jobs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE investigation_jobs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.investigation_jobs IS 'Investigation jobs with centaur friction (mandatory review/approve workflow). Purpose: Enforce human-in-the-loop for critical decisions. Cannot return final result without explicit approval.';
-
-
---
--- Name: COLUMN investigation_jobs.status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.investigation_jobs.status IS 'State machine: PENDING -> READY_FOR_REVIEW -> APPROVED -> COMPLETED. Cannot skip states.';
-
-
---
--- Name: COLUMN investigation_jobs.min_hold_until; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.investigation_jobs.min_hold_until IS 'Minimum time before job can transition to READY_FOR_REVIEW. Enforces friction period (45-60s default).';
-
-
---
--- Name: COLUMN investigation_jobs.approved_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.investigation_jobs.approved_at IS 'Timestamp when job was approved. Required before COMPLETED status (enforced by constraint).';
-
-
---
--- Name: investigation_tool_calls; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.investigation_tool_calls (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -16827,18 +13568,6 @@ CREATE TABLE public.investigation_tool_calls (
 );
 
 ALTER TABLE ONLY public.investigation_tool_calls FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE investigation_tool_calls; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.investigation_tool_calls IS 'Audit trail of tool calls made during investigations. Purpose: Debug investigation behavior and track tool usage. Data class: Non-PII. Ownership: LLM service. RLS enabled for tenant isolation.';
-
-
---
--- Name: investigations; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.investigations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -16858,18 +13587,6 @@ CREATE TABLE public.investigations (
 
 ALTER TABLE ONLY public.investigations FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE investigations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.investigations IS 'Internal-only compute trace for investigation workers. Not a public lifecycle authority.';
-
-
---
--- Name: jwt_verification_cache; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.jwt_verification_cache (
     singleton_id smallint NOT NULL,
     jwks_json text,
@@ -16883,11 +13600,6 @@ CREATE TABLE public.jwt_verification_cache (
     CONSTRAINT jwt_verification_cache_singleton_id_check CHECK ((singleton_id = 1))
 );
 
-
---
--- Name: kombu_message; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.kombu_message (
     id integer NOT NULL,
     visible boolean DEFAULT true NOT NULL,
@@ -16897,11 +13609,6 @@ CREATE TABLE public.kombu_message (
     queue_id integer NOT NULL
 );
 
-
---
--- Name: kombu_message_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.kombu_message_id_seq
     AS integer
     START WITH 1
@@ -16910,27 +13617,12 @@ CREATE SEQUENCE public.kombu_message_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: kombu_message_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.kombu_message_id_seq OWNED BY public.kombu_message.id;
-
-
---
--- Name: kombu_queue; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.kombu_queue (
     id integer NOT NULL,
     name character varying(200) NOT NULL
 );
-
-
---
--- Name: kombu_queue_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
 
 CREATE SEQUENCE public.kombu_queue_id_seq
     AS integer
@@ -16940,17 +13632,7 @@ CREATE SEQUENCE public.kombu_queue_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: kombu_queue_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.kombu_queue_id_seq OWNED BY public.kombu_queue.id;
-
-
---
--- Name: llm_api_calls; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.llm_api_calls (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17004,18 +13686,6 @@ CREATE TABLE public.llm_api_calls (
 
 ALTER TABLE ONLY public.llm_api_calls FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE llm_api_calls; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.llm_api_calls IS 'Tracks LLM API calls for cost monitoring and usage analytics. Purpose: Enable per-tenant cost tracking and budget enforcement. Data class: Non-PII. Ownership: LLM service. RLS enabled for tenant isolation.';
-
-
---
--- Name: llm_breaker_state; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_breaker_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -17031,11 +13701,6 @@ CREATE TABLE public.llm_breaker_state (
 );
 
 ALTER TABLE ONLY public.llm_breaker_state FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: llm_budget_reservations; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.llm_budget_reservations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17055,11 +13720,6 @@ CREATE TABLE public.llm_budget_reservations (
 );
 
 ALTER TABLE ONLY public.llm_budget_reservations FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: llm_call_audit; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.llm_call_audit (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17082,39 +13742,6 @@ CREATE TABLE public.llm_call_audit (
 
 ALTER TABLE ONLY public.llm_call_audit FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE llm_call_audit; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.llm_call_audit IS 'Append-only audit log for LLM call budget decisions. Purpose: Forensic proof of budget enforcement. Every call attempt is recorded with decision and reason.';
-
-
---
--- Name: COLUMN llm_call_audit.requested_model; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.llm_call_audit.requested_model IS 'The model originally requested by the caller. May differ from resolved_model after policy application.';
-
-
---
--- Name: COLUMN llm_call_audit.resolved_model; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.llm_call_audit.resolved_model IS 'The model actually used after budget policy. Same as requested_model for ALLOW, fallback model for FALLBACK, null-ish for BLOCK.';
-
-
---
--- Name: COLUMN llm_call_audit.decision; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.llm_call_audit.decision IS 'Policy decision: ALLOW (under budget), BLOCK (HTTP 429), FALLBACK (cheaper model substituted).';
-
-
---
--- Name: llm_hourly_shutoff_state; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_hourly_shutoff_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -17134,11 +13761,6 @@ CREATE TABLE public.llm_hourly_shutoff_state (
 
 ALTER TABLE ONLY public.llm_hourly_shutoff_state FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: llm_monthly_budget_state; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_monthly_budget_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -17155,11 +13777,6 @@ CREATE TABLE public.llm_monthly_budget_state (
 
 ALTER TABLE ONLY public.llm_monthly_budget_state FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: llm_monthly_costs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_monthly_costs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -17174,18 +13791,6 @@ CREATE TABLE public.llm_monthly_costs (
 );
 
 ALTER TABLE ONLY public.llm_monthly_costs FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE llm_monthly_costs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.llm_monthly_costs IS 'Aggregated monthly LLM costs per tenant. Purpose: Monthly billing reports and cost trend analysis. Data class: Non-PII. Ownership: LLM service. RLS enabled for tenant isolation.';
-
-
---
--- Name: llm_semantic_cache; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.llm_semantic_cache (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17213,11 +13818,6 @@ CREATE TABLE public.llm_semantic_cache (
 
 ALTER TABLE ONLY public.llm_semantic_cache FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: llm_validation_failures; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_validation_failures (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -17230,18 +13830,6 @@ CREATE TABLE public.llm_validation_failures (
 
 ALTER TABLE ONLY public.llm_validation_failures FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE llm_validation_failures; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.llm_validation_failures IS 'Quarantine for failed LLM validations. Purpose: Store validation errors for triage and retry. Data class: Non-PII (payloads sanitized). Ownership: LLM service. RLS enabled for tenant isolation.';
-
-
---
--- Name: message_id_sequence; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.message_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -17249,73 +13837,39 @@ CREATE SEQUENCE public.message_id_sequence
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: message_id_sequence; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
-
---
--- Name: mv_allocation_summary; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_allocation_summary AS
- SELECT aa.tenant_id,
-    aa.event_id,
-    aa.model_version,
-    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
-    e.revenue_cents AS event_revenue_cents,
+CREATE MATERIALIZED VIEW mv_allocation_summary AS
+ SELECT tenant_id,
+    event_id,
+    model_version,
+    sum(allocated_revenue_cents) AS total_allocated_cents,
+    revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
+            WHEN (revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(allocated_revenue_cents) = revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
+            WHEN (revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
         END AS drift_cents
-   FROM (public.attribution_allocations aa
-     LEFT JOIN public.attribution_events e ON ((aa.event_id = e.id)))
-  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
+   FROM (attribution_allocations aa
+     LEFT JOIN attribution_events e ON ((event_id = id)))
+  GROUP BY tenant_id, event_id, model_version, revenue_cents
   WITH NO DATA;
 
-
---
--- Name: MATERIALIZED VIEW mv_allocation_summary; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON MATERIALIZED VIEW public.mv_allocation_summary IS 'Aggregates allocation sums per (tenant_id, event_id, model_version) for sum-equality validation. Purpose: Enable reporting and validation of revenue accounting correctness. NULL HANDLING: event_id may be NULL (event deleted); validation fields (is_balanced, drift_cents) are NULL when event unavailable. LEFT JOIN ensures all allocations included in financial totals. Refresh policy: CONCURRENTLY with TTL-based refresh (30-60s).';
-
-
---
--- Name: mv_channel_performance; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_channel_performance AS
- SELECT attribution_allocations.tenant_id,
-    attribution_allocations.channel_code,
-    date_trunc('day'::text, attribution_allocations.created_at) AS allocation_date,
-    count(DISTINCT attribution_allocations.event_id) AS total_conversions,
-    sum(attribution_allocations.allocated_revenue_cents) AS total_revenue_cents,
-    avg(attribution_allocations.confidence_score) AS avg_confidence_score,
+CREATE MATERIALIZED VIEW mv_channel_performance AS
+ SELECT tenant_id,
+    channel_code,
+    date_trunc('day'::text, created_at) AS allocation_date,
+    count(DISTINCT event_id) AS total_conversions,
+    sum(allocated_revenue_cents) AS total_revenue_cents,
+    avg(confidence_score) AS avg_confidence_score,
     count(*) AS total_allocations
-   FROM public.attribution_allocations
-  WHERE (attribution_allocations.created_at >= (CURRENT_DATE - '90 days'::interval))
-  GROUP BY attribution_allocations.tenant_id, attribution_allocations.channel_code, (date_trunc('day'::text, attribution_allocations.created_at))
+   FROM attribution_allocations
+  WHERE (created_at >= (CURRENT_DATE - '90 days'::interval))
+  GROUP BY tenant_id, channel_code, (date_trunc('day'::text, created_at))
   WITH NO DATA;
-
-
---
--- Name: MATERIALIZED VIEW mv_channel_performance; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON MATERIALIZED VIEW public.mv_channel_performance IS 'Pre-aggregates channel performance by day for fast dashboard queries. Supports B2.6 API. Refresh CONCURRENTLY. 90-day rolling window. Purpose: Enable sub-500ms p95 channel performance queries without full table scans on attribution_allocations. Columns: tenant_id, channel_code, allocation_date (day), total_conversions (distinct events), total_revenue_cents (sum), avg_confidence_score, total_allocations (count). Refresh policy: REFRESH MATERIALIZED VIEW CONCURRENTLY mv_channel_performance on schedule (recommended: hourly or on-demand). Index: UNIQUE on (tenant_id, channel_code, allocation_date) enables REFRESH CONCURRENTLY.';
-
-
---
--- Name: revenue_ledger; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.revenue_ledger (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17353,167 +13907,26 @@ CREATE TABLE public.revenue_ledger (
 
 ALTER TABLE ONLY public.revenue_ledger FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE revenue_ledger; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.revenue_ledger IS 'Write-once financial ledger. Application roles may only INSERT. No UPDATE/DELETE for app roles; corrections via new ledger entries. Purpose: Revenue verification and aggregation. Data class: Non-PII. Ownership: Reconciliation service. RLS enabled for tenant isolation.';
-
-
---
--- Name: COLUMN revenue_ledger.allocation_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.allocation_id IS 'Foreign key to attribution_allocations table (nullable). Purpose: Link ledger entry to a specific allocation when applicable; supports both allocation-based posting and transaction-based reconciliation rows.';
-
-
---
--- Name: COLUMN revenue_ledger.posted_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.posted_at IS 'Timestamp when revenue was posted to the ledger. Purpose: Track posting time for audit trail and reconciliation. Data class: Non-PII.';
-
-
---
--- Name: COLUMN revenue_ledger.transaction_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.transaction_id IS 'Unique identifier for the financial transaction from payment processor (e.g., Stripe payment intent ID). INVARIANT: financial_critical. Purpose: Enable webhook idempotency and transaction deduplication. Data class: Non-PII. Required for: B2.2 webhook processing, transaction tracking. Must be unique.';
-
-
---
--- Name: COLUMN revenue_ledger.order_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.order_id IS 'Order identifier associated with the transaction. INVARIANT: financial_critical. Purpose: Link revenue to orders for reconciliation. Data class: Non-PII. Required for: B2.4 order-level revenue tracking.';
-
-
---
--- Name: COLUMN revenue_ledger.state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.state IS 'Current state of the revenue transaction (authorized, captured, refunded, chargeback). INVARIANT: financial_critical. Purpose: Track revenue lifecycle and support refund processing. Data class: Non-PII. Required for: B2.4 refund tracking, state machine enforcement. Must be valid enum value.';
-
-
---
--- Name: COLUMN revenue_ledger.previous_state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.previous_state IS 'Previous state of the revenue transaction for audit trail. INVARIANT: financial_critical. Purpose: Enable state transition tracking and audit. Data class: Non-PII. Required for: B2.4 revenue state audit trail.';
-
-
---
--- Name: COLUMN revenue_ledger.amount_cents; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.amount_cents IS 'Transaction amount in cents in its original currency. INVARIANT: financial_critical. Purpose: Store exact transaction amount without loss of precision. Data class: Non-PII. Required for: B2.2 revenue tracking, B2.3 currency conversion. Must not be NULL.';
-
-
---
--- Name: COLUMN revenue_ledger.currency; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.currency IS 'ISO 4217 currency code of the transaction (e.g., USD, EUR, GBP). INVARIANT: financial_critical. Purpose: Support multi-currency revenue tracking and conversion. Data class: Non-PII. Required for: B2.3 currency conversion, international revenue reporting. Must not be NULL.';
-
-
---
--- Name: COLUMN revenue_ledger.verification_source; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.verification_source IS 'Source that verified this ledger entry (e.g., Stripe, manual, reconciliation_run). INVARIANT: financial_critical. Purpose: Track verification provenance for audit. Data class: Non-PII. Required for: B2.4 reconciliation audit trail. Must not be NULL.';
-
-
---
--- Name: COLUMN revenue_ledger.verification_timestamp; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.verification_timestamp IS 'Timestamp when the ledger entry was verified. INVARIANT: financial_critical. Purpose: Track verification timing for audit and SLA monitoring. Data class: Non-PII. Required for: B2.4 reconciliation audit trail, verification latency tracking. Must not be NULL.';
-
-
---
--- Name: COLUMN revenue_ledger.metadata; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.metadata IS 'Additional metadata for the ledger entry (e.g., FX rates, processor details, refund reason). INVARIANT: analytics_important. Purpose: Store supplementary transaction data. Data class: Non-PII (may contain processor IDs). Required for: B2.3 FX rate tracking, B2.4 refund analysis.';
-
-
---
--- Name: COLUMN revenue_ledger.claimed_total_cents; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.claimed_total_cents IS 'Sum of all platform claims in cents for this order (Meta + Google + etc). INVARIANT: financial_critical. Purpose: Track total claimed revenue for ghost detection. Data class: Non-PII.';
-
-
---
--- Name: COLUMN revenue_ledger.verified_total_cents; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.verified_total_cents IS 'Verified truth amount in cents from payment processor webhook. INVARIANT: financial_critical. Purpose: Store canonical verified revenue. Data class: Non-PII.';
-
-
---
--- Name: COLUMN revenue_ledger.ghost_revenue_cents; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.ghost_revenue_cents IS 'Ghost revenue in cents: max(0, claimed_total_cents - verified_total_cents). INVARIANT: financial_critical. Purpose: Track over-claimed revenue for reconciliation. Data class: Non-PII.';
-
-
---
--- Name: COLUMN revenue_ledger.discrepancy_bps; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_ledger.discrepancy_bps IS 'Discrepancy in basis points: (ghost_revenue_cents * 10000) / verified_total_cents. INVARIANT: financial_critical. Purpose: Track percentage discrepancy without floats. Data class: Non-PII.';
-
-
---
--- Name: CONSTRAINT ck_revenue_ledger_state_valid ON revenue_ledger; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT ck_revenue_ledger_state_valid ON public.revenue_ledger IS 'Ensures state is a valid enum value. Purpose: Enforce state machine integrity. Required for: B2.4 refund tracking state machine.';
-
-
---
--- Name: mv_daily_revenue_summary; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_daily_revenue_summary AS
- SELECT revenue_ledger.tenant_id,
-    date_trunc('day'::text, revenue_ledger.verification_timestamp) AS revenue_date,
-    revenue_ledger.state,
-    revenue_ledger.currency,
-    sum(revenue_ledger.amount_cents) AS total_amount_cents,
+CREATE MATERIALIZED VIEW mv_daily_revenue_summary AS
+ SELECT tenant_id,
+    date_trunc('day'::text, verification_timestamp) AS revenue_date,
+    state,
+    currency,
+    sum(amount_cents) AS total_amount_cents,
     count(*) AS transaction_count
-   FROM public.revenue_ledger
-  WHERE ((revenue_ledger.state)::text = ANY ((ARRAY['captured'::character varying, 'refunded'::character varying, 'chargeback'::character varying])::text[]))
-  GROUP BY revenue_ledger.tenant_id, (date_trunc('day'::text, revenue_ledger.verification_timestamp)), revenue_ledger.state, revenue_ledger.currency
+   FROM revenue_ledger
+  WHERE ((state)::text = ANY ((ARRAY['captured'::character varying, 'refunded'::character varying, 'chargeback'::character varying])::text[]))
+  GROUP BY tenant_id, (date_trunc('day'::text, verification_timestamp)), state, currency
   WITH NO DATA;
 
-
---
--- Name: MATERIALIZED VIEW mv_daily_revenue_summary; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON MATERIALIZED VIEW public.mv_daily_revenue_summary IS 'Pre-aggregates daily revenue, refunds, and chargebacks by currency. Supports B2.6 API. Refresh CONCURRENTLY. Purpose: Enable sub-500ms p95 daily revenue queries for KPI dashboards without full table scans on revenue_ledger. Columns: tenant_id, revenue_date (day), state (captured/refunded/chargeback), currency (ISO 4217), total_amount_cents (sum), transaction_count (count). Refresh policy: REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_revenue_summary on schedule (recommended: hourly or on-demand). Index: UNIQUE on (tenant_id, revenue_date, state, currency) enables REFRESH CONCURRENTLY and fast multi-currency queries.';
-
-
---
--- Name: mv_realtime_revenue; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_realtime_revenue AS
- SELECT rl.tenant_id,
-    ((COALESCE(sum(COALESCE(rl.amount_cents, rl.revenue_cents)), (0)::bigint))::numeric / 100.0) AS total_revenue,
-    bool_or(COALESCE(rl.is_verified, false)) AS verified,
-    (EXTRACT(epoch FROM (now() - max(rl.updated_at))))::integer AS data_freshness_seconds
-   FROM public.revenue_ledger rl
-  GROUP BY rl.tenant_id
+CREATE MATERIALIZED VIEW mv_realtime_revenue AS
+ SELECT tenant_id,
+    ((COALESCE(sum(COALESCE(amount_cents, revenue_cents)), (0)::bigint))::numeric / 100.0) AS total_revenue,
+    bool_or(COALESCE(is_verified, false)) AS verified,
+    (EXTRACT(epoch FROM (now() - max(updated_at))))::integer AS data_freshness_seconds
+   FROM revenue_ledger rl
+  GROUP BY tenant_id
   WITH NO DATA;
-
-
---
--- Name: reconciliation_runs; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.reconciliation_runs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17530,34 +13943,17 @@ CREATE TABLE public.reconciliation_runs (
 
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE reconciliation_runs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.reconciliation_runs IS 'Stores reconciliation pipeline run status and metadata. Purpose: Track reconciliation pipeline execution. Data class: Non-PII. Ownership: Reconciliation service. RLS enabled for tenant isolation.';
-
-
---
--- Name: mv_reconciliation_status; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_reconciliation_status AS
- SELECT rr.tenant_id,
-    rr.state,
-    rr.last_run_at,
-    rr.id AS reconciliation_run_id
-   FROM (public.reconciliation_runs rr
-     JOIN ( SELECT reconciliation_runs.tenant_id,
-            max(reconciliation_runs.last_run_at) AS max_last_run_at
-           FROM public.reconciliation_runs
-          GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
+CREATE MATERIALIZED VIEW mv_reconciliation_status AS
+ SELECT tenant_id,
+    state,
+    last_run_at,
+    id AS reconciliation_run_id
+   FROM (reconciliation_runs rr
+     JOIN ( SELECT tenant_id,
+            max(last_run_at) AS max_last_run_at
+           FROM reconciliation_runs
+          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
   WITH NO DATA;
-
-
---
--- Name: oauth_handshake_sessions; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.oauth_handshake_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17587,32 +13983,6 @@ CREATE TABLE public.oauth_handshake_sessions (
 
 ALTER TABLE ONLY public.oauth_handshake_sessions FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE oauth_handshake_sessions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.oauth_handshake_sessions IS 'Tenant-scoped transient OAuth handshake substrate. Stores short-lived state nonce hash and optional encrypted PKCE verifier only for authorize/callback lifecycle control.';
-
-
---
--- Name: COLUMN oauth_handshake_sessions.state_nonce_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.oauth_handshake_sessions.state_nonce_hash IS 'SHA-256 hash of callback state nonce. Raw nonce is never persisted.';
-
-
---
--- Name: COLUMN oauth_handshake_sessions.gc_after; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.oauth_handshake_sessions.gc_after IS 'Timestamp after which terminal handshake rows are eligible for bounded garbage collection.';
-
-
---
--- Name: pii_audit_findings; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.pii_audit_findings (
     id bigint NOT NULL,
     table_name text NOT NULL,
@@ -17623,60 +13993,6 @@ CREATE TABLE public.pii_audit_findings (
     detected_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-
---
--- Name: TABLE pii_audit_findings; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.pii_audit_findings IS 'PII audit findings repository (Layer 3 operations audit). Purpose: Store PII contamination detections from periodic scans. Data class: Non-PII (contains record IDs and key names only, not actual PII values). Ownership: Operations/Security team. Use: Detect Layer 1/Layer 2 failures, compliance auditing, incident response. Schedule: Daily (non-prod), Hourly/Daily (prod). Reference: ADR-003-PII-Defense-Strategy.md Section "Layer 3 (Operations)".';
-
-
---
--- Name: COLUMN pii_audit_findings.table_name; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.pii_audit_findings.table_name IS 'Source table where PII was detected (attribution_events, dead_events, or revenue_ledger). Purpose: Identify contamination source for remediation.';
-
-
---
--- Name: COLUMN pii_audit_findings.column_name; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.pii_audit_findings.column_name IS 'Source column where PII was detected (raw_payload or metadata). Purpose: Identify contamination location.';
-
-
---
--- Name: COLUMN pii_audit_findings.record_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.pii_audit_findings.record_id IS 'UUID of the contaminated record. Purpose: Enable record-level remediation and investigation.';
-
-
---
--- Name: COLUMN pii_audit_findings.detected_key; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.pii_audit_findings.detected_key IS 'PII key that was detected (e.g., email, phone, ssn). Purpose: Identify PII category for compliance reporting.';
-
-
---
--- Name: COLUMN pii_audit_findings.sample_snippet; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.pii_audit_findings.sample_snippet IS 'Optional snippet of contaminated payload (redacted). Purpose: Aid investigation without exposing full PII. May be NULL.';
-
-
---
--- Name: COLUMN pii_audit_findings.detected_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.pii_audit_findings.detected_at IS 'Timestamp when PII was detected by audit scan. Purpose: Track detection timing for SLA and incident response.';
-
-
---
--- Name: pii_audit_findings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.pii_audit_findings_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -17684,17 +14000,7 @@ CREATE SEQUENCE public.pii_audit_findings_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: pii_audit_findings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.pii_audit_findings_id_seq OWNED BY public.pii_audit_findings.id;
-
-
---
--- Name: platform_connections; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.platform_connections (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17709,25 +14015,6 @@ CREATE TABLE public.platform_connections (
 );
 
 ALTER TABLE ONLY public.platform_connections FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE platform_connections; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.platform_connections IS 'Tenant-scoped platform account bindings. Purpose: Store platform account identifiers per tenant. Data class: Non-PII. Ownership: Attribution service. RLS enabled for tenant isolation.';
-
-
---
--- Name: COLUMN platform_connections.connection_metadata; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.platform_connections.connection_metadata IS 'Optional non-PII metadata for platform connection context.';
-
-
---
--- Name: platform_credentials; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.platform_credentials (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17757,39 +14044,6 @@ CREATE TABLE public.platform_credentials (
 
 ALTER TABLE ONLY public.platform_credentials FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE platform_credentials; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.platform_credentials IS 'Encrypted platform credentials per tenant connection. Purpose: Store access/refresh tokens encrypted at rest. Data class: Security credential. Ownership: Attribution service. RLS enabled for tenant isolation.';
-
-
---
--- Name: COLUMN platform_credentials.next_refresh_due_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.platform_credentials.next_refresh_due_at IS 'Queryable scheduler watermark for next provider refresh attempt.';
-
-
---
--- Name: COLUMN platform_credentials.lifecycle_status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.platform_credentials.lifecycle_status IS 'Durable provider credential lifecycle state: active, degraded, or revoked.';
-
-
---
--- Name: COLUMN platform_credentials.refresh_failure_count; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.platform_credentials.refresh_failure_count IS 'Count of consecutive refresh failures for this credential.';
-
-
---
--- Name: queue_id_sequence; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.queue_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -17797,17 +14051,7 @@ CREATE SEQUENCE public.queue_id_sequence
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: queue_id_sequence; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.queue_id_sequence OWNED BY public.kombu_queue.id;
-
-
---
--- Name: r4_crash_barriers; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.r4_crash_barriers (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17822,28 +14066,11 @@ CREATE TABLE public.r4_crash_barriers (
 
 ALTER TABLE ONLY public.r4_crash_barriers FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE r4_crash_barriers; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.r4_crash_barriers IS 'R4 crash barrier rows written after DB side-effect commit but before ack. Purpose: Prove crash-after-write/pre-ack physics. Data class: Non-PII. Tenant-scoped via RLS.';
-
-
---
--- Name: r4_recovery_exclusions; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.r4_recovery_exclusions (
     scenario text NOT NULL,
     task_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: r4_task_attempts; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.r4_task_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17857,18 +14084,6 @@ CREATE TABLE public.r4_task_attempts (
 );
 
 ALTER TABLE ONLY public.r4_task_attempts FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE r4_task_attempts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.r4_task_attempts IS 'R4 harness attempt ledger. Purpose: Prove retries/redelivery executed. Data class: Non-PII. Tenant-scoped via RLS.';
-
-
---
--- Name: raw_event_payloads; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.raw_event_payloads (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -17886,18 +14101,6 @@ CREATE TABLE public.raw_event_payloads (
 
 ALTER TABLE ONLY public.raw_event_payloads FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE raw_event_payloads; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.raw_event_payloads IS 'B1.4-P4 privacy-expirable raw telemetry substrate linked to immutable attribution_events ledger rows.';
-
-
---
--- Name: revenue_cache_entries; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.revenue_cache_entries (
     tenant_id uuid NOT NULL,
     cache_key text NOT NULL,
@@ -17914,18 +14117,6 @@ CREATE TABLE public.revenue_cache_entries (
 
 ALTER TABLE ONLY public.revenue_cache_entries FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE revenue_cache_entries; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.revenue_cache_entries IS 'Tenant-scoped realtime revenue cache. Purpose: prevent platform stampede with Postgres-only coordination. Data class: non-PII. Ownership: Attribution service. RLS enabled for tenant isolation.';
-
-
---
--- Name: revenue_state_transitions; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.revenue_state_transitions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     ledger_id uuid NOT NULL,
@@ -17938,60 +14129,6 @@ CREATE TABLE public.revenue_state_transitions (
 
 ALTER TABLE ONLY public.revenue_state_transitions FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE revenue_state_transitions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.revenue_state_transitions IS 'Audit log for revenue ledger state changes. INVARIANT: financial_critical. Purpose: Track complete history of revenue state transitions for compliance and analytics. Data class: Non-PII. Ownership: Revenue service. Required for: B2.4 refund tracking, financial audit, compliance.';
-
-
---
--- Name: COLUMN revenue_state_transitions.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_state_transitions.id IS 'Primary key UUID for the state transition record. Purpose: Unique identifier for each transition. Data class: Non-PII.';
-
-
---
--- Name: COLUMN revenue_state_transitions.ledger_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_state_transitions.ledger_id IS 'Foreign key to revenue_ledger table. INVARIANT: financial_critical. Purpose: Link transition to specific ledger entry. Data class: Non-PII. Required for: B2.4 state transition audit trail. ON DELETE CASCADE ensures transitions are deleted with ledger entry.';
-
-
---
--- Name: COLUMN revenue_state_transitions.from_state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_state_transitions.from_state IS 'State before the transition (nullable for initial state). INVARIANT: financial_critical. Purpose: Track previous state for audit trail. Data class: Non-PII. Required for: B2.4 state transition analysis, compliance audit.';
-
-
---
--- Name: COLUMN revenue_state_transitions.to_state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_state_transitions.to_state IS 'State after the transition (NOT NULL). INVARIANT: financial_critical. Purpose: Track new state for audit trail. Data class: Non-PII. Required for: B2.4 state machine enforcement, refund tracking. Must not be NULL.';
-
-
---
--- Name: COLUMN revenue_state_transitions.reason; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_state_transitions.reason IS 'Optional reason for the state transition (e.g., customer_request, fraud_detected, chargeback_received). INVARIANT: financial_critical. Purpose: Document business reason for transition. Data class: Non-PII. Required for: B2.4 refund reason tracking, compliance documentation.';
-
-
---
--- Name: COLUMN revenue_state_transitions.transitioned_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.revenue_state_transitions.transitioned_at IS 'Timestamp when the state transition occurred (NOT NULL DEFAULT now()). INVARIANT: financial_critical. Purpose: Track exact timing of state changes for audit. Data class: Non-PII. Required for: B2.4 state transition timeline, compliance audit. Must not be NULL.';
-
-
---
--- Name: roles; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.roles (
     code text NOT NULL,
     description text NOT NULL,
@@ -17999,11 +14136,6 @@ CREATE TABLE public.roles (
     CONSTRAINT ck_roles_code_lowercase CHECK ((code = lower(code))),
     CONSTRAINT ck_roles_code_not_empty CHECK ((length(TRIM(BOTH FROM code)) > 0))
 );
-
-
---
--- Name: session_authority; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.session_authority (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -18024,18 +14156,6 @@ CREATE TABLE public.session_authority (
 
 ALTER TABLE ONLY public.session_authority FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE session_authority; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.session_authority IS 'B1.4-P2 authoritative tenant-scoped session substrate. Enforces bounded (<=24h) session lifecycle and stale-session invalidation.';
-
-
---
--- Name: task_id_sequence; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.task_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -18043,17 +14163,7 @@ CREATE SEQUENCE public.task_id_sequence
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: task_id_sequence; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.task_id_sequence OWNED BY public.celery_taskmeta.id;
-
-
---
--- Name: taskset_id_sequence; Type: SEQUENCE; Schema: public; Owner: -
---
 
 CREATE SEQUENCE public.taskset_id_sequence
     START WITH 1
@@ -18062,17 +14172,7 @@ CREATE SEQUENCE public.taskset_id_sequence
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: taskset_id_sequence; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.taskset_id_sequence OWNED BY public.celery_tasksetmeta.id;
-
-
---
--- Name: tenant_membership_roles; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.tenant_membership_roles (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -18085,11 +14185,6 @@ CREATE TABLE public.tenant_membership_roles (
 
 ALTER TABLE ONLY public.tenant_membership_roles FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: tenant_memberships; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.tenant_memberships (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -18101,11 +14196,6 @@ CREATE TABLE public.tenant_memberships (
 );
 
 ALTER TABLE ONLY public.tenant_memberships FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: tenants; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.tenants (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -18124,60 +14214,6 @@ CREATE TABLE public.tenants (
     woocommerce_webhook_secret_key_id text,
     CONSTRAINT ck_tenants_name_not_empty CHECK ((length(TRIM(BOTH FROM name)) > 0))
 );
-
-
---
--- Name: TABLE tenants; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.tenants IS 'Stores tenant information for multi-tenant isolation. Purpose: Tenant identity and management. Data class: Non-PII. Ownership: Backend service. RLS enabled for tenant isolation.';
-
-
---
--- Name: COLUMN tenants.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.tenants.id IS 'Primary key UUID. Purpose: Unique tenant identifier. Data class: Non-PII.';
-
-
---
--- Name: COLUMN tenants.name; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.tenants.name IS 'Tenant name. Purpose: Human-readable tenant identification. Data class: Non-PII.';
-
-
---
--- Name: COLUMN tenants.created_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.tenants.created_at IS 'Record creation timestamp. Purpose: Audit trail. Data class: Non-PII.';
-
-
---
--- Name: COLUMN tenants.updated_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.tenants.updated_at IS 'Record update timestamp. Purpose: Audit trail. Data class: Non-PII.';
-
-
---
--- Name: COLUMN tenants.api_key_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.tenants.api_key_hash IS 'Hashed API key for tenant authentication. INVARIANT: auth_critical. Purpose: Authenticate API requests and link to tenant. Data class: Security credential (hashed). Required for: B0.4 ingestion, B1.2 auth service. Must be unique.';
-
-
---
--- Name: COLUMN tenants.notification_email; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.tenants.notification_email IS 'Email address for tenant-specific notifications. INVARIANT: auth_critical. Purpose: Send reconciliation alerts, system notifications. Data class: PII (email address). Required for: B0.4 notifications, B2.x alerting. Must not be empty.';
-
-
---
--- Name: trust_access_log; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.trust_access_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -18229,11 +14265,6 @@ CREATE TABLE public.trust_access_log (
 
 ALTER TABLE ONLY public.trust_access_log FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: trust_envelope_issuance_log; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.trust_envelope_issuance_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -18253,11 +14284,6 @@ CREATE TABLE public.trust_envelope_issuance_log (
 );
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: trust_export_artifact_attempts; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.trust_export_artifact_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -18286,11 +14312,6 @@ CREATE TABLE public.trust_export_artifact_attempts (
 
 ALTER TABLE ONLY public.trust_export_artifact_attempts FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: trust_issuance_attempts; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.trust_issuance_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -18317,11 +14338,6 @@ CREATE TABLE public.trust_issuance_attempts (
 
 ALTER TABLE ONLY public.trust_issuance_attempts FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: trust_final_issuance_identity; Type: VIEW; Schema: public; Owner: -
---
-
 CREATE VIEW public.trust_final_issuance_identity WITH (security_barrier='true') AS
  SELECT history.tenant_id,
     history.envelope_hash,
@@ -18335,22 +14351,10 @@ CREATE VIEW public.trust_final_issuance_identity WITH (security_barrier='true') 
     (attempt.signed_envelope ->> 'envelope_id'::text) AS source_envelope_id,
     ((attempt.signed_envelope -> 'policy_action_authority'::text) ->> 'policy_state'::text) AS policy_state,
     attempt.signed_envelope
-   FROM ((public.trust_envelope_issuance_log history
-     JOIN public.trust_access_log ledger ON (((ledger.tenant_id = history.tenant_id) AND (ledger.audit_ref = history.access_audit_ref))))
-     JOIN public.trust_issuance_attempts attempt ON (((attempt.tenant_id = ledger.tenant_id) AND (attempt.audit_ref = ledger.audit_ref) AND (attempt.id = ledger.issued_attempt_id))))
+   FROM ((trust_envelope_issuance_log history
+     JOIN trust_access_log ledger ON (((ledger.tenant_id = history.tenant_id) AND (ledger.audit_ref = history.access_audit_ref))))
+     JOIN trust_issuance_attempts attempt ON (((attempt.tenant_id = ledger.tenant_id) AND (attempt.audit_ref = ledger.audit_ref) AND (attempt.id = ledger.issued_attempt_id))))
   WHERE ((history.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (history.status = 'success'::text) AND (ledger.issuance_state = 'issued'::text) AND (attempt.attempt_state = 'issued'::text) AND (NOT (attempt.signed_envelope IS DISTINCT FROM ledger.issued_envelope)) AND (NOT (attempt.signature IS DISTINCT FROM ledger.issued_signature)) AND (NOT (attempt.signature_hash IS DISTINCT FROM ledger.issued_signature_hash)) AND (NOT (attempt.signing_key_id IS DISTINCT FROM ledger.issued_signing_key_id)));
-
-
---
--- Name: VIEW trust_final_issuance_identity; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON VIEW public.trust_final_issuance_identity IS 'Explicit audit-stage to final signer-confirmed artifact mapping. envelope_hash remains the immutable audit-stage foreign key; final_envelope_hash identifies the retained final artifact.';
-
-
---
--- Name: trust_rate_limit_state; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.trust_rate_limit_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -18368,11 +14372,6 @@ CREATE TABLE public.trust_rate_limit_state (
 
 ALTER TABLE ONLY public.trust_rate_limit_state FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: trust_replay_events; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.trust_replay_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -18388,11 +14387,6 @@ CREATE TABLE public.trust_replay_events (
 
 ALTER TABLE ONLY public.trust_replay_events FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: trust_request_nonces; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.trust_request_nonces (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -18406,11 +14400,6 @@ CREATE TABLE public.trust_request_nonces (
 );
 
 ALTER TABLE ONLY public.trust_request_nonces FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: trust_scope_denial_events; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.trust_scope_denial_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -18433,11 +14422,6 @@ CREATE TABLE public.trust_scope_denial_events (
 
 ALTER TABLE ONLY public.trust_scope_denial_events FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: trust_tenant_policy_events; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.trust_tenant_policy_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -18453,11 +14437,6 @@ CREATE TABLE public.trust_tenant_policy_events (
 
 ALTER TABLE ONLY public.trust_tenant_policy_events FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: trust_tenant_policy_events_revision_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 ALTER TABLE public.trust_tenant_policy_events ALTER COLUMN revision ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.trust_tenant_policy_events_revision_seq
     START WITH 1
@@ -18466,11 +14445,6 @@ ALTER TABLE public.trust_tenant_policy_events ALTER COLUMN revision ADD GENERATE
     NO MAXVALUE
     CACHE 1
 );
-
-
---
--- Name: users; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.users (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -18486,11 +14460,6 @@ CREATE TABLE public.users (
 );
 
 ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: webhook_ingress_identities; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.webhook_ingress_identities (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -18519,18 +14488,6 @@ CREATE TABLE public.webhook_ingress_identities (
 
 ALTER TABLE ONLY public.webhook_ingress_identities FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE webhook_ingress_identities; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.webhook_ingress_identities IS 'B2.2-P3 canonical provider-preserving ingress identity envelope and explicit verified-commerce state substrate.';
-
-
---
--- Name: worker_failed_jobs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.worker_failed_jobs (
     id uuid NOT NULL,
     task_id character varying(155) NOT NULL,
@@ -18557,137 +14514,6 @@ CREATE TABLE public.worker_failed_jobs (
 
 ALTER TABLE ONLY public.worker_failed_jobs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: COLUMN worker_failed_jobs.task_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.task_id IS 'Celery task execution ID';
-
-
---
--- Name: COLUMN worker_failed_jobs.task_name; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.task_name IS 'Fully qualified task name (app.tasks.module.function)';
-
-
---
--- Name: COLUMN worker_failed_jobs.queue; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.queue IS 'Target queue name (housekeeping, maintenance, llm)';
-
-
---
--- Name: COLUMN worker_failed_jobs.worker; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.worker IS 'Worker hostname/PID that executed task';
-
-
---
--- Name: COLUMN worker_failed_jobs.task_args; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.task_args IS 'Positional arguments as JSON array';
-
-
---
--- Name: COLUMN worker_failed_jobs.task_kwargs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.task_kwargs IS 'Keyword arguments as JSON object';
-
-
---
--- Name: COLUMN worker_failed_jobs.tenant_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.tenant_id IS 'Tenant UUID if task is tenant-scoped';
-
-
---
--- Name: COLUMN worker_failed_jobs.error_type; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.error_type IS 'Error classification (transient, permanent, unknown)';
-
-
---
--- Name: COLUMN worker_failed_jobs.exception_class; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.exception_class IS 'Python exception class name';
-
-
---
--- Name: COLUMN worker_failed_jobs.error_message; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.error_message IS 'Exception message (first 500 chars)';
-
-
---
--- Name: COLUMN worker_failed_jobs.traceback; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.traceback IS 'Full Python traceback (first 2000 chars)';
-
-
---
--- Name: COLUMN worker_failed_jobs.retry_count; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.retry_count IS 'Number of retry attempts';
-
-
---
--- Name: COLUMN worker_failed_jobs.last_retry_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.last_retry_at IS 'Timestamp of last retry attempt';
-
-
---
--- Name: COLUMN worker_failed_jobs.status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.status IS 'Remediation status (pending, in_progress, resolved, abandoned)';
-
-
---
--- Name: COLUMN worker_failed_jobs.remediation_notes; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.remediation_notes IS 'Engineer notes on remediation actions';
-
-
---
--- Name: COLUMN worker_failed_jobs.resolved_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.resolved_at IS 'Timestamp when task failure resolved';
-
-
---
--- Name: COLUMN worker_failed_jobs.correlation_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.correlation_id IS 'Request correlation ID from task context';
-
-
---
--- Name: COLUMN worker_failed_jobs.failed_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_failed_jobs.failed_at IS 'Timestamp when task failed';
-
-
---
--- Name: worker_side_effects; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.worker_side_effects (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -18699,11039 +14525,3367 @@ CREATE TABLE public.worker_side_effects (
 
 ALTER TABLE ONLY public.worker_side_effects FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: TABLE worker_side_effects; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.worker_side_effects IS 'Tenant-scoped worker side effects. Purpose: Idempotency/crash-safety proofs for background tasks. Data class: Non-PII. RLS enforced.';
-
-
---
--- Name: COLUMN worker_side_effects.task_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.worker_side_effects.task_id IS 'Celery task_id used as idempotency key for crash-safe re-delivery.';
-
-
---
--- Name: bayesian_artifacts_p00; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p00 FOR VALUES WITH (modulus 16, remainder 0);
-
-
---
--- Name: bayesian_artifacts_p01; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p01 FOR VALUES WITH (modulus 16, remainder 1);
 
-
---
--- Name: bayesian_artifacts_p02; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p02 FOR VALUES WITH (modulus 16, remainder 2);
-
-
---
--- Name: bayesian_artifacts_p03; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p03 FOR VALUES WITH (modulus 16, remainder 3);
 
-
---
--- Name: bayesian_artifacts_p04; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p04 FOR VALUES WITH (modulus 16, remainder 4);
-
-
---
--- Name: bayesian_artifacts_p05; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p05 FOR VALUES WITH (modulus 16, remainder 5);
 
-
---
--- Name: bayesian_artifacts_p06; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p06 FOR VALUES WITH (modulus 16, remainder 6);
-
-
---
--- Name: bayesian_artifacts_p07; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p07 FOR VALUES WITH (modulus 16, remainder 7);
 
-
---
--- Name: bayesian_artifacts_p08; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p08 FOR VALUES WITH (modulus 16, remainder 8);
-
-
---
--- Name: bayesian_artifacts_p09; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p09 FOR VALUES WITH (modulus 16, remainder 9);
 
-
---
--- Name: bayesian_artifacts_p10; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p10 FOR VALUES WITH (modulus 16, remainder 10);
-
-
---
--- Name: bayesian_artifacts_p11; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p11 FOR VALUES WITH (modulus 16, remainder 11);
 
-
---
--- Name: bayesian_artifacts_p12; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p12 FOR VALUES WITH (modulus 16, remainder 12);
-
-
---
--- Name: bayesian_artifacts_p13; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p13 FOR VALUES WITH (modulus 16, remainder 13);
 
-
---
--- Name: bayesian_artifacts_p14; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p14 FOR VALUES WITH (modulus 16, remainder 14);
-
-
---
--- Name: bayesian_artifacts_p15; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p15 FOR VALUES WITH (modulus 16, remainder 15);
 
-
---
--- Name: bayesian_model_fits_p00; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p00 FOR VALUES WITH (modulus 16, remainder 0);
-
-
---
--- Name: bayesian_model_fits_p01; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p01 FOR VALUES WITH (modulus 16, remainder 1);
 
-
---
--- Name: bayesian_model_fits_p02; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p02 FOR VALUES WITH (modulus 16, remainder 2);
-
-
---
--- Name: bayesian_model_fits_p03; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p03 FOR VALUES WITH (modulus 16, remainder 3);
 
-
---
--- Name: bayesian_model_fits_p04; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p04 FOR VALUES WITH (modulus 16, remainder 4);
-
-
---
--- Name: bayesian_model_fits_p05; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p05 FOR VALUES WITH (modulus 16, remainder 5);
 
-
---
--- Name: bayesian_model_fits_p06; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p06 FOR VALUES WITH (modulus 16, remainder 6);
-
-
---
--- Name: bayesian_model_fits_p07; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p07 FOR VALUES WITH (modulus 16, remainder 7);
 
-
---
--- Name: bayesian_model_fits_p08; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p08 FOR VALUES WITH (modulus 16, remainder 8);
-
-
---
--- Name: bayesian_model_fits_p09; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p09 FOR VALUES WITH (modulus 16, remainder 9);
 
-
---
--- Name: bayesian_model_fits_p10; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p10 FOR VALUES WITH (modulus 16, remainder 10);
-
-
---
--- Name: bayesian_model_fits_p11; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p11 FOR VALUES WITH (modulus 16, remainder 11);
 
-
---
--- Name: bayesian_model_fits_p12; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p12 FOR VALUES WITH (modulus 16, remainder 12);
-
-
---
--- Name: bayesian_model_fits_p13; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p13 FOR VALUES WITH (modulus 16, remainder 13);
 
-
---
--- Name: bayesian_model_fits_p14; Type: TABLE ATTACH; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p14 FOR VALUES WITH (modulus 16, remainder 14);
-
-
---
--- Name: bayesian_model_fits_p15; Type: TABLE ATTACH; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p15 FOR VALUES WITH (modulus 16, remainder 15);
 
-
---
--- Name: b26_p2_verdict_supersession_ledger seq; Type: DEFAULT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_verdict_supersession_ledger ALTER COLUMN seq SET DEFAULT nextval('public.b26_p2_verdict_supersession_ledger_seq_seq'::regclass);
-
-
---
--- Name: celery_taskmeta id; Type: DEFAULT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.celery_taskmeta ALTER COLUMN id SET DEFAULT nextval('public.task_id_sequence'::regclass);
 
-
---
--- Name: celery_tasksetmeta id; Type: DEFAULT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.celery_tasksetmeta ALTER COLUMN id SET DEFAULT nextval('public.taskset_id_sequence'::regclass);
-
-
---
--- Name: kombu_message id; Type: DEFAULT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.kombu_message ALTER COLUMN id SET DEFAULT nextval('public.message_id_sequence'::regclass);
 
-
---
--- Name: kombu_queue id; Type: DEFAULT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.kombu_queue ALTER COLUMN id SET DEFAULT nextval('public.queue_id_sequence'::regclass);
 
-
---
--- Name: pii_audit_findings id; Type: DEFAULT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.pii_audit_findings ALTER COLUMN id SET DEFAULT nextval('public.pii_audit_findings_id_seq'::regclass);
-
-
---
--- Name: agent_clients agent_clients_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_clients
     ADD CONSTRAINT agent_clients_pkey PRIMARY KEY (id);
 
-
---
--- Name: agent_scope_grants agent_scope_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.agent_scope_grants
     ADD CONSTRAINT agent_scope_grants_pkey PRIMARY KEY (id);
-
-
---
--- Name: agent_service_credentials agent_service_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_service_credentials
     ADD CONSTRAINT agent_service_credentials_pkey PRIMARY KEY (id);
 
-
---
--- Name: agent_token_revocations agent_token_revocations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.agent_token_revocations
     ADD CONSTRAINT agent_token_revocations_pkey PRIMARY KEY (id);
-
-
---
--- Name: alembic_version alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.alembic_version
     ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 
-
---
--- Name: attribution_allocations attribution_allocations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_pkey PRIMARY KEY (id);
-
-
---
--- Name: attribution_commerce_identities attribution_commerce_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT attribution_commerce_identities_pkey PRIMARY KEY (id);
 
-
---
--- Name: attribution_events attribution_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT attribution_events_pkey PRIMARY KEY (id);
-
-
---
--- Name: attribution_recompute_jobs attribution_recompute_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_recompute_jobs
     ADD CONSTRAINT attribution_recompute_jobs_pkey PRIMARY KEY (id);
 
-
---
--- Name: auth_refresh_tokens auth_refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_pkey PRIMARY KEY (id);
-
-
---
--- Name: b23_exception_records b23_exception_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_exception_records
     ADD CONSTRAINT b23_exception_records_pkey PRIMARY KEY (id);
 
-
---
--- Name: b23_match_task_dispatches b23_match_task_dispatches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT b23_match_task_dispatches_pkey PRIMARY KEY (id);
-
-
---
--- Name: b23_match_verdicts b23_match_verdicts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_pkey PRIMARY KEY (id);
 
-
---
--- Name: b23_revenue_events b23_revenue_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_pkey PRIMARY KEY (id);
-
-
---
--- Name: b23_webhook_ingestion_logs b23_webhook_ingestion_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_pkey PRIMARY KEY (id);
 
-
---
--- Name: b24_active_execution_leases b24_active_execution_leases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_active_execution_leases
     ADD CONSTRAINT b24_active_execution_leases_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end);
-
-
---
--- Name: b24_dirty_events b24_dirty_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_dirty_events
     ADD CONSTRAINT b24_dirty_events_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: b24_feature_authority_build_outbox b24_feature_authority_build_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT b24_feature_authority_build_outbox_pkey PRIMARY KEY (tenant_id, id);
-
-
---
--- Name: b24_feature_authority_build_requests b24_feature_authority_build_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_feature_authority_build_requests
     ADD CONSTRAINT b24_feature_authority_build_requests_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
-
---
--- Name: b24_fit_dispatch_outbox b24_fit_dispatch_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_pkey PRIMARY KEY (tenant_id, id);
-
-
---
--- Name: b24_fit_planner_wakeups b24_fit_planner_wakeups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_fit_planner_wakeups
     ADD CONSTRAINT b24_fit_planner_wakeups_pkey PRIMARY KEY (tenant_id);
 
-
---
--- Name: b24_fit_policy_replan_lineage b24_fit_policy_replan_lineage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_fit_policy_replan_lineage
     ADD CONSTRAINT b24_fit_policy_replan_lineage_pkey PRIMARY KEY (tenant_id, fit_id, transition_sequence);
-
-
---
--- Name: b24_fit_recovery_outbox b24_fit_recovery_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT b24_fit_recovery_outbox_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: b24_inference_policy_registry b24_inference_policy_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_inference_policy_registry
     ADD CONSTRAINT b24_inference_policy_registry_pkey PRIMARY KEY (policy_bundle_hash);
-
-
---
--- Name: b24_source_window_feature_authority b24_source_window_feature_authority_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
-
---
--- Name: b24_worker_process_authority b24_worker_process_authority_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_worker_process_authority
     ADD CONSTRAINT b24_worker_process_authority_pkey PRIMARY KEY (generation_id, pid);
-
-
---
--- Name: b26_p2_adjustment_attestation b26_p2_adjustment_attestation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_adjustment_attestation
     ADD CONSTRAINT b26_p2_adjustment_attestation_pkey PRIMARY KEY (adjustment_evidence_id);
 
-
---
--- Name: b26_p2_adjustment_evidence b26_p2_adjustment_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence
     ADD CONSTRAINT b26_p2_adjustment_evidence_pkey PRIMARY KEY (id);
-
-
---
--- Name: b26_p2_adjustment_evidence b26_p2_adjustment_evidence_tenant_id_provider_provider_nati_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence
     ADD CONSTRAINT b26_p2_adjustment_evidence_tenant_id_provider_provider_nati_key UNIQUE (tenant_id, provider, provider_native_event_reference);
 
-
---
--- Name: b26_p2_authority_universe b26_p2_authority_universe_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_authority_universe
     ADD CONSTRAINT b26_p2_authority_universe_pkey PRIMARY KEY (id);
-
-
---
--- Name: b26_p2_conduction_receipts b26_p2_conduction_receipts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_conduction_receipts
     ADD CONSTRAINT b26_p2_conduction_receipts_pkey PRIMARY KEY (task_id);
 
-
---
--- Name: b26_p2_evaluator_heartbeat b26_p2_evaluator_heartbeat_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_evaluator_heartbeat
     ADD CONSTRAINT b26_p2_evaluator_heartbeat_pkey PRIMARY KEY (tenant_id);
-
-
---
--- Name: b26_p2_execution_outbox b26_p2_execution_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT b26_p2_execution_outbox_pkey PRIMARY KEY (id);
 
-
---
--- Name: b26_p2_execution_quarantine b26_p2_execution_quarantine_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_execution_quarantine
     ADD CONSTRAINT b26_p2_execution_quarantine_pkey PRIMARY KEY (id);
-
-
---
--- Name: b26_p2_history_integrity_observations b26_p2_history_integrity_observations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_history_integrity_observations
     ADD CONSTRAINT b26_p2_history_integrity_observations_pkey PRIMARY KEY (id);
 
-
---
--- Name: b26_p2_ingress_auth_witness b26_p2_ingress_auth_witness_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
     ADD CONSTRAINT b26_p2_ingress_auth_witness_pkey PRIMARY KEY (webhook_ingress_identity_id);
-
-
---
--- Name: b26_p2_operational_floor b26_p2_operational_floor_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_operational_floor
     ADD CONSTRAINT b26_p2_operational_floor_pkey PRIMARY KEY (id);
 
-
---
--- Name: b26_p2_provenance_evidence b26_p2_provenance_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_provenance_evidence
     ADD CONSTRAINT b26_p2_provenance_evidence_pkey PRIMARY KEY (webhook_ingress_identity_id);
-
-
---
--- Name: b26_p2_publication_history b26_p2_publication_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_publication_history
     ADD CONSTRAINT b26_p2_publication_history_pkey PRIMARY KEY (law_kind, law_id, law_version, entry_hash);
 
-
---
--- Name: b26_p2_publication_history b26_p2_publication_identity_single_valued; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_publication_history
     ADD CONSTRAINT b26_p2_publication_identity_single_valued UNIQUE (law_kind, law_id, law_version);
-
-
---
--- Name: b26_p2_scheduler_heartbeat b26_p2_scheduler_heartbeat_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat
     ADD CONSTRAINT b26_p2_scheduler_heartbeat_pkey PRIMARY KEY (tenant_id);
 
-
---
--- Name: b26_p2_scope_policy_authority b26_p2_scope_policy_authority_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_scope_policy_authority
     ADD CONSTRAINT b26_p2_scope_policy_authority_pkey PRIMARY KEY (scope_policy_version);
-
-
---
--- Name: b26_p2_semantic_regime_registry b26_p2_semantic_regime_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_semantic_regime_registry
     ADD CONSTRAINT b26_p2_semantic_regime_registry_pkey PRIMARY KEY (regime_id);
 
-
---
--- Name: b26_p2_source_money_attestation b26_p2_source_money_attestation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_source_money_attestation
     ADD CONSTRAINT b26_p2_source_money_attestation_pkey PRIMARY KEY (webhook_ingress_identity_id);
-
-
---
--- Name: b26_p2_task_authority_directory b26_p2_task_authority_directory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_task_authority_directory
     ADD CONSTRAINT b26_p2_task_authority_directory_pkey PRIMARY KEY (task_id);
 
-
---
--- Name: b26_p2_verdict_supersession_ledger b26_p2_verdict_supersession_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_verdict_supersession_ledger
     ADD CONSTRAINT b26_p2_verdict_supersession_ledger_pkey PRIMARY KEY (id);
-
-
---
--- Name: b27_explanation_materializations b27_explanation_materializations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b27_explanation_materializations
     ADD CONSTRAINT b27_explanation_materializations_pkey PRIMARY KEY (id);
 
-
---
--- Name: b27_narrative_template_registry b27_narrative_template_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b27_narrative_template_registry
     ADD CONSTRAINT b27_narrative_template_registry_pkey PRIMARY KEY (registry_version);
-
-
---
--- Name: b27_narrative_templates b27_narrative_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b27_narrative_templates
     ADD CONSTRAINT b27_narrative_templates_pkey PRIMARY KEY (template_id);
 
-
---
--- Name: b28_proposals b28_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT b28_proposals_pkey PRIMARY KEY (id);
-
-
---
--- Name: b28_request_authentications b28_request_authentications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b28_request_authentications
     ADD CONSTRAINT b28_request_authentications_pkey PRIMARY KEY (id);
 
-
---
--- Name: b28_simulation_requests b28_simulation_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_pkey PRIMARY KEY (id);
-
-
---
--- Name: b28_simulation_results b28_simulation_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b28_simulation_results
     ADD CONSTRAINT b28_simulation_results_pkey PRIMARY KEY (id);
 
-
---
--- Name: bayesian_artifact_storage_quotas bayesian_artifact_storage_quotas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
     ADD CONSTRAINT bayesian_artifact_storage_quotas_pkey PRIMARY KEY (tenant_id);
-
-
---
--- Name: bayesian_artifacts bayesian_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p00 bayesian_artifacts_p00_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p00
     ADD CONSTRAINT bayesian_artifacts_p00_pkey PRIMARY KEY (tenant_id, id);
-
-
---
--- Name: bayesian_artifacts uq_bayesian_artifacts_tenant_artifact_ref; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts
     ADD CONSTRAINT uq_bayesian_artifacts_tenant_artifact_ref UNIQUE (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p00 bayesian_artifacts_p00_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p00
     ADD CONSTRAINT bayesian_artifacts_p00_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p01 bayesian_artifacts_p01_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p01
     ADD CONSTRAINT bayesian_artifacts_p01_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p01 bayesian_artifacts_p01_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p01
     ADD CONSTRAINT bayesian_artifacts_p01_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p02 bayesian_artifacts_p02_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p02
     ADD CONSTRAINT bayesian_artifacts_p02_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p02 bayesian_artifacts_p02_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p02
     ADD CONSTRAINT bayesian_artifacts_p02_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p03 bayesian_artifacts_p03_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p03
     ADD CONSTRAINT bayesian_artifacts_p03_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p03 bayesian_artifacts_p03_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p03
     ADD CONSTRAINT bayesian_artifacts_p03_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p04 bayesian_artifacts_p04_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p04
     ADD CONSTRAINT bayesian_artifacts_p04_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p04 bayesian_artifacts_p04_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p04
     ADD CONSTRAINT bayesian_artifacts_p04_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p05 bayesian_artifacts_p05_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p05
     ADD CONSTRAINT bayesian_artifacts_p05_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p05 bayesian_artifacts_p05_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p05
     ADD CONSTRAINT bayesian_artifacts_p05_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p06 bayesian_artifacts_p06_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p06
     ADD CONSTRAINT bayesian_artifacts_p06_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p06 bayesian_artifacts_p06_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p06
     ADD CONSTRAINT bayesian_artifacts_p06_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p07 bayesian_artifacts_p07_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p07
     ADD CONSTRAINT bayesian_artifacts_p07_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p07 bayesian_artifacts_p07_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p07
     ADD CONSTRAINT bayesian_artifacts_p07_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p08 bayesian_artifacts_p08_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p08
     ADD CONSTRAINT bayesian_artifacts_p08_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p08 bayesian_artifacts_p08_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p08
     ADD CONSTRAINT bayesian_artifacts_p08_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p09 bayesian_artifacts_p09_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p09
     ADD CONSTRAINT bayesian_artifacts_p09_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p09 bayesian_artifacts_p09_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p09
     ADD CONSTRAINT bayesian_artifacts_p09_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p10 bayesian_artifacts_p10_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p10
     ADD CONSTRAINT bayesian_artifacts_p10_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p10 bayesian_artifacts_p10_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p10
     ADD CONSTRAINT bayesian_artifacts_p10_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p11 bayesian_artifacts_p11_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p11
     ADD CONSTRAINT bayesian_artifacts_p11_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p11 bayesian_artifacts_p11_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p11
     ADD CONSTRAINT bayesian_artifacts_p11_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p12 bayesian_artifacts_p12_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p12
     ADD CONSTRAINT bayesian_artifacts_p12_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p12 bayesian_artifacts_p12_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p12
     ADD CONSTRAINT bayesian_artifacts_p12_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p13 bayesian_artifacts_p13_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p13
     ADD CONSTRAINT bayesian_artifacts_p13_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p13 bayesian_artifacts_p13_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p13
     ADD CONSTRAINT bayesian_artifacts_p13_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p14 bayesian_artifacts_p14_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p14
     ADD CONSTRAINT bayesian_artifacts_p14_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p14 bayesian_artifacts_p14_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p14
     ADD CONSTRAINT bayesian_artifacts_p14_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p15 bayesian_artifacts_p15_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_artifacts_p15
     ADD CONSTRAINT bayesian_artifacts_p15_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_artifacts_p15 bayesian_artifacts_p15_tenant_id_artifact_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifacts_p15
     ADD CONSTRAINT bayesian_artifacts_p15_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_model_fits bayesian_model_fits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits
     ADD CONSTRAINT bayesian_model_fits_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p00 bayesian_model_fits_p00_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p00
     ADD CONSTRAINT bayesian_model_fits_p00_pkey PRIMARY KEY (tenant_id, id);
-
-
---
--- Name: bayesian_model_fits uq_bayesian_model_fits_tenant_model_window_snapshot; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits
     ADD CONSTRAINT uq_bayesian_model_fits_tenant_model_window_snapshot UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
-
---
--- Name: bayesian_model_fits_p00 bayesian_model_fits_p00_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p00
     ADD CONSTRAINT bayesian_model_fits_p00_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p01 bayesian_model_fits_p01_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p01
     ADD CONSTRAINT bayesian_model_fits_p01_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p01 bayesian_model_fits_p01_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p01
     ADD CONSTRAINT bayesian_model_fits_p01_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p02 bayesian_model_fits_p02_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p02
     ADD CONSTRAINT bayesian_model_fits_p02_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p02 bayesian_model_fits_p02_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p02
     ADD CONSTRAINT bayesian_model_fits_p02_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p03 bayesian_model_fits_p03_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p03
     ADD CONSTRAINT bayesian_model_fits_p03_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p03 bayesian_model_fits_p03_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p03
     ADD CONSTRAINT bayesian_model_fits_p03_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p04 bayesian_model_fits_p04_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p04
     ADD CONSTRAINT bayesian_model_fits_p04_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p04 bayesian_model_fits_p04_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p04
     ADD CONSTRAINT bayesian_model_fits_p04_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p05 bayesian_model_fits_p05_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p05
     ADD CONSTRAINT bayesian_model_fits_p05_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p05 bayesian_model_fits_p05_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p05
     ADD CONSTRAINT bayesian_model_fits_p05_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p06 bayesian_model_fits_p06_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p06
     ADD CONSTRAINT bayesian_model_fits_p06_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p06 bayesian_model_fits_p06_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p06
     ADD CONSTRAINT bayesian_model_fits_p06_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p07 bayesian_model_fits_p07_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p07
     ADD CONSTRAINT bayesian_model_fits_p07_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p07 bayesian_model_fits_p07_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p07
     ADD CONSTRAINT bayesian_model_fits_p07_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p08 bayesian_model_fits_p08_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p08
     ADD CONSTRAINT bayesian_model_fits_p08_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p08 bayesian_model_fits_p08_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p08
     ADD CONSTRAINT bayesian_model_fits_p08_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p09 bayesian_model_fits_p09_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p09
     ADD CONSTRAINT bayesian_model_fits_p09_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p09 bayesian_model_fits_p09_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p09
     ADD CONSTRAINT bayesian_model_fits_p09_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p10 bayesian_model_fits_p10_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p10
     ADD CONSTRAINT bayesian_model_fits_p10_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p10 bayesian_model_fits_p10_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p10
     ADD CONSTRAINT bayesian_model_fits_p10_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p11 bayesian_model_fits_p11_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p11
     ADD CONSTRAINT bayesian_model_fits_p11_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p11 bayesian_model_fits_p11_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p11
     ADD CONSTRAINT bayesian_model_fits_p11_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p12 bayesian_model_fits_p12_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p12
     ADD CONSTRAINT bayesian_model_fits_p12_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p12 bayesian_model_fits_p12_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p12
     ADD CONSTRAINT bayesian_model_fits_p12_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p13 bayesian_model_fits_p13_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p13
     ADD CONSTRAINT bayesian_model_fits_p13_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p13 bayesian_model_fits_p13_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p13
     ADD CONSTRAINT bayesian_model_fits_p13_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p14 bayesian_model_fits_p14_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p14
     ADD CONSTRAINT bayesian_model_fits_p14_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p14 bayesian_model_fits_p14_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p14
     ADD CONSTRAINT bayesian_model_fits_p14_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p15 bayesian_model_fits_p15_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.bayesian_model_fits_p15
     ADD CONSTRAINT bayesian_model_fits_p15_pkey PRIMARY KEY (tenant_id, id);
 
-
---
--- Name: bayesian_model_fits_p15 bayesian_model_fits_p15_tenant_id_model_type_model_version__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_model_fits_p15
     ADD CONSTRAINT bayesian_model_fits_p15_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: budget_jobs budget_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT budget_jobs_pkey PRIMARY KEY (id);
 
-
---
--- Name: budget_optimization_jobs budget_optimization_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_pkey PRIMARY KEY (id);
-
-
---
--- Name: worker_failed_jobs celery_task_failures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.worker_failed_jobs
     ADD CONSTRAINT celery_task_failures_pkey PRIMARY KEY (id);
 
-
---
--- Name: celery_taskmeta celery_taskmeta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.celery_taskmeta
     ADD CONSTRAINT celery_taskmeta_pkey PRIMARY KEY (id);
-
-
---
--- Name: celery_taskmeta celery_taskmeta_task_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.celery_taskmeta
     ADD CONSTRAINT celery_taskmeta_task_id_key UNIQUE (task_id);
 
-
---
--- Name: celery_tasksetmeta celery_tasksetmeta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.celery_tasksetmeta
     ADD CONSTRAINT celery_tasksetmeta_pkey PRIMARY KEY (id);
-
-
---
--- Name: celery_tasksetmeta celery_tasksetmeta_taskset_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.celery_tasksetmeta
     ADD CONSTRAINT celery_tasksetmeta_taskset_id_key UNIQUE (taskset_id);
 
-
---
--- Name: channel_assignment_corrections channel_assignment_corrections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.channel_assignment_corrections
     ADD CONSTRAINT channel_assignment_corrections_pkey PRIMARY KEY (id);
-
-
---
--- Name: channel_state_transitions channel_state_transitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.channel_state_transitions
     ADD CONSTRAINT channel_state_transitions_pkey PRIMARY KEY (id);
 
-
---
--- Name: channel_taxonomy channel_taxonomy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.channel_taxonomy
     ADD CONSTRAINT channel_taxonomy_pkey PRIMARY KEY (code);
-
-
---
--- Name: b23_match_verdicts ck_b23_match_verdicts_matched_requires_attribution_event; Type: CHECK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE public.b23_match_verdicts
     ADD CONSTRAINT ck_b23_match_verdicts_matched_requires_attribution_event CHECK ((((status)::text <> ALL ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) OR (attribution_event_id IS NOT NULL))) NOT VALID;
 
-
---
--- Name: CONSTRAINT ck_b23_match_verdicts_matched_requires_attribution_event ON b23_match_verdicts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT ck_b23_match_verdicts_matched_requires_attribution_event ON public.b23_match_verdicts IS 'B2.3-P6 downstream-readiness guard: matched/post-match verdict states must carry a durable attribution_event_id for B2.4 consumption.';
-
-
---
--- Name: bayesian_model_fits ck_bayesian_model_fits_available_confidence_complete; Type: CHECK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_available_confidence_complete CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text <> ALL ((ARRAY['low'::character varying, 'medium'::character varying, 'high'::character varying])::text[])) OR (((status)::text = 'succeeded'::text) AND ((data_completeness_status)::text = 'complete'::text) AND (fallback_applied = false) AND ((diagnostic_status)::text = 'passed'::text) AND ((credible_interval_status)::text = 'available'::text) AND (artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL) AND (confidence_evidence_snapshot_hash IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND (confidence_currency_count <= 1) AND (confidence_classified_at IS NOT NULL) AND (confidence_classified_at >= source_read_completed_at) AND (source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at) AND (confidence_bucket_reason IS NOT NULL) AND ((((confidence_bucket)::text = 'high'::text) AND ((confidence_bucket_reason)::text = 'narrow_interval'::text)) OR (((confidence_bucket)::text = 'medium'::text) AND ((confidence_bucket_reason)::text = 'moderate_interval'::text)) OR (((confidence_bucket)::text = 'low'::text) AND ((confidence_bucket_reason)::text = 'wide_interval'::text)))))) NOT VALID;
-
-
---
--- Name: bayesian_model_fits ck_bayesian_model_fits_available_policy_bundle; Type: CHECK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_available_policy_bundle CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text <> ALL (ARRAY['low'::text, 'medium'::text, 'high'::text])) OR ((inference_profile_version IS NOT NULL) AND (runtime_policy_version IS NOT NULL) AND (sampling_policy_version IS NOT NULL) AND (diagnostic_policy_version IS NOT NULL) AND (policy_bundle_hash IS NOT NULL) AND (char_length((policy_bundle_hash)::text) = 64) AND (authorized_chains IS NOT NULL) AND (authorized_posterior_draws_total IS NOT NULL) AND (n_chains IS NOT NULL) AND (n_samples_actual IS NOT NULL) AND (n_chains = authorized_chains) AND (n_samples_actual = authorized_posterior_draws_total)))) NOT VALID;
 
-
---
--- Name: bayesian_model_fits ck_bayesian_model_fits_confidence_classification_state; Type: CHECK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_confidence_classification_state CHECK ((((confidence_bucket IS NULL) AND (confidence_bucket_reason IS NULL) AND (confidence_policy_version IS NULL) AND (confidence_semantics_version IS NULL) AND (confidence_classified_at IS NULL)) OR ((confidence_bucket IS NOT NULL) AND (confidence_bucket_reason IS NOT NULL) AND ((confidence_policy_version)::text = 'b24-p10-confidence-policy-v1'::text) AND ((confidence_semantics_version)::text = 'b24-p10-confidence-semantics-v1'::text) AND (confidence_classified_at IS NOT NULL)))) NOT VALID;
-
-
---
--- Name: bayesian_model_fits ck_bayesian_model_fits_confidence_evidence_hash_sha256; Type: CHECK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_confidence_evidence_hash_sha256 CHECK (((confidence_evidence_snapshot_hash IS NULL) OR ((confidence_evidence_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))) NOT VALID;
 
-
---
--- Name: bayesian_model_fits ck_bayesian_model_fits_confidence_evidence_tuple; Type: CHECK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_confidence_evidence_tuple CHECK ((((confidence_evidence_snapshot_hash IS NULL) AND (confidence_deterministic_revenue_minor IS NULL) AND (confidence_deterministic_row_count IS NULL) AND (confidence_match_verdict_count IS NULL) AND (confidence_currency_count IS NULL)) OR ((confidence_evidence_snapshot_hash IS NOT NULL) AND (confidence_deterministic_revenue_minor IS NOT NULL) AND (confidence_deterministic_row_count IS NOT NULL) AND (confidence_match_verdict_count IS NOT NULL) AND (confidence_currency_count IS NOT NULL) AND ((confidence_evidence_snapshot_hash)::text = (source_snapshot_hash)::text)))) NOT VALID;
-
-
---
--- Name: bayesian_model_fits ck_bayesian_model_fits_policy_replan_evidence; Type: CHECK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_policy_replan_evidence CHECK ((((policy_replan_count = 0) AND (superseded_policy_bundle_hash IS NULL) AND (policy_replanned_at IS NULL)) OR ((policy_replan_count > 0) AND (superseded_policy_bundle_hash IS NOT NULL) AND (char_length((superseded_policy_bundle_hash)::text) = 64) AND (policy_replanned_at IS NOT NULL)))) NOT VALID;
 
-
---
--- Name: bayesian_model_fits ck_bayesian_model_fits_source_read_pair_order; Type: CHECK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT ck_bayesian_model_fits_source_read_pair_order CHECK ((((source_read_started_at IS NULL) AND (source_read_completed_at IS NULL)) OR ((source_read_started_at IS NOT NULL) AND (source_read_completed_at IS NOT NULL) AND (source_read_completed_at >= source_read_started_at)))) NOT VALID;
-
-
---
--- Name: compliance_audit_ledger compliance_audit_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT compliance_audit_ledger_pkey PRIMARY KEY (id);
 
-
---
--- Name: dead_events dead_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.dead_events
     ADD CONSTRAINT dead_events_pkey PRIMARY KEY (id);
-
-
---
--- Name: dead_events_quarantine dead_events_quarantine_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.dead_events_quarantine
     ADD CONSTRAINT dead_events_quarantine_pkey PRIMARY KEY (id);
 
-
---
--- Name: ephemeral_click_resolution ephemeral_click_resolution_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT ephemeral_click_resolution_pkey PRIMARY KEY (id);
-
-
---
--- Name: ephemeral_order_resolution ephemeral_order_resolution_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.ephemeral_order_resolution
     ADD CONSTRAINT ephemeral_order_resolution_pkey PRIMARY KEY (id);
 
-
---
--- Name: explanation_cache explanation_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_pkey PRIMARY KEY (id);
-
-
---
--- Name: explanation_cache explanation_cache_tenant_id_entity_type_entity_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_tenant_id_entity_type_entity_id_key UNIQUE (tenant_id, entity_type, entity_id);
 
-
---
--- Name: investigation_jobs investigation_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT investigation_jobs_pkey PRIMARY KEY (id);
-
-
---
--- Name: investigation_tool_calls investigation_tool_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.investigation_tool_calls
     ADD CONSTRAINT investigation_tool_calls_pkey PRIMARY KEY (id);
 
-
---
--- Name: investigations investigations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_pkey PRIMARY KEY (id);
-
-
---
--- Name: jwt_verification_cache jwt_verification_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.jwt_verification_cache
     ADD CONSTRAINT jwt_verification_cache_pkey PRIMARY KEY (singleton_id);
 
-
---
--- Name: kombu_message kombu_message_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT kombu_message_pkey PRIMARY KEY (id);
-
-
---
--- Name: kombu_queue kombu_queue_name_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.kombu_queue
     ADD CONSTRAINT kombu_queue_name_key UNIQUE (name);
 
-
---
--- Name: kombu_queue kombu_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.kombu_queue
     ADD CONSTRAINT kombu_queue_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_api_calls llm_api_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT llm_api_calls_pkey PRIMARY KEY (id);
 
-
---
--- Name: llm_breaker_state llm_breaker_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_breaker_state
     ADD CONSTRAINT llm_breaker_state_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_breaker_state llm_breaker_state_tenant_id_user_id_breaker_key_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_breaker_state
     ADD CONSTRAINT llm_breaker_state_tenant_id_user_id_breaker_key_key UNIQUE (tenant_id, user_id, breaker_key);
 
-
---
--- Name: llm_budget_reservations llm_budget_reservations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_budget_reservations
     ADD CONSTRAINT llm_budget_reservations_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_budget_reservations llm_budget_reservations_tenant_id_user_id_endpoint_request__key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_budget_reservations
     ADD CONSTRAINT llm_budget_reservations_tenant_id_user_id_endpoint_request__key UNIQUE (tenant_id, user_id, endpoint, request_id);
 
-
---
--- Name: llm_call_audit llm_call_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_call_audit
     ADD CONSTRAINT llm_call_audit_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_hourly_shutoff_state llm_hourly_shutoff_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_hourly_shutoff_state
     ADD CONSTRAINT llm_hourly_shutoff_state_pkey PRIMARY KEY (id);
 
-
---
--- Name: llm_hourly_shutoff_state llm_hourly_shutoff_state_tenant_id_user_id_hour_start_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_hourly_shutoff_state
     ADD CONSTRAINT llm_hourly_shutoff_state_tenant_id_user_id_hour_start_key UNIQUE (tenant_id, user_id, hour_start);
-
-
---
--- Name: llm_monthly_budget_state llm_monthly_budget_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_monthly_budget_state
     ADD CONSTRAINT llm_monthly_budget_state_pkey PRIMARY KEY (id);
 
-
---
--- Name: llm_monthly_budget_state llm_monthly_budget_state_tenant_id_user_id_month_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_monthly_budget_state
     ADD CONSTRAINT llm_monthly_budget_state_tenant_id_user_id_month_key UNIQUE (tenant_id, user_id, month);
-
-
---
--- Name: llm_monthly_costs llm_monthly_costs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT llm_monthly_costs_pkey PRIMARY KEY (id);
 
-
---
--- Name: llm_semantic_cache llm_semantic_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_semantic_cache
     ADD CONSTRAINT llm_semantic_cache_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_semantic_cache llm_semantic_cache_tenant_id_user_id_endpoint_cache_key_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_semantic_cache
     ADD CONSTRAINT llm_semantic_cache_tenant_id_user_id_endpoint_cache_key_key UNIQUE (tenant_id, user_id, endpoint, cache_key);
 
-
---
--- Name: llm_validation_failures llm_validation_failures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_validation_failures
     ADD CONSTRAINT llm_validation_failures_pkey PRIMARY KEY (id);
-
-
---
--- Name: oauth_handshake_sessions oauth_handshake_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT oauth_handshake_sessions_pkey PRIMARY KEY (id);
 
-
---
--- Name: pii_audit_findings pii_audit_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.pii_audit_findings
     ADD CONSTRAINT pii_audit_findings_pkey PRIMARY KEY (id);
-
-
---
--- Name: auth_access_token_denylist pk_auth_access_token_denylist; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.auth_access_token_denylist
     ADD CONSTRAINT pk_auth_access_token_denylist PRIMARY KEY (tenant_id, user_id, jti);
 
-
---
--- Name: auth_user_token_cutoffs pk_auth_user_token_cutoffs; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.auth_user_token_cutoffs
     ADD CONSTRAINT pk_auth_user_token_cutoffs PRIMARY KEY (tenant_id, user_id);
-
-
---
--- Name: b26_p2_auth_root_evidence pk_b26_p2_auth_root_evidence; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence
     ADD CONSTRAINT pk_b26_p2_auth_root_evidence PRIMARY KEY (webhook_ingress_identity_id);
 
-
---
--- Name: b26_p2_provider_auth_consequence pk_b26_p2_provider_auth_consequence; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_provider_auth_consequence
     ADD CONSTRAINT pk_b26_p2_provider_auth_consequence PRIMARY KEY (webhook_ingress_identity_id);
-
-
---
--- Name: platform_connections platform_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.platform_connections
     ADD CONSTRAINT platform_connections_pkey PRIMARY KEY (id);
 
-
---
--- Name: platform_credentials platform_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.platform_credentials
     ADD CONSTRAINT platform_credentials_pkey PRIMARY KEY (id);
-
-
---
--- Name: r4_crash_barriers r4_crash_barriers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.r4_crash_barriers
     ADD CONSTRAINT r4_crash_barriers_pkey PRIMARY KEY (id);
 
-
---
--- Name: r4_recovery_exclusions r4_recovery_exclusions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.r4_recovery_exclusions
     ADD CONSTRAINT r4_recovery_exclusions_pkey PRIMARY KEY (scenario, task_id);
-
-
---
--- Name: r4_task_attempts r4_task_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.r4_task_attempts
     ADD CONSTRAINT r4_task_attempts_pkey PRIMARY KEY (id);
 
-
---
--- Name: raw_event_payloads raw_event_payloads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT raw_event_payloads_pkey PRIMARY KEY (id);
-
-
---
--- Name: reconciliation_runs reconciliation_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.reconciliation_runs
     ADD CONSTRAINT reconciliation_runs_pkey PRIMARY KEY (id);
 
-
---
--- Name: revenue_cache_entries revenue_cache_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.revenue_cache_entries
     ADD CONSTRAINT revenue_cache_entries_pkey PRIMARY KEY (tenant_id, cache_key);
-
-
---
--- Name: revenue_ledger revenue_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.revenue_ledger
     ADD CONSTRAINT revenue_ledger_pkey PRIMARY KEY (id);
 
-
---
--- Name: revenue_state_transitions revenue_state_transitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_pkey PRIMARY KEY (id);
-
-
---
--- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_pkey PRIMARY KEY (code);
 
-
---
--- Name: session_authority session_authority_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.session_authority
     ADD CONSTRAINT session_authority_pkey PRIMARY KEY (id);
-
-
---
--- Name: tenant_membership_roles tenant_membership_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_pkey PRIMARY KEY (id);
 
-
---
--- Name: tenant_memberships tenant_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT tenant_memberships_pkey PRIMARY KEY (id);
-
-
---
--- Name: tenants tenants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenants
     ADD CONSTRAINT tenants_pkey PRIMARY KEY (id);
 
-
---
--- Name: trust_access_log trust_access_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_access_log
     ADD CONSTRAINT trust_access_log_pkey PRIMARY KEY (id);
-
-
---
--- Name: trust_envelope_issuance_log trust_envelope_issuance_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT trust_envelope_issuance_log_pkey PRIMARY KEY (id);
 
-
---
--- Name: trust_export_artifact_attempts trust_export_artifact_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_export_artifact_attempts
     ADD CONSTRAINT trust_export_artifact_attempts_pkey PRIMARY KEY (id);
-
-
---
--- Name: trust_issuance_attempts trust_issuance_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT trust_issuance_attempts_pkey PRIMARY KEY (id);
 
-
---
--- Name: trust_rate_limit_state trust_rate_limit_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT trust_rate_limit_state_pkey PRIMARY KEY (id);
-
-
---
--- Name: trust_replay_events trust_replay_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_replay_events
     ADD CONSTRAINT trust_replay_events_pkey PRIMARY KEY (id);
 
-
---
--- Name: trust_request_nonces trust_request_nonces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_request_nonces
     ADD CONSTRAINT trust_request_nonces_pkey PRIMARY KEY (id);
-
-
---
--- Name: trust_scope_denial_events trust_scope_denial_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_scope_denial_events
     ADD CONSTRAINT trust_scope_denial_events_pkey PRIMARY KEY (id);
 
-
---
--- Name: trust_tenant_policy_events trust_tenant_policy_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_tenant_policy_events
     ADD CONSTRAINT trust_tenant_policy_events_pkey PRIMARY KEY (id);
-
-
---
--- Name: trust_tenant_policy_events trust_tenant_policy_events_revision_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_tenant_policy_events
     ADD CONSTRAINT trust_tenant_policy_events_revision_key UNIQUE (revision);
 
-
---
--- Name: agent_clients uq_agent_clients_tenant_name; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.agent_clients
     ADD CONSTRAINT uq_agent_clients_tenant_name UNIQUE (tenant_id, client_name);
-
-
---
--- Name: agent_scope_grants uq_agent_scope_grants_client_scope; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_scope_grants
     ADD CONSTRAINT uq_agent_scope_grants_client_scope UNIQUE (tenant_id, agent_client_id, scope_value);
 
-
---
--- Name: agent_service_credentials uq_agent_service_credentials_prefix; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.agent_service_credentials
     ADD CONSTRAINT uq_agent_service_credentials_prefix UNIQUE (tenant_id, token_prefix);
-
-
---
--- Name: agent_token_revocations uq_agent_token_revocations_prefix; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_token_revocations
     ADD CONSTRAINT uq_agent_token_revocations_prefix UNIQUE (tenant_id, token_prefix);
 
-
---
--- Name: attribution_commerce_identities uq_attr_commerce_identity_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT uq_attr_commerce_identity_tenant_event UNIQUE (tenant_id, attribution_event_id);
-
-
---
--- Name: attribution_commerce_identities uq_attr_commerce_identity_tenant_provider_reference; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT uq_attr_commerce_identity_tenant_provider_reference UNIQUE (tenant_id, provider, canonical_commerce_reference);
 
-
---
--- Name: attribution_events uq_attribution_events_tenant_idempotency_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT uq_attribution_events_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
-
-
---
--- Name: b23_match_task_dispatches uq_b23_dispatch_execution_tuple; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT uq_b23_dispatch_execution_tuple UNIQUE (task_id, tenant_id, webhook_ingress_identity_id);
 
-
---
--- Name: b23_match_task_dispatches uq_b23_match_task_dispatches_task_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT uq_b23_match_task_dispatches_task_id UNIQUE (task_id);
-
-
---
--- Name: b23_match_task_dispatches uq_b23_match_task_dispatches_tenant_ingress; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT uq_b23_match_task_dispatches_tenant_ingress UNIQUE (tenant_id, webhook_ingress_identity_id);
 
-
---
--- Name: b23_match_verdicts uq_b23_match_verdicts_tenant_provider_event_ref; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT uq_b23_match_verdicts_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
-
-
---
--- Name: b23_revenue_events uq_b23_revenue_events_tenant_provider_event_ref; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT uq_b23_revenue_events_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
 
-
---
--- Name: b24_feature_authority_build_outbox uq_b24_feature_authority_build_outbox_candidate; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT uq_b24_feature_authority_build_outbox_candidate UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
-
---
--- Name: b24_feature_authority_build_outbox uq_b24_feature_authority_build_outbox_dispatch_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT uq_b24_feature_authority_build_outbox_dispatch_key UNIQUE (tenant_id, dispatch_key);
 
-
---
--- Name: b24_fit_dispatch_outbox uq_b24_fit_dispatch_outbox_dispatch_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT uq_b24_fit_dispatch_outbox_dispatch_key UNIQUE (tenant_id, dispatch_key);
-
-
---
--- Name: b24_fit_dispatch_outbox uq_b24_fit_dispatch_outbox_fit; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT uq_b24_fit_dispatch_outbox_fit UNIQUE (tenant_id, fit_id);
 
-
---
--- Name: b24_fit_recovery_outbox uq_b24_fit_recovery_outbox_generation; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT uq_b24_fit_recovery_outbox_generation UNIQUE (tenant_id, dispatch_id, recovery_generation);
-
-
---
--- Name: b24_inference_policy_registry uq_b24_policy_registry_tuple; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_inference_policy_registry
     ADD CONSTRAINT uq_b24_policy_registry_tuple UNIQUE (policy_bundle_hash, inference_profile_version, runtime_policy_version, sampling_policy_version, diagnostic_policy_version);
 
-
---
--- Name: b26_p2_execution_outbox uq_b26_p2_execution_outbox_task; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT uq_b26_p2_execution_outbox_task UNIQUE (dispatch_task_id);
-
-
---
--- Name: b26_p2_execution_outbox uq_b26_p2_execution_outbox_tenant_ingress; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT uq_b26_p2_execution_outbox_tenant_ingress UNIQUE (tenant_id, webhook_ingress_identity_id);
 
-
---
--- Name: b27_explanation_materializations uq_b27_cache_identity; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b27_explanation_materializations
     ADD CONSTRAINT uq_b27_cache_identity UNIQUE (tenant_id, cache_identity_hash);
-
-
---
--- Name: b27_narrative_templates uq_b27_template_binding; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b27_narrative_templates
     ADD CONSTRAINT uq_b27_template_binding UNIQUE (claim_kind, source_path);
 
-
---
--- Name: b28_proposals uq_b28_proposal_ref; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT uq_b28_proposal_ref UNIQUE (tenant_id, proposal_ref);
-
-
---
--- Name: b28_simulation_requests uq_b28_request_ref; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT uq_b28_request_ref UNIQUE (tenant_id, request_ref);
 
-
---
--- Name: b28_simulation_results uq_b28_result_request; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_simulation_results
     ADD CONSTRAINT uq_b28_result_request UNIQUE (tenant_id, request_id);
-
-
---
--- Name: budget_jobs uq_budget_jobs_tenant_request_id; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
 
-
---
--- Name: budget_optimization_jobs uq_budget_optimization_jobs_tenant_request_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT uq_budget_optimization_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
-
-
---
--- Name: compliance_audit_ledger uq_compliance_audit_ledger_tenant_idempotency_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT uq_compliance_audit_ledger_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
 
-
---
--- Name: ephemeral_click_resolution uq_ephemeral_click_resolution_tenant_click; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT uq_ephemeral_click_resolution_tenant_click UNIQUE (tenant_id, click_id);
-
-
---
--- Name: ephemeral_order_resolution uq_ephemeral_order_resolution_tenant_order; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.ephemeral_order_resolution
     ADD CONSTRAINT uq_ephemeral_order_resolution_tenant_order UNIQUE (tenant_id, order_id);
 
-
---
--- Name: investigation_jobs uq_investigation_jobs_tenant_request_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT uq_investigation_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
-
-
---
--- Name: investigations uq_investigations_tenant_request_id; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT uq_investigations_tenant_request_id UNIQUE (tenant_id, request_id);
 
-
---
--- Name: llm_api_calls uq_llm_api_calls_tenant_request_endpoint; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT uq_llm_api_calls_tenant_request_endpoint UNIQUE (tenant_id, request_id, endpoint);
-
-
---
--- Name: llm_monthly_costs uq_llm_monthly_costs_tenant_user_month; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT uq_llm_monthly_costs_tenant_user_month UNIQUE (tenant_id, user_id, month);
 
-
---
--- Name: oauth_handshake_sessions uq_oauth_handshake_sessions_tenant_state_hash; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT uq_oauth_handshake_sessions_tenant_state_hash UNIQUE (tenant_id, state_nonce_hash);
-
-
---
--- Name: raw_event_payloads uq_raw_event_payloads_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT uq_raw_event_payloads_tenant_event UNIQUE (tenant_id, event_id);
 
-
---
--- Name: session_authority uq_session_authority_tenant_session_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.session_authority
     ADD CONSTRAINT uq_session_authority_tenant_session_id UNIQUE (tenant_id, session_id);
-
-
---
--- Name: tenant_membership_roles uq_tenant_membership_roles_membership_role; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT uq_tenant_membership_roles_membership_role UNIQUE (membership_id, role_code);
 
-
---
--- Name: tenant_memberships uq_tenant_memberships_id_tenant; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT uq_tenant_memberships_id_tenant UNIQUE (id, tenant_id);
-
-
---
--- Name: tenant_memberships uq_tenant_memberships_tenant_user; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT uq_tenant_memberships_tenant_user UNIQUE (tenant_id, user_id);
 
-
---
--- Name: trust_access_log uq_trust_access_log_audit_ref; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_access_log
     ADD CONSTRAINT uq_trust_access_log_audit_ref UNIQUE (tenant_id, audit_ref);
-
-
---
--- Name: trust_access_log uq_trust_access_log_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_access_log
     ADD CONSTRAINT uq_trust_access_log_idempotency UNIQUE (tenant_id, event_type, idempotency_key_hash);
 
-
---
--- Name: trust_export_artifact_attempts uq_trust_export_artifact_attempt; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_export_artifact_attempts
     ADD CONSTRAINT uq_trust_export_artifact_attempt UNIQUE (tenant_id, request_binding_hash, page_start, attempt_number);
-
-
---
--- Name: trust_issuance_attempts uq_trust_issuance_attempt_identity; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT uq_trust_issuance_attempt_identity UNIQUE (tenant_id, audit_ref, id);
 
-
---
--- Name: trust_issuance_attempts uq_trust_issuance_attempt_number; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT uq_trust_issuance_attempt_number UNIQUE (tenant_id, audit_ref, attempt_number);
-
-
---
--- Name: trust_envelope_issuance_log uq_trust_issuance_envelope; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT uq_trust_issuance_envelope UNIQUE (tenant_id, envelope_hash);
 
-
---
--- Name: trust_envelope_issuance_log uq_trust_issuance_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT uq_trust_issuance_idempotency UNIQUE (tenant_id, idempotency_key_hash);
-
-
---
--- Name: trust_rate_limit_state uq_trust_rate_limit_state_client_window; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT uq_trust_rate_limit_state_client_window UNIQUE (tenant_id, agent_client_id, window_started_at, window_ended_at);
 
-
---
--- Name: trust_replay_events uq_trust_replay_event; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_replay_events
     ADD CONSTRAINT uq_trust_replay_event UNIQUE (tenant_id, idempotency_key_hash, original_audit_ref);
-
-
---
--- Name: trust_request_nonces uq_trust_request_nonces_tenant_nonce; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_request_nonces
     ADD CONSTRAINT uq_trust_request_nonces_tenant_nonce UNIQUE (tenant_id, nonce_value);
 
-
---
--- Name: trust_scope_denial_events uq_trust_scope_denial_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_scope_denial_events
     ADD CONSTRAINT uq_trust_scope_denial_idempotency UNIQUE (tenant_id, idempotency_key_hash);
-
-
---
--- Name: webhook_ingress_identities uq_webhook_ingress_identities_event_id; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_event_id UNIQUE (event_id);
 
-
---
--- Name: webhook_ingress_identities uq_webhook_ingress_identities_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_tenant_event UNIQUE (tenant_id, event_id);
-
-
---
--- Name: webhook_ingress_identities uq_webhook_ingress_identities_tenant_id; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_tenant_id UNIQUE (tenant_id, id);
 
-
---
--- Name: webhook_ingress_identities uq_webhook_ingress_identities_tenant_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_tenant_idempotency UNIQUE (tenant_id, idempotency_key);
-
-
---
--- Name: users users_login_identifier_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_login_identifier_hash_key UNIQUE (login_identifier_hash);
 
-
---
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
-
-
---
--- Name: webhook_ingress_identities webhook_ingress_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_pkey PRIMARY KEY (id);
 
-
---
--- Name: worker_side_effects worker_side_effects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.worker_side_effects
     ADD CONSTRAINT worker_side_effects_pkey PRIMARY KEY (id);
 
-
---
--- Name: idx_bayesian_artifacts_tenant_artifact_hash; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_artifacts_tenant_artifact_hash ON ONLY public.bayesian_artifacts USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p00_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p00_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id, artifact_hash);
 
-
---
--- Name: idx_bayesian_artifacts_tenant_artifact_ref; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_artifacts_tenant_artifact_ref ON ONLY public.bayesian_artifacts USING btree (tenant_id, artifact_ref);
-
-
---
--- Name: bayesian_artifacts_p00_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p00_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: idx_bayesian_artifacts_tenant_fit; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_artifacts_tenant_fit ON ONLY public.bayesian_artifacts USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p00_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p00_tenant_id_fit_id_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id, fit_id);
 
-
---
--- Name: idx_bayesian_artifacts_tenant_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_artifacts_tenant_id ON ONLY public.bayesian_artifacts USING btree (tenant_id);
-
-
---
--- Name: bayesian_artifacts_p00_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p00_tenant_id_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p01_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p01_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p01_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p01_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p01_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p01_tenant_id_fit_id_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p01_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p01_tenant_id_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p02_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p02_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p02_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p02_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p02_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p02_tenant_id_fit_id_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p02_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p02_tenant_id_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p03_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p03_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p03_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p03_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p03_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p03_tenant_id_fit_id_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p03_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p03_tenant_id_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p04_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p04_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p04_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p04_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p04_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p04_tenant_id_fit_id_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p04_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p04_tenant_id_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p05_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p05_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p05_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p05_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p05_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p05_tenant_id_fit_id_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p05_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p05_tenant_id_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p06_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p06_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p06_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p06_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p06_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p06_tenant_id_fit_id_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p06_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p06_tenant_id_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p07_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p07_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p07_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p07_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p07_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p07_tenant_id_fit_id_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p07_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p07_tenant_id_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p08_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p08_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p08_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p08_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p08_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p08_tenant_id_fit_id_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p08_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p08_tenant_id_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p09_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p09_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p09_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p09_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p09_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p09_tenant_id_fit_id_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p09_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p09_tenant_id_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p10_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p10_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p10_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p10_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p10_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p10_tenant_id_fit_id_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p10_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p10_tenant_id_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p11_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p11_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p11_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p11_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p11_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p11_tenant_id_fit_id_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p11_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p11_tenant_id_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p12_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p12_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p12_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p12_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p12_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p12_tenant_id_fit_id_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p12_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p12_tenant_id_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p13_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p13_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p13_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p13_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p13_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p13_tenant_id_fit_id_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p13_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p13_tenant_id_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p14_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p14_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p14_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p14_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p14_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p14_tenant_id_fit_id_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p14_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p14_tenant_id_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id);
 
-
---
--- Name: bayesian_artifacts_p15_tenant_id_artifact_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p15_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id, artifact_hash);
-
-
---
--- Name: bayesian_artifacts_p15_tenant_id_artifact_ref_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p15_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id, artifact_ref);
 
-
---
--- Name: bayesian_artifacts_p15_tenant_id_fit_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_artifacts_p15_tenant_id_fit_id_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id, fit_id);
-
-
---
--- Name: bayesian_artifacts_p15_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_artifacts_p15_tenant_id_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id);
 
-
---
--- Name: idx_bayesian_model_fits_tenant_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_model_fits_tenant_id ON ONLY public.bayesian_model_fits USING btree (tenant_id);
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id);
 
-
---
--- Name: idx_bayesian_model_fits_tenant_model_eligibility; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_model_fits_tenant_model_eligibility ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
-
---
--- Name: idx_bayesian_model_fits_tenant_model_fallback; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_model_fits_tenant_model_fallback ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
-
---
--- Name: idx_bayesian_model_fits_tenant_model_window; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_model_fits_tenant_model_window ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end);
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
-
---
--- Name: idx_bayesian_model_fits_tenant_model_window_latest; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_model_fits_tenant_model_window_latest ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
-
---
--- Name: idx_bayesian_model_fits_tenant_source_snapshot_hash; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_model_fits_tenant_source_snapshot_hash ON ONLY public.bayesian_model_fits USING btree (tenant_id, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, source_snapshot_hash);
 
-
---
--- Name: idx_bayesian_model_fits_tenant_status; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_bayesian_model_fits_tenant_status ON ONLY public.bayesian_model_fits USING btree (tenant_id, status);
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p00_tenant_id_status_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, status);
 
-
---
--- Name: bayesian_model_fits_p01_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p01_tenant_id_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id);
-
-
---
--- Name: bayesian_model_fits_p01_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
-
---
--- Name: bayesian_model_fits_p01_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-
---
--- Name: bayesian_model_fits_p01_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
-
---
--- Name: bayesian_model_fits_p01_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-
---
--- Name: bayesian_model_fits_p01_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p01_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, source_snapshot_hash);
 
-
---
--- Name: bayesian_model_fits_p01_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p01_tenant_id_status_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, status);
-
-
---
--- Name: bayesian_model_fits_p02_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p02_tenant_id_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id);
 
-
---
--- Name: bayesian_model_fits_p02_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
-
-
---
--- Name: bayesian_model_fits_p02_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
-
---
--- Name: bayesian_model_fits_p02_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, source_window_start, source_window_end);
-
-
---
--- Name: bayesian_model_fits_p02_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
-
---
--- Name: bayesian_model_fits_p02_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p02_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p02_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p02_tenant_id_status_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, status);
 
-
---
--- Name: bayesian_model_fits_p03_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p03_tenant_id_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id);
-
-
---
--- Name: bayesian_model_fits_p03_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
-
---
--- Name: bayesian_model_fits_p03_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-
---
--- Name: bayesian_model_fits_p03_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
-
---
--- Name: bayesian_model_fits_p03_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-
---
--- Name: bayesian_model_fits_p03_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p03_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, source_snapshot_hash);
 
-
---
--- Name: bayesian_model_fits_p03_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p03_tenant_id_status_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, status);
-
-
---
--- Name: bayesian_model_fits_p04_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p04_tenant_id_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id);
 
-
---
--- Name: bayesian_model_fits_p04_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
-
-
---
--- Name: bayesian_model_fits_p04_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
-
---
--- Name: bayesian_model_fits_p04_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, source_window_start, source_window_end);
-
-
---
--- Name: bayesian_model_fits_p04_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
-
---
--- Name: bayesian_model_fits_p04_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p04_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p04_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p04_tenant_id_status_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, status);
 
-
---
--- Name: bayesian_model_fits_p05_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p05_tenant_id_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id);
-
-
---
--- Name: bayesian_model_fits_p05_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
-
---
--- Name: bayesian_model_fits_p05_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-
---
--- Name: bayesian_model_fits_p05_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
-
---
--- Name: bayesian_model_fits_p05_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-
---
--- Name: bayesian_model_fits_p05_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p05_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, source_snapshot_hash);
 
-
---
--- Name: bayesian_model_fits_p05_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p05_tenant_id_status_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, status);
-
-
---
--- Name: bayesian_model_fits_p06_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p06_tenant_id_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id);
 
-
---
--- Name: bayesian_model_fits_p06_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
-
-
---
--- Name: bayesian_model_fits_p06_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
-
---
--- Name: bayesian_model_fits_p06_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, source_window_start, source_window_end);
-
-
---
--- Name: bayesian_model_fits_p06_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
-
---
--- Name: bayesian_model_fits_p06_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p06_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p06_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p06_tenant_id_status_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, status);
 
-
---
--- Name: bayesian_model_fits_p07_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p07_tenant_id_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id);
-
-
---
--- Name: bayesian_model_fits_p07_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
-
---
--- Name: bayesian_model_fits_p07_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-
---
--- Name: bayesian_model_fits_p07_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
-
---
--- Name: bayesian_model_fits_p07_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-
---
--- Name: bayesian_model_fits_p07_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p07_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, source_snapshot_hash);
 
-
---
--- Name: bayesian_model_fits_p07_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p07_tenant_id_status_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, status);
-
-
---
--- Name: bayesian_model_fits_p08_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p08_tenant_id_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id);
 
-
---
--- Name: bayesian_model_fits_p08_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
-
-
---
--- Name: bayesian_model_fits_p08_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
-
---
--- Name: bayesian_model_fits_p08_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, source_window_start, source_window_end);
-
-
---
--- Name: bayesian_model_fits_p08_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
-
---
--- Name: bayesian_model_fits_p08_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p08_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p08_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p08_tenant_id_status_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, status);
 
-
---
--- Name: bayesian_model_fits_p09_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p09_tenant_id_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id);
-
-
---
--- Name: bayesian_model_fits_p09_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
-
---
--- Name: bayesian_model_fits_p09_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-
---
--- Name: bayesian_model_fits_p09_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
-
---
--- Name: bayesian_model_fits_p09_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-
---
--- Name: bayesian_model_fits_p09_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p09_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, source_snapshot_hash);
 
-
---
--- Name: bayesian_model_fits_p09_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p09_tenant_id_status_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, status);
-
-
---
--- Name: bayesian_model_fits_p10_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p10_tenant_id_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id);
 
-
---
--- Name: bayesian_model_fits_p10_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
-
-
---
--- Name: bayesian_model_fits_p10_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
-
---
--- Name: bayesian_model_fits_p10_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, source_window_start, source_window_end);
-
-
---
--- Name: bayesian_model_fits_p10_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
-
---
--- Name: bayesian_model_fits_p10_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p10_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p10_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p10_tenant_id_status_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, status);
 
-
---
--- Name: bayesian_model_fits_p11_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p11_tenant_id_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id);
-
-
---
--- Name: bayesian_model_fits_p11_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
-
---
--- Name: bayesian_model_fits_p11_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-
---
--- Name: bayesian_model_fits_p11_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
-
---
--- Name: bayesian_model_fits_p11_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-
---
--- Name: bayesian_model_fits_p11_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p11_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, source_snapshot_hash);
 
-
---
--- Name: bayesian_model_fits_p11_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p11_tenant_id_status_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, status);
-
-
---
--- Name: bayesian_model_fits_p12_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p12_tenant_id_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id);
 
-
---
--- Name: bayesian_model_fits_p12_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
-
-
---
--- Name: bayesian_model_fits_p12_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
-
---
--- Name: bayesian_model_fits_p12_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, source_window_start, source_window_end);
-
-
---
--- Name: bayesian_model_fits_p12_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
-
---
--- Name: bayesian_model_fits_p12_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p12_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p12_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p12_tenant_id_status_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, status);
 
-
---
--- Name: bayesian_model_fits_p13_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p13_tenant_id_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id);
-
-
---
--- Name: bayesian_model_fits_p13_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
-
---
--- Name: bayesian_model_fits_p13_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-
---
--- Name: bayesian_model_fits_p13_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
-
---
--- Name: bayesian_model_fits_p13_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-
---
--- Name: bayesian_model_fits_p13_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p13_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, source_snapshot_hash);
 
-
---
--- Name: bayesian_model_fits_p13_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p13_tenant_id_status_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, status);
-
-
---
--- Name: bayesian_model_fits_p14_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p14_tenant_id_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id);
 
-
---
--- Name: bayesian_model_fits_p14_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
-
-
---
--- Name: bayesian_model_fits_p14_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
 
-
---
--- Name: bayesian_model_fits_p14_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, source_window_start, source_window_end);
-
-
---
--- Name: bayesian_model_fits_p14_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
 
-
---
--- Name: bayesian_model_fits_p14_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p14_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, source_snapshot_hash);
-
-
---
--- Name: bayesian_model_fits_p14_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p14_tenant_id_status_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, status);
 
-
---
--- Name: bayesian_model_fits_p15_tenant_id_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p15_tenant_id_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id);
-
-
---
--- Name: bayesian_model_fits_p15_tenant_id_model_type_eligibility_st_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
 
-
---
--- Name: bayesian_model_fits_p15_tenant_id_model_type_fallback_reaso_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-
---
--- Name: bayesian_model_fits_p15_tenant_id_model_type_source_window__idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, source_window_start, source_window_end);
 
-
---
--- Name: bayesian_model_fits_p15_tenant_id_model_type_source_window_idx1; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-
---
--- Name: bayesian_model_fits_p15_tenant_id_source_snapshot_hash_idx; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX bayesian_model_fits_p15_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, source_snapshot_hash);
 
-
---
--- Name: bayesian_model_fits_p15_tenant_id_status_idx; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX bayesian_model_fits_p15_tenant_id_status_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, status);
-
-
---
--- Name: idx_agent_clients_tenant_status; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_agent_clients_tenant_status ON public.agent_clients USING btree (tenant_id, status, created_at DESC);
 
-
---
--- Name: idx_agent_scope_grants_lookup; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_agent_scope_grants_lookup ON public.agent_scope_grants USING btree (tenant_id, agent_client_id, scope_value);
-
-
---
--- Name: idx_agent_service_credentials_client; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_agent_service_credentials_client ON public.agent_service_credentials USING btree (tenant_id, agent_client_id, issued_at DESC);
 
-
---
--- Name: idx_agent_service_credentials_lookup; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_agent_service_credentials_lookup ON public.agent_service_credentials USING btree (tenant_id, token_prefix, status);
-
-
---
--- Name: idx_agent_token_revocations_lookup; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_agent_token_revocations_lookup ON public.agent_token_revocations USING btree (tenant_id, token_prefix);
 
-
---
--- Name: idx_allocations_channel_performance; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_allocations_channel_performance ON public.attribution_allocations USING btree (tenant_id, channel_code, created_at DESC) INCLUDE (allocated_revenue_cents, confidence_score);
-
-
---
--- Name: idx_allocations_tenant_projection_channel; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_allocations_tenant_projection_channel ON public.attribution_allocations USING btree (tenant_id, recompute_job_id, model_type, channel_code);
 
-
---
--- Name: idx_attr_commerce_identity_last_observed; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attr_commerce_identity_last_observed ON public.attribution_commerce_identities USING btree (last_observed_at);
-
-
---
--- Name: idx_attr_commerce_identity_tenant_last_observed; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attr_commerce_identity_tenant_last_observed ON public.attribution_commerce_identities USING btree (tenant_id, last_observed_at DESC);
 
-
---
--- Name: idx_attr_commerce_identity_tenant_provider_reference; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attr_commerce_identity_tenant_provider_reference ON public.attribution_commerce_identities USING btree (tenant_id, provider, canonical_commerce_reference);
-
-
---
--- Name: idx_attribution_allocations_channel; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attribution_allocations_channel ON public.attribution_allocations USING btree (channel_code);
 
-
---
--- Name: idx_attribution_allocations_event_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_allocations_event_id ON public.attribution_allocations USING btree (event_id);
-
-
---
--- Name: idx_attribution_allocations_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attribution_allocations_tenant_created_at ON public.attribution_allocations USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_attribution_allocations_tenant_event_model; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_allocations_tenant_event_model ON public.attribution_allocations USING btree (tenant_id, event_id, model_version);
-
-
---
--- Name: INDEX idx_attribution_allocations_tenant_event_model; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_attribution_allocations_tenant_event_model IS 'R5 performance index for sum-equality enforcement. Supports statement-level trigger lookups by (tenant_id, event_id, model_version).';
-
-
---
--- Name: idx_attribution_allocations_tenant_event_model_channel; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_attribution_allocations_tenant_event_model_channel ON public.attribution_allocations USING btree (tenant_id, event_id, model_version, channel_code) WHERE ((model_version IS NOT NULL) AND (recompute_job_id IS NULL));
 
-
---
--- Name: idx_attribution_allocations_tenant_event_projection; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_allocations_tenant_event_projection ON public.attribution_allocations USING btree (tenant_id, event_id, recompute_job_id) WHERE (recompute_job_id IS NOT NULL);
-
-
---
--- Name: INDEX idx_attribution_allocations_tenant_event_projection; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_attribution_allocations_tenant_event_projection IS 'Projection-scoped sum-validation index for deterministic allocations.';
-
-
---
--- Name: idx_attribution_allocations_tenant_event_projection_channel; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_attribution_allocations_tenant_event_projection_channel ON public.attribution_allocations USING btree (tenant_id, event_id, recompute_job_id, channel_code) WHERE (recompute_job_id IS NOT NULL);
 
-
---
--- Name: idx_attribution_allocations_tenant_model_version; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_allocations_tenant_model_version ON public.attribution_allocations USING btree (tenant_id, model_version);
-
-
---
--- Name: INDEX idx_attribution_allocations_tenant_model_version; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_attribution_allocations_tenant_model_version IS 'Composite index on (tenant_id, model_version). Purpose: Enable fast model rollups and sum-equality validation queries per model version.';
-
-
---
--- Name: idx_attribution_events_session_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attribution_events_session_id ON public.attribution_events USING btree (session_id) WHERE (session_id IS NOT NULL);
 
-
---
--- Name: idx_attribution_events_tenant_occurred_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_events_tenant_occurred_at ON public.attribution_events USING btree (tenant_id, occurred_at DESC);
-
-
---
--- Name: idx_attribution_recompute_jobs_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attribution_recompute_jobs_tenant_created_at ON public.attribution_recompute_jobs USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: INDEX idx_attribution_recompute_jobs_tenant_created_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_attribution_recompute_jobs_tenant_created_at IS 'Composite index on (tenant_id, created_at). Purpose: Enable fast queries for recent jobs per tenant (e.g., job history, audit log). DESC order for time-series queries.';
-
-
---
--- Name: idx_attribution_recompute_jobs_tenant_status; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_recompute_jobs_tenant_status ON public.attribution_recompute_jobs USING btree (tenant_id, status);
-
-
---
--- Name: INDEX idx_attribution_recompute_jobs_tenant_status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_attribution_recompute_jobs_tenant_status IS 'Composite index on (tenant_id, status). Purpose: Enable fast queries for active jobs per tenant (e.g., find all running jobs, find all failed jobs). Supports operational dashboards.';
-
-
---
--- Name: idx_attribution_recompute_jobs_window_identity; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_attribution_recompute_jobs_window_identity ON public.attribution_recompute_jobs USING btree (tenant_id, window_start, window_end, model_version);
 
-
---
--- Name: INDEX idx_attribution_recompute_jobs_window_identity; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_attribution_recompute_jobs_window_identity IS 'CRITICAL IDEMPOTENCY CONSTRAINT: Enforces window-scoped uniqueness per (tenant_id, window_start, window_end, model_version). Purpose: Prevent duplicate job identity rows - rerunning the same window must not create a new job row, but instead reuse/update the existing one. This is the provable mechanism that prevents "Window Re-Run Produces Duplicates" failure mode. Any attempt to INSERT a duplicate window identity will raise a unique_violation error, which the task handler must catch and convert to an idempotent upsert.';
-
-
---
--- Name: idx_auth_access_token_denylist_expires_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_auth_access_token_denylist_expires_at ON public.auth_access_token_denylist USING btree (expires_at DESC);
-
-
---
--- Name: idx_auth_access_token_denylist_jti; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_auth_access_token_denylist_jti ON public.auth_access_token_denylist USING btree (jti);
 
-
---
--- Name: idx_auth_access_token_denylist_tenant_user_revoked_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_auth_access_token_denylist_tenant_user_revoked_at ON public.auth_access_token_denylist USING btree (tenant_id, user_id, revoked_at DESC);
-
-
---
--- Name: idx_auth_refresh_tokens_family_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_auth_refresh_tokens_family_created_at ON public.auth_refresh_tokens USING btree (family_id, created_at DESC);
 
-
---
--- Name: idx_auth_refresh_tokens_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_auth_refresh_tokens_tenant_created_at ON public.auth_refresh_tokens USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_auth_refresh_tokens_tenant_user_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_auth_refresh_tokens_tenant_user_created_at ON public.auth_refresh_tokens USING btree (tenant_id, user_id, created_at DESC);
 
-
---
--- Name: idx_auth_user_token_cutoffs_tenant_user; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_auth_user_token_cutoffs_tenant_user ON public.auth_user_token_cutoffs USING btree (tenant_id, user_id);
-
-
---
--- Name: idx_b23_dispatch_delivery_state; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_dispatch_delivery_state ON public.b23_match_task_dispatches USING btree (delivery_state, dispatched_at);
 
-
---
--- Name: idx_b23_exception_records_tenant_provider_reference; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_exception_records_tenant_provider_reference ON public.b23_exception_records USING btree (tenant_id, provider, canonical_commerce_reference);
-
-
---
--- Name: idx_b23_exception_records_tenant_status_severity; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_exception_records_tenant_status_severity ON public.b23_exception_records USING btree (tenant_id, status, severity, raised_at DESC);
 
-
---
--- Name: idx_b23_match_task_dispatches_ingress; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_match_task_dispatches_ingress ON public.b23_match_task_dispatches USING btree (webhook_ingress_identity_id);
-
-
---
--- Name: idx_b23_match_task_dispatches_tenant_reference; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_match_task_dispatches_tenant_reference ON public.b23_match_task_dispatches USING btree (tenant_id, provider, provider_native_event_reference, normalized_commerce_reference_value);
 
-
---
--- Name: idx_b23_match_verdicts_tenant_discrepancy_band; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_match_verdicts_tenant_discrepancy_band ON public.b23_match_verdicts USING btree (tenant_id, discrepancy_band, last_transition_at DESC);
-
-
---
--- Name: idx_b23_match_verdicts_tenant_discrepancy_ratio_bps; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_match_verdicts_tenant_discrepancy_ratio_bps ON public.b23_match_verdicts USING btree (tenant_id, discrepancy_ratio_bps, last_transition_at DESC);
 
-
---
--- Name: idx_b23_match_verdicts_tenant_provider_commerce_native; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_match_verdicts_tenant_provider_commerce_native ON public.b23_match_verdicts USING btree (tenant_id, provider, provider_native_commerce_reference);
-
-
---
--- Name: idx_b23_match_verdicts_tenant_provider_reference; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_match_verdicts_tenant_provider_reference ON public.b23_match_verdicts USING btree (tenant_id, provider, canonical_commerce_reference);
 
-
---
--- Name: idx_b23_match_verdicts_tenant_state_timestamps; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_match_verdicts_tenant_state_timestamps ON public.b23_match_verdicts USING btree (tenant_id, pending_since, provisional_expires_at, confirmed_at, unmatched_marked_at, adjusted_at);
-
-
---
--- Name: idx_b23_match_verdicts_tenant_status_transition; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_match_verdicts_tenant_status_transition ON public.b23_match_verdicts USING btree (tenant_id, status, last_transition_at DESC);
 
-
---
--- Name: idx_b23_p4_attribution_event_tenant_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_p4_attribution_event_tenant_id ON public.attribution_events USING btree (tenant_id, id);
-
-
---
--- Name: idx_b23_p4_attribution_order_ref_expr; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_p4_attribution_order_ref_expr ON public.attribution_events USING btree (tenant_id, ((raw_payload ->> 'order_id'::text)), occurred_at DESC) WHERE (raw_payload ? 'order_id'::text);
 
-
---
--- Name: idx_b23_p4_match_rate_tenant_transition_status; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_p4_match_rate_tenant_transition_status ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at DESC, status) WHERE ((status)::text = ANY ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying, 'unmatched'::character varying])::text[]));
-
-
---
--- Name: idx_b23_p4_verdict_webhook_identity; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_p4_verdict_webhook_identity ON public.b23_match_verdicts USING btree (tenant_id, webhook_ingress_identity_id) WHERE (webhook_ingress_identity_id IS NOT NULL);
 
-
---
--- Name: idx_b23_p4_webhook_failure_tenant_platform_time; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_p4_webhook_failure_tenant_platform_time ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC) WHERE ((ingestion_status)::text = 'failed'::text);
-
-
---
--- Name: idx_b23_p4_webhook_identity_claim; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_p4_webhook_identity_claim ON public.webhook_ingress_identities USING btree (tenant_id, verified_commerce_ingress_state, event_timestamp, id) WHERE ((verified_commerce_ingress_state)::text = 'authenticity_verified'::text);
 
-
---
--- Name: idx_b23_p4_worker_dlq_open_status_failed_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_p4_worker_dlq_open_status_failed_at ON public.worker_failed_jobs USING btree (status, tenant_id, failed_at DESC) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying])::text[]));
-
-
---
--- Name: idx_b23_revenue_events_adjustment_evidence; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_revenue_events_adjustment_evidence ON public.b23_revenue_events USING btree (tenant_id, b26_p2_adjustment_evidence_id);
 
-
---
--- Name: idx_b23_revenue_events_tenant_event_effect_sign; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_revenue_events_tenant_event_effect_sign ON public.b23_revenue_events USING btree (tenant_id, event_type, net_effect_sign, event_occurred_at DESC);
-
-
---
--- Name: idx_b23_revenue_events_tenant_event_type_recorded; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_revenue_events_tenant_event_type_recorded ON public.b23_revenue_events USING btree (tenant_id, event_type, recorded_at DESC);
 
-
---
--- Name: idx_b23_revenue_events_tenant_gross_capture_correction; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_revenue_events_tenant_gross_capture_correction ON public.b23_revenue_events USING btree (tenant_id, match_verdict_id, is_gross_capture_correction, event_occurred_at DESC);
-
-
---
--- Name: idx_b23_revenue_events_tenant_provider_commerce_native; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_revenue_events_tenant_provider_commerce_native ON public.b23_revenue_events USING btree (tenant_id, provider, provider_native_commerce_reference);
 
-
---
--- Name: idx_b23_revenue_events_tenant_provider_reference; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_revenue_events_tenant_provider_reference ON public.b23_revenue_events USING btree (tenant_id, provider, canonical_commerce_reference, event_occurred_at DESC);
-
-
---
--- Name: idx_b23_webhook_ingestion_logs_tenant_provider_received; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC);
 
-
---
--- Name: idx_b23_webhook_ingestion_logs_tenant_status_received; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
-
-
---
--- Name: idx_b24_active_execution_canonical_profiling; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_active_execution_canonical_profiling ON public.b24_active_execution_leases USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, status, leased_until) WHERE ((status)::text = 'profiling'::text);
 
-
---
--- Name: idx_b24_active_execution_superseded; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_active_execution_superseded ON public.b24_active_execution_leases USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end) WHERE (needs_refit_after_current = true);
-
-
---
--- Name: idx_b24_active_execution_tenant_fit; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_active_execution_tenant_fit ON public.b24_active_execution_leases USING btree (tenant_id, fit_id) WHERE (fit_id IS NOT NULL);
 
-
---
--- Name: idx_b24_active_execution_tenant_status_lease; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_active_execution_tenant_status_lease ON public.b24_active_execution_leases USING btree (tenant_id, status, leased_until);
-
-
---
--- Name: idx_b24_dirty_events_authority_retry_ready; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_dirty_events_authority_retry_ready ON public.b24_dirty_events USING btree (tenant_id, status, authority_retry_after_at, observed_at, id) WHERE ((status)::text = ANY ((ARRAY['authority_waiting'::character varying, 'authority_retry_ready'::character varying])::text[]));
 
-
---
--- Name: idx_b24_dirty_events_confidence_freshness; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_dirty_events_confidence_freshness ON public.b24_dirty_events USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, observed_at, source_snapshot_hash);
-
-
---
--- Name: idx_b24_dirty_events_staleness_overlap; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_dirty_events_staleness_overlap ON public.b24_dirty_events USING btree (tenant_id, model_type, source_window_start, source_window_end, observed_at);
 
-
---
--- Name: idx_b24_dirty_events_tenant_event_hash; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_dirty_events_tenant_event_hash ON public.b24_dirty_events USING btree (tenant_id, event_hash) WHERE (event_hash IS NOT NULL);
-
-
---
--- Name: idx_b24_dirty_events_tenant_model_window_pending; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_dirty_events_tenant_model_window_pending ON public.b24_dirty_events USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, observed_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'leased'::character varying])::text[]));
 
-
---
--- Name: idx_b24_dirty_events_tenant_status_observed; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_dirty_events_tenant_status_observed ON public.b24_dirty_events USING btree (tenant_id, status, observed_at, id);
-
-
---
--- Name: idx_b24_feature_authority_build_outbox_due; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_feature_authority_build_outbox_due ON public.b24_feature_authority_build_outbox USING btree (tenant_id, status, next_attempt_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'failed_retryable'::character varying, 'stale_recovered'::character varying])::text[]));
 
-
---
--- Name: idx_b24_feature_authority_build_requests_due; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_feature_authority_build_requests_due ON public.b24_feature_authority_build_requests USING btree (tenant_id, status, retry_after_at) WHERE ((status)::text = ANY ((ARRAY['authority_build_requested'::character varying, 'authority_waiting'::character varying, 'authority_retry_ready'::character varying])::text[]));
-
-
---
--- Name: idx_b24_feature_authority_tenant_model_window; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_feature_authority_tenant_model_window ON public.b24_source_window_feature_authority USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, computed_at DESC);
 
-
---
--- Name: idx_b24_fit_dispatch_outbox_dispatching; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_fit_dispatch_outbox_dispatching ON public.b24_fit_dispatch_outbox USING btree (tenant_id, dispatching_started_at) WHERE ((status)::text = 'dispatching'::text);
-
-
---
--- Name: idx_b24_fit_dispatch_outbox_due; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_fit_dispatch_outbox_due ON public.b24_fit_dispatch_outbox USING btree (tenant_id, status, next_attempt_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'failed_retryable'::character varying, 'stale_recovered'::character varying])::text[]));
 
-
---
--- Name: idx_b24_fit_dispatch_outbox_recoverable; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_fit_dispatch_outbox_recoverable ON public.b24_fit_dispatch_outbox USING btree (status, next_recovery_at, lease_expires_at) WHERE ((status)::text = ANY ((ARRAY['dispatched'::character varying, 'leased'::character varying, 'running'::character varying, 'failed_retryable'::character varying, 'stale_recovered'::character varying])::text[]));
-
-
---
--- Name: idx_b24_fit_recovery_outbox_due; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_fit_recovery_outbox_due ON public.b24_fit_recovery_outbox USING btree (status, created_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'failed_retryable'::character varying])::text[]));
 
-
---
--- Name: idx_b24_p2_attribution_allocations_source_stream; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_p2_attribution_allocations_source_stream ON public.attribution_allocations USING btree (tenant_id, created_at, id) WHERE (verified = true);
-
-
---
--- Name: idx_b24_p2_attribution_events_source_stream; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_p2_attribution_events_source_stream ON public.attribution_events USING btree (tenant_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text));
 
-
---
--- Name: idx_b24_p2_match_verdicts_source_stream; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_p2_match_verdicts_source_stream ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at, id) WHERE ((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[]));
-
-
---
--- Name: idx_b24_p2_revenue_events_source_stream; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_p2_revenue_events_source_stream ON public.b23_revenue_events USING btree (tenant_id, event_occurred_at, id) WHERE ((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[]));
 
-
---
--- Name: idx_b24_p3_attribution_allocations_source_stream_fallback; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_p3_attribution_allocations_source_stream_fallback ON public.attribution_allocations USING btree (tenant_id, created_at, id);
-
-
---
--- Name: idx_b24_p3_attribution_events_source_stream_fallback; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_p3_attribution_events_source_stream_fallback ON public.attribution_events USING btree (tenant_id, occurred_at, id);
 
-
---
--- Name: idx_b24_p3_match_verdicts_source_stream_fallback; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_p3_match_verdicts_source_stream_fallback ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at, id);
-
-
---
--- Name: idx_b24_p3_revenue_events_source_stream_fallback; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_p3_revenue_events_source_stream_fallback ON public.b23_revenue_events USING btree (tenant_id, event_occurred_at, id);
 
-
---
--- Name: idx_b24_p4_attribution_events_campaign_cardinality; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_p4_attribution_events_campaign_cardinality ON public.attribution_events USING btree (tenant_id, campaign_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text) AND (campaign_id IS NOT NULL));
-
-
---
--- Name: idx_b24_p4_attribution_events_campaign_early_stop; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_p4_attribution_events_campaign_early_stop ON public.attribution_events USING btree (tenant_id, campaign_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text) AND (campaign_id IS NOT NULL) AND ((campaign_id)::text <> ''::text));
 
-
---
--- Name: idx_b24_p4_attribution_events_channel_early_stop; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_p4_attribution_events_channel_early_stop ON public.attribution_events USING btree (tenant_id, channel, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text) AND (channel IS NOT NULL) AND ((channel)::text <> ''::text));
-
-
---
--- Name: idx_b24_p4_match_verdicts_provider_cardinality; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_p4_match_verdicts_provider_cardinality ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL));
 
-
---
--- Name: idx_b24_p4_match_verdicts_provider_early_stop; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_p4_match_verdicts_provider_early_stop ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL) AND ((provider)::text <> ''::text));
-
-
---
--- Name: idx_b24_p4_revenue_events_provider_cardinality; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_p4_revenue_events_provider_cardinality ON public.b23_revenue_events USING btree (tenant_id, provider, event_occurred_at, id) WHERE (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (provider IS NOT NULL));
 
-
---
--- Name: idx_b24_p4_revenue_events_provider_early_stop; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b24_p4_revenue_events_provider_early_stop ON public.b23_revenue_events USING btree (tenant_id, provider, event_occurred_at, id) WHERE (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (provider IS NOT NULL) AND ((provider)::text <> ''::text));
-
-
---
--- Name: idx_b24_worker_process_authority_active; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b24_worker_process_authority_active ON public.b24_worker_process_authority USING btree (expires_at, registered_at) WHERE ((status)::text = 'active'::text);
 
-
---
--- Name: idx_b26_p2_adjustment_evidence_verdict; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b26_p2_adjustment_evidence_verdict ON public.b26_p2_adjustment_evidence USING btree (tenant_id, verdict_id, event_timestamp DESC);
-
-
---
--- Name: idx_b26_p2_outbox_pending; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b26_p2_outbox_pending ON public.b26_p2_execution_outbox USING btree (state, next_retry_at);
 
-
---
--- Name: idx_b26_p2_source_money_attestation_tenant; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b26_p2_source_money_attestation_tenant ON public.b26_p2_source_money_attestation USING btree (tenant_id, attested_at DESC);
-
-
---
--- Name: idx_b28_request_authentication_credential; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_b28_request_authentication_credential ON public.b28_request_authentications USING btree (tenant_id, credential_id);
 
-
---
--- Name: idx_b28_request_requester; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_b28_request_requester ON public.b28_simulation_requests USING btree (tenant_id, requested_by_agent_client_id);
-
-
---
--- Name: idx_budget_jobs_tenant_status; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 
-
---
--- Name: idx_channel_assignment_corrections_channels; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_channel_assignment_corrections_channels ON public.channel_assignment_corrections USING btree (from_channel, to_channel, corrected_at DESC);
-
-
---
--- Name: idx_channel_assignment_corrections_entity; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_channel_assignment_corrections_entity ON public.channel_assignment_corrections USING btree (tenant_id, entity_type, entity_id, corrected_at DESC);
 
-
---
--- Name: idx_channel_assignment_corrections_tenant; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_channel_assignment_corrections_tenant ON public.channel_assignment_corrections USING btree (tenant_id, corrected_at DESC);
-
-
---
--- Name: idx_channel_state_transitions_channel_changed_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_channel_state_transitions_channel_changed_at ON public.channel_state_transitions USING btree (channel_code, changed_at DESC);
 
-
---
--- Name: idx_channel_state_transitions_to_state_changed_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_channel_state_transitions_to_state_changed_at ON public.channel_state_transitions USING btree (to_state, changed_at DESC);
-
-
---
--- Name: idx_compliance_audit_ledger_tenant_correlation; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_compliance_audit_ledger_tenant_correlation ON public.compliance_audit_ledger USING btree (tenant_id, correlation_id);
 
-
---
--- Name: idx_compliance_audit_ledger_tenant_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_compliance_audit_ledger_tenant_created ON public.compliance_audit_ledger USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_dead_events_error_code; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_dead_events_error_code ON public.dead_events USING btree (error_code);
 
-
---
--- Name: idx_dead_events_quarantine_null_lane; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_dead_events_quarantine_null_lane ON public.dead_events_quarantine USING btree (ingested_at DESC) WHERE (tenant_id IS NULL);
-
-
---
--- Name: idx_dead_events_quarantine_tenant_idempotency_key; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_dead_events_quarantine_tenant_idempotency_key ON public.dead_events_quarantine USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
-
---
--- Name: idx_dead_events_quarantine_tenant_ingested_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_dead_events_quarantine_tenant_ingested_at ON public.dead_events_quarantine USING btree (tenant_id, ingested_at DESC);
-
-
---
--- Name: idx_dead_events_remediation; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_dead_events_remediation ON public.dead_events USING btree (remediation_status, ingested_at DESC);
 
-
---
--- Name: INDEX idx_dead_events_remediation; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_dead_events_remediation IS 'Optimizes remediation queue queries. Purpose: Enable fast lookup of events by remediation status. Required for: B0.5 remediation dashboard.';
-
-
---
--- Name: idx_dead_events_source; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_dead_events_source ON public.dead_events USING btree (source);
-
-
---
--- Name: idx_dead_events_tenant_idempotency_key; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_dead_events_tenant_idempotency_key ON public.dead_events USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
-
---
--- Name: idx_dead_events_tenant_ingested_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_dead_events_tenant_ingested_at ON public.dead_events USING btree (tenant_id, ingested_at DESC);
-
-
---
--- Name: idx_ephemeral_click_resolution_tenant_click; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_ephemeral_click_resolution_tenant_click ON public.ephemeral_click_resolution USING btree (tenant_id, click_id);
 
-
---
--- Name: idx_ephemeral_click_resolution_tenant_expires; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_ephemeral_click_resolution_tenant_expires ON public.ephemeral_click_resolution USING btree (tenant_id, expires_at);
-
-
---
--- Name: idx_ephemeral_order_resolution_tenant_expires; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_ephemeral_order_resolution_tenant_expires ON public.ephemeral_order_resolution USING btree (tenant_id, expires_at);
 
-
---
--- Name: idx_ephemeral_order_resolution_tenant_order; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_ephemeral_order_resolution_tenant_order ON public.ephemeral_order_resolution USING btree (tenant_id, order_id);
-
-
---
--- Name: idx_events_processing_status; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_events_processing_status ON public.attribution_events USING btree (processing_status, processed_at) WHERE ((processing_status)::text = 'pending'::text);
 
-
---
--- Name: INDEX idx_events_processing_status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_events_processing_status IS 'Partial index for pending event queue. Purpose: Enable fast worker queue queries. Required for: B0.5 worker queue.';
-
-
---
--- Name: idx_events_tenant_timestamp; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_events_tenant_timestamp ON public.attribution_events USING btree (tenant_id, event_timestamp DESC);
-
-
---
--- Name: INDEX idx_events_tenant_timestamp; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_events_tenant_timestamp IS 'Optimizes tenant-scoped time-series queries. Purpose: Enable fast event retrieval by tenant and time. Required for: B2.1 attribution models.';
-
-
---
--- Name: idx_explanation_cache_lookup; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_explanation_cache_lookup ON public.explanation_cache USING btree (tenant_id, entity_type, entity_id);
 
-
---
--- Name: idx_investigation_jobs_min_hold; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_investigation_jobs_min_hold ON public.investigation_jobs USING btree (min_hold_until) WHERE ((status)::text = 'PENDING'::text);
-
-
---
--- Name: idx_investigation_jobs_tenant_status; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_investigation_jobs_tenant_status ON public.investigation_jobs USING btree (tenant_id, status, created_at DESC);
 
-
---
--- Name: idx_investigations_tenant_status; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_investigations_tenant_status ON public.investigations USING btree (tenant_id, status, created_at DESC);
-
-
---
--- Name: idx_llm_api_calls_prompt_fingerprint; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_api_calls_prompt_fingerprint ON public.llm_api_calls USING btree (tenant_id, prompt_fingerprint, created_at DESC);
 
-
---
--- Name: idx_llm_breaker_state_tenant_user_updated; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_breaker_state_tenant_user_updated ON public.llm_breaker_state USING btree (tenant_id, user_id, updated_at DESC);
-
-
---
--- Name: idx_llm_budget_reservations_tenant_user_month; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_budget_reservations_tenant_user_month ON public.llm_budget_reservations USING btree (tenant_id, user_id, month DESC);
 
-
---
--- Name: idx_llm_call_audit_decision; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_call_audit_decision ON public.llm_call_audit USING btree (decision, created_at DESC);
-
-
---
--- Name: idx_llm_call_audit_prompt_fingerprint; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_call_audit_prompt_fingerprint ON public.llm_call_audit USING btree (tenant_id, prompt_fingerprint, created_at DESC);
 
-
---
--- Name: idx_llm_call_audit_request_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_call_audit_request_id ON public.llm_call_audit USING btree (request_id);
-
-
---
--- Name: idx_llm_call_audit_tenant_created; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_call_audit_tenant_created ON public.llm_call_audit USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_llm_call_audit_tenant_user_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_call_audit_tenant_user_created ON public.llm_call_audit USING btree (tenant_id, user_id, created_at DESC);
-
-
---
--- Name: idx_llm_calls_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_calls_tenant_created_at ON public.llm_api_calls USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_llm_calls_tenant_endpoint; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_calls_tenant_endpoint ON public.llm_api_calls USING btree (tenant_id, endpoint, created_at DESC);
-
-
---
--- Name: idx_llm_calls_tenant_user_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_calls_tenant_user_created_at ON public.llm_api_calls USING btree (tenant_id, user_id, created_at DESC);
 
-
---
--- Name: idx_llm_failures_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_failures_created_at ON public.llm_validation_failures USING btree (created_at DESC);
-
-
---
--- Name: idx_llm_failures_tenant_endpoint; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_failures_tenant_endpoint ON public.llm_validation_failures USING btree (tenant_id, endpoint, created_at DESC);
 
-
---
--- Name: idx_llm_hourly_shutoff_disabled_until; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_hourly_shutoff_disabled_until ON public.llm_hourly_shutoff_state USING btree (tenant_id, user_id, disabled_until DESC);
-
-
---
--- Name: idx_llm_hourly_shutoff_tenant_user_hour; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_hourly_shutoff_tenant_user_hour ON public.llm_hourly_shutoff_state USING btree (tenant_id, user_id, hour_start DESC);
 
-
---
--- Name: idx_llm_monthly_budget_state_tenant_user_month; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_monthly_budget_state_tenant_user_month ON public.llm_monthly_budget_state USING btree (tenant_id, user_id, month DESC);
-
-
---
--- Name: idx_llm_monthly_tenant_user_month; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_monthly_tenant_user_month ON public.llm_monthly_costs USING btree (tenant_id, user_id, month DESC);
 
-
---
--- Name: idx_llm_semantic_cache_tenant_user_endpoint; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_semantic_cache_tenant_user_endpoint ON public.llm_semantic_cache USING btree (tenant_id, user_id, endpoint, updated_at DESC);
-
-
---
--- Name: idx_mv_allocation_summary_key; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_mv_allocation_summary_key ON public.mv_allocation_summary USING btree (tenant_id, event_id, model_version);
 
-
---
--- Name: INDEX idx_mv_allocation_summary_key; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_mv_allocation_summary_key IS 'Unique index on (tenant_id, event_id, model_version) for REFRESH CONCURRENTLY support. NULL event_id values are treated as distinct (multiple NULLs allowed).';
-
-
---
--- Name: idx_mv_channel_performance_unique; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX idx_mv_channel_performance_unique ON public.mv_channel_performance USING btree (tenant_id, channel_code, allocation_date);
-
-
---
--- Name: idx_mv_daily_revenue_summary_unique; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_mv_daily_revenue_summary_unique ON public.mv_daily_revenue_summary USING btree (tenant_id, revenue_date, state, currency);
 
-
---
--- Name: idx_mv_realtime_revenue_tenant_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX idx_mv_realtime_revenue_tenant_id ON public.mv_realtime_revenue USING btree (tenant_id);
-
-
---
--- Name: idx_mv_reconciliation_status_tenant_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_mv_reconciliation_status_tenant_id ON public.mv_reconciliation_status USING btree (tenant_id);
 
-
---
--- Name: idx_oauth_handshake_sessions_expires_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_oauth_handshake_sessions_expires_at ON public.oauth_handshake_sessions USING btree (expires_at DESC);
-
-
---
--- Name: idx_oauth_handshake_sessions_gc_after; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_oauth_handshake_sessions_gc_after ON public.oauth_handshake_sessions USING btree (gc_after);
 
-
---
--- Name: idx_oauth_handshake_sessions_tenant_platform_user_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_oauth_handshake_sessions_tenant_platform_user_created ON public.oauth_handshake_sessions USING btree (tenant_id, platform, user_id, created_at DESC);
-
-
---
--- Name: idx_oauth_handshake_sessions_tenant_state_lookup; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_oauth_handshake_sessions_tenant_state_lookup ON public.oauth_handshake_sessions USING btree (tenant_id, state_nonce_hash, status);
 
-
---
--- Name: idx_pii_audit_findings_detected_key; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_pii_audit_findings_detected_key ON public.pii_audit_findings USING btree (detected_key);
-
-
---
--- Name: INDEX idx_pii_audit_findings_detected_key; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_pii_audit_findings_detected_key IS 'Performance index for PII category reporting. Purpose: Fast aggregation queries like "count findings by PII type". Query pattern: WHERE detected_key = X OR GROUP BY detected_key.';
-
-
---
--- Name: idx_pii_audit_findings_table_detected_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_pii_audit_findings_table_detected_at ON public.pii_audit_findings USING btree (table_name, detected_at DESC);
 
-
---
--- Name: INDEX idx_pii_audit_findings_table_detected_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_pii_audit_findings_table_detected_at IS 'Performance index for table-scoped queries with time ordering. Purpose: Fast queries like "show recent findings for attribution_events". Query pattern: WHERE table_name = X ORDER BY detected_at DESC.';
-
-
---
--- Name: idx_platform_connections_tenant_platform_updated_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_platform_connections_tenant_platform_updated_at ON public.platform_connections USING btree (tenant_id, platform, updated_at DESC);
-
-
---
--- Name: idx_platform_credentials_refresh_due; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_platform_credentials_refresh_due ON public.platform_credentials USING btree (tenant_id, lifecycle_status, next_refresh_due_at) WHERE (next_refresh_due_at IS NOT NULL);
 
-
---
--- Name: idx_platform_credentials_tenant_lifecycle_updated; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_platform_credentials_tenant_lifecycle_updated ON public.platform_credentials USING btree (tenant_id, lifecycle_status, updated_at DESC);
-
-
---
--- Name: idx_platform_credentials_tenant_platform_updated_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_platform_credentials_tenant_platform_updated_at ON public.platform_credentials USING btree (tenant_id, platform, updated_at DESC);
 
-
---
--- Name: idx_platform_credentials_tenant_revoked_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_platform_credentials_tenant_revoked_at ON public.platform_credentials USING btree (tenant_id, revoked_at DESC) WHERE (revoked_at IS NOT NULL);
-
-
---
--- Name: idx_r4_crash_barriers_scenario_wrote_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_r4_crash_barriers_scenario_wrote_at ON public.r4_crash_barriers USING btree (scenario, wrote_at DESC);
 
-
---
--- Name: idx_r4_task_attempts_scenario_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_r4_task_attempts_scenario_created_at ON public.r4_task_attempts USING btree (scenario, created_at DESC);
-
-
---
--- Name: idx_r4_task_attempts_tenant_task; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_r4_task_attempts_tenant_task ON public.r4_task_attempts USING btree (tenant_id, task_id);
 
-
---
--- Name: idx_raw_event_payloads_event_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_raw_event_payloads_event_id ON public.raw_event_payloads USING btree (event_id);
-
-
---
--- Name: idx_raw_event_payloads_payload_json_gin; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_raw_event_payloads_payload_json_gin ON public.raw_event_payloads USING gin (payload_json jsonb_path_ops);
 
-
---
--- Name: idx_raw_event_payloads_tenant_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_raw_event_payloads_tenant_created ON public.raw_event_payloads USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_raw_event_payloads_tenant_lookup_hash; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_raw_event_payloads_tenant_lookup_hash ON public.raw_event_payloads USING btree (tenant_id, lookup_hash);
 
-
---
--- Name: idx_reconciliation_runs_state; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_reconciliation_runs_state ON public.reconciliation_runs USING btree (state);
-
-
---
--- Name: idx_reconciliation_runs_tenant_last_run_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_reconciliation_runs_tenant_last_run_at ON public.reconciliation_runs USING btree (tenant_id, last_run_at DESC);
 
-
---
--- Name: idx_revenue_cache_entries_error_cooldown; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_revenue_cache_entries_error_cooldown ON public.revenue_cache_entries USING btree (error_cooldown_until);
-
-
---
--- Name: idx_revenue_cache_entries_expires_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_cache_entries_expires_at ON public.revenue_cache_entries USING btree (expires_at);
 
-
---
--- Name: idx_revenue_ledger_is_verified; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_revenue_ledger_is_verified ON public.revenue_ledger USING btree (is_verified) WHERE (is_verified = true);
-
-
---
--- Name: idx_revenue_ledger_state; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_ledger_state ON public.revenue_ledger USING btree (state);
 
-
---
--- Name: INDEX idx_revenue_ledger_state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_revenue_ledger_state IS 'Optimizes queries by state for refund processing. Purpose: Enable fast lookups of transactions by state. Required for: B2.4 refund processing queries.';
-
-
---
--- Name: idx_revenue_ledger_tenant_allocation_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX idx_revenue_ledger_tenant_allocation_id ON public.revenue_ledger USING btree (tenant_id, allocation_id) WHERE (allocation_id IS NOT NULL);
-
-
---
--- Name: INDEX idx_revenue_ledger_tenant_allocation_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_revenue_ledger_tenant_allocation_id IS 'Unique index on (tenant_id, allocation_id) where allocation_id IS NOT NULL. Purpose: Prevent duplicate ledger entries for the same allocation, ensuring idempotent allocation-based posting. Data class: Non-PII.';
-
-
---
--- Name: idx_revenue_ledger_tenant_order_reconciliation; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_ledger_tenant_order_reconciliation ON public.revenue_ledger USING btree (tenant_id, order_id, created_at DESC) WHERE (order_id IS NOT NULL);
 
-
---
--- Name: INDEX idx_revenue_ledger_tenant_order_reconciliation; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_revenue_ledger_tenant_order_reconciliation IS 'Optimizes reconciliation queries by tenant and order. Purpose: Fast lookup for ghost revenue detection.';
-
-
---
--- Name: idx_revenue_ledger_tenant_state; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_revenue_ledger_tenant_state ON public.revenue_ledger USING btree (tenant_id, state, created_at DESC);
-
-
---
--- Name: INDEX idx_revenue_ledger_tenant_state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_revenue_ledger_tenant_state IS 'Optimizes tenant-scoped state queries with temporal ordering. Purpose: Enable fast tenant revenue reporting by state. Required for: B2.4 tenant dashboards.';
-
-
---
--- Name: idx_revenue_ledger_tenant_updated_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_ledger_tenant_updated_at ON public.revenue_ledger USING btree (tenant_id, updated_at DESC);
 
-
---
--- Name: idx_revenue_ledger_transaction_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX idx_revenue_ledger_transaction_id ON public.revenue_ledger USING btree (transaction_id);
-
-
---
--- Name: INDEX idx_revenue_ledger_transaction_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_revenue_ledger_transaction_id IS 'Ensures transaction_id uniqueness for webhook idempotency. Purpose: Prevent duplicate ledger entries for the same transaction. Required for: B2.2 webhook deduplication.';
-
-
---
--- Name: idx_revenue_state_transitions_ledger_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_state_transitions_ledger_id ON public.revenue_state_transitions USING btree (ledger_id, transitioned_at DESC);
 
-
---
--- Name: INDEX idx_revenue_state_transitions_ledger_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_revenue_state_transitions_ledger_id IS 'Optimizes lookups of state transitions by ledger entry with temporal ordering. Purpose: Enable fast retrieval of state history for a ledger entry. Required for: B2.4 state history queries, refund audit trail.';
-
-
---
--- Name: idx_revenue_state_transitions_tenant_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_revenue_state_transitions_tenant_id ON public.revenue_state_transitions USING btree (tenant_id, transitioned_at DESC);
-
-
---
--- Name: idx_session_authority_active; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_session_authority_active ON public.session_authority USING btree (tenant_id, session_id, expires_at DESC) WHERE (invalidated_at IS NULL);
 
-
---
--- Name: idx_session_authority_tenant_expires; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_session_authority_tenant_expires ON public.session_authority USING btree (tenant_id, expires_at DESC);
-
-
---
--- Name: idx_session_authority_tenant_last_seen; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_session_authority_tenant_last_seen ON public.session_authority USING btree (tenant_id, last_seen_at DESC);
 
-
---
--- Name: idx_tenant_membership_roles_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_tenant_membership_roles_tenant_created_at ON public.tenant_membership_roles USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_tenant_memberships_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_tenant_memberships_tenant_created_at ON public.tenant_memberships USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_tenant_memberships_user_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_tenant_memberships_user_created_at ON public.tenant_memberships USING btree (user_id, created_at DESC);
-
-
---
--- Name: idx_tenants_api_key_hash; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_tenants_api_key_hash ON public.tenants USING btree (api_key_hash);
 
-
---
--- Name: INDEX idx_tenants_api_key_hash; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON INDEX public.idx_tenants_api_key_hash IS 'Ensures api_key_hash uniqueness for authentication. Purpose: Prevent duplicate API keys across tenants. Required for: B0.4 ingestion authentication.';
-
-
---
--- Name: idx_tenants_name; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_tenants_name ON public.tenants USING btree (name);
-
-
---
--- Name: idx_tool_calls_investigation; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_tool_calls_investigation ON public.investigation_tool_calls USING btree (investigation_id, created_at);
 
-
---
--- Name: idx_tool_calls_tenant; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_tool_calls_tenant ON public.investigation_tool_calls USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_trust_access_log_created; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_trust_access_log_created ON public.trust_access_log USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_trust_access_log_subject; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_trust_access_log_subject ON public.trust_access_log USING btree (tenant_id, subject_type, subject_ref_hash);
-
-
---
--- Name: idx_trust_issuance_subject; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_trust_issuance_subject ON public.trust_envelope_issuance_log USING btree (tenant_id, subject_type, subject_ref_hash);
 
-
---
--- Name: idx_trust_rate_limit_state_lookup; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_trust_rate_limit_state_lookup ON public.trust_rate_limit_state USING btree (tenant_id, agent_client_id, window_ended_at);
-
-
---
--- Name: idx_trust_replay_created; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_trust_replay_created ON public.trust_replay_events USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_trust_request_nonces_tenant_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_trust_request_nonces_tenant_created ON public.trust_request_nonces USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_trust_request_nonces_tenant_expires; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_trust_request_nonces_tenant_expires ON public.trust_request_nonces USING btree (tenant_id, expires_at);
 
-
---
--- Name: idx_trust_scope_denial_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_trust_scope_denial_created ON public.trust_scope_denial_events USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_webhook_ingress_identities_tenant_provider_created; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_webhook_ingress_identities_tenant_provider_created ON public.webhook_ingress_identities USING btree (tenant_id, provider, created_at DESC);
 
-
---
--- Name: idx_webhook_ingress_identities_tenant_reference; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_webhook_ingress_identities_tenant_reference ON public.webhook_ingress_identities USING btree (tenant_id, normalized_commerce_reference_kind, normalized_commerce_reference_value);
-
-
---
--- Name: idx_webhook_ingress_identities_tenant_verified_state; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_webhook_ingress_identities_tenant_verified_state ON public.webhook_ingress_identities USING btree (tenant_id, verified_commerce_ingress_state, event_timestamp DESC);
 
-
---
--- Name: idx_worker_failed_jobs_status; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_worker_failed_jobs_status ON public.worker_failed_jobs USING btree (status, failed_at);
-
-
---
--- Name: idx_worker_failed_jobs_task_name; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_worker_failed_jobs_task_name ON public.worker_failed_jobs USING btree (task_name);
 
-
---
--- Name: idx_worker_side_effects_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_worker_side_effects_tenant_created_at ON public.worker_side_effects USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: ix_b24_fit_policy_replan_lineage_fit; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_b24_fit_policy_replan_lineage_fit ON public.b24_fit_policy_replan_lineage USING btree (tenant_id, fit_id, transition_sequence);
 
-
---
--- Name: ix_b27_explanation_subject; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_b27_explanation_subject ON public.b27_explanation_materializations USING btree (tenant_id, subject_type, subject_ref_hash, stale);
-
-
---
--- Name: ix_celery_taskmeta_task_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_celery_taskmeta_task_id ON public.celery_taskmeta USING btree (task_id);
 
-
---
--- Name: ix_celery_tasksetmeta_taskset_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_celery_tasksetmeta_taskset_id ON public.celery_tasksetmeta USING btree (taskset_id);
-
-
---
--- Name: ix_kombu_message_timestamp_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_kombu_message_timestamp_id ON public.kombu_message USING btree ("timestamp", id);
 
-
---
--- Name: ix_kombu_message_visible; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_kombu_message_visible ON public.kombu_message USING btree (visible);
-
-
---
--- Name: ix_public_celery_task_failures_task_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_public_celery_task_failures_task_id ON public.worker_failed_jobs USING btree (task_id);
 
-
---
--- Name: ix_public_celery_task_failures_task_name; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_public_celery_task_failures_task_name ON public.worker_failed_jobs USING btree (task_name);
-
-
---
--- Name: ix_public_celery_task_failures_tenant_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_public_celery_task_failures_tenant_id ON public.worker_failed_jobs USING btree (tenant_id);
 
-
---
--- Name: ix_trust_access_log_issuance_state; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_trust_access_log_issuance_state ON public.trust_access_log USING btree (tenant_id, issuance_state);
-
-
---
--- Name: ix_trust_export_artifact_attempts_lookup; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_trust_export_artifact_attempts_lookup ON public.trust_export_artifact_attempts USING btree (tenant_id, request_binding_hash, page_start, attempt_number DESC);
 
-
---
--- Name: ix_trust_issuance_attempts_recovery; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_trust_issuance_attempts_recovery ON public.trust_issuance_attempts USING btree (tenant_id, attempt_state, updated_at, id);
-
-
---
--- Name: ix_trust_issuance_attempts_tenant_audit; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_trust_issuance_attempts_tenant_audit ON public.trust_issuance_attempts USING btree (tenant_id, audit_ref, attempt_number DESC);
 
-
---
--- Name: ix_trust_tenant_policy_latest; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_trust_tenant_policy_latest ON public.trust_tenant_policy_events USING btree (tenant_id, revision DESC);
-
-
---
--- Name: uq_b23_exception_records_one_open_per_verdict; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_exception_records USING btree (tenant_id, match_verdict_id) WHERE ((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying])::text[]));
 
-
---
--- Name: uq_b24_fit_dispatch_outbox_attempt; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX uq_b24_fit_dispatch_outbox_attempt ON public.b24_fit_dispatch_outbox USING btree (tenant_id, attempt_id);
-
-
---
--- Name: uq_b26_p2_xvii_commerce_identity; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX uq_b26_p2_xvii_commerce_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, normalized_commerce_reference_kind, normalized_commerce_reference_value) WHERE ((b26_p2_provenance_status = 'authenticated_known'::text) AND (b26_p2_demotion_reason IS NULL));
 
-
---
--- Name: uq_b26_p2_xvii_event_identity; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX uq_b26_p2_xvii_event_identity ON public.webhook_ingress_identities USING btree (tenant_id, provider, provider_native_event_reference) WHERE (b26_p2_provenance_status = 'authenticated_known'::text);
-
-
---
--- Name: uq_b28_request_authentication; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX uq_b28_request_authentication ON public.b28_simulation_requests USING btree (request_authentication_id);
 
-
---
--- Name: uq_platform_connections_tenant_platform_account; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX uq_platform_connections_tenant_platform_account ON public.platform_connections USING btree (tenant_id, platform, platform_account_id);
-
-
---
--- Name: uq_platform_credentials_tenant_platform_connection; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX uq_platform_credentials_tenant_platform_connection ON public.platform_credentials USING btree (tenant_id, platform, platform_connection_id);
 
-
---
--- Name: ux_r4_crash_barriers_tenant_task_attempt; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX ux_r4_crash_barriers_tenant_task_attempt ON public.r4_crash_barriers USING btree (tenant_id, task_id, attempt_no);
-
-
---
--- Name: ux_r4_task_attempts_tenant_task_attempt; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX ux_r4_task_attempts_tenant_task_attempt ON public.r4_task_attempts USING btree (tenant_id, task_id, attempt_no);
 
-
---
--- Name: ux_worker_side_effects_tenant_task_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX ux_worker_side_effects_tenant_task_id ON public.worker_side_effects USING btree (tenant_id, task_id);
-
-
---
--- Name: bayesian_artifacts_p00_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p00_pkey;
 
-
---
--- Name: bayesian_artifacts_p00_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p00_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p00_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p00_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p00_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p01_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p01_pkey;
 
-
---
--- Name: bayesian_artifacts_p01_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p01_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p01_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p01_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p01_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p02_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p02_pkey;
 
-
---
--- Name: bayesian_artifacts_p02_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p02_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p02_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p02_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p02_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p03_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p03_pkey;
 
-
---
--- Name: bayesian_artifacts_p03_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p03_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p03_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p03_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p03_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p04_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p04_pkey;
 
-
---
--- Name: bayesian_artifacts_p04_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p04_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p04_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p04_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p04_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p05_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p05_pkey;
 
-
---
--- Name: bayesian_artifacts_p05_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p05_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p05_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p05_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p05_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p06_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p06_pkey;
 
-
---
--- Name: bayesian_artifacts_p06_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p06_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p06_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p06_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p06_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p07_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p07_pkey;
 
-
---
--- Name: bayesian_artifacts_p07_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p07_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p07_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p07_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p07_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p08_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p08_pkey;
 
-
---
--- Name: bayesian_artifacts_p08_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p08_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p08_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p08_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p08_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p09_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p09_pkey;
 
-
---
--- Name: bayesian_artifacts_p09_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p09_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p09_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p09_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p09_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p10_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p10_pkey;
 
-
---
--- Name: bayesian_artifacts_p10_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p10_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p10_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p10_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p10_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p11_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p11_pkey;
 
-
---
--- Name: bayesian_artifacts_p11_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p11_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p11_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p11_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p11_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p12_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p12_pkey;
 
-
---
--- Name: bayesian_artifacts_p12_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p12_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p12_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p12_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p12_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p13_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p13_pkey;
 
-
---
--- Name: bayesian_artifacts_p13_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p13_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p13_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p13_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p13_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p14_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p14_pkey;
 
-
---
--- Name: bayesian_artifacts_p14_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p14_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p14_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p14_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p14_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_idx;
-
-
---
--- Name: bayesian_artifacts_p15_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p15_pkey;
 
-
---
--- Name: bayesian_artifacts_p15_tenant_id_artifact_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_artifact_hash_idx;
-
-
---
--- Name: bayesian_artifacts_p15_tenant_id_artifact_ref_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_artifact_ref_idx;
 
-
---
--- Name: bayesian_artifacts_p15_tenant_id_artifact_ref_key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_artifact_ref_key;
-
-
---
--- Name: bayesian_artifacts_p15_tenant_id_fit_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_fit_id_idx;
 
-
---
--- Name: bayesian_artifacts_p15_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_idx;
-
-
---
--- Name: bayesian_model_fits_p00_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p00_pkey;
 
-
---
--- Name: bayesian_model_fits_p00_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_idx;
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_eligibility_st_idx;
 
-
---
--- Name: bayesian_model_fits_p00_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_fallback_reaso_idx;
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_model_version__key;
 
-
---
--- Name: bayesian_model_fits_p00_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_source_window__idx;
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_source_window_idx1;
 
-
---
--- Name: bayesian_model_fits_p00_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_source_snapshot_hash_idx;
-
-
---
--- Name: bayesian_model_fits_p00_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_status_idx;
 
-
---
--- Name: bayesian_model_fits_p01_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p01_pkey;
-
-
---
--- Name: bayesian_model_fits_p01_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_idx;
 
-
---
--- Name: bayesian_model_fits_p01_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_eligibility_st_idx;
-
-
---
--- Name: bayesian_model_fits_p01_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_fallback_reaso_idx;
 
-
---
--- Name: bayesian_model_fits_p01_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_model_version__key;
-
-
---
--- Name: bayesian_model_fits_p01_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_source_window__idx;
 
-
---
--- Name: bayesian_model_fits_p01_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_source_window_idx1;
-
-
---
--- Name: bayesian_model_fits_p01_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_source_snapshot_hash_idx;
 
-
---
--- Name: bayesian_model_fits_p01_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_status_idx;
-
-
---
--- Name: bayesian_model_fits_p02_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p02_pkey;
 
-
---
--- Name: bayesian_model_fits_p02_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_idx;
-
-
---
--- Name: bayesian_model_fits_p02_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_eligibility_st_idx;
 
-
---
--- Name: bayesian_model_fits_p02_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_fallback_reaso_idx;
-
-
---
--- Name: bayesian_model_fits_p02_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_model_version__key;
 
-
---
--- Name: bayesian_model_fits_p02_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_source_window__idx;
-
-
---
--- Name: bayesian_model_fits_p02_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_source_window_idx1;
 
-
---
--- Name: bayesian_model_fits_p02_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_source_snapshot_hash_idx;
-
-
---
--- Name: bayesian_model_fits_p02_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_status_idx;
 
-
---
--- Name: bayesian_model_fits_p03_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p03_pkey;
-
-
---
--- Name: bayesian_model_fits_p03_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_idx;
 
-
---
--- Name: bayesian_model_fits_p03_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_eligibility_st_idx;
-
-
---
--- Name: bayesian_model_fits_p03_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_fallback_reaso_idx;
 
-
---
--- Name: bayesian_model_fits_p03_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_model_version__key;
-
-
---
--- Name: bayesian_model_fits_p03_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_source_window__idx;
 
-
---
--- Name: bayesian_model_fits_p03_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_source_window_idx1;
-
-
---
--- Name: bayesian_model_fits_p03_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_source_snapshot_hash_idx;
 
-
---
--- Name: bayesian_model_fits_p03_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_status_idx;
-
-
---
--- Name: bayesian_model_fits_p04_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p04_pkey;
 
-
---
--- Name: bayesian_model_fits_p04_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_idx;
-
-
---
--- Name: bayesian_model_fits_p04_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_eligibility_st_idx;
 
-
---
--- Name: bayesian_model_fits_p04_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_fallback_reaso_idx;
-
-
---
--- Name: bayesian_model_fits_p04_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_model_version__key;
 
-
---
--- Name: bayesian_model_fits_p04_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_source_window__idx;
-
-
---
--- Name: bayesian_model_fits_p04_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_source_window_idx1;
 
-
---
--- Name: bayesian_model_fits_p04_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_source_snapshot_hash_idx;
-
-
---
--- Name: bayesian_model_fits_p04_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_status_idx;
 
-
---
--- Name: bayesian_model_fits_p05_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p05_pkey;
-
-
---
--- Name: bayesian_model_fits_p05_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_idx;
 
-
---
--- Name: bayesian_model_fits_p05_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_eligibility_st_idx;
-
-
---
--- Name: bayesian_model_fits_p05_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_fallback_reaso_idx;
 
-
---
--- Name: bayesian_model_fits_p05_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_model_version__key;
-
-
---
--- Name: bayesian_model_fits_p05_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_source_window__idx;
 
-
---
--- Name: bayesian_model_fits_p05_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_source_window_idx1;
-
-
---
--- Name: bayesian_model_fits_p05_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_source_snapshot_hash_idx;
 
-
---
--- Name: bayesian_model_fits_p05_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_status_idx;
-
-
---
--- Name: bayesian_model_fits_p06_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p06_pkey;
 
-
---
--- Name: bayesian_model_fits_p06_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_idx;
-
-
---
--- Name: bayesian_model_fits_p06_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_eligibility_st_idx;
 
-
---
--- Name: bayesian_model_fits_p06_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_fallback_reaso_idx;
-
-
---
--- Name: bayesian_model_fits_p06_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_model_version__key;
 
-
---
--- Name: bayesian_model_fits_p06_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_source_window__idx;
-
-
---
--- Name: bayesian_model_fits_p06_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_source_window_idx1;
 
-
---
--- Name: bayesian_model_fits_p06_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_source_snapshot_hash_idx;
-
-
---
--- Name: bayesian_model_fits_p06_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_status_idx;
 
-
---
--- Name: bayesian_model_fits_p07_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p07_pkey;
-
-
---
--- Name: bayesian_model_fits_p07_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_idx;
 
-
---
--- Name: bayesian_model_fits_p07_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_eligibility_st_idx;
-
-
---
--- Name: bayesian_model_fits_p07_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_fallback_reaso_idx;
 
-
---
--- Name: bayesian_model_fits_p07_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_model_version__key;
-
-
---
--- Name: bayesian_model_fits_p07_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_source_window__idx;
 
-
---
--- Name: bayesian_model_fits_p07_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_source_window_idx1;
-
-
---
--- Name: bayesian_model_fits_p07_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_source_snapshot_hash_idx;
 
-
---
--- Name: bayesian_model_fits_p07_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_status_idx;
-
-
---
--- Name: bayesian_model_fits_p08_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p08_pkey;
 
-
---
--- Name: bayesian_model_fits_p08_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_idx;
-
-
---
--- Name: bayesian_model_fits_p08_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_eligibility_st_idx;
 
-
---
--- Name: bayesian_model_fits_p08_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_fallback_reaso_idx;
-
-
---
--- Name: bayesian_model_fits_p08_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_model_version__key;
 
-
---
--- Name: bayesian_model_fits_p08_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_source_window__idx;
-
-
---
--- Name: bayesian_model_fits_p08_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_source_window_idx1;
 
-
---
--- Name: bayesian_model_fits_p08_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_source_snapshot_hash_idx;
-
-
---
--- Name: bayesian_model_fits_p08_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_status_idx;
 
-
---
--- Name: bayesian_model_fits_p09_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p09_pkey;
-
-
---
--- Name: bayesian_model_fits_p09_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_idx;
 
-
---
--- Name: bayesian_model_fits_p09_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_eligibility_st_idx;
-
-
---
--- Name: bayesian_model_fits_p09_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_fallback_reaso_idx;
 
-
---
--- Name: bayesian_model_fits_p09_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_model_version__key;
-
-
---
--- Name: bayesian_model_fits_p09_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_source_window__idx;
 
-
---
--- Name: bayesian_model_fits_p09_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_source_window_idx1;
-
-
---
--- Name: bayesian_model_fits_p09_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_source_snapshot_hash_idx;
 
-
---
--- Name: bayesian_model_fits_p09_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_status_idx;
-
-
---
--- Name: bayesian_model_fits_p10_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p10_pkey;
 
-
---
--- Name: bayesian_model_fits_p10_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_idx;
-
-
---
--- Name: bayesian_model_fits_p10_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_eligibility_st_idx;
 
-
---
--- Name: bayesian_model_fits_p10_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_fallback_reaso_idx;
-
-
---
--- Name: bayesian_model_fits_p10_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_model_version__key;
 
-
---
--- Name: bayesian_model_fits_p10_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_source_window__idx;
-
-
---
--- Name: bayesian_model_fits_p10_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_source_window_idx1;
 
-
---
--- Name: bayesian_model_fits_p10_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_source_snapshot_hash_idx;
-
-
---
--- Name: bayesian_model_fits_p10_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_status_idx;
 
-
---
--- Name: bayesian_model_fits_p11_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p11_pkey;
-
-
---
--- Name: bayesian_model_fits_p11_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_idx;
 
-
---
--- Name: bayesian_model_fits_p11_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_eligibility_st_idx;
-
-
---
--- Name: bayesian_model_fits_p11_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_fallback_reaso_idx;
 
-
---
--- Name: bayesian_model_fits_p11_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_model_version__key;
-
-
---
--- Name: bayesian_model_fits_p11_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_source_window__idx;
 
-
---
--- Name: bayesian_model_fits_p11_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_source_window_idx1;
-
-
---
--- Name: bayesian_model_fits_p11_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_source_snapshot_hash_idx;
 
-
---
--- Name: bayesian_model_fits_p11_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_status_idx;
-
-
---
--- Name: bayesian_model_fits_p12_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p12_pkey;
 
-
---
--- Name: bayesian_model_fits_p12_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_idx;
-
-
---
--- Name: bayesian_model_fits_p12_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_eligibility_st_idx;
 
-
---
--- Name: bayesian_model_fits_p12_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_fallback_reaso_idx;
-
-
---
--- Name: bayesian_model_fits_p12_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_model_version__key;
 
-
---
--- Name: bayesian_model_fits_p12_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_source_window__idx;
-
-
---
--- Name: bayesian_model_fits_p12_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_source_window_idx1;
 
-
---
--- Name: bayesian_model_fits_p12_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_source_snapshot_hash_idx;
-
-
---
--- Name: bayesian_model_fits_p12_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_status_idx;
 
-
---
--- Name: bayesian_model_fits_p13_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p13_pkey;
-
-
---
--- Name: bayesian_model_fits_p13_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_idx;
 
-
---
--- Name: bayesian_model_fits_p13_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_eligibility_st_idx;
-
-
---
--- Name: bayesian_model_fits_p13_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_fallback_reaso_idx;
 
-
---
--- Name: bayesian_model_fits_p13_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_model_version__key;
-
-
---
--- Name: bayesian_model_fits_p13_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_source_window__idx;
 
-
---
--- Name: bayesian_model_fits_p13_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_source_window_idx1;
-
-
---
--- Name: bayesian_model_fits_p13_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_source_snapshot_hash_idx;
 
-
---
--- Name: bayesian_model_fits_p13_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_status_idx;
-
-
---
--- Name: bayesian_model_fits_p14_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p14_pkey;
 
-
---
--- Name: bayesian_model_fits_p14_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_idx;
-
-
---
--- Name: bayesian_model_fits_p14_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_eligibility_st_idx;
 
-
---
--- Name: bayesian_model_fits_p14_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_fallback_reaso_idx;
-
-
---
--- Name: bayesian_model_fits_p14_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_model_version__key;
 
-
---
--- Name: bayesian_model_fits_p14_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_source_window__idx;
-
-
---
--- Name: bayesian_model_fits_p14_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_source_window_idx1;
 
-
---
--- Name: bayesian_model_fits_p14_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_source_snapshot_hash_idx;
-
-
---
--- Name: bayesian_model_fits_p14_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_status_idx;
 
-
---
--- Name: bayesian_model_fits_p15_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p15_pkey;
-
-
---
--- Name: bayesian_model_fits_p15_tenant_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_idx;
 
-
---
--- Name: bayesian_model_fits_p15_tenant_id_model_type_eligibility_st_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_eligibility_st_idx;
-
-
---
--- Name: bayesian_model_fits_p15_tenant_id_model_type_fallback_reaso_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_fallback_reaso_idx;
 
-
---
--- Name: bayesian_model_fits_p15_tenant_id_model_type_model_version__key; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_model_version__key;
-
-
---
--- Name: bayesian_model_fits_p15_tenant_id_model_type_source_window__idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_source_window__idx;
 
-
---
--- Name: bayesian_model_fits_p15_tenant_id_model_type_source_window_idx1; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_source_window_idx1;
-
-
---
--- Name: bayesian_model_fits_p15_tenant_id_source_snapshot_hash_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
 
 ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_source_snapshot_hash_idx;
 
-
---
--- Name: bayesian_model_fits_p15_tenant_id_status_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
 ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_status_idx;
-
-
---
--- Name: agent_scope_grants trg_agent_scope_grants_reject_reserved; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_agent_scope_grants_reject_reserved BEFORE INSERT OR UPDATE OF scope_value ON public.agent_scope_grants FOR EACH ROW EXECUTE FUNCTION public.reject_reserved_trust_action_scope();
 
-
---
--- Name: attribution_allocations trg_allocations_channel_correction_audit; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_allocations_channel_correction_audit AFTER UPDATE OF channel_code ON public.attribution_allocations FOR EACH ROW WHEN ((old.channel_code IS DISTINCT FROM new.channel_code)) EXECUTE FUNCTION public.fn_log_channel_assignment_correction();
-
-
---
--- Name: TRIGGER trg_allocations_channel_correction_audit ON attribution_allocations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_allocations_channel_correction_audit ON public.attribution_allocations IS 'Automatically logs all channel_code corrections to channel_assignment_corrections table.
-            Purpose: Provide atomic audit trail for revenue reclassifications.
-            Fires: Only when channel_code column changes (not on other column updates).
-            Note: Does NOT fire on INSERT (corrections are post-ingestion only).';
-
-
---
--- Name: attribution_commerce_identities trg_b23_p0_prune_attribution_commerce_identities; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities AFTER INSERT OR UPDATE OF last_observed_at ON public.attribution_commerce_identities FOR EACH STATEMENT EXECUTE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger();
 
-
---
--- Name: attribution_allocations trg_b23_project_allocation_verification; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b23_project_allocation_verification BEFORE INSERT OR UPDATE OF tenant_id, event_id, verified, verification_source, verification_timestamp ON public.attribution_allocations FOR EACH ROW EXECUTE FUNCTION public.b23_project_allocation_verification();
-
-
---
--- Name: b23_match_verdicts trg_b23_refresh_allocation_verification_insert; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b23_refresh_allocation_verification_insert AFTER INSERT ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b23_refresh_allocation_verification();
 
-
---
--- Name: b23_match_verdicts trg_b23_refresh_allocation_verification_update; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b23_refresh_allocation_verification_update AFTER UPDATE OF status, attribution_event_id, last_transition_at ON public.b23_match_verdicts FOR EACH ROW WHEN ((((old.status)::text IS DISTINCT FROM (new.status)::text) OR (old.attribution_event_id IS DISTINCT FROM new.attribution_event_id) OR (old.last_transition_at IS DISTINCT FROM new.last_transition_at))) EXECUTE FUNCTION public.b23_refresh_allocation_verification();
-
-
---
--- Name: b23_match_verdicts trg_b23_verdict_authorship_insert; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b23_verdict_authorship_insert BEFORE INSERT ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b23_enforce_verdict_authorship();
 
-
---
--- Name: b23_match_verdicts trg_b23_verdict_authorship_update; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b23_verdict_authorship_update BEFORE UPDATE ON public.b23_match_verdicts FOR EACH ROW WHEN ((((old.status)::text IS DISTINCT FROM (new.status)::text) OR (old.confirmed_at IS DISTINCT FROM new.confirmed_at) OR (old.adjusted_at IS DISTINCT FROM new.adjusted_at) OR (old.unmatched_marked_at IS DISTINCT FROM new.unmatched_marked_at) OR ((old.match_quality)::text IS DISTINCT FROM (new.match_quality)::text) OR (old.attributed_amount_minor IS DISTINCT FROM new.attributed_amount_minor) OR (old.verified_amount_minor IS DISTINCT FROM new.verified_amount_minor) OR (old.canonical_expected_gross_amount_minor IS DISTINCT FROM new.canonical_expected_gross_amount_minor) OR (old.canonical_captured_gross_amount_minor IS DISTINCT FROM new.canonical_captured_gross_amount_minor) OR (old.canonical_net_verified_amount_minor IS DISTINCT FROM new.canonical_net_verified_amount_minor) OR (old.discrepancy_amount_minor IS DISTINCT FROM new.discrepancy_amount_minor) OR (old.discrepancy_ratio_bps IS DISTINCT FROM new.discrepancy_ratio_bps) OR ((old.discrepancy_band)::text IS DISTINCT FROM (new.discrepancy_band)::text))) EXECUTE FUNCTION public.b23_enforce_verdict_authorship();
-
-
---
--- Name: b24_dirty_events trg_b24_dirty_event_authority; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b24_dirty_event_authority BEFORE UPDATE ON public.b24_dirty_events FOR EACH ROW WHEN (((new.tenant_id IS DISTINCT FROM old.tenant_id) OR ((new.model_type)::text IS DISTINCT FROM (old.model_type)::text) OR ((new.model_version)::text IS DISTINCT FROM (old.model_version)::text) OR (new.source_window_start IS DISTINCT FROM old.source_window_start) OR (new.source_window_end IS DISTINCT FROM old.source_window_end) OR ((new.dirty_reason)::text IS DISTINCT FROM (old.dirty_reason)::text) OR ((new.source_family)::text IS DISTINCT FROM (old.source_family)::text) OR ((new.event_hash)::text IS DISTINCT FROM (old.event_hash)::text) OR ((new.source_event_id)::text IS DISTINCT FROM (old.source_event_id)::text) OR (new.created_at IS DISTINCT FROM old.created_at) OR ((new.source_snapshot_hash)::text IS DISTINCT FROM (old.source_snapshot_hash)::text))) EXECUTE FUNCTION public.b24_enforce_dirty_event_authority();
 
-
---
--- Name: bayesian_artifacts trg_b24_dispatch_fence_artifacts; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b24_dispatch_fence_artifacts BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('artifact');
-
-
---
--- Name: bayesian_model_fits trg_b24_dispatch_fence_fits; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b24_dispatch_fence_fits BEFORE INSERT OR DELETE OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dispatch_fence('fit');
 
-
---
--- Name: bayesian_artifacts trg_b24_enforce_artifact_lifecycle; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b24_enforce_artifact_lifecycle BEFORE UPDATE OF lifecycle_status ON public.bayesian_artifacts FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_artifact_lifecycle();
-
-
---
--- Name: b24_dirty_events trg_b24_enforce_dirty_event_lifecycle; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b24_enforce_dirty_event_lifecycle BEFORE UPDATE ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_dirty_event_lifecycle();
 
-
---
--- Name: bayesian_model_fits trg_b24_evidence_temporal_plausibility; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b24_evidence_temporal_plausibility BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_evidence_temporal_plausibility();
-
-
---
--- Name: attribution_events trg_b24_invalidate_attribution_events_delete; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b24_invalidate_attribution_events_delete AFTER DELETE ON public.attribution_events REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_events_delete();
 
-
---
--- Name: attribution_events trg_b24_invalidate_attribution_events_insert; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b24_invalidate_attribution_events_insert AFTER INSERT ON public.attribution_events REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_events_insert();
-
-
---
--- Name: attribution_events trg_b24_invalidate_attribution_events_update; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b24_invalidate_attribution_events_update AFTER UPDATE ON public.attribution_events REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_attribution_events_update();
 
-
---
--- Name: b23_revenue_events trg_b24_invalidate_b23_revenue_events_delete; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_delete AFTER DELETE ON public.b23_revenue_events REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_delete();
-
-
---
--- Name: b23_revenue_events trg_b24_invalidate_b23_revenue_events_insert; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_insert AFTER INSERT ON public.b23_revenue_events REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_insert();
 
-
---
--- Name: b23_revenue_events trg_b24_invalidate_b23_revenue_events_update; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b24_invalidate_b23_revenue_events_update AFTER UPDATE ON public.b23_revenue_events REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.b24_invalidate_b23_revenue_events_update();
-
-
---
--- Name: attribution_allocations trg_b24_mark_allocation_financial_window_dirty; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b24_mark_allocation_financial_window_dirty AFTER INSERT OR DELETE OR UPDATE ON public.attribution_allocations FOR EACH ROW EXECUTE FUNCTION public.b24_mark_allocation_financial_window_dirty();
 
-
---
--- Name: b23_match_verdicts trg_b24_mark_verdict_financial_window_dirty; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b24_mark_verdict_financial_window_dirty AFTER INSERT OR DELETE OR UPDATE ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b24_mark_verdict_financial_window_dirty();
-
-
---
--- Name: b24_inference_policy_registry trg_b24_policy_registry_immutable; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b24_policy_registry_immutable BEFORE DELETE OR UPDATE ON public.b24_inference_policy_registry FOR EACH ROW EXECUTE FUNCTION public.b24_reject_policy_registry_rewrite();
 
-
---
--- Name: b24_fit_policy_replan_lineage trg_b24_replan_lineage_append_only; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b24_replan_lineage_append_only BEFORE DELETE OR UPDATE ON public.b24_fit_policy_replan_lineage FOR EACH ROW EXECUTE FUNCTION public.b24_reject_replan_lineage_mutation();
-
-
---
--- Name: b24_dirty_events trg_b24_signal_fit_planner_wakeup; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b24_signal_fit_planner_wakeup AFTER INSERT OR UPDATE OF status ON public.b24_dirty_events FOR EACH ROW EXECUTE FUNCTION public.b24_signal_fit_planner_wakeup_coalesced();
 
-
---
--- Name: bayesian_model_fits trg_b24_terminal_fit_truth; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b24_terminal_fit_truth BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_terminal_fit_truth();
-
-
---
--- Name: b26_p2_provider_auth_consequence trg_b26_p2_auth_consequence_immutability; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_auth_consequence_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_auth_consequence_immutability();
 
-
---
--- Name: b26_p2_auth_root_evidence trg_b26_p2_auth_root_evidence_immutability; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_auth_root_evidence_immutability BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_auth_root_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_auth_root_evidence_immutability();
-
-
---
--- Name: b23_match_task_dispatches trg_b26_p2_conducted_effect_guard; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_conducted_effect_guard BEFORE UPDATE OF delivery_state ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_conducted_transition();
 
-
---
--- Name: b26_p2_execution_outbox trg_b26_p2_conducted_effect_guard; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_conducted_effect_guard BEFORE UPDATE OF state ON public.b26_p2_execution_outbox FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_conducted_transition();
-
-
---
--- Name: b26_p2_task_authority_directory trg_b26_p2_directory_coherence; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_directory_coherence BEFORE INSERT OR UPDATE ON public.b26_p2_task_authority_directory FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_directory_coherence();
 
-
---
--- Name: b23_match_task_dispatches trg_b26_p2_dispatch_immutability; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_dispatch_immutability BEFORE INSERT OR UPDATE ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_immutability();
-
-
---
--- Name: b23_match_task_dispatches trg_b26_p2_dispatch_provenance; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_dispatch_provenance BEFORE INSERT ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_provenance();
 
-
---
--- Name: b23_match_task_dispatches trg_b26_p2_dispatch_quarantine_exclusion; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_dispatch_quarantine_exclusion BEFORE INSERT OR UPDATE OF webhook_ingress_identity_id, tenant_id ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_quarantine_exclusion();
-
-
---
--- Name: b23_match_task_dispatches trg_b26_p2_dispatch_sovereign_window; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_dispatch_sovereign_window BEFORE INSERT OR UPDATE OF window_start, window_end, webhook_ingress_identity_id, tenant_id, provider ON public.b23_match_task_dispatches FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_dispatch_sovereign_window();
 
-
---
--- Name: webhook_ingress_identities trg_b26_p2_ingress_authority_transition; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_ingress_authority_transition BEFORE UPDATE OF b26_p2_provenance_status, b26_p2_semantic_regime, b26_p2_demotion_reason ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authority_transition();
-
-
---
--- Name: webhook_ingress_identities trg_b26_p2_ingress_duplicate_adoption; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_ingress_duplicate_adoption BEFORE INSERT ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_duplicate_adoption();
 
-
---
--- Name: webhook_ingress_identities trg_b26_p2_ingress_event_chronology; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_ingress_event_chronology BEFORE INSERT ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_event_chronology();
-
-
---
--- Name: webhook_ingress_identities trg_b26_p2_ingress_provenance; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_ingress_provenance BEFORE INSERT OR UPDATE OF verified_commerce_ingress_state, b26_p2_provenance_status ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_provenance();
 
-
---
--- Name: webhook_ingress_identities trg_b26_p2_ingress_sovereign_custody; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_ingress_sovereign_custody BEFORE DELETE OR UPDATE OF event_timestamp, tenant_id, provider, verified_commerce_ingress_state, verified_amount_currency, verified_amount_minor ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_sovereign_custody();
-
-
---
--- Name: webhook_ingress_identities trg_b26_p2_ingress_verified_authorship; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_ingress_verified_authorship BEFORE INSERT OR UPDATE OF verified_commerce_ingress_state ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ingress_verified_authorship();
 
-
---
--- Name: webhook_ingress_identities trg_b26_p2_ingress_xv_meaning_immutability; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability BEFORE UPDATE ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_authenticated_meaning_immutability();
-
-
---
--- Name: b26_p2_history_integrity_observations trg_b26_p2_observation_chronology; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_observation_chronology BEFORE INSERT ON public.b26_p2_history_integrity_observations FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_observation_chronology();
 
-
---
--- Name: b26_p2_execution_outbox trg_b26_p2_outbox_issuance; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_outbox_issuance BEFORE INSERT ON public.b26_p2_execution_outbox FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_outbox_issuance();
-
-
---
--- Name: b26_p2_execution_outbox trg_b26_p2_outbox_transitions; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_outbox_transitions BEFORE UPDATE ON public.b26_p2_execution_outbox FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_outbox_transitions();
 
-
---
--- Name: b26_p2_scope_policy_authority trg_b26_p2_policy_immutability; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_policy_immutability BEFORE UPDATE ON public.b26_p2_scope_policy_authority FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_policy_immutability();
-
-
---
--- Name: b26_p2_conduction_receipts trg_b26_p2_receipt_effect_guard; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_receipt_effect_guard BEFORE INSERT OR UPDATE ON public.b26_p2_conduction_receipts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_conduction_receipt();
 
-
---
--- Name: b26_p2_semantic_regime_registry trg_b26_p2_registry_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_registry_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_semantic_regime_registry FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_registry_governance();
-
-
---
--- Name: celery_taskmeta trg_b26_p2_result_integrity; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_result_integrity BEFORE INSERT OR UPDATE OF status ON public.celery_taskmeta FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_result_integrity();
 
-
---
--- Name: b23_match_verdicts trg_b26_p2_verdict_authority_guard; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_verdict_authority_guard BEFORE UPDATE OF b26_p2_source_authority_state, webhook_ingress_identity_id ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_guard_verdict_authority_write();
-
-
---
--- Name: webhook_ingress_identities trg_b26_p2_verdict_authority_propagate; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_verdict_authority_propagate AFTER UPDATE OF b26_p2_provenance_status, b26_p2_semantic_regime, b26_p2_demotion_reason ON public.webhook_ingress_identities FOR EACH ROW EXECUTE FUNCTION public.b26_p2_propagate_verdict_authority();
 
-
---
--- Name: b23_match_verdicts trg_b26_p2_verdict_authority_stamp; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_verdict_authority_stamp BEFORE INSERT ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_stamp_verdict_authority();
-
-
---
--- Name: b23_match_verdicts trg_b26_p2_verdict_money_authority; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_verdict_money_authority BEFORE UPDATE OF attributed_amount_minor, verified_amount_minor, canonical_expected_gross_amount_minor, canonical_captured_gross_amount_minor, canonical_net_verified_amount_minor ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_verdict_money_authority();
 
-
---
--- Name: b23_match_verdicts trg_b26_p2_verdict_temporal_conservation; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_verdict_temporal_conservation BEFORE INSERT OR DELETE OR UPDATE OF status, webhook_ingress_identity_id, tenant_id, canonical_commerce_reference ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_verdict_temporal_conservation();
-
-
---
--- Name: b26_p2_publication_history trg_b26_p2_xix_history_immutable; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_xix_history_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_publication_history FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_history_immutability();
 
-
---
--- Name: b26_p2_verdict_supersession_ledger trg_b26_p2_xix_ledger_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_xix_ledger_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.b26_p2_verdict_supersession_ledger FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_ledger_immutability();
-
-
---
--- Name: b26_p2_provider_auth_consequence trg_b26_p2_xix_revoke_on_consequence_loss; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_consequence_loss AFTER DELETE ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('consequence-loss');
 
-
---
--- Name: b26_p2_provider_auth_consequence trg_b26_p2_xix_revoke_on_consequence_loss_update; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_consequence_loss_update AFTER UPDATE ON public.b26_p2_provider_auth_consequence FOR EACH ROW WHEN (((old.b26_p2_event_family IS DISTINCT FROM new.b26_p2_event_family) AND (new.b26_p2_event_family IS NULL))) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('consequence-loss');
-
-
---
--- Name: b26_p2_provenance_evidence trg_b26_p2_xix_revoke_on_provenance_loss; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_provenance_loss AFTER DELETE ON public.b26_p2_provenance_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('provenance-loss');
 
-
---
--- Name: b26_p2_provenance_evidence trg_b26_p2_xix_revoke_on_provenance_loss_update; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_provenance_loss_update AFTER UPDATE ON public.b26_p2_provenance_evidence FOR EACH ROW WHEN ((old.evidence_witness_hash IS DISTINCT FROM new.evidence_witness_hash)) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('provenance-loss');
-
-
---
--- Name: b26_p2_auth_root_evidence trg_b26_p2_xix_revoke_on_root_loss; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_root_loss AFTER DELETE ON public.b26_p2_auth_root_evidence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('root-loss');
 
-
---
--- Name: b26_p2_auth_root_evidence trg_b26_p2_xix_revoke_on_root_loss_update; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_root_loss_update AFTER UPDATE ON public.b26_p2_auth_root_evidence FOR EACH ROW WHEN (((old.body_sha256 IS DISTINCT FROM new.body_sha256) OR (old.signature_envelope_sha256 IS DISTINCT FROM new.signature_envelope_sha256))) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('root-loss');
-
-
---
--- Name: b26_p2_ingress_auth_witness trg_b26_p2_xix_revoke_on_witness_loss; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_witness_loss AFTER DELETE ON public.b26_p2_ingress_auth_witness FOR EACH ROW EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('witness-loss');
 
-
---
--- Name: b26_p2_ingress_auth_witness trg_b26_p2_xix_revoke_on_witness_loss_update; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_xix_revoke_on_witness_loss_update AFTER UPDATE ON public.b26_p2_ingress_auth_witness FOR EACH ROW WHEN ((old.witness_hash IS DISTINCT FROM new.witness_hash)) EXECUTE FUNCTION public.b26_p2_revoke_authority_on_evidence_loss('witness-loss');
-
-
---
--- Name: b23_match_verdicts trg_b26_p2_xix_supersession_ledger; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_xix_supersession_ledger AFTER UPDATE ON public.b23_match_verdicts FOR EACH ROW EXECUTE FUNCTION public.b26_p2_record_verdict_supersession();
 
-
---
--- Name: b26_p2_provider_auth_consequence trg_b26_p2_xx_consequence_family_coherence; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_xx_consequence_family_coherence BEFORE INSERT OR UPDATE OF b26_p2_event_family, b26_p2_family_source ON public.b26_p2_provider_auth_consequence FOR EACH ROW EXECUTE FUNCTION public.b26_p2_enforce_consequence_family_coherence();
-
-
---
--- Name: b26_p2_semantic_regime_registry trg_b26_p2_xx_propagate_on_regime_change; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b26_p2_xx_propagate_on_regime_change AFTER UPDATE OF status ON public.b26_p2_semantic_regime_registry FOR EACH ROW EXECUTE FUNCTION public.b26_p2_propagate_verdict_authority_on_regime_change();
 
-
---
--- Name: b26_p2_verdict_supersession_ledger trg_b26_p2_xx_supersession_chain; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b26_p2_xx_supersession_chain BEFORE INSERT ON public.b26_p2_verdict_supersession_ledger FOR EACH ROW EXECUTE FUNCTION public.b26_p2_chain_verdict_supersession();
-
-
---
--- Name: b27_explanation_materializations trg_b27_explanation_consequence; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b27_explanation_consequence BEFORE INSERT ON public.b27_explanation_materializations FOR EACH ROW EXECUTE FUNCTION public.b27_enforce_explanation_consequence();
 
-
---
--- Name: b27_explanation_materializations trg_b27_materialization_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b27_materialization_immutable BEFORE DELETE OR UPDATE ON public.b27_explanation_materializations FOR EACH ROW EXECUTE FUNCTION public.b27_enforce_materialization_immutability();
-
-
---
--- Name: trust_envelope_issuance_log trg_b27_supersede_stale_explanations; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b27_supersede_stale_explanations AFTER INSERT ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.b27_supersede_stale_explanations();
 
-
---
--- Name: b28_simulation_results trg_b28_allocation_conservation; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b28_allocation_conservation BEFORE INSERT OR UPDATE ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_allocation_conservation();
-
-
---
--- Name: b28_simulation_requests trg_b28_final_source_identity; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b28_final_source_identity BEFORE INSERT ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_final_source_identity();
 
-
---
--- Name: b28_proposals trg_b28_proposal_consequence; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b28_proposal_consequence BEFORE INSERT ON public.b28_proposals FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_proposal_consequence();
-
-
---
--- Name: b28_proposals trg_b28_proposals_immutable; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b28_proposals_immutable BEFORE DELETE OR UPDATE ON public.b28_proposals FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_downstream_immutability();
 
-
---
--- Name: b28_simulation_requests trg_b28_request_consequence; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b28_request_consequence BEFORE INSERT ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_request_consequence();
-
-
---
--- Name: b28_simulation_requests trg_b28_request_possession; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b28_request_possession BEFORE INSERT ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_request_possession();
 
-
---
--- Name: b28_simulation_results trg_b28_result_consequence; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b28_result_consequence BEFORE INSERT ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_result_consequence();
-
-
---
--- Name: b28_simulation_requests trg_b28_simulation_requests_immutable; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_b28_simulation_requests_immutable BEFORE DELETE OR UPDATE ON public.b28_simulation_requests FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_downstream_immutability();
 
-
---
--- Name: b28_simulation_results trg_b28_simulation_results_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b28_simulation_results_immutable BEFORE DELETE OR UPDATE ON public.b28_simulation_results FOR EACH ROW EXECUTE FUNCTION public.b28_enforce_downstream_immutability();
-
-
---
--- Name: attribution_events trg_bind_session_authority_from_event; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_bind_session_authority_from_event BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_bind_session_authority_from_event();
 
-
---
--- Name: dead_events trg_block_worker_mutation_dead_events; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_block_worker_mutation_dead_events BEFORE INSERT OR DELETE OR UPDATE ON public.dead_events FOR EACH ROW EXECUTE FUNCTION public.fn_block_worker_ingestion_mutation();
-
-
---
--- Name: attribution_events trg_block_worker_mutation_events; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_block_worker_mutation_events BEFORE INSERT OR DELETE OR UPDATE ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_block_worker_ingestion_mutation();
 
-
---
--- Name: channel_taxonomy trg_channel_taxonomy_state_audit; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_channel_taxonomy_state_audit AFTER UPDATE OF state ON public.channel_taxonomy FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_channel_state_change();
-
-
---
--- Name: TRIGGER trg_channel_taxonomy_state_audit ON channel_taxonomy; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_channel_taxonomy_state_audit ON public.channel_taxonomy IS 'Automatically logs all state transitions to channel_state_transitions table.
-            Purpose: Provide atomic audit trail for channel lifecycle changes.
-            Fires: Only when state column changes (not on other column updates).';
-
-
---
--- Name: attribution_allocations trg_check_allocation_sum; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_check_allocation_sum AFTER INSERT ON public.attribution_allocations REFERENCING NEW TABLE AS newrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_insert();
 
-
---
--- Name: TRIGGER trg_check_allocation_sum ON attribution_allocations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_check_allocation_sum ON public.attribution_allocations IS 'Enforces sum-equality invariant at STATEMENT granularity (INSERT): allocations must sum to event revenue per (tenant_id, event_id, model_version) with ±1 cent tolerance.';
-
-
---
--- Name: attribution_allocations trg_check_allocation_sum_delete; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_check_allocation_sum_delete AFTER DELETE ON public.attribution_allocations REFERENCING OLD TABLE AS oldrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_delete();
-
-
---
--- Name: TRIGGER trg_check_allocation_sum_delete ON attribution_allocations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_check_allocation_sum_delete ON public.attribution_allocations IS 'Enforces sum-equality invariant at STATEMENT granularity (DELETE): allocations must sum to event revenue per (tenant_id, event_id, model_version) with ±1 cent tolerance.';
-
-
---
--- Name: attribution_allocations trg_check_allocation_sum_update; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_check_allocation_sum_update AFTER UPDATE ON public.attribution_allocations REFERENCING OLD TABLE AS oldrows NEW TABLE AS newrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_update();
 
-
---
--- Name: TRIGGER trg_check_allocation_sum_update ON attribution_allocations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_check_allocation_sum_update ON public.attribution_allocations IS 'Enforces sum-equality invariant at STATEMENT granularity (UPDATE): allocations must sum to event revenue per (tenant_id, event_id, model_version) with ±1 cent tolerance.';
-
-
---
--- Name: compliance_audit_ledger trg_compliance_audit_ledger_append_only; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_compliance_audit_ledger_append_only BEFORE DELETE OR UPDATE ON public.compliance_audit_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_compliance_audit_ledger_append_only();
-
-
---
--- Name: attribution_events trg_events_prevent_mutation; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_events_prevent_mutation BEFORE DELETE OR UPDATE ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_events_prevent_mutation();
 
-
---
--- Name: TRIGGER trg_events_prevent_mutation ON attribution_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_events_prevent_mutation ON public.attribution_events IS 'Guard trigger preventing UPDATE/DELETE operations on attribution_events. Purpose: Defense-in-depth enforcement of events immutability. Timing: BEFORE UPDATE OR DELETE. Level: FOR EACH ROW. Function: fn_events_prevent_mutation().';
-
-
---
--- Name: attribution_events trg_guard_attribution_events_payload_identity; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_guard_attribution_events_payload_identity BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_guard_attribution_events_payload_identity();
-
-
---
--- Name: TRIGGER trg_guard_attribution_events_payload_identity ON attribution_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_guard_attribution_events_payload_identity ON public.attribution_events IS 'B1.4-P0 insert-time payload authority lock for immutable attribution events.';
-
-
---
--- Name: revenue_ledger trg_ledger_prevent_mutation; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_ledger_prevent_mutation BEFORE DELETE OR UPDATE ON public.revenue_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ledger_prevent_mutation();
 
-
---
--- Name: TRIGGER trg_ledger_prevent_mutation ON revenue_ledger; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_ledger_prevent_mutation ON public.revenue_ledger IS 'Guard trigger preventing UPDATE/DELETE operations on revenue_ledger. Purpose: Defense-in-depth enforcement of ledger immutability. Timing: BEFORE UPDATE OR DELETE. Level: FOR EACH ROW. Function: fn_ledger_prevent_mutation().';
-
-
---
--- Name: llm_call_audit trg_llm_call_audit_append_only; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_llm_call_audit_append_only BEFORE DELETE OR UPDATE ON public.llm_call_audit FOR EACH ROW EXECUTE FUNCTION public.fn_llm_call_audit_append_only();
-
-
---
--- Name: attribution_events trg_pii_guardrail_attribution_events; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_pii_guardrail_attribution_events BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
 
-
---
--- Name: TRIGGER trg_pii_guardrail_attribution_events ON attribution_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_pii_guardrail_attribution_events ON public.attribution_events IS 'PII guardrail trigger (Layer 2 defense-in-depth). Blocks INSERT if raw_payload contains PII keys. Timing: BEFORE INSERT. Level: FOR EACH ROW. Function: fn_enforce_pii_guardrail(). Reference: ADR-003-PII-Defense-Strategy.md Section "Layer 2 (Database Secondary Guardrail)".';
-
-
---
--- Name: dead_events trg_pii_guardrail_dead_events; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_pii_guardrail_dead_events BEFORE INSERT ON public.dead_events FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
-
-
---
--- Name: TRIGGER trg_pii_guardrail_dead_events ON dead_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_pii_guardrail_dead_events ON public.dead_events IS 'PII guardrail trigger (Layer 2 defense-in-depth). Blocks INSERT if raw_payload contains PII keys. Timing: BEFORE INSERT. Level: FOR EACH ROW. Function: fn_enforce_pii_guardrail(). Reference: ADR-003-PII-Defense-Strategy.md Section "Layer 2 (Database Secondary Guardrail)".';
-
-
---
--- Name: revenue_ledger trg_pii_guardrail_revenue_ledger; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_pii_guardrail_revenue_ledger BEFORE INSERT ON public.revenue_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
 
-
---
--- Name: TRIGGER trg_pii_guardrail_revenue_ledger ON revenue_ledger; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_pii_guardrail_revenue_ledger ON public.revenue_ledger IS 'PII guardrail trigger (Layer 2 defense-in-depth). Blocks INSERT if metadata contains PII keys (NULL metadata allowed). Timing: BEFORE INSERT. Level: FOR EACH ROW. Function: fn_enforce_pii_guardrail(). Reference: ADR-003-PII-Defense-Strategy.md Section "Layer 2 (Database Secondary Guardrail)".';
-
-
---
--- Name: revenue_ledger trg_revenue_ledger_state_audit; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.revenue_ledger FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_revenue_state_change();
-
-
---
--- Name: TRIGGER trg_revenue_ledger_state_audit ON revenue_ledger; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TRIGGER trg_revenue_ledger_state_audit ON public.revenue_ledger IS 'Audit trigger for revenue_ledger state changes.
-            Purpose: Automatically log all state transitions to revenue_state_transitions table.
-            Fires: AFTER UPDATE OF state when state value changes.
-            Atomicity: Trigger execution is atomic within the same transaction as the UPDATE.';
-
-
---
--- Name: trust_access_log trg_trust_access_log_issuance_authority_guard; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_trust_access_log_issuance_authority_guard BEFORE INSERT OR UPDATE ON public.trust_access_log FOR EACH ROW EXECUTE FUNCTION public.trust_access_log_issuance_authority_guard();
 
-
---
--- Name: trust_access_log trg_trust_access_log_witness_immutability; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_trust_access_log_witness_immutability BEFORE UPDATE ON public.trust_access_log FOR EACH ROW EXECUTE FUNCTION public.trust_access_log_witness_immutability_guard();
-
-
---
--- Name: trust_export_artifact_attempts trg_trust_export_artifact_attempt_guard; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_trust_export_artifact_attempt_guard BEFORE INSERT OR UPDATE ON public.trust_export_artifact_attempts FOR EACH ROW EXECUTE FUNCTION public.trust_export_artifact_attempt_guard();
 
-
---
--- Name: trust_issuance_attempts trg_trust_issuance_attempt_guard; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_trust_issuance_attempt_guard BEFORE INSERT OR UPDATE ON public.trust_issuance_attempts FOR EACH ROW EXECUTE FUNCTION public.trust_issuance_attempt_guard();
-
-
---
--- Name: trust_envelope_issuance_log trg_trust_issuance_consequence_authority; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_trust_issuance_consequence_authority BEFORE INSERT ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.trust_enforce_issuance_consequence_authority();
 
-
---
--- Name: trust_envelope_issuance_log trg_trust_issuance_history_immutable; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_trust_issuance_history_immutable BEFORE DELETE OR UPDATE ON public.trust_envelope_issuance_log FOR EACH ROW EXECUTE FUNCTION public.trust_enforce_issuance_history_immutable();
-
-
---
--- Name: trust_tenant_policy_events trg_trust_policy_append_only; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_trust_policy_append_only BEFORE DELETE OR UPDATE ON public.trust_tenant_policy_events FOR EACH ROW EXECUTE FUNCTION public.trust_tenant_policy_append_only();
 
-
---
--- Name: bayesian_model_fits trg_y_b24_c11_policy_provenance; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_y_b24_c11_policy_provenance BEFORE INSERT OR UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_c11_policy_provenance();
 
-
---
--- Name: bayesian_model_fits trg_z_b24_policy_bundle_write_authority; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_z_b24_policy_bundle_write_authority BEFORE UPDATE ON public.bayesian_model_fits FOR EACH ROW EXECUTE FUNCTION public.b24_enforce_policy_bundle_write_authority();
-
-
---
--- Name: agent_clients agent_clients_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_clients
     ADD CONSTRAINT agent_clients_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: agent_scope_grants agent_scope_grants_agent_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.agent_scope_grants
     ADD CONSTRAINT agent_scope_grants_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
-
-
---
--- Name: agent_scope_grants agent_scope_grants_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_scope_grants
     ADD CONSTRAINT agent_scope_grants_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: agent_service_credentials agent_service_credentials_agent_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.agent_service_credentials
     ADD CONSTRAINT agent_service_credentials_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
-
-
---
--- Name: agent_service_credentials agent_service_credentials_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_service_credentials
     ADD CONSTRAINT agent_service_credentials_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: agent_token_revocations agent_token_revocations_agent_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.agent_token_revocations
     ADD CONSTRAINT agent_token_revocations_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
-
-
---
--- Name: agent_token_revocations agent_token_revocations_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.agent_token_revocations
     ADD CONSTRAINT agent_token_revocations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: attribution_allocations attribution_allocations_recompute_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_recompute_job_id_fkey FOREIGN KEY (recompute_job_id) REFERENCES public.attribution_recompute_jobs(id) ON DELETE CASCADE;
-
-
---
--- Name: attribution_allocations attribution_allocations_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: attribution_commerce_identities attribution_commerce_identities_attribution_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT attribution_commerce_identities_attribution_event_id_fkey FOREIGN KEY (attribution_event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
-
-
---
--- Name: attribution_commerce_identities attribution_commerce_identities_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT attribution_commerce_identities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: attribution_events attribution_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT attribution_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: attribution_recompute_jobs attribution_recompute_jobs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_recompute_jobs
     ADD CONSTRAINT attribution_recompute_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: auth_access_token_denylist auth_access_token_denylist_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.auth_access_token_denylist
     ADD CONSTRAINT auth_access_token_denylist_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: auth_refresh_tokens auth_refresh_tokens_replaced_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.auth_refresh_tokens(id) ON DELETE SET NULL;
 
-
---
--- Name: auth_refresh_tokens auth_refresh_tokens_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: auth_refresh_tokens auth_refresh_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-
---
--- Name: auth_user_token_cutoffs auth_user_token_cutoffs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.auth_user_token_cutoffs
     ADD CONSTRAINT auth_user_token_cutoffs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b23_exception_records b23_exception_records_match_verdict_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_exception_records
     ADD CONSTRAINT b23_exception_records_match_verdict_id_fkey FOREIGN KEY (match_verdict_id) REFERENCES public.b23_match_verdicts(id) ON DELETE CASCADE;
 
-
---
--- Name: b23_exception_records b23_exception_records_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_exception_records
     ADD CONSTRAINT b23_exception_records_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b23_match_task_dispatches b23_match_task_dispatches_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT b23_match_task_dispatches_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b23_match_task_dispatches b23_match_task_dispatches_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT b23_match_task_dispatches_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
-
-
---
--- Name: b23_match_verdicts b23_match_verdicts_attribution_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_attribution_event_id_fkey FOREIGN KEY (attribution_event_id) REFERENCES public.attribution_events(id) ON DELETE SET NULL;
 
-
---
--- Name: b23_match_verdicts b23_match_verdicts_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b23_match_verdicts b23_match_verdicts_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE SET NULL;
 
-
---
--- Name: b23_revenue_events b23_revenue_events_b26_p2_adjustment_evidence_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_b26_p2_adjustment_evidence_id_fkey FOREIGN KEY (b26_p2_adjustment_evidence_id) REFERENCES public.b26_p2_adjustment_evidence(id) ON DELETE SET NULL;
-
-
---
--- Name: b23_revenue_events b23_revenue_events_match_verdict_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_match_verdict_id_fkey FOREIGN KEY (match_verdict_id) REFERENCES public.b23_match_verdicts(id) ON DELETE SET NULL;
 
-
---
--- Name: b23_revenue_events b23_revenue_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b23_revenue_events b23_revenue_events_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT b23_revenue_events_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE SET NULL;
 
-
---
--- Name: b23_webhook_ingestion_logs b23_webhook_ingestion_logs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b24_active_execution_leases b24_active_execution_leases_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_active_execution_leases
     ADD CONSTRAINT b24_active_execution_leases_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b24_dirty_events b24_dirty_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_dirty_events
     ADD CONSTRAINT b24_dirty_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b24_feature_authority_build_outbox b24_feature_authority_build_outbox_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT b24_feature_authority_build_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b24_feature_authority_build_requests b24_feature_authority_build_requests_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_feature_authority_build_requests
     ADD CONSTRAINT b24_feature_authority_build_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b24_fit_dispatch_outbox b24_fit_dispatch_outbox_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b24_fit_planner_wakeups b24_fit_planner_wakeups_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_fit_planner_wakeups
     ADD CONSTRAINT b24_fit_planner_wakeups_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b24_source_window_feature_authority b24_source_window_feature_authority_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_adjustment_attestation b26_p2_adjustment_attestation_adjustment_evidence_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_adjustment_attestation
     ADD CONSTRAINT b26_p2_adjustment_attestation_adjustment_evidence_id_fkey FOREIGN KEY (adjustment_evidence_id) REFERENCES public.b26_p2_adjustment_evidence(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_adjustment_evidence b26_p2_adjustment_evidence_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence
     ADD CONSTRAINT b26_p2_adjustment_evidence_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_adjustment_evidence b26_p2_adjustment_evidence_verdict_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_adjustment_evidence
     ADD CONSTRAINT b26_p2_adjustment_evidence_verdict_id_fkey FOREIGN KEY (verdict_id) REFERENCES public.b23_match_verdicts(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_auth_root_evidence b26_p2_auth_root_evidence_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence
     ADD CONSTRAINT b26_p2_auth_root_evidence_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_conduction_receipts b26_p2_conduction_receipts_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_conduction_receipts
     ADD CONSTRAINT b26_p2_conduction_receipts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_conduction_receipts b26_p2_conduction_receipts_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_conduction_receipts
     ADD CONSTRAINT b26_p2_conduction_receipts_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_evaluator_heartbeat b26_p2_evaluator_heartbeat_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_evaluator_heartbeat
     ADD CONSTRAINT b26_p2_evaluator_heartbeat_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_execution_outbox b26_p2_execution_outbox_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT b26_p2_execution_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_execution_outbox b26_p2_execution_outbox_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT b26_p2_execution_outbox_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_execution_quarantine b26_p2_execution_quarantine_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_execution_quarantine
     ADD CONSTRAINT b26_p2_execution_quarantine_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
 
-
---
--- Name: b26_p2_ingress_auth_witness b26_p2_ingress_auth_witness_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
     ADD CONSTRAINT b26_p2_ingress_auth_witness_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_ingress_auth_witness b26_p2_ingress_auth_witness_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
     ADD CONSTRAINT b26_p2_ingress_auth_witness_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_provenance_evidence b26_p2_provenance_evidence_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_provenance_evidence
     ADD CONSTRAINT b26_p2_provenance_evidence_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_provenance_evidence b26_p2_provenance_evidence_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_provenance_evidence
     ADD CONSTRAINT b26_p2_provenance_evidence_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_provider_auth_consequence b26_p2_provider_auth_consequence_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_provider_auth_consequence
     ADD CONSTRAINT b26_p2_provider_auth_consequence_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_scheduler_heartbeat b26_p2_scheduler_heartbeat_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_scheduler_heartbeat
     ADD CONSTRAINT b26_p2_scheduler_heartbeat_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_source_money_attestation b26_p2_source_money_attestatio_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_source_money_attestation
     ADD CONSTRAINT b26_p2_source_money_attestatio_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_source_money_attestation b26_p2_source_money_attestation_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_source_money_attestation
     ADD CONSTRAINT b26_p2_source_money_attestation_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_task_authority_directory b26_p2_task_authority_director_webhook_ingress_identity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_task_authority_directory
     ADD CONSTRAINT b26_p2_task_authority_director_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_task_authority_directory b26_p2_task_authority_directory_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_task_authority_directory
     ADD CONSTRAINT b26_p2_task_authority_directory_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b27_explanation_materializations b27_explanation_materializations_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b27_explanation_materializations
     ADD CONSTRAINT b27_explanation_materializations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b28_proposals b28_proposals_result_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT b28_proposals_result_id_fkey FOREIGN KEY (result_id) REFERENCES public.b28_simulation_results(id) ON DELETE RESTRICT;
 
-
---
--- Name: b28_proposals b28_proposals_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_proposals
     ADD CONSTRAINT b28_proposals_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: b28_request_authentications b28_request_authentications_agent_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b28_request_authentications
     ADD CONSTRAINT b28_request_authentications_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE RESTRICT;
 
-
---
--- Name: b28_request_authentications b28_request_authentications_credential_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_request_authentications
     ADD CONSTRAINT b28_request_authentications_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.agent_service_credentials(id) ON DELETE RESTRICT;
-
-
---
--- Name: b28_request_authentications b28_request_authentications_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b28_request_authentications
     ADD CONSTRAINT b28_request_authentications_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b28_simulation_requests b28_simulation_requests_request_authentication_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_request_authentication_id_fkey FOREIGN KEY (request_authentication_id) REFERENCES public.b28_request_authentications(id) ON DELETE RESTRICT;
-
-
---
--- Name: b28_simulation_requests b28_simulation_requests_requested_by_agent_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_requested_by_agent_client_id_fkey FOREIGN KEY (requested_by_agent_client_id) REFERENCES public.agent_clients(id) ON DELETE RESTRICT;
 
-
---
--- Name: b28_simulation_requests b28_simulation_requests_requested_by_credential_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_requested_by_credential_id_fkey FOREIGN KEY (requested_by_credential_id) REFERENCES public.agent_service_credentials(id) ON DELETE RESTRICT;
-
-
---
--- Name: b28_simulation_requests b28_simulation_requests_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT b28_simulation_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: b28_simulation_results b28_simulation_results_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_simulation_results
     ADD CONSTRAINT b28_simulation_results_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.b28_simulation_requests(id) ON DELETE RESTRICT;
-
-
---
--- Name: b28_simulation_results b28_simulation_results_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b28_simulation_results
     ADD CONSTRAINT b28_simulation_results_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: bayesian_artifact_storage_quotas bayesian_artifact_storage_quotas_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.bayesian_artifact_storage_quotas
     ADD CONSTRAINT bayesian_artifact_storage_quotas_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: bayesian_artifacts bayesian_artifacts_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: bayesian_model_fits bayesian_model_fits_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT bayesian_model_fits_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: budget_jobs budget_jobs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT budget_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: budget_optimization_jobs budget_optimization_jobs_authority_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_authority_job_id_fkey FOREIGN KEY (authority_job_id) REFERENCES public.budget_jobs(id) ON DELETE SET NULL;
-
-
---
--- Name: budget_optimization_jobs budget_optimization_jobs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: channel_assignment_corrections channel_assignment_corrections_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.channel_assignment_corrections
     ADD CONSTRAINT channel_assignment_corrections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: channel_assignment_corrections channel_assignment_corrections_to_channel_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.channel_assignment_corrections
     ADD CONSTRAINT channel_assignment_corrections_to_channel_fkey FOREIGN KEY (to_channel) REFERENCES public.channel_taxonomy(code);
 
-
---
--- Name: channel_state_transitions channel_state_transitions_channel_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.channel_state_transitions
     ADD CONSTRAINT channel_state_transitions_channel_code_fkey FOREIGN KEY (channel_code) REFERENCES public.channel_taxonomy(code) ON DELETE CASCADE;
-
-
---
--- Name: compliance_audit_ledger compliance_audit_ledger_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT compliance_audit_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: dead_events_quarantine dead_events_quarantine_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.dead_events_quarantine
     ADD CONSTRAINT dead_events_quarantine_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
-
-
---
--- Name: dead_events dead_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.dead_events
     ADD CONSTRAINT dead_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: ephemeral_click_resolution ephemeral_click_resolution_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT ephemeral_click_resolution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: ephemeral_order_resolution ephemeral_order_resolution_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.ephemeral_order_resolution
     ADD CONSTRAINT ephemeral_order_resolution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: explanation_cache explanation_cache_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: attribution_allocations fk_allocations_event_id_set_null; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT fk_allocations_event_id_set_null FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE SET NULL;
 
-
---
--- Name: attribution_allocations fk_attribution_allocations_channel_code; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT fk_attribution_allocations_channel_code FOREIGN KEY (channel_code) REFERENCES public.channel_taxonomy(code);
-
-
---
--- Name: attribution_events fk_attribution_events_channel; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_channel FOREIGN KEY (channel) REFERENCES public.channel_taxonomy(code) ON UPDATE CASCADE ON DELETE RESTRICT;
 
-
---
--- Name: attribution_events fk_attribution_events_session_authority; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_session_authority FOREIGN KEY (tenant_id, session_id) REFERENCES public.session_authority(tenant_id, session_id) DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: b23_match_task_dispatches fk_b23_dispatch_tenant_ingress_composite; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b23_match_task_dispatches
     ADD CONSTRAINT fk_b23_dispatch_tenant_ingress_composite FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
 
-
---
--- Name: b24_active_execution_leases fk_b24_active_execution_fit; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_active_execution_leases
     ADD CONSTRAINT fk_b24_active_execution_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
-
-
---
--- Name: b24_feature_authority_build_outbox fk_b24_feature_authority_build_outbox_request; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_feature_authority_build_outbox
     ADD CONSTRAINT fk_b24_feature_authority_build_outbox_request FOREIGN KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash) REFERENCES public.b24_feature_authority_build_requests(tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash) ON DELETE CASCADE;
 
-
---
--- Name: b24_fit_dispatch_outbox fk_b24_fit_dispatch_outbox_fit; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT fk_b24_fit_dispatch_outbox_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
-
-
---
--- Name: b24_fit_recovery_outbox fk_b24_fit_recovery_outbox_dispatch; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b24_fit_recovery_outbox
     ADD CONSTRAINT fk_b24_fit_recovery_outbox_dispatch FOREIGN KEY (tenant_id, dispatch_id) REFERENCES public.b24_fit_dispatch_outbox(tenant_id, id) ON DELETE CASCADE;
 
-
---
--- Name: b24_fit_policy_replan_lineage fk_b24_replan_lineage_fit; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b24_fit_policy_replan_lineage
     ADD CONSTRAINT fk_b24_replan_lineage_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
-
-
---
--- Name: b26_p2_provider_auth_consequence fk_b26_p2_auth_cons_tenant_ingress; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_provider_auth_consequence
     ADD CONSTRAINT fk_b26_p2_auth_cons_tenant_ingress FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_auth_root_evidence fk_b26_p2_auth_root_evidence_tenant_ingress; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_auth_root_evidence
     ADD CONSTRAINT fk_b26_p2_auth_root_evidence_tenant_ingress FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_task_authority_directory fk_b26_p2_directory_execution_tuple; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_task_authority_directory
     ADD CONSTRAINT fk_b26_p2_directory_execution_tuple FOREIGN KEY (task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_execution_outbox fk_b26_p2_outbox_execution_tuple; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_execution_outbox
     ADD CONSTRAINT fk_b26_p2_outbox_execution_tuple FOREIGN KEY (dispatch_task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
-
-
---
--- Name: b26_p2_conduction_receipts fk_b26_p2_receipt_execution_tuple; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b26_p2_conduction_receipts
     ADD CONSTRAINT fk_b26_p2_receipt_execution_tuple FOREIGN KEY (task_id, tenant_id, webhook_ingress_identity_id) REFERENCES public.b23_match_task_dispatches(task_id, tenant_id, webhook_ingress_identity_id) ON DELETE CASCADE;
 
-
---
--- Name: b26_p2_ingress_auth_witness fk_b26_p2_witness_tenant_ingress; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b26_p2_ingress_auth_witness
     ADD CONSTRAINT fk_b26_p2_witness_tenant_ingress FOREIGN KEY (tenant_id, webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(tenant_id, id) ON DELETE CASCADE;
-
-
---
--- Name: b27_explanation_materializations fk_b27_explanation_materializations_source_issuance; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.b27_explanation_materializations
     ADD CONSTRAINT fk_b27_explanation_materializations_source_issuance FOREIGN KEY (tenant_id, source_issuance_envelope_hash) REFERENCES public.trust_envelope_issuance_log(tenant_id, envelope_hash);
 
-
---
--- Name: b28_simulation_requests fk_b28_simulation_requests_source_issuance; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.b28_simulation_requests
     ADD CONSTRAINT fk_b28_simulation_requests_source_issuance FOREIGN KEY (tenant_id, source_issuance_envelope_hash) REFERENCES public.trust_envelope_issuance_log(tenant_id, envelope_hash);
-
-
---
--- Name: bayesian_artifacts fk_bayesian_artifacts_tenant_fit; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT fk_bayesian_artifacts_tenant_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
 
-
---
--- Name: kombu_message fk_kombu_message_queue; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT fk_kombu_message_queue FOREIGN KEY (queue_id) REFERENCES public.kombu_queue(id);
-
-
---
--- Name: tenant_membership_roles fk_tenant_membership_roles_membership_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT fk_tenant_membership_roles_membership_tenant FOREIGN KEY (membership_id, tenant_id) REFERENCES public.tenant_memberships(id, tenant_id) ON DELETE CASCADE;
 
-
---
--- Name: trust_issuance_attempts fk_trust_issuance_attempt_audit; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT fk_trust_issuance_attempt_audit FOREIGN KEY (tenant_id, audit_ref) REFERENCES public.trust_access_log(tenant_id, audit_ref) ON DELETE RESTRICT;
-
-
---
--- Name: trust_envelope_issuance_log fk_trust_issuance_log_access_audit; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT fk_trust_issuance_log_access_audit FOREIGN KEY (tenant_id, access_audit_ref) REFERENCES public.trust_access_log(tenant_id, audit_ref) ON DELETE CASCADE;
 
-
---
--- Name: investigation_jobs investigation_jobs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT investigation_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: investigation_tool_calls investigation_tool_calls_investigation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.investigation_tool_calls
     ADD CONSTRAINT investigation_tool_calls_investigation_id_fkey FOREIGN KEY (investigation_id) REFERENCES public.investigations(id) ON DELETE CASCADE;
 
-
---
--- Name: investigation_tool_calls investigation_tool_calls_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigation_tool_calls
     ADD CONSTRAINT investigation_tool_calls_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: investigations investigations_authority_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_authority_job_id_fkey FOREIGN KEY (authority_job_id) REFERENCES public.investigation_jobs(id) ON DELETE SET NULL;
 
-
---
--- Name: investigations investigations_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: llm_api_calls llm_api_calls_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT llm_api_calls_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: llm_breaker_state llm_breaker_state_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_breaker_state
     ADD CONSTRAINT llm_breaker_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: llm_budget_reservations llm_budget_reservations_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_budget_reservations
     ADD CONSTRAINT llm_budget_reservations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: llm_call_audit llm_call_audit_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_call_audit
     ADD CONSTRAINT llm_call_audit_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: llm_hourly_shutoff_state llm_hourly_shutoff_state_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_hourly_shutoff_state
     ADD CONSTRAINT llm_hourly_shutoff_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: llm_monthly_budget_state llm_monthly_budget_state_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_monthly_budget_state
     ADD CONSTRAINT llm_monthly_budget_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: llm_monthly_costs llm_monthly_costs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT llm_monthly_costs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: llm_semantic_cache llm_semantic_cache_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_semantic_cache
     ADD CONSTRAINT llm_semantic_cache_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: llm_validation_failures llm_validation_failures_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_validation_failures
     ADD CONSTRAINT llm_validation_failures_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: oauth_handshake_sessions oauth_handshake_sessions_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT oauth_handshake_sessions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: oauth_handshake_sessions oauth_handshake_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT oauth_handshake_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-
---
--- Name: platform_connections platform_connections_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.platform_connections
     ADD CONSTRAINT platform_connections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: platform_credentials platform_credentials_platform_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.platform_credentials
     ADD CONSTRAINT platform_credentials_platform_connection_id_fkey FOREIGN KEY (platform_connection_id) REFERENCES public.platform_connections(id) ON DELETE CASCADE;
 
-
---
--- Name: platform_credentials platform_credentials_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.platform_credentials
     ADD CONSTRAINT platform_credentials_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: r4_crash_barriers r4_crash_barriers_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.r4_crash_barriers
     ADD CONSTRAINT r4_crash_barriers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: r4_task_attempts r4_task_attempts_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.r4_task_attempts
     ADD CONSTRAINT r4_task_attempts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: raw_event_payloads raw_event_payloads_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT raw_event_payloads_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
 
-
---
--- Name: raw_event_payloads raw_event_payloads_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT raw_event_payloads_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: reconciliation_runs reconciliation_runs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.reconciliation_runs
     ADD CONSTRAINT reconciliation_runs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: revenue_cache_entries revenue_cache_entries_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.revenue_cache_entries
     ADD CONSTRAINT revenue_cache_entries_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: revenue_ledger revenue_ledger_allocation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.revenue_ledger
     ADD CONSTRAINT revenue_ledger_allocation_id_fkey FOREIGN KEY (allocation_id) REFERENCES public.attribution_allocations(id) ON DELETE CASCADE;
 
-
---
--- Name: revenue_ledger revenue_ledger_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.revenue_ledger
     ADD CONSTRAINT revenue_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: revenue_state_transitions revenue_state_transitions_ledger_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_ledger_id_fkey FOREIGN KEY (ledger_id) REFERENCES public.revenue_ledger(id) ON DELETE CASCADE;
 
-
---
--- Name: revenue_state_transitions revenue_state_transitions_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: session_authority session_authority_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.session_authority
     ADD CONSTRAINT session_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: tenant_membership_roles tenant_membership_roles_role_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_role_code_fkey FOREIGN KEY (role_code) REFERENCES public.roles(code) ON DELETE RESTRICT;
-
-
---
--- Name: tenant_membership_roles tenant_membership_roles_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: tenant_memberships tenant_memberships_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT tenant_memberships_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: tenant_memberships tenant_memberships_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT tenant_memberships_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
-
---
--- Name: trust_access_log trust_access_log_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_access_log
     ADD CONSTRAINT trust_access_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: trust_envelope_issuance_log trust_envelope_issuance_log_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_envelope_issuance_log
     ADD CONSTRAINT trust_envelope_issuance_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: trust_export_artifact_attempts trust_export_artifact_attempts_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_export_artifact_attempts
     ADD CONSTRAINT trust_export_artifact_attempts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: trust_issuance_attempts trust_issuance_attempts_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_issuance_attempts
     ADD CONSTRAINT trust_issuance_attempts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: trust_rate_limit_state trust_rate_limit_state_agent_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT trust_rate_limit_state_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
-
-
---
--- Name: trust_rate_limit_state trust_rate_limit_state_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_rate_limit_state
     ADD CONSTRAINT trust_rate_limit_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: trust_replay_events trust_replay_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_replay_events
     ADD CONSTRAINT trust_replay_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: trust_request_nonces trust_request_nonces_agent_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_request_nonces
     ADD CONSTRAINT trust_request_nonces_agent_client_id_fkey FOREIGN KEY (agent_client_id) REFERENCES public.agent_clients(id) ON DELETE CASCADE;
 
-
---
--- Name: trust_request_nonces trust_request_nonces_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_request_nonces
     ADD CONSTRAINT trust_request_nonces_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: trust_scope_denial_events trust_scope_denial_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.trust_scope_denial_events
     ADD CONSTRAINT trust_scope_denial_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: trust_tenant_policy_events trust_tenant_policy_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.trust_tenant_policy_events
     ADD CONSTRAINT trust_tenant_policy_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: webhook_ingress_identities webhook_ingress_identities_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
 
-
---
--- Name: webhook_ingress_identities webhook_ingress_identities_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: worker_side_effects worker_side_effects_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.worker_side_effects
     ADD CONSTRAINT worker_side_effects_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: agent_clients; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.agent_clients ENABLE ROW LEVEL SECURITY;
-
---
--- Name: agent_scope_grants; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.agent_scope_grants ENABLE ROW LEVEL SECURITY;
 
---
--- Name: agent_service_credentials; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.agent_service_credentials ENABLE ROW LEVEL SECURITY;
-
---
--- Name: agent_token_revocations; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.agent_token_revocations ENABLE ROW LEVEL SECURITY;
 
---
--- Name: attribution_allocations; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.attribution_allocations ENABLE ROW LEVEL SECURITY;
-
---
--- Name: attribution_commerce_identities; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.attribution_commerce_identities ENABLE ROW LEVEL SECURITY;
 
---
--- Name: attribution_events; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.attribution_events ENABLE ROW LEVEL SECURITY;
-
---
--- Name: attribution_recompute_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.attribution_recompute_jobs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: attribution_recompute_jobs attribution_recompute_jobs_tenant_isolation; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY attribution_recompute_jobs_tenant_isolation ON public.attribution_recompute_jobs USING (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))) WITH CHECK (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true)));
-
-
---
--- Name: POLICY attribution_recompute_jobs_tenant_isolation ON attribution_recompute_jobs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY attribution_recompute_jobs_tenant_isolation ON public.attribution_recompute_jobs IS 'RLS policy for tenant isolation. Purpose: Ensure jobs are only visible/writable for the current tenant (app.current_tenant_id GUC). Prevents cross-tenant data leakage. Critical security control.';
-
-
---
--- Name: auth_access_token_denylist; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.auth_access_token_denylist ENABLE ROW LEVEL SECURITY;
 
---
--- Name: auth_refresh_tokens; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.auth_refresh_tokens ENABLE ROW LEVEL SECURITY;
-
---
--- Name: auth_user_token_cutoffs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.auth_user_token_cutoffs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b23_exception_records; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b23_exception_records ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b23_match_task_dispatches; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b23_match_task_dispatches ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b23_match_verdicts; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b23_match_verdicts ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b23_revenue_events; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b23_revenue_events ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b23_webhook_ingestion_logs; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b23_webhook_ingestion_logs ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b24_active_execution_leases; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b24_active_execution_leases ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b24_dirty_events; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b24_dirty_events ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b24_feature_authority_build_outbox; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b24_feature_authority_build_outbox ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b24_feature_authority_build_requests; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b24_feature_authority_build_requests ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b24_fit_dispatch_outbox; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b24_fit_dispatch_outbox ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b24_fit_planner_wakeups; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b24_fit_planner_wakeups ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b24_fit_planner_wakeups b24_fit_planner_wakeups_worker_only; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY b24_fit_planner_wakeups_worker_only ON public.b24_fit_planner_wakeups USING ((CURRENT_USER = 'app_worker'::name)) WITH CHECK ((CURRENT_USER = 'app_worker'::name));
 
-
---
--- Name: b24_fit_policy_replan_lineage; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b24_fit_policy_replan_lineage ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b24_fit_recovery_outbox; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b24_fit_recovery_outbox ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b24_source_window_feature_authority; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b24_worker_process_authority; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b24_worker_process_authority ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b26_p2_adjustment_attestation; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b26_p2_adjustment_attestation ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b26_p2_adjustment_evidence; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b26_p2_adjustment_evidence ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b26_p2_auth_root_evidence; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b26_p2_auth_root_evidence ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b26_p2_conduction_receipts; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b26_p2_conduction_receipts ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b26_p2_evaluator_heartbeat; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b26_p2_evaluator_heartbeat ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b26_p2_execution_outbox; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b26_p2_execution_outbox ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b26_p2_execution_quarantine; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b26_p2_execution_quarantine ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b26_p2_ingress_auth_witness; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b26_p2_ingress_auth_witness ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b26_p2_scope_policy_authority b26_p2_policy_global_read; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY b26_p2_policy_global_read ON public.b26_p2_scope_policy_authority FOR SELECT USING (true);
-
-
---
--- Name: b26_p2_provenance_evidence; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b26_p2_provenance_evidence ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b26_p2_provider_auth_consequence; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b26_p2_provider_auth_consequence ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b26_p2_scheduler_heartbeat; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b26_p2_scheduler_heartbeat ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b26_p2_scope_policy_authority; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b26_p2_scope_policy_authority ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b26_p2_source_money_attestation; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b26_p2_source_money_attestation ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b26_p2_verdict_supersession_ledger b26_p2_supersession_ledger_owner_all; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY b26_p2_supersession_ledger_owner_all ON public.b26_p2_verdict_supersession_ledger USING (true) WITH CHECK (true);
-
-
---
--- Name: b26_p2_verdict_supersession_ledger; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b26_p2_verdict_supersession_ledger ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b27_explanation_materializations; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b27_explanation_materializations ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b28_proposals; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b28_proposals ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b28_request_authentications; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b28_request_authentications ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b28_simulation_requests; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.b28_simulation_requests ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b28_simulation_results; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.b28_simulation_results ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_artifact_storage_quotas; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifact_storage_quotas ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_artifacts; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_artifacts ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_artifacts_p00; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts_p00 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_artifacts_p01; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_artifacts_p01 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_artifacts_p02; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts_p02 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_artifacts_p03; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_artifacts_p03 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_artifacts_p04; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts_p04 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_artifacts_p05; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_artifacts_p05 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_artifacts_p06; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts_p06 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_artifacts_p07; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_artifacts_p07 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_artifacts_p08; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts_p08 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_artifacts_p09; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_artifacts_p09 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_artifacts_p10; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts_p10 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_artifacts_p11; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_artifacts_p11 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_artifacts_p12; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts_p12 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_artifacts_p13; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_artifacts_p13 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_artifacts_p14; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_artifacts_p14 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_artifacts_p15; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_artifacts_p15 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_model_fits; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_model_fits_p00; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits_p00 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_model_fits_p01; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits_p01 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_model_fits_p02; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits_p02 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_model_fits_p03; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits_p03 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_model_fits_p04; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits_p04 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_model_fits_p05; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits_p05 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_model_fits_p06; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits_p06 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_model_fits_p07; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits_p07 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_model_fits_p08; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits_p08 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_model_fits_p09; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits_p09 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_model_fits_p10; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits_p10 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_model_fits_p11; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits_p11 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_model_fits_p12; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits_p12 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_model_fits_p13; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits_p13 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: bayesian_model_fits_p14; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.bayesian_model_fits_p14 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bayesian_model_fits_p15; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.bayesian_model_fits_p15 ENABLE ROW LEVEL SECURITY;
 
---
--- Name: budget_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.budget_jobs ENABLE ROW LEVEL SECURITY;
-
---
--- Name: budget_optimization_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.budget_optimization_jobs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b24_fit_dispatch_outbox c11_dispatch_publisher_select; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY c11_dispatch_publisher_select ON public.b24_fit_dispatch_outbox FOR SELECT USING ((SESSION_USER = 'app_dispatch_publisher'::name));
-
-
---
--- Name: b24_fit_dispatch_outbox c11_dispatch_publisher_update; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY c11_dispatch_publisher_update ON public.b24_fit_dispatch_outbox FOR UPDATE USING ((SESSION_USER = 'app_dispatch_publisher'::name)) WITH CHECK ((SESSION_USER = 'app_dispatch_publisher'::name));
 
-
---
--- Name: b24_fit_policy_replan_lineage c11_trigger_insert_b24_fit_policy_replan_lineage; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY c11_trigger_insert_b24_fit_policy_replan_lineage ON public.b24_fit_policy_replan_lineage FOR INSERT WITH CHECK ((CURRENT_USER = pg_get_userbyid(( SELECT pg_class.relowner
    FROM pg_class
-  WHERE (pg_class.oid = ('public.b24_fit_policy_replan_lineage'::regclass)::oid)))));
-
-
---
--- Name: b24_fit_dispatch_outbox c12_dispatch_internal_select; Type: POLICY; Schema: public; Owner: -
---
+  WHERE (pg_class.oid = ('b24_fit_policy_replan_lineage'::regclass)::oid)))));
 
 CREATE POLICY c12_dispatch_internal_select ON public.b24_fit_dispatch_outbox FOR SELECT USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
 
-
---
--- Name: b24_fit_dispatch_outbox c12_dispatch_internal_update; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY c12_dispatch_internal_update ON public.b24_fit_dispatch_outbox FOR UPDATE USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name))) WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
-
-
---
--- Name: b24_fit_recovery_outbox c12_recovery_internal_insert; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY c12_recovery_internal_insert ON public.b24_fit_recovery_outbox FOR INSERT WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
 
-
---
--- Name: b24_fit_recovery_outbox c12_recovery_internal_select; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY c12_recovery_internal_select ON public.b24_fit_recovery_outbox FOR SELECT USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
-
-
---
--- Name: b24_fit_recovery_outbox c12_recovery_internal_update; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY c12_recovery_internal_update ON public.b24_fit_recovery_outbox FOR UPDATE USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name))) WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
 
-
---
--- Name: b24_worker_process_authority c12_worker_authority_internal_insert; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY c12_worker_authority_internal_insert ON public.b24_worker_process_authority FOR INSERT WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
-
-
---
--- Name: b24_worker_process_authority c12_worker_authority_internal_select; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY c12_worker_authority_internal_select ON public.b24_worker_process_authority FOR SELECT USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = ANY (ARRAY['app_worker'::name, 'app_dispatch_publisher'::name]))));
 
-
---
--- Name: b24_worker_process_authority c12_worker_authority_internal_update; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY c12_worker_authority_internal_update ON public.b24_worker_process_authority FOR UPDATE USING (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name))) WITH CHECK (((CURRENT_USER = 'migration_owner'::name) AND (SESSION_USER = 'app_worker'::name)));
-
-
---
--- Name: channel_assignment_corrections; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.channel_assignment_corrections ENABLE ROW LEVEL SECURITY;
 
---
--- Name: compliance_audit_ledger; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.compliance_audit_ledger ENABLE ROW LEVEL SECURITY;
-
---
--- Name: dead_events; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.dead_events ENABLE ROW LEVEL SECURITY;
 
---
--- Name: dead_events_quarantine; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.dead_events_quarantine ENABLE ROW LEVEL SECURITY;
-
---
--- Name: b24_worker_process_authority deny_all_b24_worker_process_authority; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY deny_all_b24_worker_process_authority ON public.b24_worker_process_authority USING (false) WITH CHECK (false);
 
-
---
--- Name: ephemeral_click_resolution; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.ephemeral_click_resolution ENABLE ROW LEVEL SECURITY;
-
---
--- Name: ephemeral_order_resolution; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.ephemeral_order_resolution ENABLE ROW LEVEL SECURITY;
 
---
--- Name: explanation_cache; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
-
---
--- Name: investigation_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.investigation_jobs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: investigation_tool_calls; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.investigation_tool_calls ENABLE ROW LEVEL SECURITY;
-
---
--- Name: investigations; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.investigations ENABLE ROW LEVEL SECURITY;
 
---
--- Name: llm_api_calls; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.llm_api_calls ENABLE ROW LEVEL SECURITY;
-
---
--- Name: llm_breaker_state; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.llm_breaker_state ENABLE ROW LEVEL SECURITY;
 
---
--- Name: llm_budget_reservations; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.llm_budget_reservations ENABLE ROW LEVEL SECURITY;
-
---
--- Name: llm_call_audit; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.llm_call_audit ENABLE ROW LEVEL SECURITY;
 
---
--- Name: llm_hourly_shutoff_state; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.llm_hourly_shutoff_state ENABLE ROW LEVEL SECURITY;
-
---
--- Name: llm_monthly_budget_state; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.llm_monthly_budget_state ENABLE ROW LEVEL SECURITY;
 
---
--- Name: llm_monthly_costs; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.llm_monthly_costs ENABLE ROW LEVEL SECURITY;
-
---
--- Name: llm_semantic_cache; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.llm_semantic_cache ENABLE ROW LEVEL SECURITY;
 
---
--- Name: llm_validation_failures; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.llm_validation_failures ENABLE ROW LEVEL SECURITY;
-
---
--- Name: oauth_handshake_sessions; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.oauth_handshake_sessions ENABLE ROW LEVEL SECURITY;
 
---
--- Name: dead_events_quarantine ops_quarantine_select; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY ops_quarantine_select ON public.dead_events_quarantine FOR SELECT USING (((tenant_id IS NULL) AND (CURRENT_USER = 'app_ops'::name)));
-
-
---
--- Name: platform_connections; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
 
---
--- Name: platform_credentials; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
-
---
--- Name: dead_events_quarantine quarantine_lane_insert; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
 
-
---
--- Name: r4_crash_barriers; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.r4_crash_barriers ENABLE ROW LEVEL SECURITY;
-
---
--- Name: r4_task_attempts; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.r4_task_attempts ENABLE ROW LEVEL SECURITY;
 
---
--- Name: raw_event_payloads; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.raw_event_payloads ENABLE ROW LEVEL SECURITY;
-
---
--- Name: reconciliation_runs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.reconciliation_runs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: revenue_cache_entries; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.revenue_cache_entries ENABLE ROW LEVEL SECURITY;
-
---
--- Name: revenue_ledger; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.revenue_ledger ENABLE ROW LEVEL SECURITY;
 
---
--- Name: revenue_state_transitions; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.revenue_state_transitions ENABLE ROW LEVEL SECURITY;
-
---
--- Name: session_authority; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.session_authority ENABLE ROW LEVEL SECURITY;
 
---
--- Name: b24_fit_policy_replan_lineage tenant_isolation_b24_fit_policy_replan_lineage; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_b24_fit_policy_replan_lineage ON public.b24_fit_policy_replan_lineage FOR SELECT USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: b26_p2_adjustment_attestation tenant_isolation_b26_p2_adjustment_attestation; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_b26_p2_adjustment_attestation ON public.b26_p2_adjustment_attestation USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: b26_p2_adjustment_evidence tenant_isolation_b26_p2_adjustment_evidence; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_b26_p2_adjustment_evidence ON public.b26_p2_adjustment_evidence USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: b26_p2_source_money_attestation tenant_isolation_b26_p2_source_money_attestation; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_b26_p2_source_money_attestation ON public.b26_p2_source_money_attestation USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
-
---
--- Name: attribution_allocations tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.attribution_allocations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: POLICY tenant_isolation_policy ON attribution_allocations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.attribution_allocations IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: attribution_events tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.attribution_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON attribution_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.attribution_events IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: auth_access_token_denylist tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.auth_access_token_denylist USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: auth_refresh_tokens tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.auth_refresh_tokens USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON auth_refresh_tokens; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.auth_refresh_tokens IS 'RLS policy enforcing tenant isolation for refresh token lifecycle state.';
-
-
---
--- Name: auth_user_token_cutoffs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.auth_user_token_cutoffs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: budget_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.budget_jobs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: budget_optimization_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.budget_optimization_jobs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: POLICY tenant_isolation_policy ON budget_optimization_jobs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.budget_optimization_jobs IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: channel_assignment_corrections tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.channel_assignment_corrections USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON channel_assignment_corrections; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.channel_assignment_corrections IS 'Ensures tenants can only see their own correction records. Purpose: Multi-tenant isolation for audit data. Security: Default deny if app.current_tenant_id is unset.';
-
-
---
--- Name: dead_events tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.dead_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: POLICY tenant_isolation_policy ON dead_events; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.dead_events IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: explanation_cache tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON explanation_cache; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.explanation_cache IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: investigation_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: investigation_tool_calls tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_ro, app_rw, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.investigation_tool_calls USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON investigation_tool_calls; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.investigation_tool_calls IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: investigations tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.investigations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: POLICY tenant_isolation_policy ON investigations; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.investigations IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: llm_api_calls tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.llm_api_calls USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
-
---
--- Name: POLICY tenant_isolation_policy ON llm_api_calls; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.llm_api_calls IS 'RLS policy enforcing tenant + user isolation. Requires app.current_tenant_id and app.current_user_id.';
-
-
---
--- Name: llm_breaker_state tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.llm_breaker_state USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
-
-
---
--- Name: POLICY tenant_isolation_policy ON llm_breaker_state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.llm_breaker_state IS 'RLS policy enforcing tenant + user isolation. Requires app.current_tenant_id and app.current_user_id.';
-
-
---
--- Name: llm_budget_reservations tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.llm_budget_reservations USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
-
---
--- Name: llm_call_audit tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.llm_call_audit USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
-
-
---
--- Name: POLICY tenant_isolation_policy ON llm_call_audit; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.llm_call_audit IS 'RLS policy enforcing tenant + user isolation. Requires app.current_tenant_id and app.current_user_id.';
-
-
---
--- Name: llm_hourly_shutoff_state tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.llm_hourly_shutoff_state USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
-
---
--- Name: POLICY tenant_isolation_policy ON llm_hourly_shutoff_state; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.llm_hourly_shutoff_state IS 'RLS policy enforcing tenant + user isolation. Requires app.current_tenant_id and app.current_user_id.';
-
-
---
--- Name: llm_monthly_budget_state tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.llm_monthly_budget_state USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
-
-
---
--- Name: llm_monthly_costs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.llm_monthly_costs USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
-
---
--- Name: POLICY tenant_isolation_policy ON llm_monthly_costs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.llm_monthly_costs IS 'RLS policy enforcing tenant + user isolation. Requires app.current_tenant_id and app.current_user_id.';
-
-
---
--- Name: llm_semantic_cache tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.llm_semantic_cache USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
-
-
---
--- Name: llm_validation_failures tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.llm_validation_failures USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON llm_validation_failures; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.llm_validation_failures IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: oauth_handshake_sessions tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.oauth_handshake_sessions USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: POLICY tenant_isolation_policy ON oauth_handshake_sessions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.oauth_handshake_sessions IS 'RLS policy enforcing tenant isolation for transient OAuth handshake state.';
-
-
---
--- Name: platform_connections tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.platform_connections USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON platform_connections; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.platform_connections IS 'RLS policy enforcing tenant isolation. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: platform_credentials tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.platform_credentials USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: r4_crash_barriers tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.r4_crash_barriers TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: r4_task_attempts tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.r4_task_attempts TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: reconciliation_runs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.reconciliation_runs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON reconciliation_runs; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.reconciliation_runs IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: revenue_cache_entries tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.revenue_cache_entries USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: POLICY tenant_isolation_policy ON revenue_cache_entries; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.revenue_cache_entries IS 'RLS policy enforcing tenant isolation. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: revenue_ledger tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.revenue_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON revenue_ledger; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.revenue_ledger IS 'RLS policy enforcing tenant isolation. Purpose: Prevent cross-tenant data access. Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: revenue_state_transitions tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.revenue_state_transitions USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: POLICY tenant_isolation_policy ON revenue_state_transitions; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.revenue_state_transitions IS 'RLS policy enforcing tenant isolation on audit table.
-            Purpose: Prevent cross-tenant access to audit trail.
-            Requires app.current_tenant_id to be set via set_config().';
-
-
---
--- Name: session_authority tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.session_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: tenant_membership_roles tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.tenant_membership_roles USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: POLICY tenant_isolation_policy ON tenant_membership_roles; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.tenant_membership_roles IS 'RLS policy enforcing tenant isolation for auth substrate. Requires app.current_tenant_id.';
-
-
---
--- Name: tenant_memberships tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.tenant_memberships USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: POLICY tenant_isolation_policy ON tenant_memberships; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON POLICY tenant_isolation_policy ON public.tenant_memberships IS 'RLS policy enforcing tenant isolation for auth substrate. Requires app.current_tenant_id.';
-
-
---
--- Name: worker_failed_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs USING (((tenant_id IS NULL) OR ((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))));
-
-
---
--- Name: worker_side_effects tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: agent_clients tenant_isolation_policy_agent_clients; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_agent_clients ON public.agent_clients USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: agent_scope_grants tenant_isolation_policy_agent_scope_grants; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_agent_scope_grants ON public.agent_scope_grants USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: agent_service_credentials tenant_isolation_policy_agent_service_credentials; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_agent_service_credentials ON public.agent_service_credentials USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: agent_token_revocations tenant_isolation_policy_agent_token_revocations; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_agent_token_revocations ON public.agent_token_revocations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: attribution_commerce_identities tenant_isolation_policy_attribution_commerce_identities; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_attribution_commerce_identities ON public.attribution_commerce_identities USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b23_exception_records tenant_isolation_policy_b23_exception_records; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b23_exception_records ON public.b23_exception_records USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: b23_match_task_dispatches tenant_isolation_policy_b23_match_task_dispatches; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b23_match_task_dispatches ON public.b23_match_task_dispatches USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b23_match_verdicts tenant_isolation_policy_b23_match_verdicts; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b23_match_verdicts ON public.b23_match_verdicts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: b23_revenue_events tenant_isolation_policy_b23_revenue_events; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b23_revenue_events ON public.b23_revenue_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b23_webhook_ingestion_logs tenant_isolation_policy_b23_webhook_ingestion_logs; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b23_webhook_ingestion_logs ON public.b23_webhook_ingestion_logs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: b24_active_execution_leases tenant_isolation_policy_b24_active_execution_leases; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b24_active_execution_leases ON public.b24_active_execution_leases USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b24_dirty_events tenant_isolation_policy_b24_dirty_events; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b24_dirty_events ON public.b24_dirty_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: b24_feature_authority_build_outbox tenant_isolation_policy_b24_feature_authority_build_outbox; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b24_feature_authority_build_outbox ON public.b24_feature_authority_build_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b24_feature_authority_build_requests tenant_isolation_policy_b24_feature_authority_build_requests; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b24_feature_authority_build_requests ON public.b24_feature_authority_build_requests USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: b24_fit_dispatch_outbox tenant_isolation_policy_b24_fit_dispatch_outbox; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b24_fit_recovery_outbox tenant_isolation_policy_b24_fit_recovery_outbox; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b24_fit_recovery_outbox ON public.b24_fit_recovery_outbox USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: b24_source_window_feature_authority tenant_isolation_policy_b24_source_window_feature_authority; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b24_source_window_feature_authority ON public.b24_source_window_feature_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b26_p2_auth_root_evidence tenant_isolation_policy_b26_p2_auth_root_evidence; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b26_p2_auth_root_evidence ON public.b26_p2_auth_root_evidence USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
-
---
--- Name: b26_p2_conduction_receipts tenant_isolation_policy_b26_p2_conduction_receipts; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b26_p2_conduction_receipts ON public.b26_p2_conduction_receipts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b26_p2_evaluator_heartbeat tenant_isolation_policy_b26_p2_evaluator_heartbeat; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b26_p2_evaluator_heartbeat ON public.b26_p2_evaluator_heartbeat USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: b26_p2_execution_outbox tenant_isolation_policy_b26_p2_execution_outbox; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b26_p2_execution_outbox ON public.b26_p2_execution_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b26_p2_execution_quarantine tenant_isolation_policy_b26_p2_execution_quarantine; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b26_p2_execution_quarantine ON public.b26_p2_execution_quarantine USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: b26_p2_ingress_auth_witness tenant_isolation_policy_b26_p2_ingress_auth_witness; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b26_p2_ingress_auth_witness ON public.b26_p2_ingress_auth_witness USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
-
-
---
--- Name: b26_p2_provenance_evidence tenant_isolation_policy_b26_p2_provenance_evidence; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b26_p2_provenance_evidence ON public.b26_p2_provenance_evidence USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
-
---
--- Name: b26_p2_provider_auth_consequence tenant_isolation_policy_b26_p2_provider_auth_consequence; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b26_p2_provider_auth_consequence ON public.b26_p2_provider_auth_consequence USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
-
-
---
--- Name: b26_p2_scheduler_heartbeat tenant_isolation_policy_b26_p2_scheduler_heartbeat; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b26_p2_scheduler_heartbeat ON public.b26_p2_scheduler_heartbeat USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
-
---
--- Name: b27_explanation_materializations tenant_isolation_policy_b27_explanation_materializations; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b27_explanation_materializations ON public.b27_explanation_materializations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b28_proposals tenant_isolation_policy_b28_proposals; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b28_proposals ON public.b28_proposals USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: b28_request_authentications tenant_isolation_policy_b28_request_authentications; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b28_request_authentications ON public.b28_request_authentications USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: b28_simulation_requests tenant_isolation_policy_b28_simulation_requests; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_b28_simulation_requests ON public.b28_simulation_requests USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: b28_simulation_results tenant_isolation_policy_b28_simulation_results; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_b28_simulation_results ON public.b28_simulation_results USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_artifact_storage_quotas tenant_isolation_policy_bayesian_artifact_storage_quotas; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifact_storage_quotas ON public.bayesian_artifact_storage_quotas USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: bayesian_artifacts tenant_isolation_policy_bayesian_artifacts; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts ON public.bayesian_artifacts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_artifacts_p00 tenant_isolation_policy_bayesian_artifacts_p00; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p00 ON public.bayesian_artifacts_p00 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: bayesian_artifacts_p01 tenant_isolation_policy_bayesian_artifacts_p01; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p01 ON public.bayesian_artifacts_p01 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_artifacts_p02 tenant_isolation_policy_bayesian_artifacts_p02; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p02 ON public.bayesian_artifacts_p02 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: bayesian_artifacts_p03 tenant_isolation_policy_bayesian_artifacts_p03; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p03 ON public.bayesian_artifacts_p03 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_artifacts_p04 tenant_isolation_policy_bayesian_artifacts_p04; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p04 ON public.bayesian_artifacts_p04 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: bayesian_artifacts_p05 tenant_isolation_policy_bayesian_artifacts_p05; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p05 ON public.bayesian_artifacts_p05 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_artifacts_p06 tenant_isolation_policy_bayesian_artifacts_p06; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p06 ON public.bayesian_artifacts_p06 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: bayesian_artifacts_p07 tenant_isolation_policy_bayesian_artifacts_p07; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p07 ON public.bayesian_artifacts_p07 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_artifacts_p08 tenant_isolation_policy_bayesian_artifacts_p08; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p08 ON public.bayesian_artifacts_p08 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: bayesian_artifacts_p09 tenant_isolation_policy_bayesian_artifacts_p09; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p09 ON public.bayesian_artifacts_p09 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_artifacts_p10 tenant_isolation_policy_bayesian_artifacts_p10; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p10 ON public.bayesian_artifacts_p10 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: bayesian_artifacts_p11 tenant_isolation_policy_bayesian_artifacts_p11; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p11 ON public.bayesian_artifacts_p11 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_artifacts_p12 tenant_isolation_policy_bayesian_artifacts_p12; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p12 ON public.bayesian_artifacts_p12 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: bayesian_artifacts_p13 tenant_isolation_policy_bayesian_artifacts_p13; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p13 ON public.bayesian_artifacts_p13 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_artifacts_p14 tenant_isolation_policy_bayesian_artifacts_p14; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p14 ON public.bayesian_artifacts_p14 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: bayesian_artifacts_p15 tenant_isolation_policy_bayesian_artifacts_p15; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p15 ON public.bayesian_artifacts_p15 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: bayesian_model_fits tenant_isolation_policy_bayesian_model_fits; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits ON public.bayesian_model_fits USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: bayesian_model_fits_p00 tenant_isolation_policy_bayesian_model_fits_p00; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p00 ON public.bayesian_model_fits_p00 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: bayesian_model_fits_p01 tenant_isolation_policy_bayesian_model_fits_p01; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p01 ON public.bayesian_model_fits_p01 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: bayesian_model_fits_p02 tenant_isolation_policy_bayesian_model_fits_p02; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p02 ON public.bayesian_model_fits_p02 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: bayesian_model_fits_p03 tenant_isolation_policy_bayesian_model_fits_p03; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p03 ON public.bayesian_model_fits_p03 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: bayesian_model_fits_p04 tenant_isolation_policy_bayesian_model_fits_p04; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p04 ON public.bayesian_model_fits_p04 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: bayesian_model_fits_p05 tenant_isolation_policy_bayesian_model_fits_p05; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p05 ON public.bayesian_model_fits_p05 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: bayesian_model_fits_p06 tenant_isolation_policy_bayesian_model_fits_p06; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p06 ON public.bayesian_model_fits_p06 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: bayesian_model_fits_p07 tenant_isolation_policy_bayesian_model_fits_p07; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p07 ON public.bayesian_model_fits_p07 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: bayesian_model_fits_p08 tenant_isolation_policy_bayesian_model_fits_p08; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p08 ON public.bayesian_model_fits_p08 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: bayesian_model_fits_p09 tenant_isolation_policy_bayesian_model_fits_p09; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p09 ON public.bayesian_model_fits_p09 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: bayesian_model_fits_p10 tenant_isolation_policy_bayesian_model_fits_p10; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p10 ON public.bayesian_model_fits_p10 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: bayesian_model_fits_p11 tenant_isolation_policy_bayesian_model_fits_p11; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p11 ON public.bayesian_model_fits_p11 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: bayesian_model_fits_p12 tenant_isolation_policy_bayesian_model_fits_p12; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p12 ON public.bayesian_model_fits_p12 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: bayesian_model_fits_p13 tenant_isolation_policy_bayesian_model_fits_p13; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p13 ON public.bayesian_model_fits_p13 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: bayesian_model_fits_p14 tenant_isolation_policy_bayesian_model_fits_p14; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p14 ON public.bayesian_model_fits_p14 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: bayesian_model_fits_p15 tenant_isolation_policy_bayesian_model_fits_p15; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p15 ON public.bayesian_model_fits_p15 USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)) WITH CHECK ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: compliance_audit_ledger tenant_isolation_policy_compliance_audit_ledger; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_compliance_audit_ledger ON public.compliance_audit_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: ephemeral_click_resolution tenant_isolation_policy_ephemeral_click_resolution; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_ephemeral_click_resolution ON public.ephemeral_click_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: ephemeral_order_resolution tenant_isolation_policy_ephemeral_order_resolution; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_ephemeral_order_resolution ON public.ephemeral_order_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: raw_event_payloads tenant_isolation_policy_raw_event_payloads; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_raw_event_payloads ON public.raw_event_payloads USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: trust_access_log tenant_isolation_policy_trust_access_log; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_trust_access_log ON public.trust_access_log USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: trust_envelope_issuance_log tenant_isolation_policy_trust_envelope_issuance_log; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_trust_envelope_issuance_log ON public.trust_envelope_issuance_log USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: trust_export_artifact_attempts tenant_isolation_policy_trust_export_artifact_attempts; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_trust_export_artifact_attempts ON public.trust_export_artifact_attempts USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
-
-
---
--- Name: trust_issuance_attempts tenant_isolation_policy_trust_issuance_attempts; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_trust_issuance_attempts ON public.trust_issuance_attempts USING ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text))::uuid));
 
-
---
--- Name: trust_rate_limit_state tenant_isolation_policy_trust_rate_limit_state; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_trust_rate_limit_state ON public.trust_rate_limit_state USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: trust_replay_events tenant_isolation_policy_trust_replay_events; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_trust_replay_events ON public.trust_replay_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: trust_request_nonces tenant_isolation_policy_trust_request_nonces; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_trust_request_nonces ON public.trust_request_nonces USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: trust_scope_denial_events tenant_isolation_policy_trust_scope_denial_events; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_trust_scope_denial_events ON public.trust_scope_denial_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: trust_tenant_policy_events tenant_isolation_policy_trust_tenant_policy_events; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_trust_tenant_policy_events ON public.trust_tenant_policy_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: webhook_ingress_identities tenant_isolation_policy_webhook_ingress_identities; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_webhook_ingress_identities ON public.webhook_ingress_identities USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: dead_events_quarantine tenant_lane_insert; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
-
---
--- Name: dead_events_quarantine tenant_lane_select; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
-
-
---
--- Name: tenant_membership_roles; Type: ROW SECURITY; Schema: public; Owner: -
---
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_ro, app_rw, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
 
---
--- Name: tenant_memberships; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.tenant_memberships ENABLE ROW LEVEL SECURITY;
-
---
--- Name: trust_access_log; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.trust_access_log ENABLE ROW LEVEL SECURITY;
 
---
--- Name: trust_envelope_issuance_log; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.trust_envelope_issuance_log ENABLE ROW LEVEL SECURITY;
-
---
--- Name: trust_export_artifact_attempts; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.trust_export_artifact_attempts ENABLE ROW LEVEL SECURITY;
 
---
--- Name: trust_issuance_attempts; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.trust_issuance_attempts ENABLE ROW LEVEL SECURITY;
-
---
--- Name: trust_rate_limit_state; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.trust_rate_limit_state ENABLE ROW LEVEL SECURITY;
 
---
--- Name: trust_replay_events; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.trust_replay_events ENABLE ROW LEVEL SECURITY;
-
---
--- Name: trust_request_nonces; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.trust_request_nonces ENABLE ROW LEVEL SECURITY;
 
---
--- Name: trust_scope_denial_events; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.trust_scope_denial_events ENABLE ROW LEVEL SECURITY;
-
---
--- Name: trust_tenant_policy_events; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.trust_tenant_policy_events ENABLE ROW LEVEL SECURITY;
 
---
--- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-
---
--- Name: users users_provision_insert_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY users_provision_insert_policy ON public.users FOR INSERT TO app_user WITH CHECK (((id IS NOT NULL) AND (length(TRIM(BOTH FROM login_identifier_hash)) > 0) AND (auth_provider = ANY (ARRAY['password'::text, 'oauth_google'::text, 'oauth_microsoft'::text, 'oauth_github'::text, 'sso'::text]))));
 
-
---
--- Name: users users_self_select_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY users_self_select_policy ON public.users FOR SELECT USING ((id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid));
-
-
---
--- Name: users users_self_update_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY users_self_update_policy ON public.users FOR UPDATE USING ((id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid)) WITH CHECK ((id = (NULLIF(current_setting('app.current_user_id'::text, true), ''::text))::uuid));
 
-
---
--- Name: webhook_ingress_identities; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.webhook_ingress_identities ENABLE ROW LEVEL SECURITY;
-
---
--- Name: worker_failed_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: worker_side_effects; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
-
---
--- PostgreSQL database dump complete
---
-
-\unrestrict 2HvbI8QWvYRfIJ6dbtbAcfmTRl2ZYqZpFWfvuOoALpdI7gGudeCVFb4onLVcgT3
-
