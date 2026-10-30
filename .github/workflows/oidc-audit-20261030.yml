@@ -1,0 +1,52 @@
+﻿name: oidc-audit-20261030
+on:
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::326730685463:role/skeldir-ci-deploy
+          aws-region: us-east-2
+      - name: Capture identity and runtime role configuration
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          aws sts get-caller-identity --output json | tee evidence/identity.json
+          for role in skeldir-ci-deploy skeldir-app-runtime-prod skeldir-app-runtime-stage; do
+            aws iam get-role --role-name "$role" --output json > "evidence/role-$role.json" || true
+            aws iam list-role-policies --role-name "$role" --output json > "evidence/inline-$role.json" || true
+            aws iam list-attached-role-policies --role-name "$role" --output json > "evidence/attached-$role.json" || true
+          done
+          aws ssm get-parameters-by-path --path /skeldir/ci/config/ --recursive --output json > evidence/ci-ssm.json
+          if aws ssm get-parameters-by-path --path /skeldir/prod/config/ --recursive --output json > evidence/prod-ssm.json 2>evidence/prod-ssm.err; then
+            echo "UNEXPECTED_PROD_SSM_ALLOWED" | tee evidence/forbidden-ssm.txt
+          else
+            echo "PROD_SSM_REFUSED" | tee evidence/forbidden-ssm.txt
+          fi
+          if aws secretsmanager describe-secret --secret-id /skeldir/ci/secret/database/runtime-url --output json > evidence/ci-secret.json 2>evidence/ci-secret.err; then
+            echo "CI_SECRET_ALLOWED" | tee evidence/ci-secret.txt
+          else
+            echo "CI_SECRET_REFUSED" | tee evidence/ci-secret.txt
+          fi
+          if aws secretsmanager describe-secret --secret-id /skeldir/prod/secret/database/runtime-url --output json > evidence/prod-secret.json 2>evidence/prod-secret.err; then
+            echo "UNEXPECTED_PROD_SECRET_ALLOWED" | tee evidence/forbidden-secret.txt
+          else
+            echo "PROD_SECRET_REFUSED" | tee evidence/forbidden-secret.txt
+          fi
+          if aws sts assume-role --role-arn arn:aws:iam::326730685463:role/skeldir-app-runtime-prod --role-session-name oidc-audit > evidence/assume-runtime.json 2>evidence/assume-runtime.err; then
+            echo "RUNTIME_ASSUME_ALLOWED" | tee evidence/runtime-assume.txt
+          else
+            echo "RUNTIME_ASSUME_REFUSED" | tee evidence/runtime-assume.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: oidc-audit-evidence
+          path: evidence/
