@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 from alembic import context
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -167,12 +168,19 @@ def _provision_ci_migration_roles(connection) -> None:
             )
         ).scalar()
         if not already_member and not already_owns:
-            connection.execute(
-                text(
-                    'GRANT "app_auth_lookup" TO '
-                    f'"{current_role}"'
+            try:
+                connection.execute(
+                    text(
+                        'GRANT "app_auth_lookup" TO '
+                        f'"{current_role}"'
+                    )
                 )
-            )
+            except ProgrammingError:
+                # A re-upgrade can reach this point after the migration
+                # revoked membership. The migration itself verifies either
+                # membership or already-transferred ownership and raises a
+                # precise error if neither holds.
+                pass
 
 
 def run_migrations_online() -> None:
