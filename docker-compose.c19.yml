@@ -121,11 +121,24 @@ services:
       TRUST_SIGNER_CA_BUNDLE: /run/skeldir-tls/ca.pem
       SKELDIR_TRUST_PUBLIC_JWKS_JSON: ${C19_TRUST_PUBLIC_JWKS_JSON?missing C19_TRUST_PUBLIC_JWKS_JSON}
       INGESTION_FOLLOWUP_TASKS_ENABLED: "true"
+      # XXV history witness: issuance refuses when the signed checkpoint
+      # does not agree with live correction-ledger state. The API reads the
+      # observer's journal/custody; the observer holds the private seed.
+      B26_P2_HISTORY_WITNESS_REQUIRED: "true"
+      B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH: /run/history-witness/witness.pub
+      B26_P2_HISTORY_WITNESS_JOURNAL_PATH: /run/history-witness/journal.jsonl
+      B26_P2_HISTORY_WITNESS_CUSTODY_PATH: /run/history-witness/custody.json
+      B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH: /run/history-witness/heartbeat.json
+      B26_P2_HISTORY_WITNESS_HORIZON_SECONDS: "1200"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     volumes:
       - type: bind
         source: ${C19_TLS_DIR?missing C19_TLS_DIR}
         target: /run/skeldir-tls
+        read_only: true
+      - type: bind
+        source: ${C19_HISTORY_WITNESS_DIR?missing C19_HISTORY_WITNESS_DIR}
+        target: /run/history-witness
         read_only: true
     ports:
       - "${C19_API_PORT:-18019}:8000"
@@ -242,6 +255,33 @@ services:
     command: >
       celery -A app.celery_app worker --loglevel=INFO --pool=solo
       --concurrency=1 --prefetch-multiplier=4 --queues=b23_match_engine
+
+  worker_history:
+    <<: *worker-service
+    environment:
+      <<: *runtime-common
+      DATABASE_URL: ${C19_WORKER_DATABASE_URL?missing C19_WORKER_DATABASE_URL}
+      B26_P2_INGRESS_DATABASE_URL: ""
+      SKELDIR_CELERY_WORKER_ROLE: non_bayesian
+      B26_P2_HISTORY_WITNESS_REQUIRED: "true"
+      B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH: /run/history-witness-private/witness.key
+      B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH: /run/history-witness/witness.pub
+      B26_P2_HISTORY_WITNESS_JOURNAL_PATH: /run/history-witness/journal.jsonl
+      B26_P2_HISTORY_WITNESS_CUSTODY_PATH: /run/history-witness/custody.json
+      B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH: /run/history-witness/heartbeat.json
+      B26_P2_HISTORY_WITNESS_HORIZON_SECONDS: "1200"
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    command: >
+      celery -A app.celery_app worker --loglevel=INFO --pool=solo
+      --concurrency=1 --prefetch-multiplier=1 --queues=b26_p2_history
+    volumes:
+      - type: bind
+        source: ${C19_HISTORY_WITNESS_PRIVATE_KEY_FILE?missing C19_HISTORY_WITNESS_PRIVATE_KEY_FILE}
+        target: /run/history-witness-private/witness.key
+        read_only: true
+      - type: bind
+        source: ${C19_HISTORY_WITNESS_DIR?missing C19_HISTORY_WITNESS_DIR}
+        target: /run/history-witness
 
   worker_bayesian:
     build:

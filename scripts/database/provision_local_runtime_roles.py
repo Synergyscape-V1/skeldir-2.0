@@ -1,7 +1,7 @@
 """Provision the local-development PostgreSQL role graph.
 
 Production deployments establish roles through the governed preflight and
-fail closed when a runtime login role is absent. Local Docker Compose needs an
+fail closed when a runtime login role is absent. The local containerized topology needs an
 explicit, idempotent bootstrap because migrations now require the auth lookup
 role to exist instead of silently skipping its grants.
 """

@@ -4198,13 +4198,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: app_user
-          POSTGRES_PASSWORD: app_user
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
           POSTGRES_DB: skeldir_validation
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U app_user -d skeldir_validation"
+          --health-cmd="pg_isready -U postgres -d skeldir_validation"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -4232,16 +4232,16 @@ jobs:
       - name: Wait for Postgres
         run: |
           for i in {1..30}; do
-            pg_isready -h 127.0.0.1 -p 5432 -U app_user -d skeldir_validation && break
+            pg_isready -h 127.0.0.1 -p 5432 -U postgres -d skeldir_validation && break
             sleep 1
           done
 
       - name: Apply migrations
         env:
-          MIGRATION_DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
-          DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_validation
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_validation
         run: |
-          alembic -c alembic.ini upgrade heads
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app_user') THEN CREATE ROLE app_user LOGIN PASSWORD 'app_user'; END IF; END \$\$;" -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;" && PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO app_user;" && alembic -c alembic.ini upgrade heads
       
       - name: Run tests
         run: |
@@ -4373,7 +4373,7 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${MIGRATION_USER} WITH PASSWORD '${MIGRATION_PASS}';" -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" || true
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_auth_lookup TO ${MIGRATION_USER} WITH ADMIN OPTION;" -c "GRANT app_rw TO ${RUNTIME_USER}; GRANT app_ro TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${RUNTIME_USER} TO ${MIGRATION_USER};"
-          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${B057_P6_WORKER_USER} TO ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${B057_P6_WORKER_USER} TO ${MIGRATION_USER};" -c "ALTER ROLE ${MIGRATION_USER} CREATEROLE;"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${MIGRATION_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE ${DB_NAME} TO ${B057_P6_WORKER_USER}; GRANT USAGE ON SCHEMA public TO ${B057_P6_WORKER_USER};"
@@ -4572,7 +4572,7 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${MIGRATION_USER} WITH PASSWORD '${MIGRATION_PASS}';" -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" || true
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_auth_lookup TO ${MIGRATION_USER} WITH ADMIN OPTION;" -c "GRANT app_rw TO ${RUNTIME_USER}; GRANT app_ro TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${RUNTIME_USER} TO ${MIGRATION_USER};"
-          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_worker TO ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_worker TO ${MIGRATION_USER};" -c "ALTER ROLE ${MIGRATION_USER} CREATEROLE;"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${MIGRATION_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT CONNECT ON DATABASE ${DB_NAME} TO app_worker; GRANT USAGE ON SCHEMA public TO app_worker;"
@@ -5333,7 +5333,7 @@ jobs:
           # Historical migrations transfer materialized-view ownership to the
           # runtime role; membership permits that DDL without collapsing the
           # distinct runtime and migration login identities.
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;" -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;" -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;" -c "ALTER ROLE migration_owner CREATEROLE;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER migration_owner;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"

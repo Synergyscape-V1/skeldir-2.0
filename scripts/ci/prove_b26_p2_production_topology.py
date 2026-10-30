@@ -364,6 +364,14 @@ class _Topology:
                 os.unlink(dsn_path)
             except OSError:
                 pass
+        attestation_key_path = getattr(
+            self, "_source_attestation_key_path", None
+        )
+        if attestation_key_path:
+            try:
+                os.unlink(attestation_key_path)
+            except OSError:
+                pass
 
     def build_image(self) -> str:
         if self.args.no_build:
@@ -585,6 +593,42 @@ class _Topology:
         if proc.returncode != 0:
             raise RuntimeError(f"api_start_failed:{proc.stderr[-500:]}")
 
+    def _ensure_source_attestation_key(self) -> str:
+        """Create the auth-root-only XXV source-money signing seed.
+
+        The deployed auth root signs every authenticated amount; without a
+        mounted seed it fails closed with HTTP 500 and no lineage exists.
+        The topology proof therefore provisions the same process-only
+        credential the shipping compose topology mounts.
+        """
+        existing = getattr(self, "_source_attestation_key_path", None)
+        if existing:
+            return existing
+        import base64  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+
+        from cryptography.hazmat.primitives import serialization  # noqa: PLC0415
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # noqa: PLC0415
+            Ed25519PrivateKey,
+        )
+
+        private_key = Ed25519PrivateKey.generate()
+        raw = private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        seed = base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+        fd, key_path = tempfile.mkstemp(prefix="b26_p2_source_attestation_iv_")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(seed)
+        try:
+            os.chmod(key_path, 0o600)
+        except OSError:
+            pass
+        self._source_attestation_key_path = key_path
+        return key_path
+
     def start_auth_root(self, extra_env: list[str] | None = None) -> None:
         """Boot the dedicated authentication trust root (XIV).
 
@@ -603,6 +647,7 @@ class _Topology:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(ingress_dsn)
         self._auth_dsn_path = dsn_path
+        source_key_path = self._ensure_source_attestation_key()
         env_extras: list[str] = []
         for item in extra_env or []:
             env_extras.extend(["-e", item])
@@ -625,8 +670,14 @@ class _Topology:
             "B26_P2_INGRESS_DATABASE_URL=",
             "-e",
             "B26_P2_INGRESS_DATABASE_URL_FILE=/run/secrets/b26_p2_ingress_dsn",
+            "-e",
+            "B26_P2_SOURCE_ATTESTATION_PRIVATE_KEY_PATH=/run/secrets/b26_p2_source_attestation_key",
+            "-e",
+            "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH=/tmp/b26_p2_source_evidence_journal.jsonl",
             "-v",
             f"{dsn_path}:/run/secrets/b26_p2_ingress_dsn:ro",
+            "-v",
+            f"{source_key_path}:/run/secrets/b26_p2_source_attestation_key:ro",
             *env_extras,
             self.image,
             *AUTH_CMD,
