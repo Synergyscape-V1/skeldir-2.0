@@ -1,4 +1,4 @@
-﻿export type { paths as AuthPaths, operations as AuthOperations, components as AuthComponents } from "./auth";
+export type { paths as AuthPaths, operations as AuthOperations, components as AuthComponents } from "./auth";
 export type { paths as AttributionPaths, operations as AttributionOperations, components as AttributionComponents } from "./attribution";
 export type { paths as ReconciliationPaths, operations as ReconciliationOperations, components as ReconciliationComponents } from "./reconciliation";
 export type { paths as ExportPaths, operations as ExportOperations, components as ExportComponents } from "./export";
