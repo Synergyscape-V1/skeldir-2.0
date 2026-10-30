@@ -5333,7 +5333,7 @@ jobs:
           # Historical migrations transfer materialized-view ownership to the
           # runtime role; membership permits that DDL without collapsing the
           # distinct runtime and migration login identities.
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;" -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER migration_owner;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"

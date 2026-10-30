@@ -167,18 +167,40 @@ def public_key_fingerprint_from_raw(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+#: Parsed signing keys by path. The auth root signs every authenticated fact;
+#: re-reading and decoding the mounted seed per request added avoidable disk
+#: work to the 46 rps profile. The stat identity invalidates on rotation.
+_PRIVATE_KEY_CACHE: dict[str, tuple[int, int, object]] = {}
+
+
 def load_private_key(path: str | os.PathLike[str]):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # noqa: PLC0415
         Ed25519PrivateKey,
     )
 
+    key_path = Path(path)
     try:
-        raw = _b64u_decode(Path(path).read_text(encoding="utf-8").strip())
+        before = key_path.stat()
+        cached = _PRIVATE_KEY_CACHE.get(str(key_path))
+        if (
+            cached is not None
+            and cached[0] == before.st_size
+            and cached[1] == before.st_mtime_ns
+        ):
+            return cached[2]
+        raw = _b64u_decode(key_path.read_text(encoding="utf-8").strip())
+        after = key_path.stat()
     except (OSError, ValueError) as exc:
         raise SourceAttestationError("attestation_private_key_unreadable") from exc
     if len(raw) != 32:
         raise SourceAttestationError("attestation_private_key_wrong_length")
-    return Ed25519PrivateKey.from_private_bytes(raw)
+    private_key = Ed25519PrivateKey.from_private_bytes(raw)
+    _PRIVATE_KEY_CACHE[str(key_path)] = (
+        after.st_size,
+        after.st_mtime_ns,
+        private_key,
+    )
+    return private_key
 
 
 def load_public_key_raw(path: str | os.PathLike[str]) -> bytes:

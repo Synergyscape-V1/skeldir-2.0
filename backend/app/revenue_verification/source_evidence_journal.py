@@ -108,20 +108,38 @@ def journal_record_hash(record: Mapping[str, Any]) -> str:
     return str(record.get("record_hash") or "") or _record_hash(record)
 
 
+#: Last (size, mtime_ns, hash) observed for each journal path. Reading the
+#: whole journal on every append is quadratic in the number of authenticated
+#: facts: at R3's 46 rps profile that read dominated the leg and pushed p95
+#: past its ceiling. The file is written only by this auth-root process, and
+#: the stat identity makes an external append/truncate invalidate the cache.
+_LAST_RECORD_HASH_CACHE: dict[str, tuple[int, int, str | None]] = {}
+
+
 def _last_record_hash_unlocked(journal: Path) -> str | None:
-    if not journal.exists():
+    try:
+        stat = journal.stat()
+    except FileNotFoundError:
+        _LAST_RECORD_HASH_CACHE.pop(str(journal), None)
         return None
+    cached = _LAST_RECORD_HASH_CACHE.get(str(journal))
+    if cached is not None and cached[0] == stat.st_size and cached[1] == stat.st_mtime_ns:
+        return cached[2]
     last: str | None = None
     with journal.open("r", encoding="utf-8") as handle:
         for line in handle:
             if line.strip():
                 last = line.strip()
     if last is None:
-        return None
-    record = json.loads(last)
-    if record.get("version") == SOURCE_FACT_JOURNAL_VERSION:
-        return str(record.get("record_hash") or "") or None
-    return _record_hash(record)
+        result = None
+    else:
+        record = json.loads(last)
+        if record.get("version") == SOURCE_FACT_JOURNAL_VERSION:
+            result = str(record.get("record_hash") or "") or None
+        else:
+            result = _record_hash(record)
+    _LAST_RECORD_HASH_CACHE[str(journal)] = (stat.st_size, stat.st_mtime_ns, result)
+    return result
 
 
 def _append_chained_record(journal: Path, record: dict[str, Any]) -> None:
@@ -137,6 +155,12 @@ def _append_chained_record(journal: Path, record: dict[str, Any]) -> None:
             handle.write(line + "\n")
             handle.flush()
             os.fsync(handle.fileno())
+        stat = journal.stat()
+        _LAST_RECORD_HASH_CACHE[str(journal)] = (
+            stat.st_size,
+            stat.st_mtime_ns,
+            str(record["record_hash"]),
+        )
 
 
 def _verify_outcome(

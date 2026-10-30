@@ -21,6 +21,7 @@ from app.revenue_verification.source_evidence_journal import (
     SourceFactJournalError,
     append_source_fact,
     append_source_fact_outcome,
+    journal_record_hash,
     load_source_fact_records,
     record_commit_outcome,
     resolve_source_facts,
@@ -129,6 +130,29 @@ def test_legacy_record_is_preserved(tmp_path: Path) -> None:
     records = load_source_fact_records(journal)
     assert records is not None
     assert records[0]["version"] == LEGACY_SOURCE_FACT_JOURNAL_VERSION
+
+
+def test_cached_tip_invalidates_on_external_append(tmp_path: Path) -> None:
+    journal = tmp_path / "source.jsonl"
+    _append(journal, kind="source_money", fact_id="s1", xid="100")
+    legacy = {
+        "version": LEGACY_SOURCE_FACT_JOURNAL_VERSION,
+        "fact_kind": "source_money",
+        "fact_id": "s2",
+        "tenant_id": "t",
+        "verdict_id": "",
+        "statement": {"id": "s2"},
+        "signature": "sig",
+        "key_sha256": "k",
+    }
+    with journal.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(legacy) + "\n")
+        handle.flush()
+    _append(journal, kind="source_money", fact_id="s3", xid="300")
+
+    records = load_source_fact_records(journal)
+    assert records is not None
+    assert records[-1]["previous_record_hash"] == journal_record_hash(legacy)
 
 
 @pytest.mark.asyncio
