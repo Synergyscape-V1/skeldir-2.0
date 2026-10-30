@@ -350,16 +350,22 @@ def _observe_history_witness() -> None:
     credential with the private seed mounted only in its container; the
     API holds the public half and the shared journal/custody.
     """
-    _compose(
-        "exec",
-        "-T",
-        "worker_history",
-        "python",
-        "-c",
-        "import asyncio; "
-        "from app.tasks.b26_p2_history import observe_history_integrity; "
-        "print(asyncio.run(observe_history_integrity()))",
-    )
+    try:
+        _compose(
+            "exec",
+            "-T",
+            "worker_history",
+            "python",
+            "-c",
+            "import asyncio; "
+            "from app.tasks.b26_p2_history import observe_history_integrity; "
+            "print(asyncio.run(observe_history_integrity()))",
+        )
+    except subprocess.CalledProcessError as exc:
+        raise AssertionError(
+            "history observer failed:"
+            f" stdout={exc.stdout!r} stderr={exc.stderr!r}"
+        ) from exc
 
 
 def _record_evidence(payload: dict[str, object]) -> None:

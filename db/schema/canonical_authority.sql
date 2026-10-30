@@ -563,6 +563,7 @@ BEGIN
     END IF;
 END $$;
 REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.b26_p2_enforce_verdict_temporal_conservation() FROM PUBLIC;
 -- XIII: only the dedicated authentication trust root may record P.
 GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
 DO $$
