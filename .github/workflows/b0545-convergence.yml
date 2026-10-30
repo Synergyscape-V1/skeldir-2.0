@@ -82,6 +82,15 @@ jobs:
           # runtime role; PostgreSQL requires the migration principal to be a
           # member of that target role while preserving distinct login identities.
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
+          # XXV role prerequisites: created before the grant-bearing chain so
+          # every governed grant reaches the role. Login roles used by tests
+          # are provisioned by the test lane itself.
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_ingress NOLOGIN;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_worker NOLOGIN;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_trust_issuer NOLOGIN;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_relay NOLOGIN;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER migration_owner;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"

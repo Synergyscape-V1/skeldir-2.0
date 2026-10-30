@@ -33,7 +33,7 @@ branch_labels = None
 depends_on = None
 
 
-def _ensure_role(role: str) -> None:
+def _require_role(role: str) -> None:
     exists = (
         op.get_bind()
         .execute(
@@ -43,11 +43,11 @@ def _ensure_role(role: str) -> None:
         .scalar()
     )
     if not exists:
-        op.execute(f'CREATE ROLE "{role}" NOLOGIN')
+        raise RuntimeError(f"required_role_missing:{role}")
 
 
 def _grant(sql: str, role: str) -> None:
-    _ensure_role(role)
+    _require_role(role)
     op.execute(sql % role)
 
 
@@ -60,7 +60,7 @@ def upgrade() -> None:
         "app_ro",
         "app_relay",
     ):
-        _ensure_role(role)
+        _require_role(role)
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS public.b26_p2_adjustment_evidence (

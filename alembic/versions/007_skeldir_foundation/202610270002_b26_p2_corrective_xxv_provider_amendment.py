@@ -61,13 +61,12 @@ branch_labels = None
 depends_on = None
 
 
-def _ensure_role(role: str, *, bypass_rls: bool = False) -> None:
-    bind = op.get_bind()
+def _require_role(role: str, *, bypass_rls: bool = False) -> None:
     row = (
-        bind.execute(
+        op.get_bind()
+        .execute(
             text(
-                "SELECT rolcanlogin, rolbypassrls FROM pg_roles"
-                " WHERE rolname = :role"
+                "SELECT rolbypassrls FROM pg_roles WHERE rolname = :role"
             ),
             {"role": role},
         )
@@ -75,13 +74,9 @@ def _ensure_role(role: str, *, bypass_rls: bool = False) -> None:
         .first()
     )
     if row is None:
-        attributes = "NOLOGIN" + (" BYPASSRLS" if bypass_rls else "")
-        op.execute(f'CREATE ROLE "{role}" {attributes}')
-        return
+        raise RuntimeError(f"required_role_missing:{role}")
     if bypass_rls and not bool(row["rolbypassrls"]):
-        raise RuntimeError(
-            f"required_role_missing_bypassrls:{role}"
-        )
+        raise RuntimeError(f"required_role_missing_bypassrls:{role}")
 
 
 def upgrade() -> None:
@@ -880,8 +875,8 @@ AS $function$
     # already owned by app_auth_lookup and the migration principal no longer
     # holds the role, so re-running either statement unconditionally would
     # fail even though the state is already correct.
-    _ensure_role("app_auth_lookup", bypass_rls=True)
-    _ensure_role("app_user")
+    _require_role("app_auth_lookup", bypass_rls=True)
+    _require_role("app_user")
     can_own_auth_lookup = (
         op.get_bind()
         .execute(
