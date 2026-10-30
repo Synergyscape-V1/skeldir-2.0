@@ -149,12 +149,19 @@ def _provision_ci_migration_roles(connection) -> None:
     # and never relies on this branch.
     current_role = connection.execute(text("SELECT current_user")).scalar()
     if current_role and current_role != "app_auth_lookup":
-        connection.execute(
+        already_member = connection.execute(
             text(
-                'GRANT "app_auth_lookup" TO '
-                f'"{current_role}"'
+                "SELECT pg_has_role(current_user,"
+                " 'app_auth_lookup', 'member')"
             )
-        )
+        ).scalar()
+        if not already_member:
+            connection.execute(
+                text(
+                    'GRANT "app_auth_lookup" TO '
+                    f'"{current_role}"'
+                )
+            )
 
 
 def run_migrations_online() -> None:
