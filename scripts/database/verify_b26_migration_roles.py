@@ -124,6 +124,34 @@ def _check_runtime_roles(
             errors.append(f"runtime_role_not_login:{role}")
 
 
+_PUBLISHER_ROLES = (
+    "app_dispatch_publisher",
+    "app_worker_bayesian_publisher",
+)
+
+
+def _ensure_publisher_construction_grants(cursor, errors: list[str]) -> None:
+    for role in _PUBLISHER_ROLES:
+        cursor.execute(
+            "SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)
+        )
+        if cursor.fetchone() is None:
+            continue
+        try:
+            cursor.execute(
+                sql.SQL(
+                    "GRANT EXECUTE ON FUNCTION"
+                    " public.skeldir_database_construction_revisions()"
+                    " TO {}"
+                ).format(sql.Identifier(role))
+            )
+        except psycopg2.Error as exc:
+            errors.append(
+                f"publisher_construction_grant_failed:{role}:"
+                f"{exc.__class__.__name__}"
+            )
+
+
 def _check_post_migration(cursor, errors: list[str]) -> None:
     for function_name in (
         "lookup_user_auth_by_login_hash",
@@ -240,6 +268,7 @@ def main() -> int:
                 errors=errors,
             )
             if args.post_migration:
+                _ensure_publisher_construction_grants(cursor, errors)
                 _check_post_migration(cursor, errors)
             if args.post_migration and not args.runtime_dsn:
                 errors.append("runtime_login_proof_missing")

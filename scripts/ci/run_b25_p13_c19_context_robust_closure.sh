@@ -192,6 +192,12 @@ if [[ "$python_bin" == *.exe ]]; then
 fi
 "$python_bin" -m alembic upgrade head | tee "$evidence_dir/c19_migration_replay.out"
 "$python_bin" -m alembic current | tee "$evidence_dir/c19_migration_head.out"
+# C19 runs the real publisher under app_dispatch_publisher. The read-only
+# construction-revision guard needs EXECUTE; grant it as the governed admin
+# after migrations, and keep the grant out of schema-history head.
+PGPASSWORD=postgres psql "$C19_ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -c "GRANT EXECUTE ON FUNCTION public.skeldir_database_construction_revisions() TO app_dispatch_publisher;" \
+  | tee -a "$evidence_dir/c19_migration_head.out"
 if [[ "$python_bin" == *.exe ]]; then
   unset WSLENV
 fi
