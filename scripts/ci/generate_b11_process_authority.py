@@ -36,7 +36,6 @@ PROCESSES = (
 )
 SECRET_KEYS = {
     "api": (
-        "DATABASE_URL",
         "AUTH_JWT_SECRET",
         "AUTH_JWT_PUBLIC_KEY_RING",
         "AUTH_LOGIN_IDENTIFIER_PEPPER",
@@ -44,43 +43,37 @@ SECRET_KEYS = {
         "CELERY_BROKER_URL",
         "CELERY_RESULT_BACKEND",
     ),
-    "auth_ingress": ("DATABASE_URL",),
+    "auth_ingress": (),
     "worker": (
-        "DATABASE_URL",
         "PLATFORM_TOKEN_ENCRYPTION_KEY",
         "CELERY_BROKER_URL",
         "CELERY_RESULT_BACKEND",
         "LLM_PROVIDER_API_KEY",
     ),
     "worker_bayesian": (
-        "DATABASE_URL",
         "CELERY_BROKER_URL",
         "CELERY_RESULT_BACKEND",
         "LLM_PROVIDER_API_KEY",
     ),
     "worker_bayesian_publisher": (
-        "DATABASE_URL",
         "CELERY_BROKER_URL",
         "CELERY_RESULT_BACKEND",
     ),
     "worker_b23": (
-        "DATABASE_URL",
         "CELERY_BROKER_URL",
         "CELERY_RESULT_BACKEND",
     ),
     "observer_b26_p2": (
-        "DATABASE_URL",
         "CELERY_BROKER_URL",
         "CELERY_RESULT_BACKEND",
     ),
     "b26_p2_relay": (
-        "DATABASE_URL",
         "CELERY_BROKER_URL",
         "CELERY_RESULT_BACKEND",
     ),
-    "beat": ("DATABASE_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND"),
-    "trust_signer": ("DATABASE_URL",),
-    "trust_issuer": ("DATABASE_URL",),
+    "beat": ("CELERY_BROKER_URL", "CELERY_RESULT_BACKEND"),
+    "trust_signer": (),
+    "trust_issuer": (),
     "migration": ("MIGRATION_DATABASE_URL",),
 }
 B26_CONFIG = {
@@ -132,6 +125,14 @@ def _path(key: str) -> str:
     return contract.aws_path_template
 
 
+TASK_DATABASE_SECRETS = {
+    process: f"/skeldir/{{env}}/secret/database/runtime-{process}-url"
+    for process in PROCESSES
+    if process != "migration"
+}
+TASK_DATABASE_SECRETS["migration"] = "/skeldir/{env}/secret/database/migration-url"
+
+
 def build() -> dict:
     processes: dict[str, dict[str, list[str]]] = {}
     for process in PROCESSES:
@@ -146,6 +147,7 @@ def build() -> dict:
         "version": "b11-process-authority-v1",
         "environments": ["prod", "stage"],
         "processes": processes,
+        "task_database_secrets": dict(sorted(TASK_DATABASE_SECRETS.items())),
     }
 
 
@@ -159,7 +161,9 @@ def validate(matrix: dict) -> None:
     for process, entries in processes.items():
         for kind in ("config", "secrets"):
             paths = entries.get(kind)
-            if not isinstance(paths, list) or not paths:
+            if not isinstance(paths, list):
+                raise SystemExit(f"matrix_{process}_{kind}_invalid")
+            if kind == "secrets" and not paths and process not in {"auth_ingress", "trust_signer", "trust_issuer"}:
                 raise SystemExit(f"matrix_{process}_{kind}_empty")
             if len(paths) != len(set(paths)):
                 raise SystemExit(f"matrix_{process}_{kind}_duplicate")
@@ -170,6 +174,12 @@ def validate(matrix: dict) -> None:
                     raise SystemExit(f"matrix_{process}_{kind}_wildcard:{path}")
                 if path not in managed_paths:
                     raise SystemExit(f"matrix_{process}_{kind}_unmanaged:{path}")
+    database_path = _path("DATABASE_URL")
+    if any(
+        database_path in entries["secrets"]
+        for entries in processes.values()
+    ):
+        raise SystemExit("shared_runtime_database_secret_in_process_roles")
     # The migration credential and auth secrets may not cross process roles.
     exclusive = {
         "MIGRATION_DATABASE_URL": "migration",
@@ -189,6 +199,16 @@ def validate(matrix: dict) -> None:
                 raise SystemExit(f"exclusive_secret_holders_mismatch:{key}:{holders}")
         elif holders != [owner]:
             raise SystemExit(f"exclusive_secret_holder_mismatch:{key}:{holders}")
+    task_db = matrix.get("task_database_secrets")
+    if not isinstance(task_db, dict) or set(task_db) != set(PROCESSES):
+        raise SystemExit("task_database_secret_set_mismatch")
+    if len(set(task_db.values())) != len(task_db):
+        raise SystemExit("task_database_secret_shared")
+    for process, path in task_db.items():
+        if not isinstance(path, str) or not path.startswith("/skeldir/{env}/secret/database/"):
+            raise SystemExit(f"task_database_secret_path_invalid:{process}")
+        if "*" in path:
+            raise SystemExit(f"task_database_secret_wildcard:{process}")
     if any(
         _path("MIGRATION_DATABASE_URL") in entries["secrets"]
         for process, entries in processes.items()

@@ -87,7 +87,6 @@
         "/skeldir/{env}/secret/auth/login-identifier-pepper",
         "/skeldir/{env}/secret/celery/broker-url",
         "/skeldir/{env}/secret/celery/result-backend-url",
-        "/skeldir/{env}/secret/database/runtime-url",
         "/skeldir/{env}/secret/platform/token-encryption-key"
       ]
     },
@@ -160,9 +159,7 @@
         "/skeldir/{env}/config/tenant/secrets-cache-ttl-seconds",
         "/skeldir/{env}/config/webhooks/auth-max-body-bytes"
       ],
-      "secrets": [
-        "/skeldir/{env}/secret/database/runtime-url"
-      ]
+      "secrets": []
     },
     "worker": {
       "config": [
@@ -235,7 +232,6 @@
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
         "/skeldir/{env}/secret/celery/result-backend-url",
-        "/skeldir/{env}/secret/database/runtime-url",
         "/skeldir/{env}/secret/llm/provider-api-key",
         "/skeldir/{env}/secret/platform/token-encryption-key"
       ]
@@ -311,7 +307,6 @@
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
         "/skeldir/{env}/secret/celery/result-backend-url",
-        "/skeldir/{env}/secret/database/runtime-url",
         "/skeldir/{env}/secret/llm/provider-api-key"
       ]
     },
@@ -385,8 +380,7 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url",
-        "/skeldir/{env}/secret/database/runtime-url"
+        "/skeldir/{env}/secret/celery/result-backend-url"
       ]
     },
     "worker_b23": {
@@ -459,8 +453,7 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url",
-        "/skeldir/{env}/secret/database/runtime-url"
+        "/skeldir/{env}/secret/celery/result-backend-url"
       ]
     },
     "observer_b26_p2": {
@@ -542,8 +535,7 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url",
-        "/skeldir/{env}/secret/database/runtime-url"
+        "/skeldir/{env}/secret/celery/result-backend-url"
       ]
     },
     "b26_p2_relay": {
@@ -616,8 +608,7 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url",
-        "/skeldir/{env}/secret/database/runtime-url"
+        "/skeldir/{env}/secret/celery/result-backend-url"
       ]
     },
     "beat": {
@@ -690,8 +681,7 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url",
-        "/skeldir/{env}/secret/database/runtime-url"
+        "/skeldir/{env}/secret/celery/result-backend-url"
       ]
     },
     "trust_signer": {
@@ -764,9 +754,7 @@
         "/skeldir/{env}/config/tenant/secrets-cache-ttl-seconds",
         "/skeldir/{env}/config/webhooks/auth-max-body-bytes"
       ],
-      "secrets": [
-        "/skeldir/{env}/secret/database/runtime-url"
-      ]
+      "secrets": []
     },
     "trust_issuer": {
       "config": [
@@ -838,9 +826,7 @@
         "/skeldir/{env}/config/tenant/secrets-cache-ttl-seconds",
         "/skeldir/{env}/config/webhooks/auth-max-body-bytes"
       ],
-      "secrets": [
-        "/skeldir/{env}/secret/database/runtime-url"
-      ]
+      "secrets": []
     },
     "migration": {
       "config": [
@@ -914,5 +900,19 @@
         "/skeldir/{env}/secret/database/migration-url"
       ]
     }
+  },
+  "task_database_secrets": {
+    "api": "/skeldir/{env}/secret/database/runtime-api-url",
+    "auth_ingress": "/skeldir/{env}/secret/database/runtime-auth_ingress-url",
+    "b26_p2_relay": "/skeldir/{env}/secret/database/runtime-b26_p2_relay-url",
+    "beat": "/skeldir/{env}/secret/database/runtime-beat-url",
+    "migration": "/skeldir/{env}/secret/database/migration-url",
+    "observer_b26_p2": "/skeldir/{env}/secret/database/runtime-observer_b26_p2-url",
+    "trust_issuer": "/skeldir/{env}/secret/database/runtime-trust_issuer-url",
+    "trust_signer": "/skeldir/{env}/secret/database/runtime-trust_signer-url",
+    "worker": "/skeldir/{env}/secret/database/runtime-worker-url",
+    "worker_b23": "/skeldir/{env}/secret/database/runtime-worker_b23-url",
+    "worker_bayesian": "/skeldir/{env}/secret/database/runtime-worker_bayesian-url",
+    "worker_bayesian_publisher": "/skeldir/{env}/secret/database/runtime-worker_bayesian_publisher-url"
   }
 }

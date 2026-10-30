@@ -73,7 +73,7 @@ resource "aws_iam_policy" "process_runtime" {
           Sid      = "ReadSecret${substr(md5(path), 0, 20)}"
           Effect   = "Allow"
           Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-          Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:${replace(path, "{env}", each.value.environment)}"
+          Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:${replace(path, "{env}", each.value.environment)}-??????"
         }
       ],
       [
