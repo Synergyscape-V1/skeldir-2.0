@@ -24,6 +24,7 @@ source for the current-commerce unique identity.
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import text
 
 
 revision = "202610280001"
@@ -32,14 +33,34 @@ branch_labels = None
 depends_on = None
 
 
-def _grant(sql: str, role: str) -> None:
-    op.execute(
-        "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '%s')"
-        " THEN %s; END IF; END $$;" % (role, sql % role)
+def _ensure_role(role: str) -> None:
+    exists = (
+        op.get_bind()
+        .execute(
+            text("SELECT 1 FROM pg_roles WHERE rolname = :role"),
+            {"role": role},
+        )
+        .scalar()
     )
+    if not exists:
+        op.execute(f'CREATE ROLE "{role}" NOLOGIN')
+
+
+def _grant(sql: str, role: str) -> None:
+    _ensure_role(role)
+    op.execute(sql % role)
 
 
 def upgrade() -> None:
+    for role in (
+        "app_ingress",
+        "app_user",
+        "app_worker",
+        "app_trust_issuer",
+        "app_ro",
+        "app_relay",
+    ):
+        _ensure_role(role)
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS public.b26_p2_adjustment_evidence (

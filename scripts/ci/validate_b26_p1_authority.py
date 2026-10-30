@@ -175,11 +175,15 @@ COVERAGE_SQL_GRANDFATHERED_FILES = frozenset(
         "backend/app/revenue_verification/batch_engine.py",
         "backend/app/revenue_verification/match_engine_kernel.py",
         "backend/app/bayesian/eligibility.py",
-        # XXV source attestation reads the provider amount to verify the
-        # signed statement. It computes no coverage ratio and is not a
-        # coverage authority; the read is bound to the attestation subject.
-        "backend/app/revenue_verification/source_attestation.py",
     }
+)
+# XXV source attestation has exactly one legitimate coverage-money read: the
+# verdict/source statement used to verify the signed amount. It is not a
+# coverage authority. Pin the exact SQL value rather than exempting the file,
+# so any aggregation or other change in that file remains RED.
+SOURCE_ATTESTATION_PATH = "backend/app/revenue_verification/source_attestation.py"
+SOURCE_ATTESTATION_READ_SQL_SHA256 = (
+    "7d042c871ebc491acf6ce9ac18dc382015ee27a8ec7d9af30e5dbeabbcf8ccd2"
 )
 # semantic_contract.py legitimately names total_business_minor inside the golden
 # falsification vector as the forbidden reference. Exclude only that file from
@@ -856,6 +860,14 @@ def _validate_b26_namespace(
     details["b26_successor_product_machinery_enforced"] = enforce_product_machinery
 
 
+def _is_source_attestation_read(rel: str, value: str) -> bool:
+    return (
+        rel == SOURCE_ATTESTATION_PATH
+        and hashlib.sha256(value.encode("utf-8")).hexdigest()
+        == SOURCE_ATTESTATION_READ_SQL_SHA256
+    )
+
+
 def _check_repo_wide_coverage_and_denominator(
     path: Path, source: str, tree: ast.AST, violations: list[str]
 ) -> None:
@@ -875,6 +887,8 @@ def _check_repo_wide_coverage_and_denominator(
                 lowered = node.value.lower()
                 if "select " in lowered or "sum(" in lowered:
                     if any(token in lowered for token in COVERAGE_MONEY_SQL_TOKENS):
+                        if _is_source_attestation_read(rel, node.value):
+                            continue
                         violations.append(
                             f"b26_duplicate_coverage_authority:{rel}:{node.lineno}"
                         )

@@ -55,6 +55,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND = REPO_ROOT / "backend"
+sys.path.insert(0, str(BACKEND))
+from app.core.managed_settings_contract import (  # noqa: E402
+    PROCESS_DATABASE_SECRET_PATHS,
+)
 
 PREFIX = os.environ.get("B26_P2_XXV_PREFIX", "b26p2xxv")
 NETWORK = f"{PREFIX}-net"
@@ -512,7 +516,15 @@ def control_plane_store(role: str, state: dict) -> dict[str, str]:
     }
     store: dict[str, str] = {}
     for key, meta in contract.items():
-        store[meta["path"]] = overrides.get(key, meta["default"])
+        value = overrides.get(key, meta["default"])
+        if key == "DATABASE_URL":
+            # The shared path must not be a working fallback: each process
+            # must resolve its own task database secret.
+            value = ""
+        store[meta["path"]] = value
+    store[
+        PROCESS_DATABASE_SECRET_PATHS[role].format(env="prod")
+    ] = dsn_for
     return store
 
 

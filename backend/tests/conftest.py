@@ -162,7 +162,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
     conn = None
     try:
-        conn = psycopg2.connect(dsn)
+        conn = psycopg2.connect(dsn, connect_timeout=2)
         conn.autocommit = False
         cur = conn.cursor()
         cur.execute(
@@ -246,6 +246,12 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             "[xxv-fixture-hygiene] withdrew"
             f" {len(rows)} unattested current-claiming test verdict(s)"
         )
+    except psycopg2.OperationalError as exc:
+        # Static trust lanes intentionally run without a database service.
+        # A refused connection means there is no test database to clean; it
+        # must not turn an otherwise green suite into a false red.
+        print(f"[xxv-fixture-hygiene] skipped: database unavailable: {exc}")
+        return
     except Exception as exc:  # noqa: BLE001 - cleanup failure must be visible
         if conn is not None:
             try:

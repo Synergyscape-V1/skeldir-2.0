@@ -31,6 +31,10 @@ from pathlib import Path
 
 import psycopg2
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "backend"))
+from app.core.secrets import get_database_url  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
 PREDECESSOR = "202610180003"
@@ -159,7 +163,7 @@ def main() -> int:
     after = _row(seed_dsn, world["verdict"])
     attestations = _attestation_count(seed_dsn, before[4])
 
-    os.environ["DATABASE_URL"] = migration_dsn
+    os.environ["SKELDIR_PROCESS_DATABASE_URL"] = migration_dsn
     os.environ["MIGRATION_DATABASE_URL"] = migration_dsn
     os.environ.setdefault("ENVIRONMENT", "ci")
     sweep_module = _load(SWEEP, "xxv_b8_sweep")
@@ -177,7 +181,7 @@ def main() -> int:
         create_async_engine,
     )
 
-    os.environ["DATABASE_URL"] = (
+    os.environ["SKELDIR_PROCESS_DATABASE_URL"] = (
         "postgresql+asyncpg://"
         + seed_dsn.split("://", 1)[1]
     )
@@ -191,7 +195,7 @@ def main() -> int:
     )
 
     async def _read_customer_status():
-        engine = create_async_engine(os.environ["DATABASE_URL"])
+        engine = create_async_engine(get_database_url())
         try:
             async with AsyncSession(engine) as session:
                 await session.execute(

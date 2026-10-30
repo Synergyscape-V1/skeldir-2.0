@@ -863,6 +863,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/prove_b26_p2_xxv_legacy_generations.py",
     "scripts/ci/prove_b26_p2_xxv_predecessor_cohort.py",
     "scripts/ci/validate_b26_p2_xxv_environment_predicates.py",
+    "scripts/database/verify_b26_migration_roles.py",
     "infra/b11_p1/terraform/process_authority.tf",
 ]
 

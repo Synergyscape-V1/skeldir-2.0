@@ -13,6 +13,7 @@ from app.core.managed_settings_contract import (
     MANAGED_SETTINGS_CONTRACT,
     ManagedSettingContract,
     process_role_allows,
+    resolve_process_database_secret_path,
 )
 
 _ENV_ALIAS_MAP: dict[str, str] = {
@@ -159,6 +160,18 @@ def should_enable_control_plane() -> bool:
     return os.getenv("SKELDIR_CONTROL_PLANE_ENABLED", "0") == "1"
 
 
+def _path_for_key(
+    key: str, *, canonical_env: str, process_role: str
+) -> str:
+    if key == "DATABASE_URL" and process_role:
+        return resolve_process_database_secret_path(process_role, canonical_env)
+    if key == "DATABASE_URL" and is_production_like(canonical_env):
+        raise RuntimeError(
+            "process_role_required_for_database_url"
+        )
+    return resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
+
+
 def preload_environment_from_control_plane() -> None:
     if not should_enable_control_plane():
         return
@@ -170,7 +183,11 @@ def preload_environment_from_control_plane() -> None:
             continue
         if os.getenv(key):
             continue
-        path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
+        path = _path_for_key(
+            key,
+            canonical_env=canonical_env,
+            process_role=process_role,
+        )
         os.environ[key] = _fetch_value_from_aws(contract, path)
 
 
@@ -185,10 +202,16 @@ def hydrate_settings_from_control_plane(settings_obj: Any) -> None:
         if not process_role_allows(process_role, key):
             continue
         current_value = getattr(settings_obj, key, None)
-        if current_value is not None:
+        if current_value is not None and not (
+            key == "DATABASE_URL" and process_role
+        ):
             continue
 
-        path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
+        path = _path_for_key(
+            key,
+            canonical_env=canonical_env,
+            process_role=process_role,
+        )
         resolved = _fetch_value_from_aws(contract, path)
         if contract.classification == "config":
             maybe_json = resolved.strip()

@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
+from app.core.secrets import get_database_url  # noqa: E402
 import b26_p2_xxv_falsify as F  # noqa: E402
 from b26_p2_xxv_lane import PG  # noqa: E402
 
@@ -163,7 +165,7 @@ def main() -> int:
     os.environ["PYTHONPATH"] = os.pathsep.join(
         [str(F.REPO_ROOT / "backend"), os.environ.get("PYTHONPATH", "")]
     ).strip(os.pathsep)
-    os.environ["DATABASE_URL"] = (
+    os.environ["SKELDIR_PROCESS_DATABASE_URL"] = (
         f"postgresql+asyncpg://postgres:postgres@127.0.0.1:{PORT}/{NEW_DB}"
     )
     os.environ["ENVIRONMENT"] = "ci"
@@ -205,7 +207,7 @@ def main() -> int:
             )
             committed_result = asyncio.run(
                 _read(
-                    os.environ["DATABASE_URL"], committed, expect_attested=True
+                    get_database_url(), committed, expect_attested=True
                 )
             )
 
@@ -245,7 +247,7 @@ def main() -> int:
             try:
                 unknown_result = asyncio.run(
                     _read(
-                        os.environ["DATABASE_URL"],
+                        get_database_url(),
                         unknown,
                         expect_attested=False,
                     )
@@ -264,7 +266,7 @@ def main() -> int:
             shutil.copyfile(unknown, recovered)
             recovered_result = asyncio.run(
                 _read(
-                    os.environ["DATABASE_URL"], recovered, expect_attested=True
+                    get_database_url(), recovered, expect_attested=True
                 )
             )
             record = {

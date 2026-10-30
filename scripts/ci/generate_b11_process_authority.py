@@ -17,7 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.core.managed_settings_contract import MANAGED_SETTINGS_CONTRACT  # noqa: E402
+from app.core.managed_settings_contract import (  # noqa: E402
+    MANAGED_SETTINGS_CONTRACT,
+    PROCESS_DATABASE_SECRET_PATHS,
+)
 
 OUT = ROOT / "contracts-internal" / "governance" / "b11_process_authority.v1.json"
 PROCESSES = (
@@ -125,12 +128,9 @@ def _path(key: str) -> str:
     return contract.aws_path_template
 
 
-TASK_DATABASE_SECRETS = {
-    process: f"/skeldir/{{env}}/secret/database/runtime-{process}-url"
-    for process in PROCESSES
-    if process != "migration"
-}
-TASK_DATABASE_SECRETS["migration"] = "/skeldir/{env}/secret/database/migration-url"
+TASK_DATABASE_SECRETS = dict(PROCESS_DATABASE_SECRET_PATHS)
+if set(TASK_DATABASE_SECRETS) != set(PROCESSES):
+    raise SystemExit("process_database_secret_set_mismatch")
 
 
 def build() -> dict:
@@ -141,7 +141,10 @@ def build() -> dict:
         secret_keys = set(SECRET_KEYS.get(process, ()))
         processes[process] = {
             "config": sorted(_path(key) for key in config_keys),
-            "secrets": sorted(_path(key) for key in secret_keys),
+            "secrets": sorted(
+                {_path(key) for key in secret_keys}
+                | {TASK_DATABASE_SECRETS[process]}
+            ),
         }
     return {
         "version": "b11-process-authority-v1",
@@ -157,7 +160,10 @@ def validate(matrix: dict) -> None:
     processes = matrix.get("processes")
     if not isinstance(processes, dict) or set(processes) != set(PROCESSES):
         raise SystemExit("matrix_process_set_mismatch")
-    managed_paths = {contract.aws_path_template for contract in MANAGED_SETTINGS_CONTRACT.values()}
+    managed_paths = {
+        contract.aws_path_template
+        for contract in MANAGED_SETTINGS_CONTRACT.values()
+    } | set(TASK_DATABASE_SECRETS.values())
     for process, entries in processes.items():
         for kind in ("config", "secrets"):
             paths = entries.get(kind)

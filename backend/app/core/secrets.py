@@ -17,12 +17,16 @@ import psycopg2
 from app.core import clock as clock_module
 from app.core.config import settings
 from app.core.control_plane import (
+    is_production_like,
     resolve_aws_path_for_key,
     resolve_control_plane_env,
     should_enable_control_plane,
     _fetch_value_from_aws,  # sanctioned internal control-plane fetch path
 )
-from app.core.managed_settings_contract import MANAGED_SETTINGS_CONTRACT
+from app.core.managed_settings_contract import (
+    MANAGED_SETTINGS_CONTRACT,
+    resolve_process_database_secret_path,
+)
 
 RuntimeRole = Literal["api", "worker", "readiness"]
 MAX_ACCEPTED_CRYPTO_KEYS = 3
@@ -187,9 +191,19 @@ def was_loaded_from_control_plane(key: str) -> bool:
 
 def _read_secret_source_of_truth_value(key: str) -> str | None:
     if should_enable_control_plane():
-        canonical_env = resolve_control_plane_env(os.getenv("ENVIRONMENT", settings.ENVIRONMENT))
+        canonical_env = resolve_control_plane_env(
+            os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
+        )
         contract = _contract_for(key)
-        path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
+        process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+        if key == "DATABASE_URL" and process_role:
+            path = resolve_process_database_secret_path(
+                process_role, canonical_env
+            )
+        elif key == "DATABASE_URL" and is_production_like(canonical_env):
+            raise RuntimeError("process_role_required_for_database_url")
+        else:
+            path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
         value = _fetch_value_from_aws(contract, path)
         cleaned = _coerce_str(value)
         if cleaned is None:
@@ -301,18 +315,7 @@ def _database_url_for_sync_pg() -> str:
         if _DATABASE_DSN_CACHE:
             return _DATABASE_DSN_CACHE
 
-        candidate = _read_setting("DATABASE_URL")
-        if not candidate:
-            try:
-                from app.db import session as db_session  # local import avoids import-cycle during module init
-
-                candidate = getattr(db_session, "_ASYNC_DATABASE_URL", None)
-                if candidate:
-                    candidate = str(candidate).replace("postgresql+asyncpg://", "postgresql://", 1)
-            except Exception:
-                candidate = None
-        if not candidate:
-            candidate = require_secret("DATABASE_URL")
+        candidate = get_database_url()
 
         _DATABASE_DSN_CACHE = candidate
         return _DATABASE_DSN_CACHE
@@ -698,6 +701,22 @@ def require_secret(key: str) -> str:
 
 
 def get_database_url() -> str:
+    process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+    explicit = os.getenv("SKELDIR_PROCESS_DATABASE_URL", "").strip()
+    if explicit:
+        return explicit
+    if (
+        process_role
+        and not should_enable_control_plane()
+        and is_production_like(
+            resolve_control_plane_env(
+                os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
+            )
+        )
+    ):
+        raise RuntimeError(
+            "process_database_url_requires_control_plane"
+        )
     return require_secret("DATABASE_URL")
 
 

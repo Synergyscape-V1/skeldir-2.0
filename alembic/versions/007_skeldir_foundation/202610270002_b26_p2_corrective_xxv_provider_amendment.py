@@ -61,15 +61,27 @@ branch_labels = None
 depends_on = None
 
 
-def _role_exists(role: str) -> bool:
-    return bool(
-        op.get_bind()
-        .execute(
-            text("SELECT 1 FROM pg_roles WHERE rolname = :role"),
+def _ensure_role(role: str, *, bypass_rls: bool = False) -> None:
+    bind = op.get_bind()
+    row = (
+        bind.execute(
+            text(
+                "SELECT rolcanlogin, rolbypassrls FROM pg_roles"
+                " WHERE rolname = :role"
+            ),
             {"role": role},
         )
-        .scalar()
+        .mappings()
+        .first()
     )
+    if row is None:
+        attributes = "NOLOGIN" + (" BYPASSRLS" if bypass_rls else "")
+        op.execute(f'CREATE ROLE "{role}" {attributes}')
+        return
+    if bypass_rls and not bool(row["rolbypassrls"]):
+        raise RuntimeError(
+            f"required_role_missing_bypassrls:{role}"
+        )
 
 
 def upgrade() -> None:
@@ -868,49 +880,64 @@ AS $function$
     # already owned by app_auth_lookup and the migration principal no longer
     # holds the role, so re-running either statement unconditionally would
     # fail even though the state is already correct.
-    if _role_exists("app_auth_lookup"):
-        op.execute(
-            "GRANT USAGE, CREATE ON SCHEMA auth TO app_auth_lookup"
+    _ensure_role("app_auth_lookup", bypass_rls=True)
+    _ensure_role("app_user")
+    can_own_auth_lookup = (
+        op.get_bind()
+        .execute(
+            text(
+                "SELECT rolsuper OR pg_has_role("
+                "current_user, 'app_auth_lookup', 'member'"
+                ") FROM pg_roles WHERE rolname = current_user"
+            )
         )
-        op.execute(
-            "GRANT SELECT ON TABLE public.users TO app_auth_lookup"
+        .scalar()
+    )
+    if not can_own_auth_lookup:
+        raise RuntimeError(
+            "migration_role_must_own_or_inherit_app_auth_lookup"
         )
-        op.execute(
-            """
-            DO $$
-            BEGIN
-                IF (
-                    SELECT pg_get_userbyid(p.proowner)
-                    FROM pg_proc p
-                    JOIN pg_namespace n ON n.oid = p.pronamespace
-                    WHERE n.nspname = 'auth'
-                      AND p.proname = 'lookup_user_auth_by_login_hash'
-                ) IS DISTINCT FROM 'app_auth_lookup' THEN
-                    ALTER FUNCTION auth.lookup_user_auth_by_login_hash(text)
-                        OWNER TO app_auth_lookup;
-                END IF;
-                IF (
-                    SELECT pg_get_userbyid(p.proowner)
-                    FROM pg_proc p
-                    JOIN pg_namespace n ON n.oid = p.pronamespace
-                    WHERE n.nspname = 'auth'
-                      AND p.proname = 'lookup_user_by_login_hash'
-                ) IS DISTINCT FROM 'app_auth_lookup' THEN
-                    ALTER FUNCTION auth.lookup_user_by_login_hash(text)
-                        OWNER TO app_auth_lookup;
-                END IF;
-            END $$;
-            """
-        )
-    if _role_exists("app_user"):
-        op.execute(
-            "GRANT EXECUTE ON FUNCTION"
-            " auth.lookup_user_auth_by_login_hash(text) TO app_user"
-        )
-        op.execute(
-            "GRANT EXECUTE ON FUNCTION"
-            " auth.lookup_user_by_login_hash(text) TO app_user"
-        )
+    op.execute(
+        "GRANT USAGE, CREATE ON SCHEMA auth TO app_auth_lookup"
+    )
+    op.execute(
+        "GRANT SELECT ON TABLE public.users TO app_auth_lookup"
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF (
+                SELECT pg_get_userbyid(p.proowner)
+                FROM pg_proc p
+                JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'auth'
+                  AND p.proname = 'lookup_user_auth_by_login_hash'
+            ) IS DISTINCT FROM 'app_auth_lookup' THEN
+                ALTER FUNCTION auth.lookup_user_auth_by_login_hash(text)
+                    OWNER TO app_auth_lookup;
+            END IF;
+            IF (
+                SELECT pg_get_userbyid(p.proowner)
+                FROM pg_proc p
+                JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'auth'
+                  AND p.proname = 'lookup_user_by_login_hash'
+            ) IS DISTINCT FROM 'app_auth_lookup' THEN
+                ALTER FUNCTION auth.lookup_user_by_login_hash(text)
+                    OWNER TO app_auth_lookup;
+            END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        "GRANT EXECUTE ON FUNCTION"
+        " auth.lookup_user_auth_by_login_hash(text) TO app_user"
+    )
+    op.execute(
+        "GRANT EXECUTE ON FUNCTION"
+        " auth.lookup_user_by_login_hash(text) TO app_user"
+    )
     op.execute(
         """
         DO $$

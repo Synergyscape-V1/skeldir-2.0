@@ -87,6 +87,7 @@
         "/skeldir/{env}/secret/auth/login-identifier-pepper",
         "/skeldir/{env}/secret/celery/broker-url",
         "/skeldir/{env}/secret/celery/result-backend-url",
+        "/skeldir/{env}/secret/database/runtime-api-url",
         "/skeldir/{env}/secret/platform/token-encryption-key"
       ]
     },
@@ -159,7 +160,9 @@
         "/skeldir/{env}/config/tenant/secrets-cache-ttl-seconds",
         "/skeldir/{env}/config/webhooks/auth-max-body-bytes"
       ],
-      "secrets": []
+      "secrets": [
+        "/skeldir/{env}/secret/database/runtime-auth_ingress-url"
+      ]
     },
     "worker": {
       "config": [
@@ -232,6 +235,7 @@
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
         "/skeldir/{env}/secret/celery/result-backend-url",
+        "/skeldir/{env}/secret/database/runtime-worker-url",
         "/skeldir/{env}/secret/llm/provider-api-key",
         "/skeldir/{env}/secret/platform/token-encryption-key"
       ]
@@ -307,6 +311,7 @@
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
         "/skeldir/{env}/secret/celery/result-backend-url",
+        "/skeldir/{env}/secret/database/runtime-worker_bayesian-url",
         "/skeldir/{env}/secret/llm/provider-api-key"
       ]
     },
@@ -380,7 +385,8 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url"
+        "/skeldir/{env}/secret/celery/result-backend-url",
+        "/skeldir/{env}/secret/database/runtime-worker_bayesian_publisher-url"
       ]
     },
     "worker_b23": {
@@ -453,7 +459,8 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url"
+        "/skeldir/{env}/secret/celery/result-backend-url",
+        "/skeldir/{env}/secret/database/runtime-worker_b23-url"
       ]
     },
     "observer_b26_p2": {
@@ -535,7 +542,8 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url"
+        "/skeldir/{env}/secret/celery/result-backend-url",
+        "/skeldir/{env}/secret/database/runtime-observer_b26_p2-url"
       ]
     },
     "b26_p2_relay": {
@@ -608,7 +616,8 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url"
+        "/skeldir/{env}/secret/celery/result-backend-url",
+        "/skeldir/{env}/secret/database/runtime-b26_p2_relay-url"
       ]
     },
     "beat": {
@@ -681,7 +690,8 @@
       ],
       "secrets": [
         "/skeldir/{env}/secret/celery/broker-url",
-        "/skeldir/{env}/secret/celery/result-backend-url"
+        "/skeldir/{env}/secret/celery/result-backend-url",
+        "/skeldir/{env}/secret/database/runtime-beat-url"
       ]
     },
     "trust_signer": {
@@ -754,7 +764,9 @@
         "/skeldir/{env}/config/tenant/secrets-cache-ttl-seconds",
         "/skeldir/{env}/config/webhooks/auth-max-body-bytes"
       ],
-      "secrets": []
+      "secrets": [
+        "/skeldir/{env}/secret/database/runtime-trust_signer-url"
+      ]
     },
     "trust_issuer": {
       "config": [
@@ -826,7 +838,9 @@
         "/skeldir/{env}/config/tenant/secrets-cache-ttl-seconds",
         "/skeldir/{env}/config/webhooks/auth-max-body-bytes"
       ],
-      "secrets": []
+      "secrets": [
+        "/skeldir/{env}/secret/database/runtime-trust_issuer-url"
+      ]
     },
     "migration": {
       "config": [

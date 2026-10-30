@@ -34,6 +34,9 @@ VERIFICATION_COVERAGE_MODULE = (
     ROOT / "backend/app/revenue_verification/verification_coverage.py"
 )
 PROOF_MANIFEST_MODULE = ROOT / "backend/app/finance_reconciliation/proof_manifest.py"
+SOURCE_ATTESTATION_MODULE = (
+    ROOT / "backend/app/revenue_verification/source_attestation.py"
+)
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
 
 STATIC_CONTROLS = (
@@ -340,6 +343,11 @@ STATIC_CONTROLS = (
         "xi_nc20_denominator_regression",
         VERIFICATION_COVERAGE_MODULE,
         "coverage_implementation_identity_mismatch",
+    ),
+    (
+        "source_attestation_coverage_aggregation",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
     ),
     (
         "xi_immutable_fields_removed",

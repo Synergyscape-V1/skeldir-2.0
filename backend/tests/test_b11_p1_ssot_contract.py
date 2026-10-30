@@ -10,6 +10,42 @@ from app.core.managed_settings_contract import (
 )
 
 
+def test_process_database_authority_resolves_per_process_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SKELDIR_CONTROL_PLANE_ENABLED", "1")
+    monkeypatch.setenv("SKELDIR_PROCESS_ROLE", "api")
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    from app.core import secrets as secrets_module
+
+    seen: list[str] = []
+
+    def _fetch(_contract, path: str) -> str:
+        seen.append(path)
+        return f"postgresql://{path.rsplit('-', 1)[-1]}@example/db"
+
+    monkeypatch.setattr(secrets_module, "_fetch_value_from_aws", _fetch)
+    assert secrets_module.get_database_url().startswith("postgresql://")
+    assert seen == ["/skeldir/prod/secret/database/runtime-api-url"]
+
+    seen.clear()
+    monkeypatch.setenv("SKELDIR_PROCESS_ROLE", "trust_signer")
+    assert secrets_module.get_database_url().startswith("postgresql://")
+    assert seen == ["/skeldir/prod/secret/database/runtime-trust_signer-url"]
+
+
+def test_process_database_authority_refuses_missing_process_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SKELDIR_CONTROL_PLANE_ENABLED", "1")
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.delenv("SKELDIR_PROCESS_ROLE", raising=False)
+    from app.core import secrets as secrets_module
+
+    with pytest.raises(RuntimeError, match="process_role_required"):
+        secrets_module.get_database_url()
+
+
 def test_control_plane_env_is_fail_closed() -> None:
     assert resolve_control_plane_env("production") == "prod"
     assert resolve_control_plane_env("development") == "dev"

@@ -18,6 +18,9 @@ CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sin
 EXTERNAL_SEMANTICS_MODULE = (
     ROOT / "backend/app/finance_reconciliation/external_semantics.py"
 )
+SOURCE_ATTESTATION_MODULE = (
+    ROOT / "backend/app/revenue_verification/source_attestation.py"
+)
 TRUST_REFUSAL_MODULE = ROOT / "backend/app/trust/refusal.py"
 AUTHORITATIVE_FIELDS_MODULE = (
     ROOT / "backend/app/finance_reconciliation/authoritative_fields.py"
@@ -1018,6 +1021,16 @@ def xi_nc19_capability_seal_removed() -> None:
     )
 
 
+def source_attestation_coverage_aggregation() -> None:
+    """XXV: the legitimate read allowance must not admit aggregation."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "SELECT SUM(v.canonical_net_verified_amount_minor) AS verdict_net,",
+        defect="source_attestation_coverage_aggregation",
+    )
+
+
 def xi_nc20_denominator_regression() -> None:
     """XI-NC-20: B2.3 coverage implementation semantic drift (AST pin)."""
     _replace_once(
@@ -1405,6 +1418,9 @@ DEFECTS: dict[str, Callable[[], None]] = {
     ),
     "xi_nc19_capability_seal_removed": xi_nc19_capability_seal_removed,
     "xi_nc20_denominator_regression": xi_nc20_denominator_regression,
+    "source_attestation_coverage_aggregation": (
+        source_attestation_coverage_aggregation
+    ),
     "xi_immutable_fields_removed": xi_immutable_fields_removed,
     "xii_nc01_platform_storage_mutable_list": xii_nc01_platform_storage_mutable_list,
     "xii_nc02_shallow_freeze_mapping_child": xii_nc02_shallow_freeze_mapping_child,
