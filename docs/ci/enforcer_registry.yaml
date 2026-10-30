@@ -7038,3 +7038,318 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: enforce
+
+- id: b26-p2-xxv-a1a5-custody
+  path: scripts/ci/b26_p2_xxv_a1a5_custody.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: The A1/A5 source journal and witness custody actors remain separated, the signed journal prefix is enforced, and the actor matrix proves no single process can mint and witness its own authority.
+  command: python scripts/ci/b26_p2_xxv_a1a5_custody.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_a1a5_custody.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_a1a5_custody.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: b26-p2-xxv-attestation-sweep
+  path: scripts/ci/b26_p2_xxv_attestation_sweep.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: The live financial state sweep verifies every non-degraded match verdict against the sovereign source attestation rather than judging a fixture.
+  command: python scripts/ci/b26_p2_xxv_attestation_sweep.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_attestation_sweep.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_attestation_sweep.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: b26-p2-xxv-coverage
+  path: scripts/ci/b26_p2_xxv_coverage.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: Coverage of the XXV authority surface remains complete and non-vacuous.
+  command: python scripts/ci/b26_p2_xxv_coverage.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_coverage.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_coverage.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: b26-p2-xxv-falsify
+  path: scripts/ci/b26_p2_xxv_falsify.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: The XXV falsifiers refuse unsupported finance and preserve every supported legitimate journey through the shipping readers.
+  command: python scripts/ci/b26_p2_xxv_falsify.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_falsify.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_falsify.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: b26-p2-xxv-falsify-lineage
+  path: scripts/ci/b26_p2_xxv_falsify_lineage.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: XXV lineage falsifiers preserve source, witness, and issuance consequence ancestry.
+  command: python scripts/ci/b26_p2_xxv_falsify_lineage.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_falsify_lineage.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_falsify_lineage.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: b26-p2-xxv-lane
+  path: scripts/ci/b26_p2_xxv_lane.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: The XXV lane proof binds the final runtime artifact to the authority pin and the required journey evidence.
+  command: python scripts/ci/b26_p2_xxv_lane.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_lane.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_lane.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: b26-p2-xxv-r21-aging
+  path: scripts/ci/b26_p2_xxv_r21_aging.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: R-0021 aging and currentness preserve the outcome-first resolver law.
+  command: python scripts/ci/b26_p2_xxv_r21_aging.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_r21_aging.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_r21_aging.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: b26-p2-xxv-r21-cluster
+  path: scripts/ci/b26_p2_xxv_r21_cluster.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: R-0021 fresh-cluster recovery proves committed outcomes resolve, unknown outcomes refuse, and later committed outcomes restore.
+  command: python scripts/ci/b26_p2_xxv_r21_cluster.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_r21_cluster.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_r21_cluster.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: b26-p2-xxv-r21-currentness
+  path: scripts/ci/b26_p2_xxv_r21_currentness.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: R-0021 currentness proves the authoritative reader observes the latest committed outcome.
+  command: python scripts/ci/b26_p2_xxv_r21_currentness.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_r21_currentness.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_r21_currentness.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: b26-p2-xxv-r21-equivalent-effects
+  path: scripts/ci/b26_p2_xxv_r21_equivalent_effects.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: R-0021 equivalent effects remain conserved through the authoritative reader.
+  command: python scripts/ci/b26_p2_xxv_r21_equivalent_effects.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_r21_equivalent_effects.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_r21_equivalent_effects.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: generate-b11-process-authority
+  path: scripts/ci/generate_b11_process_authority.py
+  status: informational
+  owning_phase: B2.6-P2
+  protected_invariant: The B11 per-process IAM authority matrix is generated from the canonical process descriptors without wildcard or shared runtime-database grants.
+  command: python scripts/ci/generate_b11_process_authority.py
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/generate_b11_process_authority.py
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/generate_b11_process_authority.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: utility
+
+- id: prove-b26-p2-xxv-b8-downstream
+  path: scripts/ci/prove_b26_p2_xxv_b8_downstream.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: B8 downstream compatibility proves supported predecessor and shipping paths remain consumable through Trust.
+  command: python scripts/ci/prove_b26_p2_xxv_b8_downstream.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxv_b8_downstream.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/prove_b26_p2_xxv_b8_downstream.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: prove-b26-p2-xxv-legacy-generations
+  path: scripts/ci/prove_b26_p2_xxv_legacy_generations.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: B8 legacy generation replay proves predecessor commerce references derive the shipping payment-intent identity.
+  command: python scripts/ci/prove_b26_p2_xxv_legacy_generations.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxv_legacy_generations.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/prove_b26_p2_xxv_legacy_generations.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: prove-b26-p2-xxv-predecessor-cohort
+  path: scripts/ci/prove_b26_p2_xxv_predecessor_cohort.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: The XXV predecessor cohort remains consumable through the shipping reader.
+  command: python scripts/ci/prove_b26_p2_xxv_predecessor_cohort.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/prove_b26_p2_xxv_predecessor_cohort.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/prove_b26_p2_xxv_predecessor_cohort.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
+- id: validate-b26-p2-xxv-environment-predicates
+  path: scripts/ci/validate_b26_p2_xxv_environment_predicates.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: XXV environment predicates fail closed when required process-scoped B26 settings are absent or mis-scoped.
+  command: python scripts/ci/validate_b26_p2_xxv_environment_predicates.py --help
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/validate_b26_p2_xxv_environment_predicates.py --help
+  expected_failure_meaning: The XXV invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/validate_b26_p2_xxv_environment_predicates.py --help
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce

@@ -111,11 +111,13 @@ def upgrade() -> None:
             " USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid)"
             " WITH CHECK (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid)"
         )
-    op.execute(
-        "GRANT INSERT, SELECT ON TABLE public.b26_p2_adjustment_evidence TO app_ingress"
+    _grant(
+        "GRANT INSERT, SELECT ON TABLE public.b26_p2_adjustment_evidence TO %s",
+        "app_ingress",
     )
-    op.execute(
-        "GRANT INSERT, SELECT ON TABLE public.b26_p2_adjustment_attestation TO app_ingress"
+    _grant(
+        "GRANT INSERT, SELECT ON TABLE public.b26_p2_adjustment_attestation TO %s",
+        "app_ingress",
     )
     for role in ("app_user", "app_worker", "app_trust_issuer", "app_ro", "app_relay"):
         _grant(
@@ -178,10 +180,11 @@ def upgrade() -> None:
         " public.b26_p2_current_verdict_for_adjustment(uuid, text, text)"
         " FROM PUBLIC"
     )
-    op.execute(
+    _grant(
         "GRANT EXECUTE ON FUNCTION"
         " public.b26_p2_current_verdict_for_adjustment(uuid, text, text)"
-        " TO app_ingress"
+        " TO %s",
+        "app_ingress",
     )
     # XXV/R-0021: a genuine provider replay of the retained signed bytes may
     # lift the one-time pre-XXV demotion after the auth root has written the
@@ -244,9 +247,10 @@ def upgrade() -> None:
         "REVOKE ALL ON FUNCTION"
         " public.b26_p2_lift_pre_xxv_demotion(uuid, uuid) FROM PUBLIC"
     )
-    op.execute(
+    _grant(
         "GRANT EXECUTE ON FUNCTION"
-        " public.b26_p2_lift_pre_xxv_demotion(uuid, uuid) TO app_ingress"
+        " public.b26_p2_lift_pre_xxv_demotion(uuid, uuid) TO %s",
+        "app_ingress",
     )
 
 

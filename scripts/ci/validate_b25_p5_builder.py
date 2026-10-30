@@ -41,6 +41,7 @@ from app.trust.source_adapters import (  # noqa: E402
 from app.core.config import settings as _settings  # noqa: E402
 
 _settings.B26_P2_HISTORY_WITNESS_REQUIRED = False
+_settings.B26_P2_SOURCE_ATTESTATION_REQUIRED = False
 
 
 class B25P5ValidationError(RuntimeError):
@@ -127,6 +128,9 @@ class _FakeMappings:
         assert self._row is not None
         return self._row
 
+    def one_or_none(self) -> dict[str, object] | None:
+        return self._row
+
 
 class _FakeResult:
     def __init__(self, row: dict[str, object] | None) -> None:
@@ -134,6 +138,11 @@ class _FakeResult:
 
     def mappings(self) -> _FakeMappings:
         return _FakeMappings(self._row)
+
+    def scalar(self) -> object:
+        if self._row is not None and "tenant_id" in self._row:
+            return str(self._row["tenant_id"])
+        return "00000000-0000-0000-0000-000000000001"
 
 
 class FakeReadOnlySession:
