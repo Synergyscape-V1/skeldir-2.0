@@ -267,4 +267,4 @@ def downgrade() -> None:
     op.execute(
         "REVOKE ALL ON TABLE public.b26_p2_source_money_attestation FROM PUBLIC"
     )
-    op.execute("DROP TABLE IF EXISTS public.b26_p2_source_money_attestation CASCADE")
+    op.execute("DROP TABLE IF EXISTS public.b26_p2_source_money_attestation CASCADE")  # CI:DESTRUCTIVE_OK - XXV downgrade restores pre-XXV schema

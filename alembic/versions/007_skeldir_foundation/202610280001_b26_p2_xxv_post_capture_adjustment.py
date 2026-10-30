@@ -286,7 +286,7 @@ def downgrade() -> None:
     )
     op.execute(
         "ALTER TABLE public.b23_revenue_events"
-        " DROP COLUMN IF EXISTS b26_p2_adjustment_evidence_id"
+        " DROP COLUMN IF EXISTS b26_p2_adjustment_evidence_id"  # CI:DESTRUCTIVE_OK - XXV downgrade restores pre-XXV schema
     )
-    op.execute("DROP TABLE IF EXISTS public.b26_p2_adjustment_attestation")
-    op.execute("DROP TABLE IF EXISTS public.b26_p2_adjustment_evidence")
+    op.execute("DROP TABLE IF EXISTS public.b26_p2_adjustment_attestation")  # CI:DESTRUCTIVE_OK - XXV downgrade restores pre-XXV schema
+    op.execute("DROP TABLE IF EXISTS public.b26_p2_adjustment_evidence")  # CI:DESTRUCTIVE_OK - XXV downgrade restores pre-XXV schema
