@@ -250,8 +250,8 @@ jobs:
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
           grep -E "^p13_expected_cases=21$" /tmp/b25_p13_e2e.out
           grep -E "^p13_executed_cases=21$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_expected=158$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_failed=158$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_expected=160$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_failed=160$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=97$" /tmp/b25_p13_e2e.out
 
           # C10: the signature commits to the producing inference regime.
