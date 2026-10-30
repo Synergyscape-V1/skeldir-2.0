@@ -866,7 +866,6 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xxv_environment_predicates.py",
     "scripts/database/verify_b26_migration_roles.py",
     "scripts/database/provision_local_runtime_roles.py",
-    "alembic/versions/007_skeldir_foundation/202610300001_b26_p2_construction_revision_runtime_grants.py",
     "frontend/src/types/api/index.ts",
     "scripts/r5/r5_verification.py",
     "infra/b11_p1/terraform/process_authority.tf",
