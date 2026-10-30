@@ -185,6 +185,18 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
     signature_sha = hashlib.sha256(
         signature_header.encode("utf-8")
     ).hexdigest()
+    # Compatibility law: the predecessor row must use the same commerce
+    # meaning the shipping Stripe parser derives from these exact bytes.
+    from app.webhooks.commerce_derivation import derive_commerce  # noqa: PLC0415
+
+    derived = derive_commerce("stripe", raw_body)
+    normalized_kind = derived.normalized_commerce_reference_kind
+    normalized_value = derived.normalized_commerce_reference_value
+    if normalized_value != commerce_reference:
+        raise RuntimeError(
+            "b8_commerce_derivation_mismatch:"
+            f"{normalized_value}!={commerce_reference}"
+        )
 
     conn = psycopg2.connect(_dsn(admin, database))
     conn.autocommit = True
@@ -241,7 +253,7 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
                 " verified_amount_minor, verified_amount_currency,"
                 " event_timestamp, idempotency_key,"
                 " verified_commerce_ingress_state)"
-                " VALUES (%s, %s, %s, 'stripe', %s, %s, 'order_reference',"
+                " VALUES (%s, %s, %s, 'stripe', %s, %s, %s,"
                 " %s, 1000, 'USD', %s, %s, 'authenticity_verified')",
                 (
                     str(ingress),
@@ -249,7 +261,8 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
                     str(event),
                     event_reference,
                     commerce_reference,
-                    commerce_reference,
+                    normalized_kind,
+                    normalized_value,
                     TENANT_DAY,
                     f"b8-ingress:{reference}",
                 ),
@@ -363,6 +376,8 @@ def _seed(admin: str, database: str, generation: str) -> dict[str, str]:
             "signature_sha256": signature_sha,
             "event_reference": event_reference,
             "commerce_reference": commerce_reference,
+            "normalized_kind": normalized_kind,
+            "normalized_value": normalized_value,
             "amount_minor": 1000,
             "currency": "USD",
         },
@@ -640,9 +655,11 @@ def _replay_recovery(
                     provider_native_commerce_reference=provider_input[
                         "commerce_reference"
                     ],
-                    normalized_commerce_reference_kind="order_reference",
+                    normalized_commerce_reference_kind=provider_input[
+                        "normalized_kind"
+                    ],
                     normalized_commerce_reference_value=provider_input[
-                        "commerce_reference"
+                        "normalized_value"
                     ],
                     verified_amount_minor=1000,
                     verified_amount_currency="USD",

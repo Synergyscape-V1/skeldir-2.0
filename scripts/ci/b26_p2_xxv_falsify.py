@@ -4490,6 +4490,15 @@ def f_hb08_replay_reattest(args: argparse.Namespace) -> int:
         " WHERE webhook_ingress_identity_id = %s",
         (ingress_id,),
     )[0][0]
+    # Model the inherited pre-XXV demotion, not only a missing attestation.
+    # The replay must traverse the shipping authentication root's inherited
+    # branch and the governed lift, not a helper writer.
+    sql(
+        "UPDATE public.webhook_ingress_identities"
+        " SET b26_p2_demotion_reason ="
+        " 'pre_xxv_source_money_unattestable' WHERE id = %s",
+        (ingress_id,),
+    )
     pre_status, pre_recon = read_reconciliation(state, tenant, verdict["verdict_id"])
     pre_trust_status, pre_trust = read_trust(tenant, verdict["verdict_id"])
     replay_status, replay_body, _ = post_stripe(
