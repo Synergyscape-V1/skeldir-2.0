@@ -483,3 +483,46 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | CI throughput remediation | docs/forensics/ci_throughput_remediation.evidence.json | Machine-readable before/after measurements, fault-corpus outcomes, VAC re-check, landing record | PR #715 / 93dbdb14 | pending |
 | Phase II (P6 repair) | docs/forensics/P2_P6_INCUMBENT_REPAIR.md | Pre-promotion incumbent P6 vacuity evidence, identity-preserving repair (DB env + pipefail), controls, corpus consequence | p2-p6-incumbent-repair / pending | pending |
 | Phase II (ledger) | docs/forensics/p2_monolith_evacuation_ledger.json | Machine-readable ci.yml evacuation authority: 69-job Phase II start census, per-job invariant/proof/disposition, Gate M accounting (validator: scripts/ci/validate_p2_evacuation_ledger.py) | p2-p6-incumbent-repair / pending | pending |
+
+## Candidate evidence packs awaiting merge
+
+| Evidence pack | Path | Note | Status |
+|---|---|---|---|
+| B2.5-P14-Corrective-Action-Remediation-VII-Report | docs/forensics/B2.5-P14-Corrective-Action-Remediation-VII-Report.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.5-P14-Corrective-Action-Remediation-VIII-Report | docs/forensics/B2.5-P14-Corrective-Action-Remediation-VIII-Report.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-III-Report | docs/forensics/B2.6-P1-Corrective-Action-Remediation-III-Report.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-Report-IV | docs/forensics/B2.6-P1-Corrective-Action-Remediation-Report-IV.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-Report-IX | docs/forensics/B2.6-P1-Corrective-Action-Remediation-Report-IX.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-Report-V | docs/forensics/B2.6-P1-Corrective-Action-Remediation-Report-V.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-Report-VI | docs/forensics/B2.6-P1-Corrective-Action-Remediation-Report-VI.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-Report-VII | docs/forensics/B2.6-P1-Corrective-Action-Remediation-Report-VII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-Report-VIII | docs/forensics/B2.6-P1-Corrective-Action-Remediation-Report-VIII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-Report-X | docs/forensics/B2.6-P1-Corrective-Action-Remediation-Report-X.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-Report-XI | docs/forensics/B2.6-P1-Corrective-Action-Remediation-Report-XI.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Corrective-Action-Remediation-Report-XII | docs/forensics/B2.6-P1-Corrective-Action-Remediation-Report-XII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P1-Remediation-Report | docs/forensics/B2.6-P1-Remediation-Report.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-I | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-I.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-II | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-II.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-III | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-III.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-IV | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-IV.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-IX | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-IX.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-V | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-V.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-VI | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-VI.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-VII | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-VII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-VIII | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-VIII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-X | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-X.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XI | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XI.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XII | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XIII | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XIII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XIV | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XIV.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XIX | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XIX.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XV | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XV.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XVI | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XVI.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XVII | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XVII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XVIII | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XVIII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XX | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XX.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XXII | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XXII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XXIII | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XXIII.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Corrective-Action-Remediation-Report-XXIV | docs/forensics/B2.6-P2-Corrective-Action-Remediation-Report-XXIV.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-Remediation-Report | docs/forensics/B2.6-P2-Remediation-Report.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
+| B2.6-P2-XXV-Verified-Checkpoint | docs/forensics/B2.6-P2-XXV-Verified-Checkpoint.md | XXV/XXIV candidate evidence pack; document is authoritative for its own claims. | PENDING_MERGE |
