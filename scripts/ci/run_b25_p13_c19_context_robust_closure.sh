@@ -186,6 +186,9 @@ sleep 2
   | tee "$evidence_dir/c19_authority_boundary.out"
 
 export MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
+PGPASSWORD=postgres psql "$C19_ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_auth_lookup') THEN CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS; END IF; END \$\$;" \
+  -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;"
 export DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
 if [[ "$python_bin" == *.exe ]]; then
   export WSLENV="${WSLENV:+$WSLENV:}MIGRATION_DATABASE_URL:DATABASE_URL"
