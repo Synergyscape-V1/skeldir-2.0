@@ -203,6 +203,11 @@ ALLOWED_M1_PATH_PREFIXES = [
     "Makefile",
     "pytest.ini",
     "scripts/guard_no_docker.py",
+    # B2.2-P0 webhook-surface declaration and its enforcer: the declared
+    # runtime-internal adjustment routes are contract governance, not M1
+    # local-development authority.
+    "contracts-internal/governance/b22_p0_declared_webhook_surface.main.json",
+    "scripts/ci/enforce_b22_p0_webhook_surface_lock.py",
     "scripts/smoke/",
     "scripts/ci/run_m1_onboarding_bootstrap.sh",
     "scripts/ci/validate_m1_local_dev_authority.py",
