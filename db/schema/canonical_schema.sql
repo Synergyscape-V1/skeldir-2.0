@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 2HvbI8QWvYRfIJ6dbtbAcfmTRl2ZYqZpFWfvuOoALpdI7gGudeCVFb4onLVcgT3
+\restrict Q6MSxGjn9mJtOY6MZpeXA1hl4v6tHwXKsF7eDNFN5h3gOZFIALWr8bppFPMsq2O
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -9605,9 +9605,6 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
 
 
 
-            Purpose: Ensure every post-ingestion assignment correction produces a corresponding audit row.
-            Invariant: No assignment correction without matching correction row.
-            Security: SECURITY DEFINER to bypass RLS during trigger execution (reads tenant_id from allocation, already RLS-protected).';
 
 
 
@@ -9656,9 +9653,6 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
 
 
 
-            Purpose: Ensure every state change produces a corresponding audit row.
-            Invariant: No taxonomy state change without matching transition row.
-            Security: SECURITY DEFINER to ensure trigger can insert audit records.';
 
 
 
@@ -9689,9 +9683,6 @@ CREATE FUNCTION public.fn_log_revenue_state_change() RETURNS trigger
 
 
 
-            Purpose: Ensure every state change produces a corresponding revenue_state_transitions row.
-            Invariant: No ledger state change without matching transition row.
-            Security: SECURITY DEFINER to bypass RLS on revenue_state_transitions during trigger execution.';
 
 
 
@@ -14862,9 +14853,6 @@ CREATE TABLE public.channel_taxonomy (
 
 
 
-            All unmapped channels MUST be normalized to the ''unknown'' code. Purpose: Provide single source
-            of truth for channel codes, ensuring consistency across ingestion, allocation models, and UI.
-            Data class: Non-PII. Ownership: Attribution service.';
 
 
 
@@ -20568,9 +20556,6 @@ CREATE TRIGGER trg_allocations_channel_correction_audit AFTER UPDATE OF channel_
 
 
 
-            Purpose: Provide atomic audit trail for revenue reclassifications.
-            Fires: Only when channel_code column changes (not on other column updates).
-            Note: Does NOT fire on INSERT (corrections are post-ingestion only).';
 
 
 
@@ -20902,8 +20887,6 @@ CREATE TRIGGER trg_channel_taxonomy_state_audit AFTER UPDATE OF state ON public.
 
 
 
-            Purpose: Provide atomic audit trail for channel lifecycle changes.
-            Fires: Only when state column changes (not on other column updates).';
 
 
 
@@ -20982,9 +20965,6 @@ CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.re
 
 
 
-            Purpose: Automatically log all state transitions to revenue_state_transitions table.
-            Fires: AFTER UPDATE OF state when state value changes.
-            Atomicity: Trigger execution is atomic within the same transaction as the UPDATE.';
 
 
 
@@ -22412,8 +22392,6 @@ CREATE POLICY tenant_isolation_policy ON public.revenue_state_transitions USING 
 
 
 
-            Purpose: Prevent cross-tenant access to audit trail.
-            Requires app.current_tenant_id to be set via set_config().';
 
 
 
@@ -22828,5 +22806,5 @@ ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 
 
-\unrestrict dlqArvvoDrSK7yG7Bgy3Jfkt22VmmOlpynUPliy19dbFLFuKer4UOAOhsfmyp6G
+\unrestrict Q6MSxGjn9mJtOY6MZpeXA1hl4v6tHwXKsF7eDNFN5h3gOZFIALWr8bppFPMsq2O
 

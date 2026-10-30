@@ -30,7 +30,13 @@ def _normalize_schema(text: str) -> str:
 
     out: list[str] = []
     in_matview_query = False
+    in_comment_on = False
     for line in text.splitlines():
+        stripped = line.strip()
+        if in_comment_on:
+            if stripped.endswith("';") or stripped.endswith(";"):
+                in_comment_on = False
+            continue
         if line.startswith("--"):
             continue
         if line.startswith("\\restrict"):
@@ -44,6 +50,8 @@ def _normalize_schema(text: str) -> str:
         if line.startswith("SELECT set_config("):
             continue
         if line.startswith("COMMENT ON "):
+            if not (stripped.endswith("';") or stripped.endswith(";")):
+                in_comment_on = True
             continue
         norm = line.rstrip()
         if "--" in norm:
