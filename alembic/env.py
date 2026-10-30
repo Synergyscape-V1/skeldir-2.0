@@ -155,7 +155,18 @@ def _provision_ci_migration_roles(connection) -> None:
                 " 'app_auth_lookup', 'member')"
             )
         ).scalar()
-        if not already_member:
+        already_owns = connection.execute(
+            text(
+                "SELECT count(*) = 2 AND bool_and("
+                "pg_get_userbyid(p.proowner) = 'app_auth_lookup')"
+                " FROM pg_proc p"
+                " JOIN pg_namespace n ON n.oid = p.pronamespace"
+                " WHERE n.nspname = 'auth'"
+                " AND p.proname IN ('lookup_user_auth_by_login_hash',"
+                " 'lookup_user_by_login_hash')"
+            )
+        ).scalar()
+        if not already_member and not already_owns:
             connection.execute(
                 text(
                     'GRANT "app_auth_lookup" TO '
