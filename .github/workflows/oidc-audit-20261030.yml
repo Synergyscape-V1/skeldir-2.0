@@ -1,5 +1,6 @@
 ﻿name: oidc-audit-20261030
 on:
+  pull_request:
   workflow_dispatch:
 permissions:
   id-token: write
