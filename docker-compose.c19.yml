@@ -168,10 +168,19 @@ services:
       DATABASE_POOL_SIZE: "20"
       DATABASE_MAX_OVERFLOW: "10"
       DATABASE_FORCE_POOLING: "1"
+      # XXV: the authentication root signs the verified amount in the
+      # ingress transaction. C19 mounts an ephemeral seed so the required
+      # source-attestation law is exercised, not disabled.
+      B26_P2_SOURCE_ATTESTATION_REQUIRED: "true"
+      B26_P2_SOURCE_ATTESTATION_PRIVATE_KEY_PATH: /run/secrets/b26_p2_source_attestation_key
     volumes:
       - type: bind
         source: ${C19_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}
         target: /run/secrets/b26_p2_ingress_dsn
+        read_only: true
+      - type: bind
+        source: ${C19_SOURCE_ATTESTATION_KEY_FILE:-./secrets/b26_p2_source_attestation_key}
+        target: /run/secrets/b26_p2_source_attestation_key
         read_only: true
     command: uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --workers 1
     depends_on:

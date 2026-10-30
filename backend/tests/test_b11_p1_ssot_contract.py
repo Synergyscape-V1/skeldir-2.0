@@ -65,6 +65,44 @@ def test_process_database_authority_refuses_missing_process_role(
         secrets_module.get_database_url()
 
 
+def test_production_database_override_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.setenv("SKELDIR_CONTROL_PLANE_ENABLED", "1")
+    monkeypatch.setenv("SKELDIR_PROCESS_ROLE", "api")
+    monkeypatch.setenv(
+        "SKELDIR_PROCESS_DATABASE_URL",
+        "postgresql://app_worker:app_worker@example/db",
+    )
+    from app.core import secrets as secrets_module
+
+    with pytest.raises(RuntimeError, match="explicit_process_database_url_forbidden"):
+        secrets_module.get_database_url()
+
+
+def test_production_shared_database_url_cannot_bypass_process_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.setenv("SKELDIR_CONTROL_PLANE_ENABLED", "1")
+    monkeypatch.setenv("SKELDIR_PROCESS_ROLE", "api")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://app_worker:app_worker@example/db"
+    )
+    from app.core import secrets as secrets_module
+
+    seen: list[str] = []
+
+    def _fetch(_contract, path: str) -> str:
+        seen.append(path)
+        return "postgresql://app_user:app_user@example/db"
+
+    monkeypatch.setattr(secrets_module, "_fetch_value_from_aws", _fetch)
+    assert secrets_module.get_database_url().startswith("postgresql://app_user")
+    assert seen == ["/skeldir/prod/secret/database/runtime-api-url"]
+
+
 def test_control_plane_env_is_fail_closed() -> None:
     assert resolve_control_plane_env("production") == "prod"
     assert resolve_control_plane_env("development") == "dev"

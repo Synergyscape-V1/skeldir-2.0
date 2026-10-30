@@ -350,6 +350,26 @@ STATIC_CONTROLS = (
         "b26_duplicate_coverage_authority",
     ),
     (
+        "source_attestation_coverage_count",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_avg",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_group_by",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_window",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
         "xi_immutable_fields_removed",
         CANONICAL_SINK_MODULE,
         "canonical_external_fields_mutable",
@@ -746,6 +766,46 @@ def _proof_required_additional_cell_control() -> dict[str, Any]:
     }
 
 
+def _source_attestation_formatting_control() -> dict[str, Any]:
+    """A formatting-only edit to the legitimate read must remain GREEN."""
+    original = SOURCE_ATTESTATION_MODULE.read_bytes()
+    pristine_hash = _sha(original)
+    try:
+        text = original.decode("utf-8")
+        old = "SELECT v.canonical_net_verified_amount_minor AS verdict_net,"
+        new = (
+            "select\n"
+            "    v.canonical_net_verified_amount_minor\n"
+            "        as verdict_net,"
+        )
+        if text.count(old) != 1:
+            raise RuntimeError("formatting_control_anchor_mismatch")
+        SOURCE_ATTESTATION_MODULE.write_text(
+            text.replace(old, new, 1), encoding="utf-8"
+        )
+        green = _validator()
+        if green.returncode != 0:
+            raise RuntimeError(
+                f"formatting_control_not_green:{green.stdout}{green.stderr}"
+            )
+    finally:
+        SOURCE_ATTESTATION_MODULE.write_bytes(original)
+    if _sha(SOURCE_ATTESTATION_MODULE.read_bytes()) != pristine_hash:
+        raise RuntimeError("formatting_control_restore_hash_mismatch")
+    restored = _validator()
+    if restored.returncode != 0:
+        raise RuntimeError(
+            f"formatting_control_restore_not_green:{restored.stdout}{restored.stderr}"
+        )
+    return {
+        "control": "source_attestation_legitimate_formatting",
+        "pristine_hash": pristine_hash,
+        "observed_green": True,
+        "restoration_hash": _sha(SOURCE_ATTESTATION_MODULE.read_bytes()),
+        "restored_green": True,
+    }
+
+
 def run_battery() -> list[dict[str, Any]]:
     pristine = _validator()
     if pristine.returncode != 0:
@@ -786,6 +846,7 @@ def run_battery() -> list[dict[str, Any]]:
                 "restored_green": True,
             }
         )
+    ledger.append(_source_attestation_formatting_control())
     ledger.append(_proof_identity_control())
     ledger.append(_proof_required_additional_cell_control())
     return ledger

@@ -9,6 +9,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -183,7 +184,7 @@ COVERAGE_SQL_GRANDFATHERED_FILES = frozenset(
 # so any aggregation or other change in that file remains RED.
 SOURCE_ATTESTATION_PATH = "backend/app/revenue_verification/source_attestation.py"
 SOURCE_ATTESTATION_READ_SQL_SHA256 = (
-    "7d042c871ebc491acf6ce9ac18dc382015ee27a8ec7d9af30e5dbeabbcf8ccd2"
+    "ea6b926a6c3564bc7dbae4ca7fbf81526b39202b8b71cfe5fc64685d66117424"
 )
 # semantic_contract.py legitimately names total_business_minor inside the golden
 # falsification vector as the forbidden reference. Exclude only that file from
@@ -860,10 +861,26 @@ def _validate_b26_namespace(
     details["b26_successor_product_machinery_enforced"] = enforce_product_machinery
 
 
+def _normalize_source_attestation_sql(value: str) -> str:
+    """Normalize formatting, not meaning.
+
+    Whitespace and SQL comments are not authority. Case is folded for
+    keywords/identifiers; the resulting token stream is pinned, so a
+    formatting-only edit remains the same read while any added aggregation,
+    grouping, projection, table, or predicate changes the hash.
+    """
+    without_comments = re.sub(
+        r"--[^\n]*|/\*.*?\*/", " ", value, flags=re.DOTALL
+    )
+    return re.sub(r"\s+", "", without_comments).lower().rstrip(";")
+
+
 def _is_source_attestation_read(rel: str, value: str) -> bool:
     return (
         rel == SOURCE_ATTESTATION_PATH
-        and hashlib.sha256(value.encode("utf-8")).hexdigest()
+        and hashlib.sha256(
+            _normalize_source_attestation_sql(value).encode("utf-8")
+        ).hexdigest()
         == SOURCE_ATTESTATION_READ_SQL_SHA256
     )
 

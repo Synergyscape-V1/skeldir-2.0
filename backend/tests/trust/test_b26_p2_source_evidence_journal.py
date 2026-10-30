@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -346,7 +347,7 @@ async def test_commit_raising_is_unknown_not_aborted(
 
     with pytest.raises(RuntimeError, match="commit outcome lost"):
         async with source_fact_outcome_transaction(str(private_path)):
-            async with db_session.get_ingress_session(__import__("uuid").uuid4()):
+            async with db_session.get_ingress_session(uuid4()):
                 _append(journal, kind="source_money", fact_id="s1", xid="100")
 
     outcomes = [

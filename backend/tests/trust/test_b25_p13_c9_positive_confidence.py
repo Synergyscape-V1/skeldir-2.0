@@ -66,7 +66,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.api import trust_api, trust_keys
 from app.bayesian.model_identity import active_identity
 from app.core.secrets import get_database_url
-from app.db.dsn import to_sync_postgres_dsn
+from app.db.dsn import to_asyncpg_postgres_dsn, to_sync_postgres_dsn
 from app.trust.machine_identity import AgentScope
 
 
@@ -842,7 +842,7 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     api_database_url = os.getenv("B25_API_DATABASE_URL") or get_database_url().replace(
         "app_worker", "app_user"
     )
-    api_engine = create_async_engine(api_database_url)
+    api_engine = create_async_engine(to_asyncpg_postgres_dsn(api_database_url))
 
     async def app_user_session(request: Request, x_tenant_id: uuid.UUID = Header(
         alias="X-Tenant-ID"
@@ -943,7 +943,7 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
 
     subject_ref = f"urn:skeldir:confidence_projection:{dispatch['fit_id']}"
     foreign_tenant = uuid.uuid4()
-    isolation_engine = create_async_engine(api_database_url)
+    isolation_engine = create_async_engine(to_asyncpg_postgres_dsn(api_database_url))
 
     async def isolation_read(tenant: uuid.UUID):
         async with AsyncSession(isolation_engine) as session:

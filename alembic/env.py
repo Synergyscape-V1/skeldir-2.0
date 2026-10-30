@@ -143,6 +143,18 @@ def _provision_ci_migration_roles(connection) -> None:
             connection.execute(
                 text(f'CREATE ROLE "{role}" {attributes}')
             )
+    # CI lanes migrate as a role that may not yet inherit the lookup owner.
+    # The XXV owner-transfer migration requires that inheritance; grant it
+    # here for the CI placeholder only. Production uses the governed preflight
+    # and never relies on this branch.
+    current_role = connection.execute(text("SELECT current_user")).scalar()
+    if current_role and current_role != "app_auth_lookup":
+        connection.execute(
+            text(
+                'GRANT "app_auth_lookup" TO '
+                f'"{current_role}"'
+            )
+        )
 
 
 def run_migrations_online() -> None:

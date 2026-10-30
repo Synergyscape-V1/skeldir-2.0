@@ -1031,6 +1031,46 @@ def source_attestation_coverage_aggregation() -> None:
     )
 
 
+def source_attestation_coverage_count() -> None:
+    """Equivalent aggregate: COUNT over the same money column."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "SELECT COUNT(v.canonical_net_verified_amount_minor) AS verdict_net,",
+        defect="source_attestation_coverage_count",
+    )
+
+
+def source_attestation_coverage_avg() -> None:
+    """Equivalent aggregate: AVG over the same money column."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "SELECT AVG(v.canonical_net_verified_amount_minor) AS verdict_net,",
+        defect="source_attestation_coverage_avg",
+    )
+
+
+def source_attestation_coverage_group_by() -> None:
+    """Equivalent aggregation surface: GROUP BY over the same read."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        " WHERE v.tenant_id = :tenant_id AND v.id = :verdict_id\n",
+        " WHERE v.tenant_id = :tenant_id AND v.id = :verdict_id\n GROUP BY v.tenant_id\n",
+        defect="source_attestation_coverage_group_by",
+    )
+
+
+def source_attestation_coverage_window() -> None:
+    """Equivalent aggregation surface: window SUM over the same money."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "SELECT SUM(v.canonical_net_verified_amount_minor) OVER (PARTITION BY v.tenant_id) AS verdict_net,",
+        defect="source_attestation_coverage_window",
+    )
+
+
 def xi_nc20_denominator_regression() -> None:
     """XI-NC-20: B2.3 coverage implementation semantic drift (AST pin)."""
     _replace_once(
@@ -1421,6 +1461,10 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "source_attestation_coverage_aggregation": (
         source_attestation_coverage_aggregation
     ),
+    "source_attestation_coverage_count": source_attestation_coverage_count,
+    "source_attestation_coverage_avg": source_attestation_coverage_avg,
+    "source_attestation_coverage_group_by": source_attestation_coverage_group_by,
+    "source_attestation_coverage_window": source_attestation_coverage_window,
     "xi_immutable_fields_removed": xi_immutable_fields_removed,
     "xii_nc01_platform_storage_mutable_list": xii_nc01_platform_storage_mutable_list,
     "xii_nc02_shallow_freeze_mapping_child": xii_nc02_shallow_freeze_mapping_child,

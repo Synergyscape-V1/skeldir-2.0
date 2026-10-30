@@ -109,6 +109,7 @@ values = {
     "C19_TRUST_SIGNING_KEY_VALID_FROM": valid_from,
     "C19_TRUST_PUBLIC_JWKS_JSON": json.dumps(jwks, separators=(",", ":")),
     "C19_TRUST_SIGNER_SHARED_SECRET": b64(os.urandom(32)),
+    "C19_SOURCE_ATTESTATION_KEY_B64URL": b64(os.urandom(32)),
 }
 for key, value in values.items():
     print(f"export {key}={shlex.quote(value)}")
@@ -116,6 +117,9 @@ PY
 )"
 
 export C19_API_DATABASE_URL='postgresql://app_user:app_user@postgres:5432/skeldir_c19'
+export C19_SOURCE_ATTESTATION_KEY_FILE="${runtime_root}/b26_p2_source_attestation_key"
+printf '%s' "$C19_SOURCE_ATTESTATION_KEY_B64URL" > "$C19_SOURCE_ATTESTATION_KEY_FILE"
+chmod 600 "$C19_SOURCE_ATTESTATION_KEY_FILE"
 # B2.6-P2 Corrective XIV Architecture B: the API is a non-authoritative
 # byte relay (no ingress DB capability); the dedicated authentication
 # trust root (auth_ingress service) alone mounts the file-mounted
@@ -157,6 +161,7 @@ if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
     C19_AUTH_JWT_PUBLIC_KEY_RING_JSON C19_TRUST_PUBLIC_JWKS_JSON
     C19_TRUST_SIGNING_KEY_SEED_B64URL C19_TRUST_SIGNING_KEY_ID
     C19_TRUST_SIGNING_KEY_VALID_FROM C19_TRUST_SIGNER_SHARED_SECRET
+    C19_SOURCE_ATTESTATION_KEY_FILE C19_SOURCE_ATTESTATION_KEY_B64URL
   )
   for name in "${teardown_names[@]}"; do
     printf '%s=%s\n' "$name" "${!name}" >> "$teardown_env"

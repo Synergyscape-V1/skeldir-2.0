@@ -701,22 +701,40 @@ def require_secret(key: str) -> str:
 
 
 def get_database_url() -> str:
+    """Resolve the database DSN without allowing a shared override.
+
+    Production-like processes must resolve their own control-plane path. A
+    process may not supply ``SKELDIR_PROCESS_DATABASE_URL`` or a shared
+    ``DATABASE_URL`` environment value: either would let a proof harness or a
+    misconfigured deployment act under another process's database authority.
+    Non-production lanes may still use the explicit override for fixtures, but
+    the shipping path always goes through the process-scoped secret.
+    """
     process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
     explicit = os.getenv("SKELDIR_PROCESS_DATABASE_URL", "").strip()
-    if explicit:
-        return explicit
-    if (
-        process_role
-        and not should_enable_control_plane()
-        and is_production_like(
-            resolve_control_plane_env(
-                os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
+    canonical_env = resolve_control_plane_env(
+        os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
+    )
+    if is_production_like(canonical_env):
+        if explicit:
+            raise RuntimeError(
+                "explicit_process_database_url_forbidden_in_production"
+            )
+        if not process_role:
+            raise RuntimeError("process_role_required_for_database_url")
+        if not should_enable_control_plane():
+            raise RuntimeError("process_database_url_requires_control_plane")
+        path = resolve_process_database_secret_path(process_role, canonical_env)
+        value = _coerce_str(
+            _fetch_value_from_aws(
+                MANAGED_SETTINGS_CONTRACT["DATABASE_URL"], path
             )
         )
-    ):
-        raise RuntimeError(
-            "process_database_url_requires_control_plane"
-        )
+        if not value:
+            raise RuntimeError("required secret missing: DATABASE_URL")
+        return value
+    if explicit:
+        return explicit
     return require_secret("DATABASE_URL")
 
 
