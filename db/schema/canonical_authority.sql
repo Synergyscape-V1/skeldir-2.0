@@ -554,6 +554,14 @@ END $$;
 GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_user;
 GRANT SELECT ON TABLE public.b26_p2_ingress_auth_witness TO app_user;
 GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_ingress;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_worker') THEN
+        -- XXV: the B2.3 worker reads the authenticated consequence's
+        -- family/auth columns to build the governed correction source.
+        GRANT SELECT ON TABLE public.b26_p2_provider_auth_consequence TO app_worker;
+    END IF;
+END $$;
 REVOKE ALL ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) FROM PUBLIC;
 -- XIII: only the dedicated authentication trust root may record P.
 GRANT EXECUTE ON FUNCTION public.b26_p2_record_provider_auth_consequence(uuid, text, text, text, text, text, text) TO app_ingress;
