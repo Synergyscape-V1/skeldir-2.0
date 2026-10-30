@@ -1007,6 +1007,26 @@ def _provision_ingress_dsn_file(cfg: _Phase8Config, env: dict[str, str]) -> None
     env["E2E_INGRESS_DSN_FILE"] = dsn_path
 
 
+def _provision_source_attestation_key(env: dict[str, str]) -> None:
+    """Mount an ephemeral XXV source-attestation seed into the auth root.
+
+    Full-physics e2e exercises the same required-attestation law as a
+    deployment: the authentication root signs the provider-verified amount
+    inside the ingress transaction. The seed is generated per run and never
+    written to the repository or database.
+    """
+    import tempfile
+
+    from app.revenue_verification.source_attestation import generate_keypair
+
+    private_seed, _public_key = generate_keypair()
+    fd, key_path = tempfile.mkstemp(prefix="b26_p2_source_attestation_key_p8_")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(private_seed)
+    env["E2E_SOURCE_ATTESTATION_KEY_FILE"] = key_path
+    env["E2E_SOURCE_ATTESTATION_REQUIRED"] = "true"
+
+
 def _wait_for_auth_root(
     env: dict[str, str], timeout_s: int = 120
 ) -> None:
@@ -1312,6 +1332,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         # dedicated auth root (single secret-delivery law; the API
         # never receives it) and boot the root alongside the relay.
         _provision_ingress_dsn_file(cfg, env)
+        _provision_source_attestation_key(env)
         run_step(
             "compose_up_runtime",
             [
