@@ -1698,8 +1698,10 @@ async def _conduct_adjustment_events(
     """
     import base64  # noqa: PLC0415
 
-    import httpx  # noqa: PLC0415
-
+    from app.ingestion.auth_root_relay import (  # noqa: PLC0415
+        AuthRootRelayError,
+        relay_verified_ingress_to_auth_root,
+    )
     from app.webhooks.commerce_derivation import (  # noqa: PLC0415
         adjustment_event_references,
     )
@@ -1722,35 +1724,25 @@ async def _conduct_adjustment_events(
         raise HTTPException(status_code=503, detail="authentication root unavailable")
     adjustments: list[dict[str, Any]] = []
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            for reference in references:
-                payload = {
-                    "api_key": api_key,
-                    "provider": provider,
-                    "raw_body_b64": raw_body_b64,
-                    "signature_header": signature_header,
-                }
-                if reference is not None:
-                    payload["provider_event_reference"] = reference
-                response = await client.post(
-                    root_url + "/v1/authenticate-adjustment", json=payload
+        for reference in references:
+            payload = {
+                "api_key": api_key,
+                "provider": provider,
+                "raw_body_b64": raw_body_b64,
+                "signature_header": signature_header,
+            }
+            if reference is not None:
+                payload["provider_event_reference"] = reference
+            adjustments.append(
+                await relay_verified_ingress_to_auth_root(
+                    root_url,
+                    payload,
+                    timeout_seconds=30.0,
+                    path="/v1/authenticate-adjustment",
                 )
-                if response.status_code != 200:
-                    detail = "adjustment_authentication_refused"
-                    try:
-                        parsed = response.json()
-                        detail = str(parsed.get("detail") or detail)
-                    except Exception:  # noqa: BLE001
-                        pass
-                    raise HTTPException(status_code=409, detail=detail)
-                try:
-                    adjustments.append(response.json())
-                except Exception as exc:  # noqa: BLE001
-                    raise HTTPException(
-                        status_code=502, detail="adjustment response invalid"
-                    ) from exc
-    except HTTPException:
-        raise
+            )
+    except AuthRootRelayError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=503, detail="authentication root unavailable"

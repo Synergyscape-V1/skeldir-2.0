@@ -68,6 +68,8 @@ async def relay_verified_ingress_to_auth_root(
     root_url: str,
     payload: Mapping[str, Any],
     timeout_seconds: float = 10.0,
+    *,
+    path: str = "/v1/authenticate-ingress",
 ) -> dict[str, Any]:
     """POST the relay envelope to the auth root; return its JSON body.
 
@@ -88,7 +90,7 @@ async def relay_verified_ingress_to_auth_root(
     """
     import httpx  # noqa: PLC0415  -- bounded transport lives here only.
 
-    url = root_url.rstrip("/") + "/v1/authenticate-ingress"
+    url = root_url.rstrip("/") + path
     body = dict(payload)
     try:
         response = await _relay_client(timeout_seconds).post(url, json=body)
