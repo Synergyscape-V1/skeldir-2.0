@@ -153,9 +153,13 @@ def _ensure_publisher_construction_grants(cursor, errors: list[str]) -> None:
 
 
 def _check_post_migration(cursor, errors: list[str]) -> None:
-    for function_name in (
-        "lookup_user_auth_by_login_hash",
-        "lookup_user_by_login_hash",
+    # The runtime login lookup is owned by the dedicated BYPASSRLS role.
+    # The legacy lookup remains owned by the migration principal so the
+    # predecessor B1.2 migrations can recreate/drop it on a supported
+    # downgrade without requiring post-upgrade owner membership.
+    for function_name, expected_owner in (
+        ("lookup_user_auth_by_login_hash", AUTH_LOOKUP_ROLE),
+        ("lookup_user_by_login_hash", "migration_owner"),
     ):
         cursor.execute(
             "SELECT pg_get_userbyid(p.proowner)"
@@ -166,7 +170,7 @@ def _check_post_migration(cursor, errors: list[str]) -> None:
         row = cursor.fetchone()
         if row is None:
             errors.append(f"missing_auth_lookup_function:{function_name}")
-        elif str(row[0]) != AUTH_LOOKUP_ROLE:
+        elif str(row[0]) != expected_owner:
             errors.append(f"auth_lookup_function_owner_mismatch:{function_name}")
         cursor.execute(
             "SELECT has_function_privilege("

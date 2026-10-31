@@ -871,7 +871,7 @@ AS $function$
     # The migration principal's temporary SET ROLE membership is revoked after
     # the owner change, so it cannot replace the lookup afterwards. The owner
     # change and revocation are conditional so a data-carrying downgrade and
-    # re-upgrade remain possible: after the first upgrade the functions are
+    # re-upgrade remain possible: after the first upgrade the runtime lookup is
     # already owned by app_auth_lookup and the migration principal no longer
     # holds the role, so re-running either statement unconditionally would
     # fail even though the state is already correct.
@@ -892,20 +892,19 @@ AS $function$
         op.get_bind()
         .execute(
             text(
-                "SELECT count(*) = 2 AND bool_and("
+                "SELECT count(*) = 1 AND bool_and("
                 "pg_get_userbyid(p.proowner) = 'app_auth_lookup')"
                 " FROM pg_proc p"
                 " JOIN pg_namespace n ON n.oid = p.pronamespace"
                 " WHERE n.nspname = 'auth'"
-                " AND p.proname IN ('lookup_user_auth_by_login_hash',"
-                " 'lookup_user_by_login_hash')"
+                " AND p.proname = 'lookup_user_auth_by_login_hash'"
             )
         )
         .scalar()
     )
     # A downgrade/re-upgrade after the first owner transfer no longer has
     # migration_owner membership (the migration revokes it), but the
-    # functions are already owned by app_auth_lookup. That is a lawful
+    # runtime lookup is already owned by app_auth_lookup. That is a lawful
     # re-upgrade state; only a fresh database without the owner needs the
     # membership check.
     if not can_own_auth_lookup and not auth_lookup_already_owns:
@@ -930,16 +929,6 @@ AS $function$
                   AND p.proname = 'lookup_user_auth_by_login_hash'
             ) IS DISTINCT FROM 'app_auth_lookup' THEN
                 ALTER FUNCTION auth.lookup_user_auth_by_login_hash(text)
-                    OWNER TO app_auth_lookup;
-            END IF;
-            IF (
-                SELECT pg_get_userbyid(p.proowner)
-                FROM pg_proc p
-                JOIN pg_namespace n ON n.oid = p.pronamespace
-                WHERE n.nspname = 'auth'
-                  AND p.proname = 'lookup_user_by_login_hash'
-            ) IS DISTINCT FROM 'app_auth_lookup' THEN
-                ALTER FUNCTION auth.lookup_user_by_login_hash(text)
                     OWNER TO app_auth_lookup;
             END IF;
         END $$;
