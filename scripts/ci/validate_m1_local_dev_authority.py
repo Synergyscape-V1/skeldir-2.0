@@ -789,6 +789,10 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xvii_physics.py",
     "scripts/ci/test_b26_p2_xvii_negative_controls.py",
     "backend/tests/finance_reconciliation/test_b26_p2_xvii_semantic_closure.py",
+    # XXV realtime refresh coalescing: the webhook chain's per-event
+    # matview refresh is bounded to one per tenant per second; explicit
+    # refreshes remain immediate. Same exemption shape; prohibitions intact.
+    "backend/app/tasks/matviews.py",
     "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py",
     # B2.6-P2 Corrective XIII fixture convergence (terminal law): proof
     # and equivalence corpora authenticate lawful fixtures via the atomic
