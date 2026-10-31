@@ -73,14 +73,53 @@ def _begin_realtime_refresh(tenant_uuid: UUID, now: float) -> bool:
         return True
 
 
-def _finish_realtime_refresh(tenant_uuid: UUID) -> bool:
-    """Return True when the owner must run again for a pending arrival."""
+def _pending_realtime_refresh_delay(tenant_uuid: UUID) -> float | None:
+    """Return the delay before the trailing refresh, or None to release.
+
+    The owner remains claimed while the delayed task is queued, so an arrival
+    in the gap marks pending instead of starting a competing refresh.
+    """
     with _REALTIME_REFRESH_LOCK:
-        if tenant_uuid in _REALTIME_REFRESH_PENDING:
-            _REALTIME_REFRESH_PENDING.discard(tenant_uuid)
-            return True
-        _REALTIME_REFRESH_ACTIVE.discard(tenant_uuid)
-        return False
+        if tenant_uuid not in _REALTIME_REFRESH_PENDING:
+            _REALTIME_REFRESH_ACTIVE.discard(tenant_uuid)
+            return None
+        now = time.monotonic()
+        last = _REALTIME_REFRESH_LAST.get(tenant_uuid, now)
+        remaining = max(0.0, _REALTIME_REFRESH_MIN_INTERVAL_S - (now - last))
+        _REALTIME_REFRESH_LAST[tenant_uuid] = now + remaining
+        return remaining
+
+
+def _mark_trailing_start(tenant_uuid: UUID) -> None:
+    with _REALTIME_REFRESH_LOCK:
+        _REALTIME_REFRESH_ACTIVE.add(tenant_uuid)
+        _REALTIME_REFRESH_PENDING.discard(tenant_uuid)
+        _REALTIME_REFRESH_LAST[tenant_uuid] = time.monotonic()
+
+
+def _schedule_realtime_trailing(
+    tenant_uuid: UUID, correlation_id: str, delay: float
+) -> None:
+    try:
+        enqueue_tenant_task(
+            matview_refresh_all_for_tenant,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_uuid),
+            kwargs={
+                "correlation_id": correlation_id,
+                "schedule_class": "realtime",
+                "trailing": True,
+            },
+            countdown=delay,
+        )
+    except Exception:
+        _abandon_realtime_refresh(tenant_uuid)
+        logger.exception(
+            "matview_realtime_trailing_enqueue_failed",
+            extra={"tenant_id": str(tenant_uuid), "correlation_id": correlation_id},
+        )
+        return
+    with _REALTIME_REFRESH_LOCK:
+        _REALTIME_REFRESH_PENDING.discard(tenant_uuid)
 
 
 def _abandon_realtime_refresh(tenant_uuid: UUID) -> None:
@@ -329,6 +368,7 @@ def matview_refresh_all_for_tenant(
     *,
     correlation_id: Optional[str] = None,
     schedule_class: Optional[str] = None,
+    trailing: bool = False,
 ) -> dict:
     tenant_uuid = _normalize_tenant_id(task_tenant_id(self))
     correlation_id = correlation_id or str(uuid4())
@@ -344,7 +384,9 @@ def matview_refresh_all_for_tenant(
         },
     )
     realtime = schedule_class == "realtime"
-    if realtime and not _begin_realtime_refresh(
+    if realtime and trailing:
+        _mark_trailing_start(tenant_uuid)
+    elif realtime and not _begin_realtime_refresh(
         tenant_uuid, time.monotonic()
     ):
         logger.info(
@@ -361,57 +403,64 @@ def matview_refresh_all_for_tenant(
             "reason": "realtime_refresh_coalesced",
         }
     try:
-        while True:
-            results = refresh_all_for_tenant(tenant_uuid, correlation_id)
-            strategies: list[TaskOutcomeStrategy] = []
-            for result in results:
-                strategy = strategy_for_refresh_result(result)
-                strategies.append(strategy)
-                _record_metrics(result, strategy)
-                _log_view_result(
-                    task_id=self.request.id,
-                    result=result,
-                    strategy=strategy,
-                    schedule_class=schedule_class,
-                )
-
-            if TaskOutcomeStrategy.DEAD_LETTER in strategies:
-                overall = TaskOutcomeStrategy.DEAD_LETTER
-            elif TaskOutcomeStrategy.RETRY in strategies:
-                overall = TaskOutcomeStrategy.RETRY
-            elif TaskOutcomeStrategy.SILENT_SKIP in strategies:
-                overall = TaskOutcomeStrategy.SILENT_SKIP
-            else:
-                overall = TaskOutcomeStrategy.SUCCESS
-
-            failed = next(
-                (r for r in results if r.outcome == RefreshOutcome.FAILED),
-                results[0],
-            )
-            _log_task_summary(
+        results = refresh_all_for_tenant(tenant_uuid, correlation_id)
+        strategies: list[TaskOutcomeStrategy] = []
+        for result in results:
+            strategy = strategy_for_refresh_result(result)
+            strategies.append(strategy)
+            _record_metrics(result, strategy)
+            _log_view_result(
                 task_id=self.request.id,
-                result=failed,
-                strategy=overall,
+                result=result,
+                strategy=strategy,
                 schedule_class=schedule_class,
-                view_count=len(results),
             )
-            if overall in (TaskOutcomeStrategy.DEAD_LETTER, TaskOutcomeStrategy.RETRY):
-                return _apply_strategy(
-                    task=self, result=failed, strategy=overall
+
+        if TaskOutcomeStrategy.DEAD_LETTER in strategies:
+            overall = TaskOutcomeStrategy.DEAD_LETTER
+        elif TaskOutcomeStrategy.RETRY in strategies:
+            overall = TaskOutcomeStrategy.RETRY
+        elif TaskOutcomeStrategy.SILENT_SKIP in strategies:
+            overall = TaskOutcomeStrategy.SILENT_SKIP
+        else:
+            overall = TaskOutcomeStrategy.SUCCESS
+
+        failed = next(
+            (r for r in results if r.outcome == RefreshOutcome.FAILED),
+            results[0],
+        )
+        _log_task_summary(
+            task_id=self.request.id,
+            result=failed,
+            strategy=overall,
+            schedule_class=schedule_class,
+            view_count=len(results),
+        )
+        if overall in (TaskOutcomeStrategy.DEAD_LETTER, TaskOutcomeStrategy.RETRY):
+            return _apply_strategy(
+                task=self, result=failed, strategy=overall
+            )
+        if realtime:
+            delay = _pending_realtime_refresh_delay(tenant_uuid)
+            if delay is not None:
+                _schedule_realtime_trailing(
+                    tenant_uuid, correlation_id, delay
                 )
-            if not realtime or not _finish_realtime_refresh(tenant_uuid):
                 return {
-                    "status": (
-                        "skipped"
-                        if overall == TaskOutcomeStrategy.SILENT_SKIP
-                        else "ok"
-                    ),
+                    "status": "deferred",
+                    "delay_s": delay,
                     "results": [r.to_log_dict() for r in results],
                     "strategy": overall.value,
                 }
-            # A newer arrival landed while this refresh was running. The
-            # same owner performs the trailing refresh; it never relies on a
-            # later event or a flag with no running task.
+        return {
+            "status": (
+                "skipped"
+                if overall == TaskOutcomeStrategy.SILENT_SKIP
+                else "ok"
+            ),
+            "results": [r.to_log_dict() for r in results],
+            "strategy": overall.value,
+        }
     except BaseException:
         if realtime:
             _abandon_realtime_refresh(tenant_uuid)

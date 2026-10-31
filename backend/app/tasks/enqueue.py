@@ -92,6 +92,7 @@ def enqueue_tenant_task(
     kwargs: Mapping[str, Any] | None = None,
     queue: str | None = None,
     correlation_id: str | None = None,
+    countdown: float | None = None,
 ):
     parsed = parse_authority_envelope(envelope)
     _assert_tenant_scoped(task.name)
@@ -102,6 +103,7 @@ def enqueue_tenant_task(
         headers=headers,
         queue=queue,
         correlation_id=correlation_id,
+        countdown=countdown,
     )
 
 
