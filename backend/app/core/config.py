@@ -13,6 +13,7 @@ from pydantic import AliasChoices, Field, PostgresDsn, field_validator, model_va
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.core.control_plane import (
     hydrate_settings_from_control_plane,
+    is_production_like,
     preload_environment_from_control_plane,
     resolve_control_plane_env,
 )
@@ -318,6 +319,43 @@ class Settings(BaseSettings):
             "and read by the builder; replays an older journal prefix only by "
             "advancing this lower bound. Must live on a volume the database "
             "principal cannot write."
+        ),
+    )
+
+    # B2.6-P2 Corrective XXV sovereign source-money attestation. The
+    # authentication root signs the provider's verified amount with a seed
+    # mounted into that process only; every authoritative reader verifies the
+    # signature against a public key whose fingerprint is compiled into the
+    # image. This is the only authority over "the provider sent this amount"
+    # that a database maintenance principal cannot replace.
+    B26_P2_SOURCE_ATTESTATION_PRIVATE_KEY_PATH: Optional[str] = Field(
+        None,
+        description=(
+            "Ed25519 seed used by the authentication root to attest the "
+            "provider's verified amount; configured in that process only."
+        ),
+    )
+    B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH: str = Field(
+        "var/b26_p2/source_attestation_ed25519.pub",
+        description=(
+            "Public verification key for source-money attestations, read by "
+            "every authoritative financial reader."
+        ),
+    )
+    B26_P2_SOURCE_ATTESTATION_REQUIRED: bool = Field(
+        True,
+        description=(
+            "Fail closed unless current verdict money is justified by a "
+            "verified sovereign source attestation. Disabling is an explicit "
+            "non-production choice and production refuses to start with it off."
+        ),
+    )
+    B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH: Optional[str] = Field(
+        None,
+        description=(
+            "Append-only authentication-root journal of signed source and "
+            "adjustment facts. Required in production so completeness can be "
+            "adjudicated against facts the database principal cannot create."
         ),
     )
 
@@ -685,7 +723,11 @@ class Settings(BaseSettings):
                 "B2.3 worker demand exceeds the dedicated B2.3 DB pool budget "
                 f"({b23_worker_demand} > {b23_pool_capacity})"
             )
-        if str(self.ENVIRONMENT).strip().lower() in {"prod", "production"}:
+        # XXV (HB-01): one canonical predicate for "is this a real
+        # deployment?". The value stored here has already been canonicalised
+        # by resolve_control_plane_env, so an alias-literal comparison would
+        # be dead code; is_production_like is the only admitted form.
+        if is_production_like(self.ENVIRONMENT):
             # XXIII (HB-04): production may not run with the independent
             # witness disabled or unpinned. The setting exists for local
             # and CI lanes only; a production process must fail closed at
@@ -713,6 +755,28 @@ class Settings(BaseSettings):
             ):
                 raise ValueError(
                     "history witness genesis does not match compiled anchor"
+                )
+            # XXV: the sovereign source-money attestation has the same
+            # standing as the historical witness. A production process may
+            # not run with the attestation requirement off, and may not run
+            # from an image that carries no attestation verification root --
+            # otherwise the only authority over the provider's amount that
+            # lies outside the database owner's reach would be absent.
+            from app.trust.witness_anchor import (  # noqa: PLC0415
+                COMPILED_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256,
+            )
+
+            if not self.B26_P2_SOURCE_ATTESTATION_REQUIRED:
+                raise ValueError(
+                    "B26_P2_SOURCE_ATTESTATION_REQUIRED must be true in production"
+                )
+            if not (self.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH or "").strip():
+                raise ValueError(
+                    "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH must be set in production"
+                )
+            if not COMPILED_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256:
+                raise ValueError(
+                    "source attestation compiled anchor missing from production image"
                 )
         return self
 

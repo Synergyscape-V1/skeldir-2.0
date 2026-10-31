@@ -250,8 +250,8 @@ jobs:
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
           grep -E "^p13_expected_cases=21$" /tmp/b25_p13_e2e.out
           grep -E "^p13_executed_cases=21$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_expected=158$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_failed=158$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_expected=160$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_failed=160$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=97$" /tmp/b25_p13_e2e.out
 
           # C10: the signature commits to the producing inference regime.
@@ -2605,7 +2605,7 @@ jobs:
           # contract under the corrected authority.
           granted=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT string_agg(table_name || ':' || privilege_type, ',' ORDER BY table_name, privilege_type) FROM information_schema.table_privileges WHERE grantee = 'app_trust_issuer'")
-          test "$granted" = "trust_access_log:SELECT,trust_access_log:UPDATE,trust_envelope_issuance_log:INSERT,trust_envelope_issuance_log:SELECT,trust_export_artifact_attempts:INSERT,trust_export_artifact_attempts:SELECT,trust_export_artifact_attempts:UPDATE,trust_final_issuance_identity:SELECT,trust_issuance_attempts:INSERT,trust_issuance_attempts:SELECT,trust_issuance_attempts:UPDATE"
+          test "$granted" = "b26_p2_adjustment_attestation:SELECT,b26_p2_adjustment_evidence:SELECT,b26_p2_source_money_attestation:SELECT,trust_access_log:SELECT,trust_access_log:UPDATE,trust_envelope_issuance_log:INSERT,trust_envelope_issuance_log:SELECT,trust_export_artifact_attempts:INSERT,trust_export_artifact_attempts:SELECT,trust_export_artifact_attempts:UPDATE,trust_final_issuance_identity:SELECT,trust_issuance_attempts:INSERT,trust_issuance_attempts:SELECT,trust_issuance_attempts:UPDATE"
           guard=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.trust_access_log'::regclass AND tgname = 'trg_trust_access_log_issuance_authority_guard'")
           test "$guard" = "1"

@@ -42,9 +42,49 @@ MIG_XXIII = (
     / "007_skeldir_foundation"
     / "202610180003_b26_p2_corrective_xxiii_witness_growth_authority.py"
 )
+MIG_XXV = (
+    REPO_ROOT
+    / "alembic"
+    / "versions"
+    / "007_skeldir_foundation"
+    / "202610270001_b26_p2_corrective_xxv_source_attestation.py"
+)
+MIG_XXV_2 = (
+    REPO_ROOT
+    / "alembic"
+    / "versions"
+    / "007_skeldir_foundation"
+    / "202610270002_b26_p2_corrective_xxv_provider_amendment.py"
+)
+ATTESTATION = (
+    REPO_ROOT
+    / "backend"
+    / "app"
+    / "revenue_verification"
+    / "source_attestation.py"
+)
+SWEEP = (
+    REPO_ROOT
+    / "scripts"
+    / "ci"
+    / "b26_p2_xxv_attestation_sweep.py"
+)
 CONTRACT = REPO_ROOT / "backend" / "app" / "core" / "construction_authority.py"
+MATCH_KERNEL = (
+    REPO_ROOT / "backend" / "app" / "revenue_verification" / "match_engine_kernel.py"
+)
+CORRECTIONS = (
+    REPO_ROOT / "backend" / "app" / "revenue_verification" / "corrections.py"
+)
+BATCH_ENGINE = (
+    REPO_ROOT / "backend" / "app" / "revenue_verification" / "batch_engine.py"
+)
+WEBHOOKS = REPO_ROOT / "backend" / "app" / "api" / "webhooks.py"
 BUILDER = REPO_ROOT / "backend" / "app" / "trust" / "builder.py"
 WITNESS = REPO_ROOT / "backend" / "app" / "trust" / "history_witness.py"
+REVENUE_TASKS = (
+    REPO_ROOT / "backend" / "app" / "tasks" / "revenue_verification.py"
+)
 OBSERVER = REPO_ROOT / "backend" / "app" / "tasks" / "b26_p2_history.py"
 COVERAGE = REPO_ROOT / "scripts" / "ci" / "b26_p2_xxii_coverage.py"
 WORKFLOW = (
@@ -54,7 +94,7 @@ WORKFLOW = (
     / "b2_6-p1-finance-reconciliation-adjudication.yml"
 )
 
-HEAD = "202610180003"
+HEAD = "202610280001"
 
 
 def _read(path: Path, violations: list[str], tag: str) -> str:
@@ -63,6 +103,20 @@ def _read(path: Path, violations: list[str], tag: str) -> str:
     except OSError as exc:
         violations.append(f"xxii_comp_unreadable:{tag}:{exc}")
         return ""
+
+
+def _executable_only(source: str) -> str:
+    """Strip whole-line comments so a static cell judges CODE, not prose.
+
+    The migration records *why* the owner-written epoch table was removed,
+    and that explanation necessarily names the removed identifiers. A static
+    gate that read the comment would fail the corrected tree and pass the
+    defective one, which is exactly backwards. Only full-line comments are
+    removed; a token on a line that carries code is still judged.
+    """
+    return "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith("#")
+    )
 
 
 def _static_checks(violations: list[str], checks: dict) -> None:
@@ -176,6 +230,122 @@ def _static_checks(violations: list[str], checks: dict) -> None:
             violations.append(f"xxii_comp_coverage_missing:{token}")
     if "validate_b26_p2_xxii_composition.py" not in workflow:
         violations.append("xxii_comp_workflow_step_missing")
+    # XXV (A6/A10/A12): the sovereign source attestation must be present in
+    # the tree under proof, chained to the XXIII head, and actually enforced
+    # by the builder. A proof that can run without the attestation law is a
+    # proof of the previous release.
+    mig_xxv = _read(MIG_XXV, violations, "xxv_migration")
+    if 'revision = "202610270001"' not in mig_xxv:
+        violations.append("xxv_migration_revision_missing")
+    if 'down_revision = "202610180003"' not in mig_xxv:
+        violations.append("xxv_migration_not_chained_to_xxiii")
+    if "b26_p2_source_money_attestation" not in mig_xxv:
+        violations.append("xxv_attestation_table_absent")
+    attestation_module = _read(ATTESTATION, violations, "xxv_attestation_module")
+    for token in (
+        "def verify_signature",
+        "attestation_key_not_anchored",
+        "verdict_net_unsupported_by_attestation",
+        "adjustment_attestation_missing",
+        "read_verdict_source_attestation_status",
+    ):
+        if token not in attestation_module:
+            violations.append(f"xxv_attestation_law_absent:{token}")
+    builder_source = _read(BUILDER, violations, "builder")
+    if "read_verdict_source_attestation_status" not in builder_source:
+        violations.append("xxv_builder_does_not_require_attestation")
+    checks["static_xxv_attestation_law"] = True
+    # XXV (A6/A10 class closure): no reader and no oracle may decide
+    # authority by consulting an instant the maintenance principal owns.
+    #
+    # The candidate artifact granted a "predecessor generation" exemption to
+    # any row with no attestation whose creation time preceded a watermark
+    # stored in a table the maintenance principal owns. Deleting the
+    # authentication root's attestation row and moving that watermark was
+    # enough to have a coherently forged amount served as current money while
+    # this proof printed PASS (falsifier xxv-hb03-predecessor-escape). The
+    # exemption is removed, the watermark table is removed, and these static
+    # cells keep the class closed: the absence of an attestation is never a
+    # grant, and nothing may reintroduce a comparable owner-written instant.
+    for banned in ("attestation_required_from", "attestation_watermark"):
+        if banned in _executable_only(mig_xxv):
+            violations.append(f"xxv_owner_written_instant_present_in_migration:{banned}")
+        if banned in _executable_only(attestation_module):
+            violations.append(f"xxv_owner_written_instant_present_in_reader:{banned}")
+        if banned in _executable_only(_read(SWEEP, violations, "xxv_attestation_sweep")):
+            violations.append(f"xxv_owner_written_instant_present_in_oracle:{banned}")
+    if "b26_p2_source_attestation_authority" in _executable_only(mig_xxv):
+        violations.append("xxv_owner_written_epoch_table_present_in_migration")
+    if "attestation_missing" not in attestation_module:
+        violations.append("xxv_attestation_absence_grant_absent_from_reader")
+    checks["static_xxv_no_owner_written_instant"] = True
+    # XXV-2 (A2/B10): a provider amendment must be admissible without
+    # weakening commerce-identity collision refusal, and the corrected money
+    # must be linked to the amending source's own attestation. The static cells
+    # bind the tree under proof to the admission split, the current-only
+    # commerce index, the tenant-bound demotion propagation, the correction
+    # relink, and the exclusion of amendment sources from independent B2.3
+    # match (which would otherwise create a second verdict for one identity).
+    mig_xxv_2 = _read(MIG_XXV_2, violations, "xxv_2_migration")
+    for token, reason in (
+        ('revision = "202610270002"', "xxv_2_revision_missing"),
+        ('down_revision = "202610270001"', "xxv_2_not_chained_to_xxv"),
+        ("superseded_by_provider_amendment", "xxv_2_supersession_absent"),
+        (
+            "b26_p2_atomic_commerce_identity_conflict_refused",
+            "xxv_2_collision_refusal_absent",
+        ),
+        (
+            "b26_p2_demotion_reason IS NULL",
+            "xxv_2_current_only_commerce_index_absent",
+        ),
+        (
+            "app.current_tenant_id",
+            "xxv_2_propagation_tenant_binding_absent",
+        ),
+        (
+            "_amendment_link",
+            "xxv_2_conducted_relink_exemption_absent",
+        ),
+        (
+            "b26_p2_conducted_verdict_regression_refused",
+            "xxv_2_conducted_relink_guard_absent",
+        ),
+        (
+            "interval '60 seconds'",
+            "xxv_2_lifecycle_creation_window_absent",
+        ),
+    ):
+        if token not in mig_xxv_2:
+            violations.append(reason)
+    kernel_source = _read(MATCH_KERNEL, violations, "xxv_2_match_kernel")
+    for token in (
+        "source_webhook_ingress_identity_id",
+        "_is_lawful_superseding_amendment_source",
+    ):
+        if token not in kernel_source:
+            violations.append(f"xxv_2_correction_relink_absent:{token}")
+    corrections_source = _read(CORRECTIONS, violations, "xxv_2_corrections")
+    if 'webhook_ingress_identity_id=ingress["id"]' not in corrections_source:
+        violations.append("xxv_2_correction_evidence_ingress_absent")
+    batch_source = _read(BATCH_ENGINE, violations, "xxv_2_batch_engine")
+    if "prior.b26_p2_provenance_status = 'authenticated_known'" not in batch_source:
+        violations.append("xxv_2_amendment_source_not_excluded_from_match")
+    webhook_source = _read(WEBHOOKS, violations, "xxv_2_webhooks")
+    if "(prior.created_at, prior.id)" not in webhook_source:
+        violations.append("xxv_2_amendment_source_not_excluded_from_dispatch")
+    checks["static_xxv_2_amendment_law"] = True
+    # XXV (A3/HB-08): an append path must ask the observer to witness the new
+    # ledger state, and concurrent observers must serialize the journal.
+    witness_source = _read(WITNESS, violations, "xxv_a3_witness")
+    if "def witness_lock" not in witness_source:
+        violations.append("xxv_a3_witness_lock_absent")
+    tasks_source = _read(REVENUE_TASKS, violations, "xxv_a3_tasks")
+    if "_enqueue_history_observation" not in tasks_source:
+        violations.append("xxv_a3_observation_enqueue_absent")
+    if "QUEUE_B26_P2_HISTORY" not in tasks_source:
+        violations.append("xxv_a3_history_queue_binding_absent")
+    checks["static_xxv_a3_observation_on_growth"] = True
     checks["static_laws"] = True
 
 
@@ -285,9 +455,17 @@ def _coherent_rewrite_cell(
         private_path = root / "witness.key"
         public_path = root / "witness.pub"
         journal = root / "journal.jsonl"
+        custody = root / "custody.json"
+        heartbeat = root / "heartbeat.json"
         private_path.write_text(private_seed, encoding="utf-8")
         public_path.write_text(public_key, encoding="utf-8")
         _n, _seq, _tip, digest, universe = _live_state(cursor)
+        # XXV: a published checkpoint carries its custody record. Issuance
+        # refuses a missing custody record in EVERY environment now (the old
+        # guard compared ENVIRONMENT to the alias literal "production", which
+        # canonicalisation makes unreachable, so custody loss was accepted in
+        # every deployment -- both independent XXIV audits deleted the custody
+        # record and kept receiving signed envelopes).
         append_checkpoint(
             journal,
             private_key_path=private_path,
@@ -296,18 +474,24 @@ def _coherent_rewrite_cell(
             ledger_tip_hash=ledger_tip_hash,
             ledger_prefix_digest=digest,
             authority_universe=universe,
+            custody_path=custody,
+            heartbeat_path=heartbeat,
         )
         previous = (
             settings.B26_P2_HISTORY_WITNESS_REQUIRED,
             settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH,
             settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
             settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH,
+            settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+            settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
         )
         try:
             settings.B26_P2_HISTORY_WITNESS_REQUIRED = True
             settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH = str(journal)
             settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH = str(public_path)
             settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH = None
+            settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH = str(custody)
+            settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH = str(heartbeat)
             _plant_observation(cursor, ledger_count, ledger_tip_hash)
             if _builder_status(cursor) != (True, ""):
                 violations.append("xxii_comp_witness_clean_refused")
@@ -383,6 +567,8 @@ def _coherent_rewrite_cell(
                 settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH,
                 settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
                 settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH,
+                settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+                settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
             ) = previous
 
 
@@ -407,9 +593,17 @@ def _truncate_cell(
         private_path = root / "witness.key"
         public_path = root / "witness.pub"
         journal = root / "journal.jsonl"
+        custody = root / "custody.json"
+        heartbeat = root / "heartbeat.json"
         private_path.write_text(private_seed, encoding="utf-8")
         public_path.write_text(public_key, encoding="utf-8")
         _n, _seq, _tip, digest, universe = _live_state(cursor)
+        # XXV: a published checkpoint carries its custody record. Issuance
+        # refuses a missing custody record in EVERY environment now (the old
+        # guard compared ENVIRONMENT to the alias literal "production", which
+        # canonicalisation makes unreachable, so custody loss was accepted in
+        # every deployment -- both independent XXIV audits deleted the custody
+        # record and kept receiving signed envelopes).
         append_checkpoint(
             journal,
             private_key_path=private_path,
@@ -418,18 +612,24 @@ def _truncate_cell(
             ledger_tip_hash=ledger_tip_hash,
             ledger_prefix_digest=digest,
             authority_universe=universe,
+            custody_path=custody,
+            heartbeat_path=heartbeat,
         )
         previous = (
             settings.B26_P2_HISTORY_WITNESS_REQUIRED,
             settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH,
             settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
             settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH,
+            settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+            settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
         )
         try:
             settings.B26_P2_HISTORY_WITNESS_REQUIRED = True
             settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH = str(journal)
             settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH = str(public_path)
             settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH = None
+            settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH = str(custody)
+            settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH = str(heartbeat)
             cursor.execute(
                 "TRUNCATE public.b26_p2_verdict_supersession_ledger"
             )
@@ -444,6 +644,8 @@ def _truncate_cell(
                 settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH,
                 settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
                 settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH,
+                settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+                settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
             ) = previous
 
 
@@ -644,8 +846,53 @@ def _external_false_world_cell(
                 )
         consumer.rollback()
         consumer.close()
+
+        # XXV: restore the amounts this cell forged. A proof that leaves an
+        # unsupported financial world committed in the database it adjudicates
+        # is itself a source of false finance, and the XXV live attestation
+        # sweep reads the database as it finds it.
+        with ref.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant,),
+            )
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " DISABLE TRIGGER trg_b26_p2_ingress_sovereign_custody"
+            )
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " DISABLE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability"
+            )
+            cur.execute(
+                "UPDATE public.webhook_ingress_identities"
+                " SET verified_amount_minor=1000"
+                " WHERE tenant_id=%s AND id=%s",
+                (tenant, ingress),
+            )
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " ENABLE TRIGGER trg_b26_p2_ingress_xv_meaning_immutability"
+            )
+            cur.execute(
+                "ALTER TABLE public.webhook_ingress_identities"
+                " ENABLE TRIGGER trg_b26_p2_ingress_sovereign_custody"
+            )
+            cur.execute(
+                "UPDATE public.b23_match_verdicts"
+                " SET verified_amount_minor=1000,"
+                "     canonical_captured_gross_amount_minor=1000,"
+                "     canonical_net_verified_amount_minor=1000,"
+                "     discrepancy_amount_minor=0,"
+                "     discrepancy_ratio_bps=0,"
+                "     discrepancy_band='within_tolerance'"
+                " WHERE tenant_id=%s AND id=%s",
+                (tenant, verdict),
+            )
+        ref.commit()
         ref.close()
         checks["live_external_false_world_refused"] = True
+        checks["live_external_false_world_restored"] = True
     except Exception as exc:  # noqa: BLE001 - surface the failing cell
         violations.append(
             f"xxii_comp_false_world_failed:{type(exc).__name__}:{exc}"
@@ -685,6 +932,117 @@ def _external_false_world_cell(
             admin.close()  # type: ignore[name-defined]
         except Exception:  # noqa: BLE001
             pass
+
+
+def _xxv_attestation_sweep_cell(dsn: str, violations: list[str], checks: dict) -> None:
+    """XXV (A12): judge the live financial state, not a self-made fixture.
+
+    Both XXIV audits obtained ``B26_P2_XXII_COMPOSITION_PASS`` -- including a
+    cell literally named ``live_external_false_world_refused`` -- while a
+    coherently forged amount was being served as current money. The cell was
+    asserting that the validator's OWN mutation had been refused, which is a
+    statement about the validator, not about the database.
+
+    This cell walks every verdict in the database under proof and requires
+    each one's money to be justified by a signature produced by the
+    authentication root. No in-database principal can satisfy that, so a
+    false world introduced by anyone -- including an auditor who never
+    touched this script -- turns the mandatory proof RED.
+    """
+    from b26_p2_xxv_attestation_sweep import (  # noqa: PLC0415
+        default_public_key_path,
+        sweep,
+    )
+
+    try:
+        result = sweep(
+            dsn,
+            public_key_path=default_public_key_path(),
+            check_source_evidence=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - an unrunnable oracle is a failure
+        violations.append(f"xxv_attestation_sweep_unrunnable:{type(exc).__name__}:{exc}")
+        return
+    checks["live_xxv_attestation_sweep"] = True
+    checks["live_xxv_attestation_census"] = result["census"]
+    checks["live_xxv_verdicts_examined"] = result["verdicts_examined"]
+    source_status = str(
+        result.get("source_evidence", {}).get("status", "")
+    )
+    if source_status.startswith("FAIL:"):
+        checks["live_xxv_attestation_sweep"] = False
+        violations.append(f"xxv_source_evidence:{source_status}")
+    if result["unverifiable"]:
+        checks["live_xxv_attestation_sweep"] = False
+        for row in result["unverifiable"][:10]:
+            violations.append(
+                "xxv_source_money_unattested:"
+                f"{row['verdict_id']}:{row['reason']}"
+            )
+
+
+def _live_conduction_completeness_cell(
+    dsn: str, violations: list[str], checks: dict
+) -> None:
+    """Every current first-authenticated source must have a consequence.
+
+    A source with an earlier authenticated sibling is an amendment awaiting
+    the authorised correction surface, not a missing match. A first source
+    older than the grace window with no verdict is accepted ingress that the
+    required B2.3 financial consumer did not conduct. This is the B6/HB-14
+    negative-control oracle: removing the worker used to leave the mandatory
+    proof green.
+    """
+    import psycopg2  # noqa: PLC0415
+
+    conn = psycopg2.connect(dsn)
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT i.id::text, i.provider,
+                       i.event_timestamp
+                  FROM public.webhook_ingress_identities AS i
+                 WHERE i.verified_commerce_ingress_state =
+                       'authenticity_verified'
+                   AND i.b26_p2_provenance_status = 'authenticated_known'
+                   AND i.b26_p2_demotion_reason IS NULL
+                   AND i.event_timestamp < now() - interval '60 seconds'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM public.b23_match_verdicts AS v
+                        WHERE v.webhook_ingress_identity_id = i.id
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1
+                         FROM public.webhook_ingress_identities AS prior
+                        WHERE prior.tenant_id = i.tenant_id
+                          AND prior.provider = i.provider
+                          AND prior.normalized_commerce_reference_kind
+                              IS NOT DISTINCT FROM
+                              i.normalized_commerce_reference_kind
+                          AND prior.normalized_commerce_reference_value
+                              IS NOT DISTINCT FROM
+                              i.normalized_commerce_reference_value
+                          AND prior.b26_p2_provenance_status =
+                              'authenticated_known'
+                          AND prior.id <> i.id
+                          AND (prior.created_at, prior.id)
+                              < (i.created_at, i.id)
+                   )
+                 ORDER BY i.event_timestamp ASC
+                 LIMIT 5
+                """
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if rows:
+        violations.append(
+            "xxii_comp_conduction_missing:"
+            + ";".join(f"{row[0]}:{row[1]}" for row in rows)
+        )
+    checks["live_conduction_completeness"] = not rows
 
 
 def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
@@ -756,12 +1114,18 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
             violations.append("xxii_comp_chronology_trigger_missing")
         checks["live_chronology_triggers"] = True
 
+        cur.execute(
+            "SELECT public.b26_p2_enforce_lifecycle_admission("
+            "'shopify','orders.create','pending',NULL,false,"
+            "%s::timestamptz,%s::timestamptz,true)",
+            ("2026-10-01T00:00:00+00:00", "2026-10-01T00:00:30+00:00"),
+        )
         _expect_exception(
             cur,
             "SELECT public.b26_p2_enforce_lifecycle_admission("
             "'shopify','orders.create','pending',NULL,false,"
             "%s::timestamptz,%s::timestamptz,true)",
-            ("2026-10-01T00:00:00+00:00", "2026-10-01T00:00:30+00:00"),
+            ("2026-10-01T00:00:00+00:00", "2026-10-01T00:02:00+00:00"),
             "b26_p2_lifecycle_not_creation_moment",
         )
         _expect_exception(
@@ -1038,7 +1402,9 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
         )
 
         conn.rollback()
+        _live_conduction_completeness_cell(dsn, violations, checks)
         _external_false_world_cell(dsn, violations, checks)
+        _xxv_attestation_sweep_cell(dsn, violations, checks)
     except Exception as exc:  # noqa: BLE001 - surface the failing cell
         violations.append(f"xxii_comp_live_failed:{type(exc).__name__}:{exc}")
         try:
@@ -1047,6 +1413,73 @@ def _live_checks(dsn: str, violations: list[str], checks: dict) -> None:
             pass
     finally:
         conn.close()
+
+
+def _source_evidence_cell(
+    dsn: str, violations: list[str], checks: dict
+) -> None:
+    """Compare the live complete lifecycle manifest to the signed witness.
+
+    The per-fact attestation sweep proves each present fact; this cell proves
+    the set is the set the independent observer signed. It is deliberately
+    separate so a present-but-forged fact and a missing-but-signed fact both
+    fail the same governing proof.
+    """
+    import os  # noqa: PLC0415
+
+    journal_path = os.getenv("B26_P2_HISTORY_WITNESS_JOURNAL_PATH", "").strip()
+    public_key_path = os.getenv(
+        "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH", ""
+    ).strip()
+    if not journal_path or not public_key_path:
+        checks["live_source_evidence"] = "SKIPPED:no_witness_env"
+        return
+    try:
+        from sqlalchemy.ext.asyncio import (  # noqa: PLC0415
+            AsyncSession,
+            create_async_engine,
+        )
+
+        from app.revenue_verification.source_evidence import (  # noqa: PLC0415
+            source_evidence_snapshots,
+        )
+        from app.trust.history_witness import (  # noqa: PLC0415
+            load_public_key,
+            verify_journal,
+        )
+
+        async def _snapshots():
+            engine = create_async_engine(
+                dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
+            )
+            try:
+                async with AsyncSession(engine) as session:
+                    return await source_evidence_snapshots(session)
+            finally:
+                await engine.dispose()
+
+        snapshots = asyncio.run(_snapshots())
+        journal = verify_journal(
+            journal_path,
+            public_key=load_public_key(public_key_path),
+            require_freshness=False,
+        )
+        latest = journal.latest
+        if latest.source_evidence_by_tenant is None:
+            violations.append("xxii_comp_source_evidence_missing")
+            return
+        expected = {
+            tenant: str(snapshot["digest"])
+            for tenant, snapshot in snapshots.items()
+        }
+        if expected != dict(latest.source_evidence_by_tenant):
+            violations.append("xxii_comp_source_evidence_diverged")
+            return
+        checks["live_source_evidence"] = True
+    except Exception as exc:  # noqa: BLE001 - surface the failing cell
+        violations.append(
+            f"xxii_comp_source_evidence_failed:{type(exc).__name__}:{exc}"
+        )
 
 
 def main() -> int:
@@ -1058,6 +1491,7 @@ def main() -> int:
     checks: dict = {}
     _static_checks(violations, checks)
     if args.dsn is not None:
+        _source_evidence_cell(args.dsn, violations, checks)
         _live_checks(args.dsn, violations, checks)
     status = "PASS" if not violations else "FAIL"
     print(f"B26_P2_XXII_COMPOSITION_{status}")

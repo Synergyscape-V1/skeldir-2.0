@@ -41,6 +41,11 @@ class CorrectionEvidence:
     currency_code: str
     event_occurred_at: datetime
     is_gross_capture_correction: bool
+    # XXV-2: the authenticated row the amount was read from. The B2.3 worker
+    # relinks the verdict to it, so the corrected money stays covered by that
+    # row's sovereign source attestation.
+    webhook_ingress_identity_id: UUID | None = None
+    adjustment_evidence_id: UUID | None = None
 
 
 async def resolve_correction_evidence(
@@ -97,7 +102,68 @@ async def resolve_correction_evidence(
         )
     ).mappings().first()
     if ingress is None:
-        raise CorrectionEvidenceError("correction_source_authority_unresolved")
+        if event_type == "payment_capture":
+            raise CorrectionEvidenceError(
+                "correction_source_authority_unresolved"
+            )
+        # A post-capture adjustment is not a current creation source. Its
+        # signed evidence names the parent verdict and is resolved from the
+        # adjustment-evidence relation, never from a capture ingress.
+        adjustment = (
+            await session.execute(
+                text(
+                    """
+                    SELECT a.id, a.verdict_id,
+                           a.provider_native_event_reference,
+                           a.provider_native_commerce_reference,
+                           a.event_type, a.amount_minor, a.currency_code,
+                           a.event_timestamp, b.signature
+                      FROM public.b26_p2_adjustment_evidence AS a
+                      LEFT JOIN public.b26_p2_adjustment_attestation AS b
+                        ON b.adjustment_evidence_id = a.id
+                       AND b.tenant_id = a.tenant_id
+                     WHERE a.tenant_id = :tenant_id
+                       AND a.provider = :provider
+                       AND a.provider_native_event_reference = :event_reference
+                       AND a.verdict_id = :verdict_id
+                     LIMIT 1
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "provider": provider,
+                    "event_reference": provider_native_event_reference,
+                    "verdict_id": str(verdict_id),
+                },
+            )
+        ).mappings().first()
+        if adjustment is None or adjustment["signature"] is None:
+            raise CorrectionEvidenceError(
+                "correction_adjustment_evidence_missing"
+            )
+        if str(adjustment["event_type"]) != event_type:
+            raise CorrectionEvidenceError(
+                "correction_adjustment_event_type_mismatch"
+            )
+        commerce_reference = str(
+            adjustment["provider_native_commerce_reference"] or ""
+        )
+        if commerce_reference not in {
+            str(verdict["provider_native_commerce_reference"] or ""),
+            str(verdict["canonical_commerce_reference"] or ""),
+        }:
+            raise CorrectionEvidenceError("correction_source_verdict_mismatch")
+        return CorrectionEvidence(
+            provider=provider,
+            event_type=event_type,
+            provider_native_event_reference=provider_native_event_reference,
+            provider_native_commerce_reference=commerce_reference,
+            amount_minor=int(adjustment["amount_minor"]),
+            currency_code=str(adjustment["currency_code"]),
+            event_occurred_at=adjustment["event_timestamp"],
+            is_gross_capture_correction=is_gross_capture_correction,
+            adjustment_evidence_id=adjustment["id"],
+        )
     commerce_reference = str(
         ingress["provider_native_commerce_reference"] or ""
     )
@@ -115,6 +181,7 @@ async def resolve_correction_evidence(
         currency_code=str(ingress["verified_amount_currency"]),
         event_occurred_at=ingress["event_timestamp"],
         is_gross_capture_correction=is_gross_capture_correction,
+        webhook_ingress_identity_id=ingress["id"],
     )
 
 
@@ -144,6 +211,10 @@ async def conduct_correction(
             is_gross_capture_correction=(
                 evidence.is_gross_capture_correction
             ),
+            source_webhook_ingress_identity_id=(
+                evidence.webhook_ingress_identity_id
+            ),
+            adjustment_evidence_id=evidence.adjustment_evidence_id,
         ),
     )
     from app.trust.source_adapters import read_match_verdict_source

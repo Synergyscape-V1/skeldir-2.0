@@ -37,6 +37,17 @@ B22_REQUIRED_PUBLIC_SURFACE = {
 B22_APPROVED_RUNTIME_ALIAS_SURFACE = {
     "POST /api/webhooks/stripe/payment_intent_succeeded",
 }
+# XXV post-capture adjustment ingress is a real provider-signed webhook
+# surface, but it is deliberately not part of the B2.2-P0 public OpenAPI /
+# typegen contract (which locks exactly one public capture operation per
+# provider). Declaring it here keeps every hidden webhook route enumerated:
+# an undeclared hidden route still fails runtime_routes_contains_unexpected.
+B22_APPROVED_RUNTIME_INTERNAL_SURFACE = {
+    "POST /api/webhooks/stripe/charge_refunded",
+    "POST /api/webhooks/shopify/refunds_create",
+    "POST /api/webhooks/woocommerce/order_refunded",
+    "POST /api/webhooks/paypal/payment_capture_refunded",
+}
 
 
 def _resolve(repo_root: Path, raw: str) -> Path:
@@ -144,7 +155,7 @@ def _validate_surface_shape(
     contract: dict[str, Any],
     repo_root: Path,
     violations: list[str],
-) -> tuple[set[str], set[str], set[Path], set[Path], set[Path]]:
+) -> tuple[set[str], set[str], set[str], set[Path], set[Path], set[Path]]:
     required_public_providers = contract.get("required_public_providers")
     if not isinstance(required_public_providers, list) or not required_public_providers:
         violations.append("declared_contract_missing_required_public_providers")
@@ -161,7 +172,7 @@ def _validate_surface_shape(
     public_operations_raw = contract.get("public_operations")
     if not isinstance(public_operations_raw, list) or not public_operations_raw:
         violations.append("declared_contract_missing_public_operations")
-        return set(), set(), set(), set(), set()
+        return set(), set(), set(), set(), set(), set()
 
     public_surface: set[str] = set()
     provider_counts: dict[str, int] = {}
@@ -257,9 +268,61 @@ def _validate_surface_shape(
     if overlap:
         violations.append("declared_public_surface_overlaps_runtime_aliases:" + "|".join(overlap))
 
+    internal_raw = contract.get("runtime_internal_operations")
+    if not isinstance(internal_raw, list):
+        violations.append("declared_contract_runtime_internal_operations_must_be_list")
+        internal_raw = []
+
+    runtime_internal_surface: set[str] = set()
+    for operation in internal_raw:
+        if not isinstance(operation, dict):
+            violations.append("declared_runtime_internal_operation_not_object")
+            continue
+        method = str(operation.get("method", "")).upper().strip()
+        path = str(operation.get("path", "")).strip()
+        provider = str(operation.get("provider", "")).strip().lower()
+        visibility = str(operation.get("visibility", "")).strip()
+        reason = str(operation.get("reason", "")).strip()
+
+        if method not in {m.upper() for m in HTTP_METHODS}:
+            violations.append(f"invalid_runtime_internal_method:{method}")
+            continue
+        if not path.startswith("/api/webhooks/"):
+            violations.append(f"invalid_runtime_internal_path:{path}")
+            continue
+        if provider not in B22_REQUIRED_PUBLIC_PROVIDERS:
+            violations.append(f"invalid_runtime_internal_provider:{provider}")
+            continue
+        if visibility != "runtime_internal_only":
+            violations.append(f"invalid_runtime_internal_visibility:{visibility}")
+        if not reason:
+            violations.append(f"runtime_internal_reason_missing:{method} {path}")
+
+        runtime_internal_surface.add(f"{method} {path}")
+
+    if len(runtime_internal_surface) != len(internal_raw):
+        violations.append("declared_runtime_internal_operations_contain_duplicates")
+
+    _compare_set(
+        name="declared_runtime_internal_surface",
+        observed=runtime_internal_surface,
+        expected=B22_APPROVED_RUNTIME_INTERNAL_SURFACE,
+        violations=violations,
+    )
+
+    overlap = sorted(
+        (public_surface | runtime_alias_surface) & runtime_internal_surface
+    )
+    if overlap:
+        violations.append(
+            "declared_runtime_internal_surface_overlaps_public_or_alias:"
+            + "|".join(overlap)
+        )
+
     return (
         public_surface,
         runtime_alias_surface,
+        runtime_internal_surface,
         source_contract_paths,
         bundle_paths,
         generated_type_paths,
@@ -299,6 +362,7 @@ def run_enforcement(
     (
         public_surface,
         runtime_alias_surface,
+        runtime_internal_surface,
         source_contract_paths,
         bundle_paths,
         generated_type_paths,
@@ -322,7 +386,7 @@ def run_enforcement(
     _compare_set(
         name="runtime_routes",
         observed=runtime_routes,
-        expected=(public_surface | runtime_alias_surface),
+        expected=(public_surface | runtime_alias_surface | runtime_internal_surface),
         violations=violations,
     )
     _compare_set(
@@ -331,6 +395,12 @@ def run_enforcement(
         expected=public_surface,
         violations=violations,
     )
+    hidden_in_openapi = sorted(runtime_internal_surface & runtime_openapi)
+    if hidden_in_openapi:
+        violations.append(
+            "runtime_internal_surface_leaked_into_openapi:"
+            + "|".join(hidden_in_openapi)
+        )
 
     source_surface: set[str] = set()
     for source_path in source_contract_paths:
@@ -373,7 +443,7 @@ def run_enforcement(
         _compare_set(
             name="contract_scope_runtime_transport_only_allowlist",
             observed=transport_allowlist_set,
-            expected=runtime_alias_surface,
+            expected=runtime_alias_surface | runtime_internal_surface,
             violations=violations,
         )
 

@@ -786,7 +786,25 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
                 "E2E_WORKER_DATABASE_MAX_OVERFLOW": os.getenv(
                     "E2E_WORKER_DATABASE_MAX_OVERFLOW", "0"
                 ),
-                "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", str(api_workers)),
+                "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", "2"),
+                "E2E_AUTH_WORKERS": os.getenv("E2E_AUTH_WORKERS", "1"),
+                # R3 fires at concurrency 80. Each API request can hold
+                # its relay session across the auth-root round trip, and
+                # the root holds an ingress session for the same call;
+                # size both pools so the load profile measures server
+                # work rather than pool checkout waits.
+                "E2E_API_DATABASE_POOL_SIZE": os.getenv(
+                    "E2E_API_DATABASE_POOL_SIZE", "40"
+                ),
+                "E2E_API_DATABASE_MAX_OVERFLOW": os.getenv(
+                    "E2E_API_DATABASE_MAX_OVERFLOW", "0"
+                ),
+                "E2E_AUTH_DATABASE_POOL_SIZE": os.getenv(
+                    "E2E_AUTH_DATABASE_POOL_SIZE", "30"
+                ),
+                "E2E_AUTH_DATABASE_MAX_OVERFLOW": os.getenv(
+                    "E2E_AUTH_DATABASE_MAX_OVERFLOW", "0"
+                ),
             }
         )
     return env
@@ -1005,6 +1023,108 @@ def _provision_ingress_dsn_file(cfg: _Phase8Config, env: dict[str, str]) -> None
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(ingress_dsn)
     env["E2E_INGRESS_DSN_FILE"] = dsn_path
+
+
+def _provision_source_attestation_key(env: dict[str, str]) -> None:
+    """Mount an ephemeral XXV source-attestation seed into the auth root.
+
+    Full-physics e2e exercises the same required-attestation law as a
+    deployment: the authentication root signs the provider-verified amount
+    inside the ingress transaction. The seed is generated per run and never
+    written to the repository or database.
+    """
+    import base64
+    import tempfile
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+    )
+
+    private_key = Ed25519PrivateKey.generate()
+    private_raw = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    private_seed = base64.urlsafe_b64encode(private_raw).rstrip(b"=").decode("ascii")
+    fd, key_path = tempfile.mkstemp(prefix="b26_p2_source_attestation_key_p8_")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(private_seed)
+    public_b64 = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+    ).rstrip(b"=").decode("ascii")
+    fd_pub, public_path = tempfile.mkstemp(prefix="b26_p2_source_attestation_pub_p8_")
+    with os.fdopen(fd_pub, "w", encoding="utf-8") as handle:
+        handle.write(public_b64)
+    env["E2E_SOURCE_ATTESTATION_KEY_FILE"] = key_path
+    env["E2E_SOURCE_ATTESTATION_PUBLIC_KEY_FILE"] = public_path
+    env["E2E_SOURCE_ATTESTATION_REQUIRED"] = "true"
+    env["E2E_SOURCE_EVIDENCE_JOURNAL_PATH"] = "/tmp/b26_p2_source_evidence.jsonl"
+
+
+def _probe_source_evidence_journal(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+    """Read and chain-validate the auth root's journal after the load leg."""
+    journal_path = env.get(
+        "E2E_SOURCE_EVIDENCE_JOURNAL_PATH",
+        "/tmp/b26_p2_source_evidence.jsonl",
+    )
+    code = (
+        "import json;"
+        "from app.revenue_verification.source_evidence_journal import "
+        "load_source_fact_records;"
+        f"p={journal_path!r};"
+        "r=load_source_fact_records(p) or [];"
+        "print(json.dumps({"
+        "'path':p,'record_count':len(r),"
+        "'prepared_count':sum(1 for x in r if x.get('version')!='b26-p2-source-fact-outcome-v1'),"
+        "'outcome_count':sum(1 for x in r if x.get('version')=='b26-p2-source-fact-outcome-v1'),"
+        "'tip':r[-1].get('record_hash') if r else None}))"
+    )
+    proc = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.e2e.yml",
+            "exec",
+            "-T",
+            "auth_ingress",
+            "python",
+            "-c",
+            code,
+        ],
+        cwd=str(cfg.repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "source evidence journal probe failed: "
+            f"{proc.stdout}{proc.stderr}"
+        )
+    payload = None
+    for line in reversed(proc.stdout.splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            payload = json.loads(line)
+            break
+    if payload is None:
+        raise RuntimeError("source evidence journal probe returned no JSON")
+    if int(payload.get("record_count", 0)) <= 0:
+        raise RuntimeError("source evidence journal is empty after the load leg")
+    if int(payload.get("outcome_count", 0)) <= 0:
+        raise RuntimeError("source evidence journal has no signed outcomes")
+    artifact = cfg.artifact_dir / "source_evidence_journal_probe.json"
+    artifact.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return payload
 
 
 def _wait_for_auth_root(
@@ -1312,6 +1432,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         # dedicated auth root (single secret-delivery law; the API
         # never receives it) and boot the root alongside the relay.
         _provision_ingress_dsn_file(cfg, env)
+        _provision_source_attestation_key(env)
         run_step(
             "compose_up_runtime",
             [
@@ -1603,6 +1724,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             raise r3_step_error
         if collect_error is not None:
             raise collect_error
+        journal_probe = _probe_source_evidence_journal(cfg, env)
         r3_profile = _extract_profile_metrics_from_r3_log(
             cfg.logs_dir / "r3_ingestion_under_fire.log",
             "EG3_4_Test2_Month18",
@@ -1783,6 +1905,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         )
         _assert_secret_hygiene(cfg.logs_dir / "compose_logs.log")
         gates["eg8_7_operational_readiness_pack"] = "pass"
+        gates["eg8_8_source_evidence_journal"] = "pass"
         return {
             "run_authority": run_authority,
             "openapi_spec_sha256": openapi_spec_sha256,
@@ -1790,6 +1913,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "eg8_5": eg85_evidence,
             "negative_controls": negative_controls,
             "container_identity": container_identity_evidence,
+            "source_evidence_journal": journal_probe,
         }
     finally:
         if llm_load_proc is not None and llm_load_proc.poll() is None:

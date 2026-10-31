@@ -16,10 +16,12 @@ python_path() {
   if [[ "$python_bin" == *.exe ]] && command -v wslpath >/dev/null 2>&1; then
     wslpath -w "$1" 2>/dev/null || {
       local windows_path="C:${1#/mnt/c}"
-      printf '%s\n' "${windows_path//\//\\}"
+      printf '%s
+' "${windows_path//\//\\}"
     }
   else
-    printf '%s\n' "$1"
+    printf '%s
+' "$1"
   fi
 }
 
@@ -55,7 +57,9 @@ openssl req -x509 -newkey rsa:2048 -nodes \
 openssl req -newkey rsa:2048 -nodes \
   -keyout "$tls_dir/signer-key.pem" -out "$tls_dir/signer.csr" \
   -subj '/CN=trust_signer' >/dev/null 2>&1
-printf 'subjectAltName=DNS:trust_signer,DNS:localhost\nextendedKeyUsage=serverAuth\n' \
+printf 'subjectAltName=DNS:trust_signer,DNS:localhost
+extendedKeyUsage=serverAuth
+' \
   > "$tls_dir/signer.ext"
 openssl x509 -req -in "$tls_dir/signer.csr" \
   -CA "$tls_dir/ca.pem" -CAkey "$tls_dir/ca-key.pem" -CAcreateserial \
@@ -88,6 +92,12 @@ public_bytes = private_key.public_key().public_bytes(
     format=serialization.PublicFormat.Raw,
 )
 b64 = lambda value: base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+witness_seed = os.urandom(32)
+witness_key = Ed25519PrivateKey.from_private_bytes(witness_seed)
+witness_public = witness_key.public_key().public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw,
+)
 valid_from = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
 jwks = {
     "keys": [{
@@ -109,6 +119,9 @@ values = {
     "C19_TRUST_SIGNING_KEY_VALID_FROM": valid_from,
     "C19_TRUST_PUBLIC_JWKS_JSON": json.dumps(jwks, separators=(",", ":")),
     "C19_TRUST_SIGNER_SHARED_SECRET": b64(os.urandom(32)),
+    "C19_SOURCE_ATTESTATION_KEY_B64URL": b64(os.urandom(32)),
+    "C19_HISTORY_WITNESS_PRIVATE_KEY_B64URL": b64(witness_seed),
+    "C19_HISTORY_WITNESS_PUBLIC_KEY_B64URL": b64(witness_public),
 }
 for key, value in values.items():
     print(f"export {key}={shlex.quote(value)}")
@@ -116,6 +129,19 @@ PY
 )"
 
 export C19_API_DATABASE_URL='postgresql://app_user:app_user@postgres:5432/skeldir_c19'
+export C19_SOURCE_ATTESTATION_KEY_FILE="${runtime_root}/b26_p2_source_attestation_key"
+printf '%s' "$C19_SOURCE_ATTESTATION_KEY_B64URL" > "$C19_SOURCE_ATTESTATION_KEY_FILE"
+chmod 600 "$C19_SOURCE_ATTESTATION_KEY_FILE"
+# XXV history witness: the observer process signs checkpoints over the live
+# correction ledger; issuance reads the same journal/custody. The private
+# seed stays outside the shared directory and is mounted only into the
+# observer container.
+export C19_HISTORY_WITNESS_DIR="${runtime_root}/history_witness"
+export C19_HISTORY_WITNESS_PRIVATE_KEY_FILE="${runtime_root}/history_witness_private.key"
+mkdir -p "$C19_HISTORY_WITNESS_DIR"
+printf '%s' "$C19_HISTORY_WITNESS_PRIVATE_KEY_B64URL" > "$C19_HISTORY_WITNESS_PRIVATE_KEY_FILE"
+printf '%s' "$C19_HISTORY_WITNESS_PUBLIC_KEY_B64URL" > "$C19_HISTORY_WITNESS_DIR/witness.pub"
+chmod 600 "$C19_HISTORY_WITNESS_PRIVATE_KEY_FILE" "$C19_HISTORY_WITNESS_DIR/witness.pub"
 # B2.6-P2 Corrective XIV Architecture B: the API is a non-authoritative
 # byte relay (no ingress DB capability); the dedicated authentication
 # trust root (auth_ingress service) alone mounts the file-mounted
@@ -157,9 +183,13 @@ if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
     C19_AUTH_JWT_PUBLIC_KEY_RING_JSON C19_TRUST_PUBLIC_JWKS_JSON
     C19_TRUST_SIGNING_KEY_SEED_B64URL C19_TRUST_SIGNING_KEY_ID
     C19_TRUST_SIGNING_KEY_VALID_FROM C19_TRUST_SIGNER_SHARED_SECRET
+    C19_SOURCE_ATTESTATION_KEY_FILE C19_SOURCE_ATTESTATION_KEY_B64URL
+    C19_HISTORY_WITNESS_DIR C19_HISTORY_WITNESS_PRIVATE_KEY_FILE
+    C19_HISTORY_WITNESS_PRIVATE_KEY_B64URL C19_HISTORY_WITNESS_PUBLIC_KEY_B64URL
   )
   for name in "${teardown_names[@]}"; do
-    printf '%s=%s\n' "$name" "${!name}" >> "$teardown_env"
+    printf '%s=%s
+' "$name" "${!name}" >> "$teardown_env"
   done
   chmod 600 "$teardown_env"
 fi
@@ -181,19 +211,28 @@ sleep 2
   | tee "$evidence_dir/c19_authority_boundary.out"
 
 export MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
+PGPASSWORD=postgres psql "$C19_ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_auth_lookup') THEN CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS; END IF; END \$\$;" \
+  -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;"
 export DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
 if [[ "$python_bin" == *.exe ]]; then
   export WSLENV="${WSLENV:+$WSLENV:}MIGRATION_DATABASE_URL:DATABASE_URL"
 fi
 "$python_bin" -m alembic upgrade head | tee "$evidence_dir/c19_migration_replay.out"
 "$python_bin" -m alembic current | tee "$evidence_dir/c19_migration_head.out"
+# C19 runs the real publisher under app_dispatch_publisher. The read-only
+# construction-revision guard needs EXECUTE; grant it as the governed admin
+# after migrations, and keep the grant out of schema-history head.
+PGPASSWORD=postgres psql "$C19_ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -c "GRANT EXECUTE ON FUNCTION public.skeldir_database_construction_revisions() TO app_dispatch_publisher;" \
+  | tee -a "$evidence_dir/c19_migration_head.out"
 if [[ "$python_bin" == *.exe ]]; then
   unset WSLENV
 fi
 
 "${compose[@]}" up -d --build \
   trust_signer api worker_attribution worker_b23_a worker_b23_b \
-  worker_bayesian worker_publisher beat
+  worker_bayesian worker_publisher worker_history beat
 for _ in $(seq 1 120); do
   if curl --fail --silent "$C19_API_BASE_URL/health/ready" >/dev/null; then
     break
@@ -212,7 +251,7 @@ c19_report_topology_failure() {
   "${compose[@]}" ps --all || true
   local service
   for service in postgres trust_signer api worker_attribution worker_b23_a \
-      worker_b23_b worker_bayesian worker_publisher beat; do
+      worker_b23_b worker_bayesian worker_publisher worker_history beat; do
     echo "----- c19 container logs: $service -----"
     "${compose[@]}" logs --no-color --tail 120 "$service" 2>&1 || true
   done
@@ -274,7 +313,8 @@ echo "c21_authority_test_path=$repo_root/backend/tests/trust/test_b25_p13_c21_fr
 if [[ "$python_bin" == *.exe ]]; then
   powershell_runner="$runtime_root/run-c19-observer.ps1"
   : > "$powershell_runner"
-  printf '%s\n' '$ErrorActionPreference = "Stop"' >> "$powershell_runner"
+  printf '%s
+' '$ErrorActionPreference = "Stop"' >> "$powershell_runner"
   observer_env=(
     MIGRATION_DATABASE_URL DATABASE_URL
     C19_POSTGRES_PORT C19_API_PORT C19_COMPOSE_PROJECT_NAME
@@ -301,15 +341,20 @@ if [[ "$python_bin" == *.exe ]]; then
         ;;
     esac
     encoded="$(printf '%s' "$value" | base64 -w 0)"
-    printf '$env:%s = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("%s"))\n' \
+    printf '$env:%s = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("%s"))
+' \
       "$name" "$encoded" >> "$powershell_runner"
   done
-  printf 'Set-Location -LiteralPath "%s"\n' "$(python_path "$repo_root")" >> "$powershell_runner"
-  printf '& "%s" -m pytest backend/tests/trust/test_b25_p13_c19_context_robust_topology.py backend/tests/trust/test_b25_p13_c20_runtime_authority.py backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py -q -s --no-header -p no:randomly *>&1 | Tee-Object -FilePath "%s"\n' \
+  printf 'Set-Location -LiteralPath "%s"
+' "$(python_path "$repo_root")" >> "$powershell_runner"
+  printf '& "%s" -m pytest backend/tests/trust/test_b25_p13_c19_context_robust_topology.py backend/tests/trust/test_b25_p13_c20_runtime_authority.py backend/tests/trust/test_b25_p13_c21_freshness_issuance_authority.py -q -s --no-header -p no:randomly *>&1 | Tee-Object -FilePath "%s"
+' \
     "$(python_path "$python_bin")" "$(python_path "$evidence_dir/c19_topology_pytest.out")" \
     >> "$powershell_runner"
-  printf '%s\n' 'if ($null -eq $LASTEXITCODE) { exit 1 }' >> "$powershell_runner"
-  printf '%s\n' 'exit $LASTEXITCODE' >> "$powershell_runner"
+  printf '%s
+' 'if ($null -eq $LASTEXITCODE) { exit 1 }' >> "$powershell_runner"
+  printf '%s
+' 'exit $LASTEXITCODE' >> "$powershell_runner"
   observer_status=1
   for _ in 1 2 3; do
     set +e

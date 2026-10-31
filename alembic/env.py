@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 from alembic import context
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -112,6 +114,64 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _provision_ci_migration_roles(connection) -> None:
+    """Create CI-only role placeholders before the migration chain runs.
+
+    Production deployments use the explicit preflight/provisioner and fail if
+    a runtime login role is absent. CI lanes that migrate with an admin
+    principal need the full role graph before the earliest grant-bearing
+    migration, otherwise a later-created role would miss governed grants.
+    The placeholders are NOLOGIN; workflows that need a login provision it
+    themselves before this step.
+    """
+    if not ci_mode:
+        return
+    roles = (
+        ("app_auth_lookup", "NOLOGIN BYPASSRLS"),
+        ("app_user", "NOLOGIN"),
+        ("app_ingress", "NOLOGIN"),
+        ("app_worker", "NOLOGIN"),
+        ("app_trust_issuer", "NOLOGIN"),
+        ("app_ro", "NOLOGIN"),
+        ("app_relay", "NOLOGIN"),
+    )
+    for role, attributes in roles:
+        exists = connection.execute(
+            text("SELECT 1 FROM pg_roles WHERE rolname = :role"),
+            {"role": role},
+        ).scalar()
+        if not exists:
+            connection.execute(
+                text(f'CREATE ROLE "{role}" {attributes}')
+            )
+    # CI lanes migrate as a role that may not yet inherit the lookup owner.
+    # The XXV owner-transfer migration requires that inheritance; grant it
+    # here for the CI placeholder only. Production uses the governed preflight
+    # and never relies on this branch.
+    current_role = connection.execute(text("SELECT current_user")).scalar()
+    if current_role and current_role != "app_auth_lookup":
+        already_member = connection.execute(
+            text(
+                "SELECT pg_has_role(current_user,"
+                " 'app_auth_lookup', 'member')"
+            )
+        ).scalar()
+        if not already_member:
+            try:
+                connection.execute(
+                    text(
+                        'GRANT "app_auth_lookup" TO '
+                        f'"{current_role}"'
+                    )
+                )
+            except ProgrammingError:
+                # A re-upgrade can reach this point after the migration
+                # revoked membership. The migration itself verifies either
+                # membership or already-transferred ownership and raises a
+                # precise error if neither holds.
+                pass
+
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
@@ -126,6 +186,8 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        _provision_ci_migration_roles(connection)
+        connection.commit()
         context.configure(
             connection=connection, target_metadata=target_metadata
         )

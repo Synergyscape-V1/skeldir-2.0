@@ -72,6 +72,8 @@ def test_witness_gate_admits_matching_live_state(
         ledger_tip_hash="b" * 64,
         ledger_prefix_digest=digest,
         authority_universe=UNIVERSE,
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
     )
 
     assert _verify_signed_history_witness(
@@ -349,6 +351,8 @@ def test_same_count_retry_does_not_fork_custody(tmp_path: Path) -> None:
         ledger_tip_hash="2" * 64,
         ledger_prefix_digest="b" * 64,
         authority_universe=UNIVERSE,
+        prefix_anchor_seq=1,
+        prefix_anchor_hash="1" * 64,
         custody_path=custody,
         heartbeat_path=heartbeat,
     )
@@ -585,9 +589,17 @@ def _production_anchor_fixture(
         ledger_tip_hash=None,
         ledger_prefix_digest=digest,
         authority_universe=UNIVERSE,
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
     )
     fingerprint = public_key_fingerprint(load_public_key(public_path))
-    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    # XXV (HB-01): the fixture used to set ENVIRONMENT="production" -- a value
+    # resolve_control_plane_env never produces, because it canonicalises that
+    # alias to "prod" before Settings stores it. So these cells proved the
+    # anchor guard worked only in a state no deployment can be in, while the
+    # guard was unreachable in every real process. The fixture now uses the
+    # canonical value, and the guard itself no longer depends on it.
+    monkeypatch.setattr(settings, "ENVIRONMENT", "prod")
     return journal, public_path, checkpoint, fingerprint
 
 
@@ -678,6 +690,11 @@ def test_production_missing_custody_refuses(
         "B26_P2_HISTORY_WITNESS_GENESIS_HASH",
         checkpoint.checkpoint_hash,
     )
+    # XXV: the fixture now publishes custody with the checkpoint (a lawful
+    # observer always does), so the custody record has to be REMOVED to
+    # exercise the loss this cell governs -- which is exactly the capability
+    # both independent audits used.
+    Path(settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH).unlink()
     accepted, reason = _verify_signed_history_witness(
         ledger_count=0,
         ledger_tip_hash=None,
@@ -686,3 +703,226 @@ def test_production_missing_custody_refuses(
     )
     assert accepted is False
     assert reason.endswith("witness_custody_missing")
+
+
+def test_xxv_compiled_anchor_mismatch_refuses_outside_production(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """XXV (HB-01/A1): the anchor comparison is not behind an environment.
+
+    Both XXIV audits replaced the entire witness verification root and kept
+    receiving signed envelopes, because the comparison sat behind
+    ``settings.ENVIRONMENT == "production"`` -- unreachable after
+    canonicalisation. The comparison now fires wherever the image carries an
+    anchor, which this cell asserts in a NON-production environment: if the
+    guard were still environment-gated, the mismatch below would be ignored.
+    """
+    private_path, public_path = _witness_files(tmp_path)
+    journal = _enable(monkeypatch, tmp_path, public=public_path)
+    digest = hashlib.sha256(b"").hexdigest()
+    append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=0,
+        ledger_tip_seq=None,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
+        authority_universe=UNIVERSE,
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
+    )
+    monkeypatch.setattr(settings, "ENVIRONMENT", "ci")
+    monkeypatch.setattr(witness_anchor, "COMPILED_PUBLIC_KEY_SHA256", "f" * 64)
+    monkeypatch.setattr(
+        witness_anchor,
+        "COMPILED_GENESIS_HASH",
+        settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH or "e" * 64,
+    )
+    accepted, reason = _verify_signed_history_witness(
+        ledger_count=0,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
+        authority_universe=UNIVERSE,
+    )
+    assert accepted is False
+    assert "witness_compiled_" in reason
+
+
+def test_xxv_missing_custody_refuses_outside_production(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """XXV (HB-02/A5): custody loss refuses everywhere, not only in "production".
+
+    Nicholas deleted the custody record on a production-configured deployment
+    and received HTTP 200 with a signed envelope for a subject that had never
+    been issued; Trey reproduced it. The refusal was written, but behind the
+    same unreachable environment literal.
+    """
+    private_path, public_path = _witness_files(tmp_path)
+    journal = _enable(monkeypatch, tmp_path, public=public_path)
+    digest = hashlib.sha256(b"").hexdigest()
+    append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=0,
+        ledger_tip_seq=None,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
+        authority_universe=UNIVERSE,
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
+    )
+    monkeypatch.setattr(settings, "ENVIRONMENT", "ci")
+    assert _verify_signed_history_witness(
+        ledger_count=0,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
+        authority_universe=UNIVERSE,
+    ) == (True, "")
+
+    Path(settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH).unlink()
+    accepted, reason = _verify_signed_history_witness(
+        ledger_count=0,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=digest,
+        authority_universe=UNIVERSE,
+    )
+    assert accepted is False
+    assert reason.endswith("witness_custody_missing")
+
+
+def test_tenant_failure_is_committed_without_erasing_healthy_progress(
+    tmp_path: Path,
+) -> None:
+    """A failed tenant is named in the signed checkpoint; healthy facts stay."""
+
+    from app.revenue_verification.source_evidence import (
+        global_source_evidence_digest,
+    )
+
+    private_path, _public_path = _witness_files(tmp_path)
+    journal = tmp_path / "journal.jsonl"
+    custody = tmp_path / "custody.json"
+    tenant_a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    tenant_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=1,
+        ledger_tip_seq=1,
+        ledger_tip_hash="1" * 64,
+        ledger_prefix_digest="a" * 64,
+        authority_universe=UNIVERSE,
+        custody_path=custody,
+        source_evidence_digest=global_source_evidence_digest(
+            {tenant_a: {"digest": "c" * 64, "count": 1}}
+        ),
+        source_evidence_by_tenant={tenant_a: "c" * 64},
+        source_evidence_count=1,
+        source_evidence_manifest_by_tenant={
+            tenant_a: {"facts": ("a" * 64,), "states": ("1" * 64,)}
+        },
+    )
+    second_map = {tenant_b: "e" * 64}
+    checkpoint = append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=2,
+        ledger_tip_seq=2,
+        ledger_tip_hash="2" * 64,
+        ledger_prefix_digest="b" * 64,
+        authority_universe=UNIVERSE,
+        prefix_anchor_seq=1,
+        prefix_anchor_hash="1" * 64,
+        custody_path=custody,
+        source_evidence_digest=global_source_evidence_digest(
+            {tenant_b: {"digest": "e" * 64, "count": 1}}
+        ),
+        source_evidence_by_tenant=second_map,
+        source_evidence_count=1,
+        source_evidence_manifest_by_tenant={
+            tenant_b: {"facts": ("b" * 64,), "states": ()}
+        },
+        source_evidence_failures_by_tenant={tenant_a: "f" * 64},
+    )
+
+    assert checkpoint.source_evidence_failures_by_tenant == {tenant_a: "f" * 64}
+    verified = verify_journal(
+        journal,
+        public_key_path=None,
+        public_key=load_public_key(
+            tmp_path / "witness.ed25519.pub"
+        ),
+    )
+    assert verified.latest.source_evidence_failures_by_tenant == {
+        tenant_a: "f" * 64
+    }
+
+
+def test_source_manifest_preserves_prior_facts_across_tenants(
+    tmp_path: Path,
+) -> None:
+    from app.revenue_verification.source_evidence import (
+        global_source_evidence_digest,
+    )
+
+    private_path, _public_path = _witness_files(tmp_path)
+    journal = tmp_path / "journal.jsonl"
+    custody = tmp_path / "custody.json"
+    tenant_a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    tenant_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    fact_a = "a" * 64
+    fact_b = "b" * 64
+    state_a = "1" * 64
+    first_map = {tenant_a: "c" * 64}
+    append_checkpoint(
+        journal,
+        private_key_path=private_path,
+        ledger_count=1,
+        ledger_tip_seq=1,
+        ledger_tip_hash="1" * 64,
+        ledger_prefix_digest="a" * 64,
+        authority_universe=UNIVERSE,
+        custody_path=custody,
+        source_evidence_digest=global_source_evidence_digest(
+            {
+                tenant_a: {"digest": "c" * 64, "count": 1},
+            }
+        ),
+        source_evidence_by_tenant=first_map,
+        source_evidence_count=1,
+        source_evidence_manifest_by_tenant={
+            tenant_a: {"facts": (fact_a,), "states": (state_a,)}
+        },
+    )
+    second_map = {
+        tenant_a: "d" * 64,
+        tenant_b: "e" * 64,
+    }
+    with pytest.raises(
+        HistoryWitnessError,
+        match="witness_source_evidence_fact_missing",
+    ):
+        append_checkpoint(
+            journal,
+            private_key_path=private_path,
+            ledger_count=1,
+            ledger_tip_seq=1,
+            ledger_tip_hash="1" * 64,
+            ledger_prefix_digest="a" * 64,
+            authority_universe=UNIVERSE,
+            custody_path=custody,
+            source_evidence_digest=global_source_evidence_digest(
+                {
+                    tenant_a: {"digest": "d" * 64, "count": 0},
+                    tenant_b: {"digest": "e" * 64, "count": 2},
+                }
+            ),
+            source_evidence_by_tenant=second_map,
+            source_evidence_count=2,
+            source_evidence_manifest_by_tenant={
+                tenant_a: {"facts": (), "states": ()},
+                tenant_b: {"facts": (fact_b,), "states": ()},
+            },
+        )
+

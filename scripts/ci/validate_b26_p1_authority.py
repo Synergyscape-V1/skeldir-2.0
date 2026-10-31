@@ -9,6 +9,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -176,6 +177,14 @@ COVERAGE_SQL_GRANDFATHERED_FILES = frozenset(
         "backend/app/revenue_verification/match_engine_kernel.py",
         "backend/app/bayesian/eligibility.py",
     }
+)
+# XXV source attestation has exactly one legitimate coverage-money read: the
+# verdict/source statement used to verify the signed amount. It is not a
+# coverage authority. Pin the exact SQL value rather than exempting the file,
+# so any aggregation or other change in that file remains RED.
+SOURCE_ATTESTATION_PATH = "backend/app/revenue_verification/source_attestation.py"
+SOURCE_ATTESTATION_READ_SQL_SHA256 = (
+    "ea6b926a6c3564bc7dbae4ca7fbf81526b39202b8b71cfe5fc64685d66117424"
 )
 # semantic_contract.py legitimately names total_business_minor inside the golden
 # falsification vector as the forbidden reference. Exclude only that file from
@@ -852,6 +861,88 @@ def _validate_b26_namespace(
     details["b26_successor_product_machinery_enforced"] = enforce_product_machinery
 
 
+def _normalize_source_attestation_sql(value: str) -> str:
+    """Normalize formatting, not meaning.
+
+    Whitespace and SQL comments are not authority. Case is folded for
+    keywords/identifiers; the resulting token stream is pinned, so a
+    formatting-only edit remains the same read while any added aggregation,
+    grouping, projection, table, or predicate changes the hash.
+    """
+    without_comments = re.sub(
+        r"--[^\n]*|/\*.*?\*/", " ", value, flags=re.DOTALL
+    )
+    return re.sub(r"\s+", "", without_comments).lower().rstrip(";")
+
+
+def _is_source_attestation_read(rel: str, value: str) -> bool:
+    return (
+        rel == SOURCE_ATTESTATION_PATH
+        and hashlib.sha256(
+            _normalize_source_attestation_sql(value).encode("utf-8")
+        ).hexdigest()
+        == SOURCE_ATTESTATION_READ_SQL_SHA256
+    )
+
+
+def _constant_string(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _constant_string(node.left)
+        right = _constant_string(node.right)
+        if left is not None and right is not None:
+            return left + right
+    return None
+
+
+def _string_values(tree: ast.AST):
+    """Yield every literal and every fully-literal concatenation.
+
+    Formatting is not authority: the classifier normalizes whitespace
+    before looking for SQL, and a SQL string split with ``+`` is still one
+    candidate read. Both are needed so newline/tab/concatenation variants
+    cannot hide a duplicate coverage authority.
+    """
+    for node in ast.walk(tree):
+        value = _constant_string(node)
+        if value is not None:
+            yield node.lineno, value
+
+
+def _call_is_sum(node: ast.Call) -> bool:
+    func = node.func
+    if isinstance(func, ast.Name) and func.id == "sum":
+        return True
+    return isinstance(func, ast.Attribute) and func.attr == "sum"
+
+
+def _node_mentions_coverage_money(node: ast.AST) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name) and child.id in COVERAGE_MONEY_SQL_TOKENS:
+            return True
+        if isinstance(child, ast.Attribute) and child.attr in COVERAGE_MONEY_SQL_TOKENS:
+            return True
+        if isinstance(child, ast.Constant) and isinstance(child.value, str):
+            compact = re.sub(r"\s+", "", child.value.lower())
+            if any(token in compact for token in COVERAGE_MONEY_SQL_TOKENS):
+                return True
+    return False
+
+
+def _call_is_func_sum(node: ast.Call) -> bool:
+    return isinstance(node.func, ast.Attribute) and node.func.attr == "sum"
+
+
+def _node_has_coverage_string_literal(node: ast.AST) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.Constant) and isinstance(child.value, str):
+            compact = re.sub(r"\s+", "", child.value.lower())
+            if any(token in compact for token in COVERAGE_MONEY_SQL_TOKENS):
+                return True
+    return False
+
+
 def _check_repo_wide_coverage_and_denominator(
     path: Path, source: str, tree: ast.AST, violations: list[str]
 ) -> None:
@@ -866,15 +957,46 @@ def _check_repo_wide_coverage_and_denominator(
     """
     rel = path.relative_to(REPO_ROOT).as_posix()
     if rel not in COVERAGE_SQL_GRANDFATHERED_FILES:
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                lowered = node.value.lower()
-                if "select " in lowered or "sum(" in lowered:
-                    if any(token in lowered for token in COVERAGE_MONEY_SQL_TOKENS):
-                        violations.append(
-                            f"b26_duplicate_coverage_authority:{rel}:{node.lineno}"
-                        )
-                        break
+        for lineno, value in _string_values(tree):
+            compact = re.sub(r"\s+", "", value.lower())
+            if not any(
+                marker in compact
+                for marker in (
+                    "sum(",
+                    "count(",
+                    "avg(",
+                    "groupby",
+                    "over(",
+                    "func.sum",
+                    "total(",
+                )
+            ):
+                continue
+            if not any(token in compact for token in COVERAGE_MONEY_SQL_TOKENS):
+                continue
+            if _is_source_attestation_read(rel, value):
+                continue
+            violations.append(
+                f"b26_duplicate_coverage_authority:{rel}:{lineno}"
+            )
+            break
+        if not any(
+            f"b26_duplicate_coverage_authority:{rel}:" in item
+            for item in violations
+        ):
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not _call_is_sum(node):
+                    continue
+                mentions = (
+                    _node_mentions_coverage_money(node)
+                    if _call_is_func_sum(node)
+                    else _node_has_coverage_string_literal(node)
+                )
+                if mentions:
+                    violations.append(
+                        f"b26_duplicate_coverage_authority:{rel}:{node.lineno}"
+                    )
+                    break
     if rel not in TOTAL_BUSINESS_ALLOWLIST_FILES:
         found = False
         for node in ast.walk(tree):

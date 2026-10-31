@@ -20,6 +20,7 @@ class ManagedSettingContract:
     rotation_criticality: RotationCriticality
     owner: str
     call_sites: tuple[str, ...]
+    process_roles: tuple[str, ...] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -34,6 +35,7 @@ def _contract(
     owner: str,
     call_sites: tuple[str, ...],
     env_scopes: tuple[str, ...] = ALLOWED_SECRET_ENVS,
+    process_roles: tuple[str, ...] | None = None,
 ) -> ManagedSettingContract:
     return ManagedSettingContract(
         key=key,
@@ -43,6 +45,7 @@ def _contract(
         rotation_criticality=rotation_criticality,
         owner=owner,
         call_sites=call_sites,
+        process_roles=process_roles,
     )
 
 
@@ -63,6 +66,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="critical",
         owner="platform-security",
         call_sites=("alembic/env.py", "scripts/run_alembic.ps1"),
+        process_roles=("migration",),
     ),
     "DATABASE_POOL_SIZE": _contract(
         key="DATABASE_POOL_SIZE",
@@ -666,6 +670,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/history_witness.py",
             "backend/app/tasks/b26_p2_history.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH",
@@ -677,6 +682,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/builder.py",
             "backend/app/trust/history_witness.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH",
@@ -688,6 +694,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/tasks/b26_p2_history.py",
             "backend/app/trust/history_witness.py",
         ),
+        process_roles=("observer_b26_p2",),
     ),
     "B26_P2_HISTORY_WITNESS_GENESIS_HASH": _contract(
         key="B26_P2_HISTORY_WITNESS_GENESIS_HASH",
@@ -699,6 +706,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/builder.py",
             "backend/app/tasks/b26_p2_history.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_HORIZON_SECONDS": _contract(
         key="B26_P2_HISTORY_WITNESS_HORIZON_SECONDS",
@@ -707,6 +715,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="none",
         owner="backend-platform",
         call_sites=("backend/app/trust/builder.py",),
+        process_roles=("api",),
     ),
     "B26_P2_HISTORY_WITNESS_REQUIRED": _contract(
         key="B26_P2_HISTORY_WITNESS_REQUIRED",
@@ -715,6 +724,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="none",
         owner="backend-platform",
         call_sites=("backend/app/trust/builder.py",),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH",
@@ -726,6 +736,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/builder.py",
             "backend/app/tasks/b26_p2_history.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
     ),
     "B26_P2_HISTORY_WITNESS_CUSTODY_PATH": _contract(
         key="B26_P2_HISTORY_WITNESS_CUSTODY_PATH",
@@ -737,8 +748,128 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
             "backend/app/trust/builder.py",
             "backend/app/tasks/b26_p2_history.py",
         ),
+        process_roles=("observer_b26_p2", "api"),
+    ),
+    "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH": _contract(
+        key="B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH",
+        classification="config",
+        aws_path_template=(
+            "/skeldir/{env}/config/b26-p2/source-evidence-journal-path"
+        ),
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=(
+            "backend/app/revenue_verification/source_evidence_journal.py",
+            "backend/app/revenue_verification/source_evidence.py",
+            "backend/app/revenue_verification/source_attestation.py",
+            "backend/app/tasks/b26_p2_history.py",
+        ),
+        process_roles=("auth_ingress", "observer_b26_p2", "api"),
+    ),
+    "B26_P2_SOURCE_ATTESTATION_PRIVATE_KEY_PATH": _contract(
+        key="B26_P2_SOURCE_ATTESTATION_PRIVATE_KEY_PATH",
+        classification="config",
+        aws_path_template=(
+            "/skeldir/{env}/config/b26-p2/source-attestation-private-key-path"
+        ),
+        rotation_criticality="high",
+        owner="platform-security",
+        call_sites=(
+            "backend/app/auth_service/server.py",
+            "backend/app/revenue_verification/source_attestation.py",
+        ),
+        process_roles=("auth_ingress",),
+    ),
+    "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH": _contract(
+        key="B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH",
+        classification="config",
+        aws_path_template=(
+            "/skeldir/{env}/config/b26-p2/source-attestation-public-key-path"
+        ),
+        rotation_criticality="high",
+        owner="backend-platform",
+        call_sites=(
+            "backend/app/revenue_verification/source_attestation.py",
+            "backend/app/trust/builder.py",
+        ),
+        process_roles=(
+            "auth_ingress",
+            "observer_b26_p2",
+            "api",
+            "worker",
+            "trust_issuer",
+        ),
+    ),
+    "B26_P2_SOURCE_ATTESTATION_REQUIRED": _contract(
+        key="B26_P2_SOURCE_ATTESTATION_REQUIRED",
+        classification="config",
+        aws_path_template=(
+            "/skeldir/{env}/config/b26-p2/source-attestation-required"
+        ),
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=(
+            "backend/app/core/config.py",
+            "backend/app/revenue_verification/source_attestation.py",
+            "backend/app/trust/builder.py",
+        ),
+        process_roles=(
+            "auth_ingress",
+            "observer_b26_p2",
+            "api",
+            "worker",
+            "trust_issuer",
+        ),
     ),
 }
+
+# One database credential per database-using process. The migration role keeps
+# its distinct migration secret; every runtime process resolves only its own
+# path. This mapping is the runtime consumer of the B11 authority matrix and is
+# validated against that matrix by scripts/ci/generate_b11_process_authority.py.
+PROCESS_DATABASE_SECRET_PATHS: dict[str, str] = {
+    "api": "/skeldir/{env}/secret/database/runtime-api-url",
+    "auth_ingress": "/skeldir/{env}/secret/database/runtime-auth_ingress-url",
+    "worker": "/skeldir/{env}/secret/database/runtime-worker-url",
+    "worker_bayesian": (
+        "/skeldir/{env}/secret/database/runtime-worker_bayesian-url"
+    ),
+    "worker_bayesian_publisher": (
+        "/skeldir/{env}/secret/database/runtime-worker_bayesian_publisher-url"
+    ),
+    "worker_b23": "/skeldir/{env}/secret/database/runtime-worker_b23-url",
+    "observer_b26_p2": (
+        "/skeldir/{env}/secret/database/runtime-observer_b26_p2-url"
+    ),
+    "b26_p2_relay": "/skeldir/{env}/secret/database/runtime-b26_p2_relay-url",
+    "beat": "/skeldir/{env}/secret/database/runtime-beat-url",
+    "trust_signer": "/skeldir/{env}/secret/database/runtime-trust_signer-url",
+    "trust_issuer": "/skeldir/{env}/secret/database/runtime-trust_issuer-url",
+    "migration": "/skeldir/{env}/secret/database/migration-url",
+}
+
+
+def resolve_process_database_secret_path(
+    process_role: str, canonical_env: str
+) -> str:
+    try:
+        template = PROCESS_DATABASE_SECRET_PATHS[process_role]
+    except KeyError as exc:
+        raise KeyError(
+            f"No process database secret defined for role: {process_role}"
+        ) from exc
+    return template.format(env=canonical_env)
+
+
+def process_role_allows(role: str, key: str) -> bool:
+    """Return whether one process role may resolve a managed setting."""
+
+    contract = MANAGED_SETTINGS_CONTRACT.get(key)
+    if contract is None:
+        return False
+    if contract.process_roles is None:
+        return True
+    return role in contract.process_roles
 
 
 def get_managed_setting_contract(key: str) -> ManagedSettingContract:

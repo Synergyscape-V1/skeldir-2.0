@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r /app/backend/requirements-lock.txt
 COPY backend /app/backend
 ARG B26_P2_HISTORY_WITNESS_PUBLIC_KEY_SHA256=""
 ARG B26_P2_HISTORY_WITNESS_GENESIS_HASH=""
+ARG B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256=""
 RUN python - <<'PY'
 import os
 from pathlib import Path
@@ -24,6 +25,9 @@ public_key_sha256 = os.environ.get(
 genesis_hash = os.environ.get(
     "B26_P2_HISTORY_WITNESS_GENESIS_HASH", ""
 ).strip()
+source_attestation_sha256 = os.environ.get(
+    "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256", ""
+).strip()
 target = Path("/app/backend/app/trust/witness_anchor.py")
 text = target.read_text(encoding="utf-8")
 text = text.replace(
@@ -33,6 +37,11 @@ text = text.replace(
 text = text.replace(
     "COMPILED_GENESIS_HASH: str | None = None",
     f"COMPILED_GENESIS_HASH: str | None = {genesis_hash!r}",
+)
+text = text.replace(
+    "COMPILED_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256: str | None = None",
+    "COMPILED_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256: str | None = "
+    f"{source_attestation_sha256!r}",
 )
 target.write_text(text, encoding="utf-8")
 PY

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Sequence, Union
 
 from alembic import op
+from sqlalchemy import text
 
 
 revision: str = "202603021130"
@@ -46,6 +47,47 @@ def _revoke_if_role_exists(role: str, revoke_sql: str) -> None:
     )
 
 
+def _revoke_if_role_and_function_exists(
+    role: str, function_signature: str, revoke_sql: str
+) -> None:
+    """Revoke only when both the role and the function still exist.
+
+    XXV-2 owns and removes its lookup functions before this predecessor
+    downgrade runs. A missing function is already in the target state;
+    revoking it would fail the whole base downgrade for no semantic gain.
+    """
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{role}')
+               AND to_regprocedure('{function_signature}') IS NOT NULL THEN
+                EXECUTE '{revoke_sql}';
+            END IF;
+        END
+        $$;
+        """
+    )
+
+
+def _new_lookup_owned_by_auth_lookup() -> bool:
+    """XXV-2 owns the runtime lookup; predecessor DDL must not replace it."""
+    return bool(
+        op.get_bind()
+        .execute(
+            text(
+                "SELECT count(*) = 1 AND bool_and("
+                "pg_get_userbyid(p.proowner) = 'app_auth_lookup')"
+                " FROM pg_proc p"
+                " JOIN pg_namespace n ON n.oid = p.pronamespace"
+                " WHERE n.nspname = 'auth'"
+                " AND p.proname = 'lookup_user_auth_by_login_hash'"
+            )
+        )
+        .scalar()
+    )
+
+
 def upgrade() -> None:
     op.execute("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash text")
     _grant_if_role_exists(
@@ -57,8 +99,9 @@ def upgrade() -> None:
         "GRANT REFERENCES ON TABLE public.users TO app_rw",
     )
 
-    op.execute(
-        """
+    if not _new_lookup_owned_by_auth_lookup():
+        op.execute(
+            """
         CREATE OR REPLACE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text)
         RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
         LANGUAGE sql
@@ -74,12 +117,12 @@ def upgrade() -> None:
             WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
-        """
-    )
-    op.execute("REVOKE ALL ON FUNCTION auth.lookup_user_auth_by_login_hash(text) FROM PUBLIC")
-    _grant_if_role_exists("app_user", "GRANT EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) TO app_user")
-    _grant_if_role_exists("app_rw", "GRANT EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) TO app_rw")
-    _grant_if_role_exists("app_ro", "GRANT EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) TO app_ro")
+            """
+        )
+        op.execute("REVOKE ALL ON FUNCTION auth.lookup_user_auth_by_login_hash(text) FROM PUBLIC")
+        _grant_if_role_exists("app_user", "GRANT EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) TO app_user")
+        _grant_if_role_exists("app_rw", "GRANT EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) TO app_rw")
+        _grant_if_role_exists("app_ro", "GRANT EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) TO app_ro")
 
     op.execute(
         """
@@ -177,19 +220,23 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS public.idx_auth_refresh_tokens_tenant_created_at")  # CI:DESTRUCTIVE_OK - rollback for B1.2-P4 substrate removal
     op.execute("DROP TABLE IF EXISTS public.auth_refresh_tokens")  # CI:DESTRUCTIVE_OK - rollback for B1.2-P4 substrate removal
 
-    _revoke_if_role_exists(
-        "app_ro",
-        "REVOKE EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) FROM app_ro",
-    )
-    _revoke_if_role_exists(
-        "app_rw",
-        "REVOKE EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) FROM app_rw",
-    )
-    _revoke_if_role_exists(
-        "app_user",
-        "REVOKE EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) FROM app_user",
-    )
-    op.execute("DROP FUNCTION IF EXISTS auth.lookup_user_auth_by_login_hash(text)")
+    if not _new_lookup_owned_by_auth_lookup():
+        _revoke_if_role_and_function_exists(
+            "app_ro",
+            "auth.lookup_user_auth_by_login_hash(text)",
+            "REVOKE EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) FROM app_ro",
+        )
+        _revoke_if_role_and_function_exists(
+            "app_rw",
+            "auth.lookup_user_auth_by_login_hash(text)",
+            "REVOKE EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) FROM app_rw",
+        )
+        _revoke_if_role_and_function_exists(
+            "app_user",
+            "auth.lookup_user_auth_by_login_hash(text)",
+            "REVOKE EXECUTE ON FUNCTION auth.lookup_user_auth_by_login_hash(text) FROM app_user",
+        )
+        op.execute("DROP FUNCTION IF EXISTS auth.lookup_user_auth_by_login_hash(text)")
 
     op.execute(
         """

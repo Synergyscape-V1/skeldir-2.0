@@ -42,6 +42,50 @@ from tests.helpers.webhook_secret_seed import (
 )
 
 
+_B23_P6_ATTESTATION_PRIVATE_KEY_PATH: Path | None = None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _b23_p6_source_attestation_key(tmp_path_factory):
+    """Give the synthetic B2.3 fixtures ordinary XXV source attestations.
+
+    The closure proof seeds authenticated ingress rows directly rather than
+    through a provider webhook. XXV refuses to count a current verdict whose
+    source amount has no signed attestation, so the fixture generates the
+    same auth-root-only keypair the shipping root would hold and signs each
+    seeded ingress amount. Production authority is unchanged.
+    """
+
+    global _B23_P6_ATTESTATION_PRIVATE_KEY_PATH
+    from app.core.config import settings
+    from app.revenue_verification.source_attestation import generate_keypair
+
+    base = tmp_path_factory.mktemp("b23_p6_source_attestation")
+    private_seed, public_b64 = generate_keypair()
+    private_path = base / "source.key"
+    public_path = base / "source.pub"
+    private_path.write_text(private_seed, encoding="utf-8")
+    public_path.write_text(public_b64, encoding="utf-8")
+    mp = pytest.MonkeyPatch()
+    mp.setattr(settings, "B26_P2_SOURCE_ATTESTATION_REQUIRED", True, raising=False)
+    mp.setattr(
+        settings,
+        "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH",
+        str(public_path),
+    )
+    mp.setattr(
+        settings,
+        "B26_P2_SOURCE_ATTESTATION_PRIVATE_KEY_PATH",
+        str(private_path),
+    )
+    _B23_P6_ATTESTATION_PRIVATE_KEY_PATH = private_path
+    try:
+        yield
+    finally:
+        mp.undo()
+        _B23_P6_ATTESTATION_PRIVATE_KEY_PATH = None
+
+
 def _require_authoritative_db_proofs() -> bool:
     return os.getenv("SKELDIR_B23_P6_REQUIRE_DB_PROOFS", "0").strip().lower() in {
         "1",
@@ -1288,6 +1332,7 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
                             },
                         )
                     ).scalar_one()
+                    authenticated = False
                     try:
                         await apply_xix_family_gucs_sqlalchemy(issuer, provider)
                         await issuer.execute(
@@ -1305,19 +1350,58 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
                                 "sig_sha256": "b" * 64,
                             },
                         )
+                        authenticated = True
                     except Exception as auth_exc:
                         if "b26_p2_atomic_family_unbound_refused" not in str(
                             auth_exc
                         ):
                             raise
+                    if authenticated:
+                        from app.revenue_verification.source_attestation import (  # noqa: PLC0415
+                            build_statement,
+                            write_source_attestation,
+                        )
+
+                        universe = (
+                            await issuer.execute(
+                                text(
+                                    "SELECT public.b26_p2_authority_universe()::text"
+                                )
+                            )
+                        ).scalar_one()
+                        statement = build_statement(
+                            tenant_id=tenant_id,
+                            webhook_ingress_identity_id=ingress_id,
+                            provider=provider,
+                            provider_native_event_reference=(
+                                f"coverage-event-{reference}"
+                            ),
+                            provider_native_commerce_reference=reference,
+                            normalized_commerce_reference_kind="order_id",
+                            normalized_commerce_reference_value=reference,
+                            verified_amount_minor=amount_minor,
+                            verified_amount_currency=currency,
+                            verified_amount_scale=2,
+                            event_timestamp=occurred_at,
+                            body_sha256="a" * 64,
+                            authority_universe=universe,
+                        )
+                        await write_source_attestation(
+                            issuer,
+                            statement=statement,
+                            private_key_path=str(
+                                _B23_P6_ATTESTATION_PRIVATE_KEY_PATH
+                            ),
+                        )
                     return inserted
             finally:
                 await issuer_engine.dispose()
 
+        matched_reference = f"coverage-a-matched-{uuid4().hex[:8]}"
         matched_webhook_id, matched_attribution_id = await insert_verified_webhook(
             tenant_id=tenant_a,
             provider="stripe",
-            reference=f"coverage-a-matched-{uuid4().hex[:8]}",
+            reference=matched_reference,
             amount_minor=76000,
             currency="USD",
             occurred_at=now,
@@ -1354,13 +1438,14 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             currency="EUR",
             occurred_at=now,
         )
+        tenant_b_matched_reference = f"coverage-b-matched-{uuid4().hex[:8]}"
         (
             tenant_b_matched_webhook_id,
             tenant_b_attribution_id,
         ) = await insert_verified_webhook(
             tenant_id=tenant_b,
             provider="stripe",
-            reference=f"coverage-b-matched-{uuid4().hex[:8]}",
+            reference=tenant_b_matched_reference,
             amount_minor=900000,
             currency="USD",
             occurred_at=now,
@@ -1446,7 +1531,7 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
                     "attribution_event_id": str(attribution_event_id),
                     "webhook_ingress_identity_id": str(webhook_ingress_identity_id),
                     "reference": reference,
-                    "event_reference": f"{reference}-event",
+                    "event_reference": f"coverage-event-{reference}",
                     "amount_minor": amount_minor,
                     "now_utc": now,
                 },
@@ -1456,14 +1541,14 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             tenant_id=tenant_a,
             attribution_event_id=matched_attribution_id,
             webhook_ingress_identity_id=matched_webhook_id,
-            reference="coverage-a-matched",
+            reference=matched_reference,
             amount_minor=76000,
         )
         await insert_matched_verdict(
             tenant_id=tenant_b,
             attribution_event_id=tenant_b_attribution_id,
             webhook_ingress_identity_id=tenant_b_matched_webhook_id,
-            reference="coverage-b-matched",
+            reference=tenant_b_matched_reference,
             amount_minor=900000,
         )
 

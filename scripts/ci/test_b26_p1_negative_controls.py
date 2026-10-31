@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -34,6 +36,9 @@ VERIFICATION_COVERAGE_MODULE = (
     ROOT / "backend/app/revenue_verification/verification_coverage.py"
 )
 PROOF_MANIFEST_MODULE = ROOT / "backend/app/finance_reconciliation/proof_manifest.py"
+SOURCE_ATTESTATION_MODULE = (
+    ROOT / "backend/app/revenue_verification/source_attestation.py"
+)
 WORKFLOW = ROOT / ".github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml"
 
 STATIC_CONTROLS = (
@@ -340,6 +345,61 @@ STATIC_CONTROLS = (
         "xi_nc20_denominator_regression",
         VERIFICATION_COVERAGE_MODULE,
         "coverage_implementation_identity_mismatch",
+    ),
+    (
+        "source_attestation_coverage_aggregation",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_count",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_avg",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_group_by",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_window",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_newline_count",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_tab_avg",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_concatenation",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_python_sum",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_func_sum",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_appended",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
     ),
     (
         "xi_immutable_fields_removed",
@@ -738,6 +798,46 @@ def _proof_required_additional_cell_control() -> dict[str, Any]:
     }
 
 
+def _source_attestation_formatting_control() -> dict[str, Any]:
+    """A formatting-only edit to the legitimate read must remain GREEN."""
+    original = SOURCE_ATTESTATION_MODULE.read_bytes()
+    pristine_hash = _sha(original)
+    try:
+        text = original.decode("utf-8")
+        old = "SELECT v.canonical_net_verified_amount_minor AS verdict_net,"
+        new = (
+            "select\n"
+            "    v.canonical_net_verified_amount_minor\n"
+            "        as verdict_net,"
+        )
+        if text.count(old) != 1:
+            raise RuntimeError("formatting_control_anchor_mismatch")
+        SOURCE_ATTESTATION_MODULE.write_text(
+            text.replace(old, new, 1), encoding="utf-8"
+        )
+        green = _validator()
+        if green.returncode != 0:
+            raise RuntimeError(
+                f"formatting_control_not_green:{green.stdout}{green.stderr}"
+            )
+    finally:
+        SOURCE_ATTESTATION_MODULE.write_bytes(original)
+    if _sha(SOURCE_ATTESTATION_MODULE.read_bytes()) != pristine_hash:
+        raise RuntimeError("formatting_control_restore_hash_mismatch")
+    restored = _validator()
+    if restored.returncode != 0:
+        raise RuntimeError(
+            f"formatting_control_restore_not_green:{restored.stdout}{restored.stderr}"
+        )
+    return {
+        "control": "source_attestation_legitimate_formatting",
+        "pristine_hash": pristine_hash,
+        "observed_green": True,
+        "restoration_hash": _sha(SOURCE_ATTESTATION_MODULE.read_bytes()),
+        "restored_green": True,
+    }
+
+
 def run_battery() -> list[dict[str, Any]]:
     pristine = _validator()
     if pristine.returncode != 0:
@@ -778,15 +878,55 @@ def run_battery() -> list[dict[str, Any]]:
                 "restored_green": True,
             }
         )
+    ledger.append(_source_attestation_formatting_control())
     ledger.append(_proof_identity_control())
     ledger.append(_proof_required_additional_cell_control())
     return ledger
+
+
+def _run_in_disposable_worktree(evidence_out: Path | None) -> int:
+    """Re-exec the mutating battery in an owned worktree, never this checkout."""
+    temp_root = Path(tempfile.mkdtemp(prefix="b26p1-nc-worktree-"))
+    try:
+        subprocess.run(
+            ["git", "worktree", "add", "--detach", str(temp_root), "HEAD"],
+            cwd=str(ROOT),
+            check=True,
+        )
+        env = dict(os.environ)
+        env["B26_P1_ISOLATED_WORKTREE"] = "1"
+        command = [
+            sys.executable,
+            str(temp_root / "scripts/ci/test_b26_p1_negative_controls.py"),
+        ]
+        if evidence_out is not None:
+            command.extend(
+                ["--evidence-out", str(temp_root / evidence_out)]
+            )
+        completed = subprocess.run(command, cwd=str(temp_root), env=env)
+        if completed.returncode != 0:
+            return completed.returncode
+        if evidence_out is not None:
+            source = temp_root / evidence_out
+            target = ROOT / evidence_out
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        return 0
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(temp_root)],
+            cwd=str(ROOT),
+            check=False,
+        )
+        shutil.rmtree(temp_root, ignore_errors=True)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-out", type=Path)
     args = parser.parse_args()
+    if os.getenv("B26_P1_ISOLATED_WORKTREE") != "1":
+        return _run_in_disposable_worktree(args.evidence_out)
     try:
         ledger = run_battery()
     except RuntimeError as exc:

@@ -1012,6 +1012,15 @@ def _match_verdict_payload(
         # checkable downstream; the (0,60]s indistinguishable kernel
         # remains a recorded deviation, never a per-row claim.
         "match_verdict_status": _qualified_match_verdict_status(source),
+        # XXV (B6/B9/B12): the certified figure travels IN the signed
+        # artifact. The amount and currency come from the money-authority
+        # decision that was already resolved and validated for this verdict
+        # (and whose source attestation the caller verified before reaching
+        # here), so the signature now covers the integer-minor amount a
+        # machine consumer has to read -- instead of covering a provenance
+        # hash of it that no consumer can invert.
+        "verified_revenue_minor": money_decision.amount_minor,
+        "currency": money_decision.currency,
         "confidence_metadata": _confidence_unavailable(),
         "provenance_chain": build_match_verdict_provenance_chain(
             source=source,
@@ -1153,6 +1162,34 @@ async def read_history_integrity_status(
         .mappings()
         .one()
     )
+    tenant_value = (
+        await db_session.execute(
+            text("SELECT current_setting('app.current_tenant_id', true)")
+        )
+    ).scalar()
+    if not tenant_value:
+        return False, "history_integrity_tenant_missing"
+    from app.core.config import settings  # noqa: PLC0415
+    from sqlalchemy.ext.asyncio import AsyncSession  # noqa: PLC0415
+
+    evidence = None
+    if settings.B26_P2_HISTORY_WITNESS_REQUIRED and isinstance(
+        db_session, AsyncSession
+    ):
+        from app.revenue_verification.source_evidence import (  # noqa: PLC0415
+            SourceEvidenceError,
+            source_evidence_snapshot,
+        )
+        try:
+            evidence = await source_evidence_snapshot(
+                db_session, tenant_id=str(tenant_value)
+            )
+        except SourceEvidenceError as exc:
+            return (
+                False,
+                "history_integrity_source_evidence_unverifiable:"
+                + str(exc),
+            )
     if str(live["violations"] or "").strip():
         return False, "history_integrity_violations_present"
     if int(live["n"] or 0) != int(row["ledger_count"] or 0):
@@ -1171,10 +1208,31 @@ async def read_history_integrity_status(
             if live.get("authority_universe") is not None
             else None
         ),
+        tenant_source_evidence_digest=(
+            {str(tenant_value): str(evidence["digest"])}
+            if evidence is not None and int(evidence["count"]) > 0
+            else None
+        ),
     )
     if not witness_ok:
         return False, witness_reason
     return True, ""
+
+
+def _history_anchor_required() -> bool:
+    """True when the deployment must carry a compiled historical anchor.
+
+    XXV (HB-01): this is a *requirement* predicate, never an *enforcement*
+    predicate. Enforcement in ``_verify_signed_history_witness`` is
+    unconditional whenever the image carries an anchor; this function only
+    decides where a missing anchor is itself fatal. It reads the canonical
+    environment through ``is_production_like`` so no alias can make it
+    unreachable.
+    """
+    from app.core.config import settings  # noqa: PLC0415
+    from app.core.control_plane import is_production_like  # noqa: PLC0415
+
+    return is_production_like(settings.ENVIRONMENT)
 
 
 def _verify_signed_history_witness(
@@ -1183,6 +1241,7 @@ def _verify_signed_history_witness(
     ledger_tip_hash: str | None,
     ledger_prefix_digest: str | None = None,
     authority_universe: str | None = None,
+    tenant_source_evidence_digest: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
     """Verify the out-of-database signed checkpoint against live state.
 
@@ -1208,16 +1267,36 @@ def _verify_signed_history_witness(
         COMPILED_GENESIS_HASH,
         COMPILED_PUBLIC_KEY_SHA256,
     )
+    from app.revenue_verification.source_evidence_journal import (  # noqa: PLC0415
+        journal_record_hash,
+        load_source_fact_records,
+    )
 
     if not settings.B26_P2_HISTORY_WITNESS_REQUIRED:
         return True, ""
     try:
         genesis_hash = settings.B26_P2_HISTORY_WITNESS_GENESIS_HASH
-        if settings.ENVIRONMENT == "production":
-            if not COMPILED_GENESIS_HASH or not COMPILED_PUBLIC_KEY_SHA256:
-                raise HistoryWitnessError(
-                    "witness_compiled_anchor_missing"
-                )
+        # XXV (HB-01/A1/A5): the compiled-anchor comparison is NOT gated on
+        # an environment predicate. The previous guard tested the literal
+        # "production", while app/core/config.py canonicalises every
+        # environment value through resolve_control_plane_env ("production"
+        # -> "prod"), so the branch was unreachable in every possible
+        # deployment and the entire root-substitution class was open. The
+        # comparison now fires whenever the deployed image carries an anchor,
+        # which is what makes the anchor an authority rather than a label:
+        #
+        #   * an image built with the anchor (every production image, by the
+        #     import-time assertion in Settings) always compares it, so a
+        #     substituted runtime key, journal, heartbeat or genesis is
+        #     refused regardless of ENVIRONMENT;
+        #   * a source/dev image carries no anchor and cannot run as prod or
+        #     stage at all, because Settings refuses to construct.
+        #
+        # Reached by: xxv-hb01-anchor-reachability, xxv-hb01-root-substitution.
+        anchored = bool(COMPILED_GENESIS_HASH and COMPILED_PUBLIC_KEY_SHA256)
+        if _history_anchor_required() and not anchored:
+            raise HistoryWitnessError("witness_compiled_anchor_missing")
+        if anchored:
             if genesis_hash != COMPILED_GENESIS_HASH:
                 raise HistoryWitnessError(
                     "witness_compiled_genesis_mismatch"
@@ -1230,6 +1309,10 @@ def _verify_signed_history_witness(
                     "witness_compiled_public_key_mismatch"
                 )
             genesis_hash = COMPILED_GENESIS_HASH
+        source_journal_records = load_source_fact_records(
+            settings.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH
+        ) or []
+
         journal = verify_journal(
             settings.B26_P2_HISTORY_WITNESS_JOURNAL_PATH,
             public_key_path=settings.B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH,
@@ -1241,14 +1324,39 @@ def _verify_signed_history_witness(
             expected_prefix_digest=ledger_prefix_digest,
             expected_universe=authority_universe,
             require_universe=True,
+            expected_source_evidence_by_tenant=tenant_source_evidence_digest,
+            require_source_evidence=(tenant_source_evidence_digest is not None),
             heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
         )
+        # The signed source-journal custody commits a prefix. Later appends
+        # (for example an outcome receipt written after the observer's read)
+        # are lawful; a shorter journal, a different record at the committed
+        # index, or a broken chain is not.
+        witnessed_journal_count = journal.latest.source_journal_count
+        if witnessed_journal_count is not None:
+            if len(source_journal_records) < witnessed_journal_count:
+                raise HistoryWitnessError(
+                    "witness_source_journal_truncated"
+                )
+            if witnessed_journal_count > 0:
+                committed_tip = journal_record_hash(
+                    source_journal_records[witnessed_journal_count - 1]
+                )
+                if committed_tip != journal.latest.source_journal_tip:
+                    raise HistoryWitnessError(
+                        "witness_source_journal_tip_mismatch"
+                    )
         custody = load_custody(
             settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH
         )
         if custody is None:
-            if settings.ENVIRONMENT == "production":
-                raise HistoryWitnessError("witness_custody_missing")
+            # XXV (HB-02/A5): custody loss is refused whenever the witness is
+            # required, not only under an unreachable environment literal. A
+            # journal always has a custody record once the observer has run,
+            # so a missing custody record means the record was removed or was
+            # never published -- neither of which may issue as complete
+            # history. Reached by: xxv-hb02-custody.
+            raise HistoryWitnessError("witness_custody_missing")
         else:
             custody_count = int(custody["ledger_count"])
             latest = journal.latest
@@ -1488,6 +1596,36 @@ async def build_unsigned_trust_envelope(
             )
         source = refreshed
 
+    from app.core.config import settings  # noqa: PLC0415
+    from sqlalchemy.ext.asyncio import AsyncSession  # noqa: PLC0415
+
+    if settings.B26_P2_HISTORY_WITNESS_REQUIRED and isinstance(
+        db_session, AsyncSession
+    ):
+        # The production confidence reader is a Trust subject, not the
+        # internal project_b24_confidence helper. It must carry the same
+        # complete-source witness as a match verdict.
+        history_ok, history_reason = await read_history_integrity_status(
+            db_session
+        )
+        if not history_ok:
+            refusal = build_error_envelope(
+                tenant_id=request.tenant_id,
+                reason_code="history_integrity_unverifiable",
+                created_at=created_at,
+                audience_id=audience_id,
+            )
+            return TrustEnvelopeBuildResult(
+                status="refused",
+                unsigned_payload=None,
+                refusal_payload=refusal,
+                reason_code="history_integrity_unverifiable",
+                field_source_decisions=decisions,
+                money_authority_decision=None,
+                read_only_observation=_read_only_observation(llm_modules=()),
+                authority_witness=None,
+            )
+
     if isinstance(source, ConfidenceProjectionSource):
         if payload_runner is None:
             payload = _confidence_projection_payload(request=request, source=source)
@@ -1589,6 +1727,37 @@ async def build_unsigned_trust_envelope(
         )
     )
     if not conservation_ok:
+        refusal = build_error_envelope(
+            tenant_id=request.tenant_id,
+            reason_code="money_source_not_authoritative",
+            created_at=created_at,
+            audience_id=audience_id,
+        )
+        return TrustEnvelopeBuildResult(
+            status="refused",
+            unsigned_payload=None,
+            refusal_payload=refusal,
+            reason_code="money_source_not_authoritative",
+            field_source_decisions=decisions,
+            money_authority_decision=None,
+            read_only_observation=_read_only_observation(llm_modules=()),
+            authority_witness=None,
+        )
+
+    # XXV (A6/A10): the conservation oracle above compares rows that a single
+    # maintenance principal can rewrite together, which is exactly how both
+    # XXIV audits produced an internally coherent false world. The sovereign
+    # source attestation is the one piece of evidence that principal cannot
+    # produce, so issuance now requires it and refuses an attestation that
+    # contradicts the money being certified.
+    from app.revenue_verification.source_attestation import (  # noqa: PLC0415
+        read_verdict_source_attestation_status,
+    )
+
+    attestation = await read_verdict_source_attestation_status(
+        db_session, tenant_id=request.tenant_id, verdict_id=source.id
+    )
+    if attestation.unverifiable:
         refusal = build_error_envelope(
             tenant_id=request.tenant_id,
             reason_code="money_source_not_authoritative",

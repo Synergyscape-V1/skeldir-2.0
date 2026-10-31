@@ -822,6 +822,23 @@ def test_b057_p5_full_chain_webhook_to_matview():
         assert _count_events(runtime_db_url, None, event_id) == 0
         assert _count_allocations(runtime_db_url, None, event_id) == 0
 
+        _poll_until(
+            description="matview refresh task success metric",
+            timeout_s=30.0,
+            interval_s=1.0,
+            probe=lambda: _parse_metric_value(
+                _scrape_metrics(f"{exporter_url}/metrics"),
+                "celery_task_success_total",
+                {"task_name": "app.tasks.matviews.refresh_all_for_tenant"},
+            )
+            > _parse_metric_value(
+                metrics_worker_before,
+                "celery_task_success_total",
+                {"task_name": "app.tasks.matviews.refresh_all_for_tenant"},
+            ),
+            on_timeout=lambda: None,
+        )
+
         metrics_api_after = _scrape_metrics(f"{base_url}/metrics")
         metrics_worker_after = _scrape_metrics(f"{exporter_url}/metrics")
         (artifact_dir / "metrics_api_after.txt").write_text(metrics_api_after, encoding="utf-8")

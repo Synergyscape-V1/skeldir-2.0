@@ -16,13 +16,27 @@ from __future__ import annotations
 COMPILED_PUBLIC_KEY_SHA256: str | None = None
 COMPILED_GENESIS_HASH: str | None = None
 
+#: XXV: the sovereign source-money attestation verification root. The
+#: authentication root signs the provider's amount with a seed no database
+#: principal holds; every reader verifies against this fingerprint, which is
+#: pinned at image build time. A maintenance principal that rewrites financial
+#: rows cannot forge a signature, and cannot swap the public key on disk
+#: either, because the fingerprint it would have to match lives in the image.
+COMPILED_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256: str | None = None
+
 
 def has_compiled_anchor() -> bool:
     return bool(COMPILED_PUBLIC_KEY_SHA256 and COMPILED_GENESIS_HASH)
 
 
+def has_compiled_source_attestation_anchor() -> bool:
+    return bool(COMPILED_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256)
+
+
 __all__ = (
     "COMPILED_GENESIS_HASH",
     "COMPILED_PUBLIC_KEY_SHA256",
+    "COMPILED_SOURCE_ATTESTATION_PUBLIC_KEY_SHA256",
     "has_compiled_anchor",
+    "has_compiled_source_attestation_anchor",
 )

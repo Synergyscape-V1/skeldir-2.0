@@ -337,15 +337,18 @@ def _migration_bodies_for(name: str) -> list[str]:
         for chunk_name, _args, chunk in _function_chunks(sql):
             if chunk_name != name:
                 continue
-            start = chunk.find("AS $$")
-            if start == -1:
-                start = chunk.find("AS $function$")
-                if start == -1:
-                    continue
-                marker = "AS $function$"
-            else:
-                marker = "AS $$"
-            end = chunk.find("$$", start + len(marker))
+            candidates = [
+                (pos, marker, close)
+                for pos, marker, close in (
+                    (chunk.find("AS $$"), "AS $$", "$$"),
+                    (chunk.find("AS $function$"), "AS $function$", "$function$"),
+                )
+                if pos != -1
+            ]
+            if not candidates:
+                continue
+            start, marker, close = min(candidates, key=lambda item: item[0])
+            end = chunk.find(close, start + len(marker))
             if end <= start:
                 continue
             bodies.append(chunk[start + len(marker):end])
@@ -500,7 +503,8 @@ def main() -> int:
                                         "202609300008",
                                         "202609300009",
                                         "202610180001",
-                                        "202610180003"):
+                                        "202610270001",
+                                        "202610280001"):
                             violations.append(
                                 "x_authority_unexpected_migration_head:"
                                 f"{head}"

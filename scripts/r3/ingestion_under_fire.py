@@ -18,6 +18,7 @@ import math
 import multiprocessing as mp
 import os
 import platform
+import random
 import sys
 import time
 from dataclasses import dataclass
@@ -1110,12 +1111,17 @@ def _build_s8_requests_from_config(
         )
         reqs.append((url, headers, body))
 
-    # Deterministic shuffle (same as original S8)
-    reqs.sort(
-        key=lambda r: hashlib.sha256(
-            r[1]["X-Idempotency-Key"].encode("utf-8")
-        ).hexdigest()
+    # Deterministic shuffle. Sorting by the idempotency-key hash alone
+    # placed every replay of one event contiguously, turning the 25%
+    # duplicate cohort into one head-of-line storm rather than the
+    # sustained mixed traffic this profile names. A seeded PRNG keeps
+    # the order reproducible per run while distributing replays across
+    # the whole fire.
+    seed_material = (
+        f"{cfg.name}|{cfg.tenant_id}|{cfg.run_start_epoch}".encode("utf-8")
     )
+    seed = int(hashlib.sha256(seed_material).hexdigest()[:16], 16)
+    random.Random(seed).shuffle(reqs)
     return reqs
 
 

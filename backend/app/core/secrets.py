@@ -17,12 +17,16 @@ import psycopg2
 from app.core import clock as clock_module
 from app.core.config import settings
 from app.core.control_plane import (
+    is_production_like,
     resolve_aws_path_for_key,
     resolve_control_plane_env,
     should_enable_control_plane,
     _fetch_value_from_aws,  # sanctioned internal control-plane fetch path
 )
-from app.core.managed_settings_contract import MANAGED_SETTINGS_CONTRACT
+from app.core.managed_settings_contract import (
+    MANAGED_SETTINGS_CONTRACT,
+    resolve_process_database_secret_path,
+)
 
 RuntimeRole = Literal["api", "worker", "readiness"]
 MAX_ACCEPTED_CRYPTO_KEYS = 3
@@ -187,9 +191,19 @@ def was_loaded_from_control_plane(key: str) -> bool:
 
 def _read_secret_source_of_truth_value(key: str) -> str | None:
     if should_enable_control_plane():
-        canonical_env = resolve_control_plane_env(os.getenv("ENVIRONMENT", settings.ENVIRONMENT))
+        canonical_env = resolve_control_plane_env(
+            os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
+        )
         contract = _contract_for(key)
-        path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
+        process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+        if key == "DATABASE_URL" and process_role:
+            path = resolve_process_database_secret_path(
+                process_role, canonical_env
+            )
+        elif key == "DATABASE_URL" and is_production_like(canonical_env):
+            raise RuntimeError("process_role_required_for_database_url")
+        else:
+            path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
         value = _fetch_value_from_aws(contract, path)
         cleaned = _coerce_str(value)
         if cleaned is None:
@@ -301,18 +315,7 @@ def _database_url_for_sync_pg() -> str:
         if _DATABASE_DSN_CACHE:
             return _DATABASE_DSN_CACHE
 
-        candidate = _read_setting("DATABASE_URL")
-        if not candidate:
-            try:
-                from app.db import session as db_session  # local import avoids import-cycle during module init
-
-                candidate = getattr(db_session, "_ASYNC_DATABASE_URL", None)
-                if candidate:
-                    candidate = str(candidate).replace("postgresql+asyncpg://", "postgresql://", 1)
-            except Exception:
-                candidate = None
-        if not candidate:
-            candidate = require_secret("DATABASE_URL")
+        candidate = get_database_url()
 
         _DATABASE_DSN_CACHE = candidate
         return _DATABASE_DSN_CACHE
@@ -578,7 +581,10 @@ def _refresh_verification_ring_from_source_of_truth() -> tuple[JwtKeyRing, str]:
     value = _read_secret_source_of_truth_value("AUTH_JWT_PUBLIC_KEY_RING")
     if value is None:
         env_name = (_read_setting("ENVIRONMENT") or "").lower()
-        if env_name in {"local", "dev", "ci", "test"}:
+        # XXV (HB-01 sibling sweep): "test" is not a canonical environment --
+        # resolve_control_plane_env maps it to "ci"/"local" -- so the member
+        # was dead. The reachable canonical members are unchanged.
+        if env_name in {"local", "dev", "ci"}:
             value = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
     if value is None:
         raise RuntimeError("required secret missing: AUTH_JWT_PUBLIC_KEY_RING")
@@ -695,6 +701,40 @@ def require_secret(key: str) -> str:
 
 
 def get_database_url() -> str:
+    """Resolve the database DSN without allowing a shared override.
+
+    Production-like processes must resolve their own control-plane path. A
+    process may not supply ``SKELDIR_PROCESS_DATABASE_URL`` or a shared
+    ``DATABASE_URL`` environment value: either would let a proof harness or a
+    misconfigured deployment act under another process's database authority.
+    Non-production lanes may still use the explicit override for fixtures, but
+    the shipping path always goes through the process-scoped secret.
+    """
+    process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+    explicit = os.getenv("SKELDIR_PROCESS_DATABASE_URL", "").strip()
+    canonical_env = resolve_control_plane_env(
+        os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
+    )
+    if is_production_like(canonical_env):
+        if explicit:
+            raise RuntimeError(
+                "explicit_process_database_url_forbidden_in_production"
+            )
+        if not process_role:
+            raise RuntimeError("process_role_required_for_database_url")
+        if not should_enable_control_plane():
+            raise RuntimeError("process_database_url_requires_control_plane")
+        path = resolve_process_database_secret_path(process_role, canonical_env)
+        value = _coerce_str(
+            _fetch_value_from_aws(
+                MANAGED_SETTINGS_CONTRACT["DATABASE_URL"], path
+            )
+        )
+        if not value:
+            raise RuntimeError("required secret missing: DATABASE_URL")
+        return value
+    if explicit:
+        return explicit
     return require_secret("DATABASE_URL")
 
 
@@ -717,7 +757,10 @@ def get_jwt_validation_config() -> JwtValidationConfig:
     public_ring = _read_setting("AUTH_JWT_PUBLIC_KEY_RING")
     if public_ring is None:
         env_name = (_read_setting("ENVIRONMENT") or "").lower()
-        if env_name in {"local", "dev", "ci", "test"}:
+        # XXV (HB-01 sibling sweep): "test" is not a canonical environment --
+        # resolve_control_plane_env maps it to "ci"/"local" -- so the member
+        # was dead. The reachable canonical members are unchanged.
+        if env_name in {"local", "dev", "ci"}:
             public_ring = _read_setting("AUTH_JWT_SECRET")
     return JwtValidationConfig(
         public_key_ring=public_ring,

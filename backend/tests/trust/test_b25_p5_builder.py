@@ -1,4 +1,4 @@
-"""B2.5-P5 unsigned TrustEnvelope builder tests."""
+﻿"""B2.5-P5 unsigned TrustEnvelope builder tests."""
 
 from __future__ import annotations
 
@@ -64,6 +64,11 @@ class _FakeResult:
 
     def mappings(self) -> _FakeMappings:
         return _FakeMappings(self._row)
+
+    def scalar(self) -> object:
+        if self._row is not None and "tenant_id" in self._row:
+            return str(self._row["tenant_id"])
+        return "00000000-0000-0000-0000-000000000001"
 
 
 class FakeReadOnlySession:

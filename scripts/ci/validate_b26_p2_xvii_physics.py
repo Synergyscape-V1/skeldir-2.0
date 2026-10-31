@@ -9,9 +9,10 @@ Laws (each REDs on the effect):
   and conduct (live: regime stamp on lawful auth; old-regime survivor
   flagged by the binding oracle, refused at dispatch, P3 FALSE);
 - identity conservation: same event ref + different bytes -> conflict
-  refusal; same commerce identity across distinct events -> conflict
-  refusal; same bytes -> duplicate token (XVI preserved); re-entry
-  idempotent (live);
+  refusal; a same-commerce distinct event is either a lawful provider
+  amendment (XXV-2) that supersedes the prior current authority or, when
+  the amendment conditions do not hold, a conflict refusal; same bytes ->
+  duplicate token (XVI preserved); re-entry idempotent (live);
 - tuple binding: witness covers the semantic tuple; detachment is
   oracle-visible and re-binding is deterministic (live);
 - redelivery recovery: a demoted row re-authenticates via provider
@@ -25,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -107,7 +109,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         checks["xvi_forward_law_preserved"] = True
 
 
-def _mkrow(cur, tenant, evref, cref, amount):
+def _mkrow(cur, tenant, evref, cref, amount, event_ts=None):
     ev, ing = str(uuid.uuid4()), str(uuid.uuid4())
     cur.execute(
         "INSERT INTO public.attribution_events (id, tenant_id, occurred_at,"
@@ -115,9 +117,9 @@ def _mkrow(cur, tenant, evref, cref, amount):
         " event_type, channel, campaign_id, conversion_value_cents, currency,"
         " event_timestamp, processed_at, processing_status)"
         " VALUES (%s,%s,now(),%s,%s,%s,'{}'::jsonb,%s,'conversion',"
-        " 'xvii_phys_ch','c',%s,'USD',now(),now(),'processed')",
+        " 'xvii_phys_ch','c',%s,'USD',COALESCE(%s,now()),now(),'processed')",
         (ev, tenant, str(uuid.uuid4()), str(uuid.uuid4()), amount,
-         str(uuid.uuid4()), amount),
+         str(uuid.uuid4()), amount, event_ts),
     )
     cur.execute(
         "INSERT INTO public.webhook_ingress_identities (id, tenant_id, event_id,"
@@ -128,8 +130,18 @@ def _mkrow(cur, tenant, evref, cref, amount):
         " verified_amount_currency, event_timestamp, idempotency_key,"
         " verified_commerce_ingress_state)"
         " VALUES (%s,%s,%s,'stripe',%s,%s,'stripe_payment_intent_id',%s,%s,'USD',"
-        " now(),%s,'authenticity_verified')",
-        (ing, tenant, ev, evref, cref, cref, amount, str(uuid.uuid4())),
+        " COALESCE(%s,now()),%s,'authenticity_verified')",
+        (
+            ing,
+            tenant,
+            ev,
+            evref,
+            cref,
+            cref,
+            amount,
+            event_ts,
+            str(uuid.uuid4()),
+        ),
     )
     return ing
 
@@ -150,6 +162,29 @@ def _auth(icur, ing, eref, sha, sig="b" * 64):
         (ing, eref, sha, sig),
     )
     return str(icur.fetchone()[0])
+
+
+def _oracle_violations(cur):
+    cur.execute(
+        "SELECT violation_kind, detail"
+        " FROM public.b26_p2_xvii_semantic_binding_oracle()"
+    )
+    return [(str(row[0]), str(row[1])) for row in cur.fetchall()]
+
+
+def _only_expected_amendment(violations):
+    """XXV-2 leaves the superseded row authenticated but non-current.
+
+    The XVII oracle predates lawful provider amendment and reports that
+    pair as a duplicate commerce fact. The validator accepts exactly that
+    one expected pair; any other oracle violation still fails.
+    """
+
+    return all(
+        kind == "xvii_duplicate_canonical_commerce"
+        and detail == "commerce=stripe_payment_intent_id:xvii-c1"
+        for kind, detail in violations
+    )
 
 
 def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
@@ -236,10 +271,51 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                         )
                     else:
                         checks["same_ref_conflict_refused"] = True
-                # XVII commerce conservation: same commerce, distinct event.
+                # Same-row re-entry idempotent while the row is current.
+                assert _auth(icur, row1, "xvii-e1", sha_a) == "authenticated_known"
+                checks["same_row_reentry_idempotent"] = True
+                # XVII commerce conservation after XXV-2: a same-commerce
+                # distinct event is a lawful provider amendment when the
+                # provider distinguishes it from the event already holding
+                # authority. It supersedes the prior row; it does not
+                # replace its authenticated money.
                 row3 = _mkrow(cur, tenant, "xvii-e2", "xvii-c1", 7600)
+                assert _auth(icur, row3, "xvii-e2", "e" * 64) == "authenticated_known"
+                cur.execute(
+                    "SELECT b26_p2_demotion_reason"
+                    " FROM public.webhook_ingress_identities WHERE id = %s",
+                    (row1,),
+                )
+                demotion = cur.fetchone()[0]
+                if demotion != "superseded_by_provider_amendment:xvii-e2":
+                    violations.append(
+                        f"xvii_phys_amendment_demotion_wrong:{demotion}"
+                    )
+                else:
+                    checks["provider_amendment_supersedes_prior"] = True
                 try:
-                    _auth(icur, row3, "xvii-e2", "e" * 64)
+                    _auth(icur, row1, "xvii-e1", sha_a)
+                    violations.append("xvii_phys_demoted_reauth_permitted")
+                except Exception as exc:
+                    if "b26_p2_atomic_demoted_ingress_refused" not in str(exc):
+                        violations.append(
+                            "xvii_phys_demoted_reauth_wrong_refusal:"
+                            f"{str(exc).splitlines()[0][:120]}"
+                        )
+                    else:
+                        checks["demoted_row_reauth_refused"] = True
+                # A non-amendment collision on the same commerce identity
+                # (backward event instant) keeps the strict refusal.
+                row5 = _mkrow(
+                    cur,
+                    tenant,
+                    "xvii-e5",
+                    "xvii-c1",
+                    7600,
+                    event_ts=datetime.now(timezone.utc) - timedelta(hours=1),
+                )
+                try:
+                    _auth(icur, row5, "xvii-e5", "g" * 64)
                     violations.append("xvii_phys_same_commerce_second_lineage")
                 except Exception as exc:
                     if "b26_p2_atomic_commerce_identity_conflict_refused" not in str(exc):
@@ -253,15 +329,12 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                 row4 = _mkrow(cur, tenant, "xvii-e3", "xvii-c3", 100)
                 assert _auth(icur, row4, "xvii-e3", "f" * 64) == "authenticated_known"
                 checks["distinct_events_authenticate"] = True
-                # Same-row re-entry idempotent.
-                assert _auth(icur, row1, "xvii-e1", sha_a) == "authenticated_known"
-                checks["same_row_reentry_idempotent"] = True
                 # Binding oracle clean on lawful state.
-                cur.execute(
-                    "SELECT count(*) FROM public.b26_p2_xvii_semantic_binding_oracle()"
-                )
-                if cur.fetchone()[0] != 0:
+                oracle = _oracle_violations(cur)
+                if not _only_expected_amendment(oracle):
                     violations.append("xvii_phys_oracle_dirty_on_lawful")
+                elif oracle:
+                    checks["binding_oracle_supersession_visible"] = True
                 else:
                     checks["binding_oracle_clean"] = True
                 # Capture the true witness before tampering so governed
@@ -270,14 +343,14 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     "SELECT witness_hash FROM"
                     " public.b26_p2_ingress_auth_witness"
                     " WHERE webhook_ingress_identity_id = %s",
-                    (row1,),
+                    (row4,),
                 )
                 true_witness = cur.fetchone()[0]
                 # Tuple detachment visible: tamper witness as admin...
                 cur.execute(
                     "UPDATE public.b26_p2_ingress_auth_witness SET witness_hash='0'"
                     " WHERE webhook_ingress_identity_id = %s",
-                    (row1,),
+                    (row4,),
                 )
                 cur.execute(
                     "SELECT violation_kind FROM"
@@ -297,18 +370,16 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     "UPDATE public.b26_p2_ingress_auth_witness"
                     " SET witness_hash = %s"
                     " WHERE webhook_ingress_identity_id = %s",
-                    (true_witness, row1,),
+                    (true_witness, row4,),
                 )
                 cur.execute(
                     "UPDATE public.webhook_ingress_identities"
                     " SET b26_p2_demotion_reason = NULL WHERE id = %s",
-                    (row1,),
+                    (row4,),
                 )
-                assert _auth(icur, row1, "xvii-e1", sha_a) == "authenticated_known"
-                cur.execute(
-                    "SELECT count(*) FROM public.b26_p2_xvii_semantic_binding_oracle()"
-                )
-                if cur.fetchone()[0] != 0:
+                assert _auth(icur, row4, "xvii-e3", "f" * 64) == "authenticated_known"
+                oracle = _oracle_violations(cur)
+                if not _only_expected_amendment(oracle):
                     violations.append("xvii_phys_rebind_not_clean")
                 else:
                     checks["reauth_rebinds_deterministically"] = True
@@ -371,11 +442,11 @@ def _live_checks(admin_dsn: str, violations: list[str], checks: dict) -> None:
                     violations.append("xvii_phys_regime_not_restored")
                 else:
                     checks["regime_restored_on_reauth"] = True
-                cur.execute(
-                    "SELECT count(*) FROM public.b26_p2_xvii_semantic_binding_oracle()"
-                )
-                if cur.fetchone()[0] != 0:
+                oracle = _oracle_violations(cur)
+                if not _only_expected_amendment(oracle):
                     violations.append("xvii_phys_oracle_dirty_at_close")
+                elif oracle:
+                    checks["binding_oracle_supersession_visible_at_close"] = True
         finally:
             ing.close()
         cur.close()

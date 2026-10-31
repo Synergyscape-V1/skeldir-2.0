@@ -11,7 +11,7 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.celery_app import celery_app
-from app.core.queues import QUEUE_B23_MATCH_ENGINE
+from app.core.queues import QUEUE_B23_MATCH_ENGINE, QUEUE_B26_P2_HISTORY
 from app.db.session import engine, get_b23_session
 from app.observability.context import set_request_correlation_id
 from app.revenue_verification.batch_engine import execute_b23_batch_match_engine
@@ -24,6 +24,32 @@ from app.revenue_verification.state_transitions import (
 from app.tasks.context import run_in_worker_loop
 
 logger = logging.getLogger(__name__)
+
+
+def _enqueue_history_observation(*, correlation_id: str) -> None:
+    """Ask the observer to witness the ledger immediately after growth.
+
+    A ledger append (match creation or correction) makes the signed consumer
+    refuse with ``history_integrity_unverifiable`` until the next scheduled
+    observation. Enqueueing the shipping observer from the append path turns
+    that window into task latency instead of a scheduler interval. The
+    scheduled beat remains in place as the periodic freshness/continuity
+    motor; this is an additional, not a replacement, observation.
+    """
+    from app.tasks.b26_p2_history import observe_history_integrity_task
+
+    try:
+        observe_history_integrity_task.apply_async(
+            args=[],
+            queue=QUEUE_B26_P2_HISTORY,
+            routing_key=f"{QUEUE_B26_P2_HISTORY}.task",
+            headers={"correlation_id": correlation_id},
+        )
+    except Exception:  # noqa: BLE001 - observation must not fail the writer
+        logger.warning(
+            "b26_p2_history_observation_enqueue_failed",
+            extra={"correlation_id": correlation_id},
+        )
 
 
 async def _derive_p2_scope_for_window(
@@ -329,6 +355,8 @@ def execute_b23_batch_match_engine_task(
             p2_scope_identity=str(p2_scope.get("scope_identity") or ""),
         )
     )
+    if int(result.processed_count or 0) > 0:
+        _enqueue_history_observation(correlation_id=correlation_id)
     return {
         "tenant_id": tenant_id,
         "task_name": self.name,
@@ -446,7 +474,7 @@ def register_b23_post_capture_correction_task(
             }
 
     try:
-        return run_in_worker_loop(_run())
+        result = run_in_worker_loop(_run())
     except CorrectionEvidenceError as exc:
         logger.warning(
             "b23_post_capture_correction_unresolved",
@@ -466,3 +494,6 @@ def register_b23_post_capture_correction_task(
             "reason": exc.reason,
             "correlation_id": correlation_id,
         }
+    if result.get("revenue_event_written"):
+        _enqueue_history_observation(correlation_id=correlation_id)
+    return result

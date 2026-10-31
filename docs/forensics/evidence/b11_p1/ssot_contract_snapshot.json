@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 82,
+  "keys_total": 86,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/attribution/deterministic-default-lookback-days",
@@ -24,6 +24,7 @@
       ],
       "key": "ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -41,6 +42,7 @@
       ],
       "key": "AUTH_JWT_ALGORITHM",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -58,6 +60,7 @@
       ],
       "key": "AUTH_JWT_AUDIENCE",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -75,6 +78,7 @@
       ],
       "key": "AUTH_JWT_ISSUER",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -92,6 +96,7 @@
       ],
       "key": "AUTH_JWT_JWKS_URL",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -109,6 +114,7 @@
       ],
       "key": "AUTH_JWT_PUBLIC_KEY_RING",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "critical"
     },
     {
@@ -126,6 +132,7 @@
       ],
       "key": "AUTH_JWT_SECRET",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "critical"
     },
     {
@@ -143,6 +150,7 @@
       ],
       "key": "AUTH_LOGIN_IDENTIFIER_PEPPER",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "high"
     },
     {
@@ -161,6 +169,7 @@
       ],
       "key": "B23_DATABASE_LOCK_TIMEOUT_MS",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -179,6 +188,7 @@
       ],
       "key": "B23_DATABASE_MAX_OVERFLOW",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -197,6 +207,7 @@
       ],
       "key": "B23_DATABASE_POOL_SIZE",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -215,6 +226,7 @@
       ],
       "key": "B23_DATABASE_POOL_TIMEOUT_SECONDS",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -233,6 +245,7 @@
       ],
       "key": "B23_DATABASE_STATEMENT_TIMEOUT_MS",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -252,6 +265,7 @@
       ],
       "key": "B23_WORKER_CONCURRENCY",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -270,6 +284,7 @@
       ],
       "key": "B23_WORKER_PREFETCH_MULTIPLIER",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -288,6 +303,10 @@
       ],
       "key": "B26_P2_HISTORY_WITNESS_CUSTODY_PATH",
       "owner": "backend-platform",
+      "process_roles": [
+        "observer_b26_p2",
+        "api"
+      ],
       "rotation_criticality": "none"
     },
     {
@@ -306,6 +325,10 @@
       ],
       "key": "B26_P2_HISTORY_WITNESS_GENESIS_HASH",
       "owner": "backend-platform",
+      "process_roles": [
+        "observer_b26_p2",
+        "api"
+      ],
       "rotation_criticality": "high"
     },
     {
@@ -324,6 +347,10 @@
       ],
       "key": "B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH",
       "owner": "backend-platform",
+      "process_roles": [
+        "observer_b26_p2",
+        "api"
+      ],
       "rotation_criticality": "none"
     },
     {
@@ -341,6 +368,9 @@
       ],
       "key": "B26_P2_HISTORY_WITNESS_HORIZON_SECONDS",
       "owner": "backend-platform",
+      "process_roles": [
+        "api"
+      ],
       "rotation_criticality": "none"
     },
     {
@@ -360,6 +390,10 @@
       ],
       "key": "B26_P2_HISTORY_WITNESS_JOURNAL_PATH",
       "owner": "backend-platform",
+      "process_roles": [
+        "observer_b26_p2",
+        "api"
+      ],
       "rotation_criticality": "none"
     },
     {
@@ -378,6 +412,9 @@
       ],
       "key": "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH",
       "owner": "platform-security",
+      "process_roles": [
+        "observer_b26_p2"
+      ],
       "rotation_criticality": "high"
     },
     {
@@ -396,6 +433,10 @@
       ],
       "key": "B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH",
       "owner": "backend-platform",
+      "process_roles": [
+        "observer_b26_p2",
+        "api"
+      ],
       "rotation_criticality": "none"
     },
     {
@@ -413,6 +454,107 @@
       ],
       "key": "B26_P2_HISTORY_WITNESS_REQUIRED",
       "owner": "backend-platform",
+      "process_roles": [
+        "observer_b26_p2",
+        "api"
+      ],
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/source-attestation-private-key-path",
+      "call_sites": [
+        "backend/app/auth_service/server.py",
+        "backend/app/revenue_verification/source_attestation.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_SOURCE_ATTESTATION_PRIVATE_KEY_PATH",
+      "owner": "platform-security",
+      "process_roles": [
+        "auth_ingress"
+      ],
+      "rotation_criticality": "high"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/source-attestation-public-key-path",
+      "call_sites": [
+        "backend/app/revenue_verification/source_attestation.py",
+        "backend/app/trust/builder.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH",
+      "owner": "backend-platform",
+      "process_roles": [
+        "auth_ingress",
+        "observer_b26_p2",
+        "api",
+        "worker",
+        "trust_issuer"
+      ],
+      "rotation_criticality": "high"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/source-attestation-required",
+      "call_sites": [
+        "backend/app/core/config.py",
+        "backend/app/revenue_verification/source_attestation.py",
+        "backend/app/trust/builder.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_SOURCE_ATTESTATION_REQUIRED",
+      "owner": "backend-platform",
+      "process_roles": [
+        "auth_ingress",
+        "observer_b26_p2",
+        "api",
+        "worker",
+        "trust_issuer"
+      ],
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b26-p2/source-evidence-journal-path",
+      "call_sites": [
+        "backend/app/revenue_verification/source_evidence_journal.py",
+        "backend/app/revenue_verification/source_evidence.py",
+        "backend/app/revenue_verification/source_attestation.py",
+        "backend/app/tasks/b26_p2_history.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH",
+      "owner": "backend-platform",
+      "process_roles": [
+        "auth_ingress",
+        "observer_b26_p2",
+        "api"
+      ],
       "rotation_criticality": "none"
     },
     {
@@ -430,6 +572,7 @@
       ],
       "key": "BAYESIAN_TASK_SOFT_TIME_LIMIT_S",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -447,6 +590,7 @@
       ],
       "key": "BAYESIAN_TASK_TIME_LIMIT_S",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -464,6 +608,7 @@
       ],
       "key": "CELERY_BROKER_ENGINE_MAX_OVERFLOW",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -481,6 +626,7 @@
       ],
       "key": "CELERY_BROKER_ENGINE_POOL_SIZE",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -498,6 +644,7 @@
       ],
       "key": "CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -515,6 +662,7 @@
       ],
       "key": "CELERY_BROKER_RECOVERY_TASK_NAME_FILTER",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -532,6 +680,7 @@
       ],
       "key": "CELERY_BROKER_URL",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "high"
     },
     {
@@ -549,6 +698,7 @@
       ],
       "key": "CELERY_BROKER_VISIBILITY_TIMEOUT_S",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -566,6 +716,7 @@
       ],
       "key": "CELERY_CHORD_UNLOCK_MAX_RETRIES",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -583,6 +734,7 @@
       ],
       "key": "CELERY_CHORD_UNLOCK_RETRY_DELAY_S",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -600,6 +752,7 @@
       ],
       "key": "CELERY_RESULT_BACKEND",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "high"
     },
     {
@@ -617,6 +770,7 @@
       ],
       "key": "CELERY_RESULT_BACKEND_ENGINE_POOL_SIZE",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -634,6 +788,7 @@
       ],
       "key": "CELERY_TASK_ACKS_LATE",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -651,6 +806,7 @@
       ],
       "key": "CELERY_TASK_ACKS_ON_FAILURE_OR_TIMEOUT",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -668,6 +824,7 @@
       ],
       "key": "CELERY_TASK_REJECT_ON_WORKER_LOST",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -685,6 +842,7 @@
       ],
       "key": "CELERY_TASK_SOFT_TIME_LIMIT_S",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -702,6 +860,7 @@
       ],
       "key": "CELERY_TASK_TIME_LIMIT_S",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -719,6 +878,7 @@
       ],
       "key": "CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -736,6 +896,7 @@
       ],
       "key": "CELERY_WORKER_MAX_TASKS_PER_CHILD",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -753,6 +914,7 @@
       ],
       "key": "CELERY_WORKER_PREFETCH_MULTIPLIER",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -770,6 +932,7 @@
       ],
       "key": "DATABASE_MAX_OVERFLOW",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -787,6 +950,7 @@
       ],
       "key": "DATABASE_POOL_SIZE",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -804,6 +968,7 @@
       ],
       "key": "DATABASE_POOL_TIMEOUT_SECONDS",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -821,6 +986,7 @@
       ],
       "key": "DATABASE_POOL_TOTAL_CAP",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -839,6 +1005,7 @@
       ],
       "key": "DATABASE_URL",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "critical"
     },
     {
@@ -856,6 +1023,7 @@
       ],
       "key": "ENVIRONMENT",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -873,6 +1041,7 @@
       ],
       "key": "IDEMPOTENCY_CACHE_TTL",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -890,6 +1059,7 @@
       ],
       "key": "INGESTION_FOLLOWUP_TASKS_ENABLED",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -907,6 +1077,7 @@
       ],
       "key": "LLM_B17_EXPLANATION_FAST_TIER",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -924,6 +1095,7 @@
       ],
       "key": "LLM_B17_EXPLANATION_MAX_COST_CENTS",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -941,6 +1113,7 @@
       ],
       "key": "LLM_B17_EXPLANATION_TIMEOUT_MS",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -959,6 +1132,7 @@
       ],
       "key": "LLM_B17_PREWARM_CALL_BUDGET_CENTS",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -976,6 +1150,7 @@
       ],
       "key": "LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -994,6 +1169,7 @@
       ],
       "key": "LLM_B17_PREWARM_ENABLED",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1012,6 +1188,7 @@
       ],
       "key": "LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1030,6 +1207,7 @@
       ],
       "key": "LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1048,6 +1226,7 @@
       ],
       "key": "LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1065,6 +1244,7 @@
       ],
       "key": "LLM_B17_PREWARM_RUN_SYNC",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1082,6 +1262,7 @@
       ],
       "key": "LLM_B17_PREWARM_TIMEOUT_MS",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1099,6 +1280,7 @@
       ],
       "key": "LLM_BREAKER_FAILURE_THRESHOLD",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1116,6 +1298,7 @@
       ],
       "key": "LLM_BREAKER_OPEN_SECONDS",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1133,6 +1316,7 @@
       ],
       "key": "LLM_COMPLEXITY_POLICY_PATH",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1150,6 +1334,7 @@
       ],
       "key": "LLM_HOURLY_SHUTOFF_CENTS",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1167,6 +1352,7 @@
       ],
       "key": "LLM_MONTHLY_CAP_CENTS",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1184,6 +1370,7 @@
       ],
       "key": "LLM_PROVIDER_API_KEY",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "high"
     },
     {
@@ -1201,6 +1388,7 @@
       ],
       "key": "LLM_PROVIDER_ENABLED",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1218,6 +1406,7 @@
       ],
       "key": "LLM_PROVIDER_KILL_SWITCH",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1235,6 +1424,7 @@
       ],
       "key": "LLM_PROVIDER_MODEL",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1252,6 +1442,7 @@
       ],
       "key": "LLM_PROVIDER_TIMEOUT_MS",
       "owner": "ai-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1270,6 +1461,7 @@
       ],
       "key": "LOG_LEVEL",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1288,6 +1480,9 @@
       ],
       "key": "MIGRATION_DATABASE_URL",
       "owner": "platform-security",
+      "process_roles": [
+        "migration"
+      ],
       "rotation_criticality": "critical"
     },
     {
@@ -1305,6 +1500,7 @@
       ],
       "key": "PLATFORM_SUPPORTED_PLATFORMS",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1323,6 +1519,7 @@
       ],
       "key": "PLATFORM_TOKEN_ENCRYPTION_KEY",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "critical"
     },
     {
@@ -1340,6 +1537,7 @@
       ],
       "key": "PLATFORM_TOKEN_KEY_ID",
       "owner": "platform-security",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1357,6 +1555,7 @@
       ],
       "key": "STRIPE_BASE_URL",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1374,6 +1573,7 @@
       ],
       "key": "TENANT_API_KEY_HEADER",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1391,6 +1591,7 @@
       ],
       "key": "TENANT_SECRETS_CACHE_MAX_ENTRIES",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1408,6 +1609,7 @@
       ],
       "key": "TENANT_SECRETS_CACHE_TTL_SECONDS",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     },
     {
@@ -1426,6 +1628,7 @@
       ],
       "key": "WEBHOOK_AUTH_MAX_BODY_BYTES",
       "owner": "backend-platform",
+      "process_roles": null,
       "rotation_criticality": "none"
     }
   ]
