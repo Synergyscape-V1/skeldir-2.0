@@ -794,6 +794,18 @@ ALLOWED_M1_PATH_PREFIXES = [
     # and equivalence corpora authenticate lawful fixtures via the atomic
     # transition (admin allowed); negative fixtures stay pending/unknown.
     # Same exemption shape; every prohibition retained unchanged.
+    # --- B2.6-P2 Corrective XXV auth downgrade compatibility ---
+    # The runtime lookup stays owned by the dedicated BYPASSRLS role while
+    # the legacy lookup remains migration-owned, so the predecessor B1.2
+    # downgrade can recreate/drop it during the supported B0.3 closure
+    # walk. The proof-plane validators below track the same XXV amendment
+    # and coverage-surface changes. Same exemption shape; every prohibited
+    # path/content pattern is retained unchanged.
+    "alembic/versions/007_skeldir_foundation/202603021130_b12_p4_token_refresh_lifecycle.py",
+    "scripts/ci/enforce_b23_p6_end_to_end_closure.py",
+    "scripts/ci/validate_b26_p2_xix_physics.py",
+    "scripts/ci/validate_b26_p2_xviii_contract_hierarchy.py",
+    "scripts/ci/validate_b26_p2_xviii_physics.py",
     "scripts/ci/b26_p2_viii_equivalence.py",
     # B2.6-P2 Corrective XIII lane convergence (B2.5-P14 custody): the
     # trust-root auth_ingress service carries no B28 DSNs (untrusted).
