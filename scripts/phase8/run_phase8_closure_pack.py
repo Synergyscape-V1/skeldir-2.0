@@ -1051,8 +1051,19 @@ def _provision_source_attestation_key(env: dict[str, str]) -> None:
     fd, key_path = tempfile.mkstemp(prefix="b26_p2_source_attestation_key_p8_")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(private_seed)
+    public_b64 = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+    ).rstrip(b"=").decode("ascii")
+    fd_pub, public_path = tempfile.mkstemp(prefix="b26_p2_source_attestation_pub_p8_")
+    with os.fdopen(fd_pub, "w", encoding="utf-8") as handle:
+        handle.write(public_b64)
     env["E2E_SOURCE_ATTESTATION_KEY_FILE"] = key_path
+    env["E2E_SOURCE_ATTESTATION_PUBLIC_KEY_FILE"] = public_path
     env["E2E_SOURCE_ATTESTATION_REQUIRED"] = "true"
+    env["E2E_SOURCE_EVIDENCE_JOURNAL_PATH"] = "/tmp/b26_p2_source_evidence.jsonl"
 
 
 def _wait_for_auth_root(

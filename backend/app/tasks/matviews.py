@@ -49,8 +49,52 @@ class MatviewTaskFailure(RuntimeError):
 # window already covers. Coalesce only the ``schedule_class="realtime"``
 # path; explicit/manual refreshes remain immediate and observable.
 _REALTIME_REFRESH_LAST: dict[UUID, float] = {}
+_REALTIME_REFRESH_PENDING: set[UUID] = set()
 _REALTIME_REFRESH_LOCK = threading.Lock()
 _REALTIME_REFRESH_MIN_INTERVAL_S = 1.0
+
+
+def _coalesce_realtime_refresh(tenant_uuid: UUID, now: float) -> bool:
+    """Return True when this arrival must wait for the in-flight refresh.
+
+    A skipped arrival is recorded as pending. The refresh that is already
+    running is responsible for enqueueing one trailing refresh, so the final
+    event of a burst is never left behind by the coalescing window.
+    """
+    with _REALTIME_REFRESH_LOCK:
+        last = _REALTIME_REFRESH_LAST.get(tenant_uuid, 0.0)
+        if now - last < _REALTIME_REFRESH_MIN_INTERVAL_S:
+            _REALTIME_REFRESH_PENDING.add(tenant_uuid)
+            return True
+        _REALTIME_REFRESH_LAST[tenant_uuid] = now
+        return False
+
+
+def _schedule_trailing_realtime_refresh(
+    tenant_uuid: UUID, correlation_id: str
+) -> None:
+    """Enqueue exactly one trailing refresh for a coalesced final arrival."""
+    with _REALTIME_REFRESH_LOCK:
+        if tenant_uuid not in _REALTIME_REFRESH_PENDING:
+            return
+        _REALTIME_REFRESH_PENDING.discard(tenant_uuid)
+    try:
+        enqueue_tenant_task(
+            matview_refresh_all_for_tenant,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_uuid),
+            kwargs={
+                "correlation_id": correlation_id,
+                "schedule_class": "realtime",
+                "trailing": True,
+            },
+        )
+    except Exception:
+        with _REALTIME_REFRESH_LOCK:
+            _REALTIME_REFRESH_PENDING.add(tenant_uuid)
+        logger.exception(
+            "matview_realtime_trailing_enqueue_failed",
+            extra={"tenant_id": str(tenant_uuid), "correlation_id": correlation_id},
+        )
 
 _OUTCOME_STRATEGY_MAP: dict[RefreshOutcome, TaskOutcomeStrategy] = {
     RefreshOutcome.SUCCESS: TaskOutcomeStrategy.SUCCESS,
@@ -292,6 +336,7 @@ def matview_refresh_all_for_tenant(
     *,
     correlation_id: Optional[str] = None,
     schedule_class: Optional[str] = None,
+    trailing: bool = False,
 ) -> dict:
     tenant_uuid = _normalize_tenant_id(task_tenant_id(self))
     correlation_id = correlation_id or str(uuid4())
@@ -306,26 +351,26 @@ def matview_refresh_all_for_tenant(
             "schedule_class": schedule_class,
         },
     )
-    if schedule_class == "realtime":
-        now = time.monotonic()
-        with _REALTIME_REFRESH_LOCK:
-            last = _REALTIME_REFRESH_LAST.get(tenant_uuid, 0.0)
-            if now - last < _REALTIME_REFRESH_MIN_INTERVAL_S:
-                logger.info(
-                    "matview_refresh_realtime_coalesced",
-                    extra={
-                        "task_id": self.request.id,
-                        "tenant_id": str(tenant_uuid),
-                        "correlation_id": correlation_id,
-                        "schedule_class": schedule_class,
-                    },
-                )
-                return {
-                    "status": "skipped",
-                    "reason": "realtime_refresh_coalesced",
-                }
-            _REALTIME_REFRESH_LAST[tenant_uuid] = now
-    results = refresh_all_for_tenant(tenant_uuid, correlation_id)
+    if schedule_class == "realtime" and not trailing:
+        if _coalesce_realtime_refresh(tenant_uuid, time.monotonic()):
+            logger.info(
+                "matview_refresh_realtime_coalesced",
+                extra={
+                    "task_id": self.request.id,
+                    "tenant_id": str(tenant_uuid),
+                    "correlation_id": correlation_id,
+                    "schedule_class": schedule_class,
+                },
+            )
+            return {
+                "status": "skipped",
+                "reason": "realtime_refresh_coalesced",
+            }
+    try:
+        results = refresh_all_for_tenant(tenant_uuid, correlation_id)
+    finally:
+        if schedule_class == "realtime":
+            _schedule_trailing_realtime_refresh(tenant_uuid, correlation_id)
     strategies: list[TaskOutcomeStrategy] = []
     for result in results:
         strategy = strategy_for_refresh_result(result)

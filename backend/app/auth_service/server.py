@@ -401,6 +401,50 @@ async def _source_money_attestation_exists(session, ingress_id: str) -> bool:
     ).scalar() is not None
 
 
+async def _source_money_attestation_replay_required(session, ingress_id: str) -> bool:
+    """Return True when replay must re-run the conflict-safe attestation writer.
+
+    A present row is not sufficient: an earlier commit whose acknowledgement
+    was lost leaves only an ``unknown`` journal outcome, and the readers
+    correctly refuse it. The normal writer is idempotent at the row level and
+    appends a definitive ``committed`` outcome, so replay must run it whenever
+    the journal does not already contain a committed source-money fact for
+    this ingress. Replay storms with a committed fact keep the fast path.
+    """
+    if not await _source_money_attestation_exists(session, ingress_id):
+        return True
+    from app.core.config import settings  # noqa: PLC0415
+    from app.revenue_verification.source_evidence_journal import (  # noqa: PLC0415
+        resolve_source_facts,
+    )
+
+    journal_path = (
+        os.getenv("B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", "").strip()
+        or (settings.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH or "").strip()
+    )
+    if not journal_path:
+        return False
+    public_key_path = (
+        os.getenv("B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH", "").strip()
+        or settings.B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH
+    )
+    if not public_key_path:
+        return True
+    try:
+        resolved = await resolve_source_facts(
+            session,
+            path=journal_path,
+            public_key_path=public_key_path,
+        )
+    except Exception:
+        # An unreadable or unverifiable journal cannot justify skipping the
+        # writer; fail closed by taking the signing path.
+        return True
+    if resolved is None:
+        return False
+    return ("source_money", str(ingress_id)) not in resolved.committed
+
+
 @app.post("/v1/authenticate-ingress", response_model=AuthenticateResponse)
 async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateResponse:
     """Verify provider signature, then atomically persist auth truth."""
@@ -717,7 +761,7 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                 .one_or_none()
             )
             if inherited is not None:
-                if not await _source_money_attestation_exists(
+                if await _source_money_attestation_replay_required(
                     session, str(inherited["iid"])
                 ):
                     await _write_source_money_attestation(
@@ -771,7 +815,7 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             # is never replaced, and the statement is over the derived
             # provider bytes, so a forged row still fails the reader's
             # ingress/attestation equality checks.
-            if not await _source_money_attestation_exists(
+            if await _source_money_attestation_replay_required(
                 session, str(winner["iid"])
             ):
                 await _write_source_money_attestation(

@@ -483,3 +483,38 @@ async def test_signed_outcome_is_resolved_without_old_xid_lookup(
     assert resolved is not None
     assert ("source_money", "s1") in resolved.committed
     assert resolved.unknown == frozenset()
+
+
+def _append_many(path: str, count: int, prefix: str) -> None:
+    for index in range(count):
+        append_source_fact(
+            fact_kind="source_money",
+            fact_id=f"{prefix}-{index}",
+            tenant_id="t",
+            verdict_id="v",
+            statement={"id": f"{prefix}-{index}"},
+            signature="sig",
+            key_sha256="k",
+            database_transaction_id=f"{prefix}-{index}",
+            path=path,
+        )
+
+
+def test_concurrent_writers_preserve_one_chain(tmp_path: Path) -> None:
+    import multiprocessing
+
+    journal = tmp_path / "source.jsonl"
+    context = multiprocessing.get_context("spawn")
+    writers = [
+        context.Process(target=_append_many, args=(str(journal), 200, f"w{index}"))
+        for index in range(2)
+    ]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join(timeout=60)
+        assert writer.exitcode == 0
+    records = load_source_fact_records(journal)
+    assert records is not None
+    assert len(records) == 400
+

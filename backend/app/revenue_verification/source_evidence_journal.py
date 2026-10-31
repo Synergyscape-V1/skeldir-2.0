@@ -24,6 +24,8 @@ import hashlib
 import json
 import os
 import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -37,6 +39,52 @@ SOURCE_FACT_OUTCOME_VERSION = "b26-p2-source-fact-outcome-v1"
 #: production auth root runs one worker; the OS append itself remains
 #: durable and fsynced.
 _JOURNAL_APPEND_LOCK = threading.Lock()
+
+
+@contextmanager
+def _journal_file_lock(journal: Path):
+    """Serialise append/read across processes sharing one journal file.
+
+    The process-local ``threading.Lock`` above is not sufficient for the
+    supported two-auth-root topology: two uvicorn processes read the same tip
+    and append competing hashes. The OS lock is the cross-process boundary.
+    A separate ``.lock`` file keeps the journal itself append-only.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
+    try:
+        import msvcrt
+    except ImportError:
+        msvcrt = None
+
+    lock_path = journal.with_name(journal.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        elif msvcrt is not None:
+            handle.seek(0)
+            if handle.read(1) == b"":
+                handle.seek(0)
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    time.sleep(0.01)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            elif msvcrt is not None:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 class SourceFactJournalError(RuntimeError):
@@ -146,21 +194,24 @@ def _append_chained_record(journal: Path, record: dict[str, Any]) -> None:
     """Append one v3 record with a durable previous/record hash chain."""
 
     with _JOURNAL_APPEND_LOCK:
-        previous = _last_record_hash_unlocked(journal)
-        record["previous_record_hash"] = previous
-        record["record_hash"] = _record_hash(record)
-        line = json.dumps(record, sort_keys=True, separators=(",", ":"), default=str)
-        journal.parent.mkdir(parents=True, exist_ok=True)
-        with journal.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        stat = journal.stat()
-        _LAST_RECORD_HASH_CACHE[str(journal)] = (
-            stat.st_size,
-            stat.st_mtime_ns,
-            str(record["record_hash"]),
-        )
+        with _journal_file_lock(journal):
+            previous = _last_record_hash_unlocked(journal)
+            record["previous_record_hash"] = previous
+            record["record_hash"] = _record_hash(record)
+            line = json.dumps(
+                record, sort_keys=True, separators=(",", ":"), default=str
+            )
+            journal.parent.mkdir(parents=True, exist_ok=True)
+            with journal.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            stat = journal.stat()
+            _LAST_RECORD_HASH_CACHE[str(journal)] = (
+                stat.st_size,
+                stat.st_mtime_ns,
+                str(record["record_hash"]),
+            )
 
 
 def _verify_outcome(
@@ -371,30 +422,31 @@ def load_source_fact_records(
     if not journal.exists():
         return []
     records: list[dict[str, Any]] = []
-    with journal.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            record = json.loads(line)
-            version = record.get("version")
-            if version not in {
-                SOURCE_FACT_JOURNAL_VERSION,
-                SOURCE_FACT_JOURNAL_V2,
-                LEGACY_SOURCE_FACT_JOURNAL_VERSION,
-                SOURCE_FACT_OUTCOME_VERSION,
-            }:
-                raise SourceFactJournalError(
-                    "source_fact_journal_version_unsupported"
-                )
-            if version in {
-                SOURCE_FACT_JOURNAL_VERSION,
-                SOURCE_FACT_JOURNAL_V2,
-            } and not str(record.get("database_transaction_id") or "").strip():
-                raise SourceFactJournalError(
-                    "source_fact_journal_transaction_identity_missing"
-                )
-            records.append(record)
+    with _journal_file_lock(journal):
+        with journal.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                version = record.get("version")
+                if version not in {
+                    SOURCE_FACT_JOURNAL_VERSION,
+                    SOURCE_FACT_JOURNAL_V2,
+                    LEGACY_SOURCE_FACT_JOURNAL_VERSION,
+                    SOURCE_FACT_OUTCOME_VERSION,
+                }:
+                    raise SourceFactJournalError(
+                        "source_fact_journal_version_unsupported"
+                    )
+                if version in {
+                    SOURCE_FACT_JOURNAL_VERSION,
+                    SOURCE_FACT_JOURNAL_V2,
+                } and not str(record.get("database_transaction_id") or "").strip():
+                    raise SourceFactJournalError(
+                        "source_fact_journal_transaction_identity_missing"
+                    )
+                records.append(record)
     # v3 records carry an explicit previous/record hash chain. v2/v1 records
     # are still accepted as legacy prefixes; their computed hash is the link
     # the first v3 record must cite, so modifying or deleting a legacy record

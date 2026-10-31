@@ -124,9 +124,12 @@ services:
       # explicitly disable the requirement; production refuses either absence.
       B26_P2_SOURCE_ATTESTATION_REQUIRED: ${E2E_SOURCE_ATTESTATION_REQUIRED:-false}
       B26_P2_SOURCE_ATTESTATION_PRIVATE_KEY_PATH: /run/secrets/b26_p2_source_attestation_key
+      B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH: /run/secrets/b26_p2_source_attestation_pub
+      B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH: ${E2E_SOURCE_EVIDENCE_JOURNAL_PATH:-/tmp/b26_p2_source_evidence.jsonl}
     volumes:
       - ${E2E_INGRESS_DSN_FILE:-./secrets/b26_p2_ingress_dsn}:/run/secrets/b26_p2_ingress_dsn:ro
       - ${E2E_SOURCE_ATTESTATION_KEY_FILE:-./secrets/b26_p2_source_attestation_key}:/run/secrets/b26_p2_source_attestation_key:ro
+      - ${E2E_SOURCE_ATTESTATION_PUBLIC_KEY_FILE:-./secrets/b26_p2_source_attestation_pub}:/run/secrets/b26_p2_source_attestation_pub:ro
     command: uvicorn app.auth_service.server:app --host 0.0.0.0 --port 8001 --workers ${E2E_AUTH_WORKERS:-1}
     depends_on:
       postgres:
