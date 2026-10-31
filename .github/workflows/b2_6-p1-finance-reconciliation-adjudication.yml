@@ -73,7 +73,7 @@ jobs:
 
       - name: Prove static sensors and proof identity are non-vacuous
         run: |
-          python scripts/ci/run_b26_p1_negative_controls_isolated.py \
+          python scripts/ci/test_b26_p1_negative_controls.py \
             --evidence-out artifacts/b26_p1/static/negative-controls.json
           git diff --exit-code
 

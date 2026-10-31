@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -882,10 +884,49 @@ def run_battery() -> list[dict[str, Any]]:
     return ledger
 
 
+def _run_in_disposable_worktree(evidence_out: Path | None) -> int:
+    """Re-exec the mutating battery in an owned worktree, never this checkout."""
+    temp_root = Path(tempfile.mkdtemp(prefix="b26p1-nc-worktree-"))
+    try:
+        subprocess.run(
+            ["git", "worktree", "add", "--detach", str(temp_root), "HEAD"],
+            cwd=str(ROOT),
+            check=True,
+        )
+        env = dict(os.environ)
+        env["B26_P1_ISOLATED_WORKTREE"] = "1"
+        command = [
+            sys.executable,
+            str(temp_root / "scripts/ci/test_b26_p1_negative_controls.py"),
+        ]
+        if evidence_out is not None:
+            command.extend(
+                ["--evidence-out", str(temp_root / evidence_out)]
+            )
+        completed = subprocess.run(command, cwd=str(temp_root), env=env)
+        if completed.returncode != 0:
+            return completed.returncode
+        if evidence_out is not None:
+            source = temp_root / evidence_out
+            target = ROOT / evidence_out
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        return 0
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(temp_root)],
+            cwd=str(ROOT),
+            check=False,
+        )
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-out", type=Path)
     args = parser.parse_args()
+    if os.getenv("B26_P1_ISOLATED_WORKTREE") != "1":
+        return _run_in_disposable_worktree(args.evidence_out)
     try:
         ledger = run_battery()
     except RuntimeError as exc:
