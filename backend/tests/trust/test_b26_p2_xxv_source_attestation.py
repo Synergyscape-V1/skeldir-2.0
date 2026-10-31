@@ -489,3 +489,54 @@ def test_private_key_cache_rotates_with_the_mounted_file(tmp_path) -> None:
     public_path.write_text(public_two, encoding="utf-8")
     assert verify_signature(statement, signature, public_key_path=public_path) == fingerprint
 
+def test_private_key_cache_detects_metadata_preserving_replacement(tmp_path) -> None:
+    import os
+
+    from app.revenue_verification.source_attestation import (
+        generate_keypair,
+        load_private_key,
+        sign_statement,
+        verify_signature,
+    )
+
+    path = tmp_path / "source.key"
+    seed_one, _ = generate_keypair()
+    path.write_text(seed_one, encoding="utf-8")
+    first = load_private_key(path)
+    original_stat = path.stat()
+
+    seed_two, public_two = generate_keypair()
+    replacement = tmp_path / "replacement.key"
+    replacement.write_text(seed_two, encoding="utf-8")
+    os.utime(
+        replacement,
+        ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+    )
+    os.replace(replacement, path)
+    assert path.stat().st_size == original_stat.st_size
+    assert path.stat().st_mtime_ns == original_stat.st_mtime_ns
+
+    second = load_private_key(path)
+    assert second is not first
+
+    statement = {
+        "version": 1,
+        "tenant_id": "t",
+        "webhook_ingress_identity_id": "i",
+        "provider": "stripe",
+        "provider_native_event_reference": "e",
+        "provider_native_commerce_reference": "c",
+        "normalized_commerce_reference_kind": "order_reference",
+        "normalized_commerce_reference_value": "c",
+        "verified_amount_minor": 1,
+        "verified_amount_currency": "USD",
+        "verified_amount_scale": 2,
+        "event_timestamp": "2026-01-01T00:00:00Z",
+        "body_sha256": "a" * 64,
+        "authority_universe": None,
+    }
+    signature, fingerprint = sign_statement(statement, private_key_path=path)
+    public_path = tmp_path / "source.pub"
+    public_path.write_text(public_two, encoding="utf-8")
+    assert verify_signature(statement, signature, public_key_path=public_path) == fingerprint
+

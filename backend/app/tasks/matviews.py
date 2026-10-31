@@ -130,7 +130,7 @@ def _abandon_realtime_refresh(tenant_uuid: UUID) -> None:
 
 _OUTCOME_STRATEGY_MAP: dict[RefreshOutcome, TaskOutcomeStrategy] = {
     RefreshOutcome.SUCCESS: TaskOutcomeStrategy.SUCCESS,
-    RefreshOutcome.SKIPPED_LOCK_HELD: TaskOutcomeStrategy.SILENT_SKIP,
+    RefreshOutcome.SKIPPED_LOCK_HELD: TaskOutcomeStrategy.RETRY,
     RefreshOutcome.FAILED: TaskOutcomeStrategy.DEAD_LETTER,
 }
 
@@ -292,7 +292,12 @@ def _apply_strategy(
     retry_delay_s: int = 60,
 ) -> dict:
     if strategy == TaskOutcomeStrategy.RETRY:
-        raise task.retry(exc=RuntimeError("matview_refresh_retry"), countdown=retry_delay_s)
+        lock_contention = result.outcome == RefreshOutcome.SKIPPED_LOCK_HELD
+        raise task.retry(
+            exc=RuntimeError("matview_refresh_retry"),
+            countdown=1 if lock_contention else retry_delay_s,
+            max_retries=10 if lock_contention else None,
+        )
     if strategy == TaskOutcomeStrategy.DEAD_LETTER:
         raise MatviewTaskFailure(
             f"matview refresh failed: view={result.view_name} outcome={result.outcome.value}"
@@ -427,7 +432,14 @@ def matview_refresh_all_for_tenant(
 
         failed = next(
             (r for r in results if r.outcome == RefreshOutcome.FAILED),
-            results[0],
+            next(
+                (
+                    r
+                    for r in results
+                    if r.outcome == RefreshOutcome.SKIPPED_LOCK_HELD
+                ),
+                results[0],
+            ),
         )
         _log_task_summary(
             task_id=self.request.id,

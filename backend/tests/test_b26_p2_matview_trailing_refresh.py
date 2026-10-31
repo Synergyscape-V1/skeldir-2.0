@@ -57,3 +57,42 @@ def test_failed_owner_releases_claim_for_a_later_arrival() -> None:
     matviews._abandon_realtime_refresh(tenant)
     assert tenant not in matviews._REALTIME_REFRESH_ACTIVE
     assert matviews._begin_realtime_refresh(tenant, 100.1) is True
+
+def test_lock_held_is_retry_not_silent_success() -> None:
+    from datetime import datetime, timezone
+
+    from app.matviews.executor import RefreshOutcome, RefreshResult
+
+    result = RefreshResult(
+        view_name="mv_allocation_summary",
+        tenant_id=uuid4(),
+        correlation_id="corr",
+        outcome=RefreshOutcome.SKIPPED_LOCK_HELD,
+        started_at=datetime.now(timezone.utc),
+        duration_ms=1,
+        error_type=None,
+        error_message=None,
+        lock_key_debug=None,
+    )
+    assert (
+        matviews.strategy_for_refresh_result(result)
+        is matviews.TaskOutcomeStrategy.RETRY
+    )
+
+    class _Task:
+        def retry(self, **kwargs):
+            raise RuntimeError(kwargs)
+
+    try:
+        matviews._apply_strategy(
+            task=_Task(),
+            result=result,
+            strategy=matviews.TaskOutcomeStrategy.RETRY,
+        )
+    except RuntimeError as exc:
+        kwargs = exc.args[0]
+    else:  # pragma: no cover - defensive
+        raise AssertionError("lock-held refresh did not request a retry")
+    assert kwargs["countdown"] == 1
+    assert kwargs["max_retries"] == 10
+

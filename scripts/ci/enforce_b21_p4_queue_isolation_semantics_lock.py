@@ -118,8 +118,11 @@ def run_enforcement(
         # B2.6-P2 Corrective XIII: the generic worker blanks the
         # authenticated-ingress credential in all forms (env string and
         # file reference) and declares a non-auth process role (physical
-        # process isolation); queue topology is unchanged.
-        "B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution",
+        # process isolation). XXV: maintenance has its own solo consumer so
+        # the matview refresh lock cannot strand a final event behind a
+        # prefork sibling.
+        "B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,llm,attribution",
+        "worker_maintenance: cd backend && SKELDIR_PROCESS_ROLE=worker B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= celery -A app.celery_app.celery_app worker --loglevel=info --queues=maintenance --pool=solo --concurrency=1",
         "worker_bayesian: cd backend && SKELDIR_PROCESS_ROLE=worker_bayesian SKELDIR_CELERY_WORKER_ROLE=bayesian",
         "SKELDIR_CELERY_INCLUDE_BAYESIAN_TASKS=1 celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian",
     )

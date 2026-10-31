@@ -148,3 +148,29 @@ async def test_committed_cache_survives_retained_history(tmp_path, monkeypatch) 
         _NoQuerySession(), "ingress-1"
     ) is False
 
+@pytest.mark.asyncio
+async def test_cold_committed_replay_uses_writer_without_history_scan(
+    tmp_path, monkeypatch
+) -> None:
+    journal, _, public_path = _prepare(tmp_path, "committed")
+    from app.revenue_verification.source_evidence_journal import (
+        _COMMITTED_FACT_CACHE,
+        _COMMITTED_FACT_CACHE_LOCK,
+    )
+
+    with _COMMITTED_FACT_CACHE_LOCK:
+        _COMMITTED_FACT_CACHE.clear()
+    monkeypatch.setattr(server, "_source_money_attestation_exists", AsyncMock(return_value=True))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", str(journal))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH", str(public_path))
+
+    from app.revenue_verification import source_evidence_journal as journal_module
+
+    def _must_not_scan(*_args, **_kwargs):
+        raise AssertionError("cold replay scanned retained journal history")
+
+    monkeypatch.setattr(journal_module, "resolve_source_facts", _must_not_scan)
+    assert await server._source_money_attestation_replay_required(
+        _NoQuerySession(), "ingress-1"
+    ) is True
+

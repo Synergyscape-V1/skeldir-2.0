@@ -170,7 +170,7 @@ def public_key_fingerprint_from_raw(raw: bytes) -> str:
 #: Parsed signing keys by path. The auth root signs every authenticated fact;
 #: re-reading and decoding the mounted seed per request added avoidable disk
 #: work to the 46 rps profile. The stat identity invalidates on rotation.
-_PRIVATE_KEY_CACHE: dict[str, tuple[int, int, object]] = {}
+_PRIVATE_KEY_CACHE: dict[str, tuple[int, int, int, int, object]] = {}
 
 
 def load_private_key(path: str | os.PathLike[str]):
@@ -187,8 +187,10 @@ def load_private_key(path: str | os.PathLike[str]):
             cached is not None
             and cached[0] == before_path.st_size
             and cached[1] == before_path.st_mtime_ns
+            and cached[2] == before_path.st_ino
+            and cached[3] == before_path.st_dev
         ):
-            return cached[2]
+            return cached[4]
         for _attempt in range(3):
             with key_path.open("rb") as handle:
                 before = os.fstat(handle.fileno())
@@ -211,6 +213,8 @@ def load_private_key(path: str | os.PathLike[str]):
     _PRIVATE_KEY_CACHE[cache_key] = (
         after.st_size,
         after.st_mtime_ns,
+        after.st_ino,
+        after.st_dev,
         private_key,
     )
     return private_key

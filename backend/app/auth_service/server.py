@@ -407,16 +407,16 @@ async def _source_money_attestation_replay_required(session, ingress_id: str) ->
     A present row is not sufficient: an earlier commit whose acknowledgement
     was lost leaves only an ``unknown`` journal outcome, and the readers
     correctly refuse it. The normal writer is idempotent at the row level and
-    appends a definitive ``committed`` outcome, so replay must run it whenever
-    the journal does not already contain a committed source-money fact for
-    this ingress. Replay storms with a committed fact keep the fast path.
+    appends a definitive ``committed`` outcome. Replay runs it once when the
+    in-process committed-fact cache is cold or does not yet contain this
+    ingress; the writer's outcome warms the cache, so subsequent redeliveries
+    stay on the fast path. This deliberately does not scan or verify the
+    accumulated deployment journal on the authentication event loop.
     """
     if not await _source_money_attestation_exists(session, ingress_id):
         return True
     from app.core.config import settings  # noqa: PLC0415
     from app.revenue_verification.source_evidence_journal import (  # noqa: PLC0415
-        remember_committed_facts,
-        resolve_source_facts,
         source_fact_is_committed_in_process,
     )
 
@@ -426,30 +426,9 @@ async def _source_money_attestation_replay_required(session, ingress_id: str) ->
     )
     if not journal_path:
         return False
-    public_key_path = (
-        os.getenv("B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH", "").strip()
-        or settings.B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH
-    )
-    if not public_key_path:
-        return True
-    if source_fact_is_committed_in_process(
+    return not source_fact_is_committed_in_process(
         journal_path, "source_money", str(ingress_id)
-    ):
-        return False
-    try:
-        resolved = await resolve_source_facts(
-            session,
-            path=journal_path,
-            public_key_path=public_key_path,
-        )
-    except Exception:
-        # An unreadable or unverifiable journal cannot justify skipping the
-        # writer; fail closed by taking the signing path.
-        return True
-    if resolved is None:
-        return False
-    remember_committed_facts(journal_path, resolved.committed)
-    return ("source_money", str(ingress_id)) not in resolved.committed
+    )
 
 
 @app.post("/v1/authenticate-ingress", response_model=AuthenticateResponse)
