@@ -114,12 +114,12 @@ def _static_checks(violations: list[str], checks: dict) -> None:
         (BATCH_PATH, (
             "b26_p2_ingress_has_current_authority",
             "event_ref_rank",
-            "b26_p2_source_authority_state = 'current'",
+            "b26_p2_verdict_has_current_authority",
         )),
         (COVERAGE_PATH, (
-            "b26_p2_ingress_has_current_authority",
+            "b26_p2_authority_universe",
             "unverifiable_historical_revenue",
-            "b26_p2_source_authority_state = 'current'",
+            "read_verdict_source_attestation_status",
         )),
         (DERIVATION_PATH, (
             "derive_event_family",

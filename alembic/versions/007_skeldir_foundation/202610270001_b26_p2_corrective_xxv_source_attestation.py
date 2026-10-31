@@ -169,6 +169,10 @@ def upgrade() -> None:
         "ALTER TABLE public.b23_match_verdicts DISABLE ROW LEVEL SECURITY"
     )
     op.execute(
+        "ALTER TABLE public.b26_p2_source_money_attestation"
+        " DISABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
         """
         DO $$
         BEGIN
@@ -179,11 +183,16 @@ def upgrade() -> None:
                    AND column_name = 'b26_p2_demotion_reason'
             ) THEN
                 EXECUTE $sql$
-                    UPDATE public.webhook_ingress_identities
+                    UPDATE public.webhook_ingress_identities AS i
                        SET b26_p2_demotion_reason =
                            'pre_xxv_source_money_unattestable'
-                     WHERE b26_p2_demotion_reason IS NULL
-                       AND b26_p2_provenance_status = 'authenticated_known'
+                     WHERE i.b26_p2_demotion_reason IS NULL
+                       AND i.b26_p2_provenance_status = 'authenticated_known'
+                       AND NOT EXISTS (
+                           SELECT 1
+                             FROM public.b26_p2_source_money_attestation AS a
+                            WHERE a.webhook_ingress_identity_id = i.id
+                       )
                 $sql$;
             END IF;
         END $$;
@@ -197,6 +206,9 @@ def upgrade() -> None:
                    v.webhook_ingress_identity_id
                )
          WHERE v.b26_p2_source_authority_state = 'current'
+           AND public.b26_p2_derive_verdict_authority(
+                   v.webhook_ingress_identity_id
+               ) IS DISTINCT FROM v.b26_p2_source_authority_state
         """
     )
     op.execute(
@@ -212,6 +224,14 @@ def upgrade() -> None:
     )
     op.execute(
         "ALTER TABLE public.b23_match_verdicts FORCE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.b26_p2_source_money_attestation"
+        " ENABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE public.b26_p2_source_money_attestation"
+        " FORCE ROW LEVEL SECURITY"
     )
 
     # ------------------------------------------------------------------

@@ -788,6 +788,23 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
                 ),
                 "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", "2"),
                 "E2E_AUTH_WORKERS": os.getenv("E2E_AUTH_WORKERS", "2"),
+                # R3 fires at concurrency 80. Each API request can hold
+                # its relay session across the auth-root round trip, and
+                # the root holds an ingress session for the same call;
+                # size both pools so the load profile measures server
+                # work rather than pool checkout waits.
+                "E2E_API_DATABASE_POOL_SIZE": os.getenv(
+                    "E2E_API_DATABASE_POOL_SIZE", "40"
+                ),
+                "E2E_API_DATABASE_MAX_OVERFLOW": os.getenv(
+                    "E2E_API_DATABASE_MAX_OVERFLOW", "0"
+                ),
+                "E2E_AUTH_DATABASE_POOL_SIZE": os.getenv(
+                    "E2E_AUTH_DATABASE_POOL_SIZE", "30"
+                ),
+                "E2E_AUTH_DATABASE_MAX_OVERFLOW": os.getenv(
+                    "E2E_AUTH_DATABASE_MAX_OVERFLOW", "0"
+                ),
             }
         )
     return env

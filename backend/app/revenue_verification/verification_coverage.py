@@ -213,6 +213,7 @@ async def fetch_verification_coverage_aggregate(
           ) AS v ON true
          WHERE wi.tenant_id = :tenant_id
            AND wi.verified_commerce_ingress_state = 'authenticity_verified'
+           AND public.b26_p2_ingress_has_current_authority(wi.id)
            AND wi.event_timestamp >= :window_start
            AND wi.event_timestamp < :window_end
            AND wi.provider IN :supported_platforms

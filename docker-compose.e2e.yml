@@ -116,8 +116,8 @@ services:
       PLATFORM_TOKEN_KEY_ID: e2e-key
       # XIV: size the relay endpoint's pools to the lane's API pools so
       # the relay hop carries the same concurrency as the relaying API.
-      DATABASE_POOL_SIZE: "20"
-      DATABASE_MAX_OVERFLOW: "10"
+      DATABASE_POOL_SIZE: ${E2E_AUTH_DATABASE_POOL_SIZE:-20}
+      DATABASE_MAX_OVERFLOW: ${E2E_AUTH_DATABASE_MAX_OVERFLOW:-10}
       DATABASE_FORCE_POOLING: "1"
       # XXV: full-physics lanes mount an ephemeral source-attestation seed
       # and require the root to sign the verified amount. Other e2e profiles
