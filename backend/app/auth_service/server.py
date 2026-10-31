@@ -627,6 +627,24 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                 status_code=503,
                 detail=f"construction_authority_unverified:{exc}",
             ) from exc
+        # Replay storms present the same verified bytes concurrently. The
+        # atomic transition already serializes identical bytes, but only
+        # after every relay has created its precursor and reached the
+        # transition. Serializing here, before the winner pre-check, makes
+        # concurrent replays observe the first committed winner instead of
+        # each paying a doomed INSERT/rollback cycle. The namespace and
+        # digest match the atomic transition's bytes lock, so this adds no
+        # new lock order and distinct events remain fully concurrent.
+        await session.execute(
+            text(
+                "SELECT pg_advisory_xact_lock("
+                "hashtext(:namespace), hashtext(lower(:body_sha)))"
+            ),
+            {
+                "namespace": f"b26_p2_sovereign_bytes:{tenant_uuid}",
+                "body_sha": body_sha,
+            },
+        )
         # XVI (H-XVI-R6): sovereign content-addressed duplicate fence.
         # The relay-supplied event_id (idempotency key) is routing
         # information, not financial identity: the same provider event
