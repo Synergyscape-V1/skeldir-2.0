@@ -370,6 +370,36 @@ STATIC_CONTROLS = (
         "b26_duplicate_coverage_authority",
     ),
     (
+        "source_attestation_coverage_newline_count",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_tab_avg",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_concatenation",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_python_sum",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_func_sum",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
+        "source_attestation_coverage_appended",
+        SOURCE_ATTESTATION_MODULE,
+        "b26_duplicate_coverage_authority",
+    ),
+    (
         "xi_immutable_fields_removed",
         CANONICAL_SINK_MODULE,
         "canonical_external_fields_mutable",

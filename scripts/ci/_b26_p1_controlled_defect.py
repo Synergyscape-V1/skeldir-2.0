@@ -1071,6 +1071,69 @@ def source_attestation_coverage_window() -> None:
     )
 
 
+def source_attestation_coverage_newline_count() -> None:
+    """Equivalent COUNT aggregation with a newline-formatted SELECT."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "select\n    count(v.canonical_net_verified_amount_minor)\n        as verdict_net,",
+        defect="source_attestation_coverage_newline_count",
+    )
+
+
+def source_attestation_coverage_tab_avg() -> None:
+    """Equivalent AVG aggregation with a tab-formatted SELECT."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "select\tavg(v.canonical_net_verified_amount_minor)\t as verdict_net,",
+        defect="source_attestation_coverage_tab_avg",
+    )
+
+
+def source_attestation_coverage_concatenation() -> None:
+    """Aggregate SQL split across literal concatenation."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "DEFAULT_ATTESTATION_KEY_ID =",
+        "_NC_CONCAT = (\n"
+        "    \"SELECT \"\n"
+        "    + \"COUNT(v.canonical_net_verified_amount_minor) AS verdict_net\"\n"
+        ")\n\nDEFAULT_ATTESTATION_KEY_ID =",
+        defect="source_attestation_coverage_concatenation",
+    )
+
+
+def source_attestation_coverage_python_sum() -> None:
+    """Python summation over a string-named coverage column."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "DEFAULT_ATTESTATION_KEY_ID =",
+        "_NC_PY_SUM = sum(row[\"verified_amount_minor\"] for row in [])\n\nDEFAULT_ATTESTATION_KEY_ID =",
+        defect="source_attestation_coverage_python_sum",
+    )
+
+
+def source_attestation_coverage_func_sum() -> None:
+    """SQLAlchemy func.sum over a coverage column."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "DEFAULT_ATTESTATION_KEY_ID =",
+        "_NC_FUNC_SUM = func.sum(v.verified_amount_minor)\n\nDEFAULT_ATTESTATION_KEY_ID =",
+        defect="source_attestation_coverage_func_sum",
+    )
+
+
+def source_attestation_coverage_appended() -> None:
+    """A second aggregate read appended after the pinned legitimate read."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "DEFAULT_ATTESTATION_KEY_ID =",
+        "_NC_APPENDED_READ = \"SELECT SUM(v.verified_amount_minor) FROM public.b23_match_verdicts\"\n\nDEFAULT_ATTESTATION_KEY_ID =",
+        defect="source_attestation_coverage_appended",
+    )
+
+
 def xi_nc20_denominator_regression() -> None:
     """XI-NC-20: B2.3 coverage implementation semantic drift (AST pin)."""
     _replace_once(
@@ -1465,6 +1528,18 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "source_attestation_coverage_avg": source_attestation_coverage_avg,
     "source_attestation_coverage_group_by": source_attestation_coverage_group_by,
     "source_attestation_coverage_window": source_attestation_coverage_window,
+    "source_attestation_coverage_newline_count": (
+        source_attestation_coverage_newline_count
+    ),
+    "source_attestation_coverage_tab_avg": source_attestation_coverage_tab_avg,
+    "source_attestation_coverage_concatenation": (
+        source_attestation_coverage_concatenation
+    ),
+    "source_attestation_coverage_python_sum": (
+        source_attestation_coverage_python_sum
+    ),
+    "source_attestation_coverage_func_sum": source_attestation_coverage_func_sum,
+    "source_attestation_coverage_appended": source_attestation_coverage_appended,
     "xi_immutable_fields_removed": xi_immutable_fields_removed,
     "xii_nc01_platform_storage_mutable_list": xii_nc01_platform_storage_mutable_list,
     "xii_nc02_shallow_freeze_mapping_child": xii_nc02_shallow_freeze_mapping_child,
