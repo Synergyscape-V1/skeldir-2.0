@@ -7,6 +7,8 @@ exceptions without embedding refresh SQL in tasks.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
@@ -40,6 +42,15 @@ class UnmappedOutcomeError(RuntimeError):
 class MatviewTaskFailure(RuntimeError):
     pass
 
+
+# Realtime webhook ingestion enqueues a refresh chain per event. Under
+# sustained load the chains would refresh the same tenant's views many times
+# per second, spending database CPU on work that a bounded realtime freshness
+# window already covers. Coalesce only the ``schedule_class="realtime"``
+# path; explicit/manual refreshes remain immediate and observable.
+_REALTIME_REFRESH_LAST: dict[UUID, float] = {}
+_REALTIME_REFRESH_LOCK = threading.Lock()
+_REALTIME_REFRESH_MIN_INTERVAL_S = 1.0
 
 _OUTCOME_STRATEGY_MAP: dict[RefreshOutcome, TaskOutcomeStrategy] = {
     RefreshOutcome.SUCCESS: TaskOutcomeStrategy.SUCCESS,
@@ -295,6 +306,25 @@ def matview_refresh_all_for_tenant(
             "schedule_class": schedule_class,
         },
     )
+    if schedule_class == "realtime":
+        now = time.monotonic()
+        with _REALTIME_REFRESH_LOCK:
+            last = _REALTIME_REFRESH_LAST.get(tenant_uuid, 0.0)
+            if now - last < _REALTIME_REFRESH_MIN_INTERVAL_S:
+                logger.info(
+                    "matview_refresh_realtime_coalesced",
+                    extra={
+                        "task_id": self.request.id,
+                        "tenant_id": str(tenant_uuid),
+                        "correlation_id": correlation_id,
+                        "schedule_class": schedule_class,
+                    },
+                )
+                return {
+                    "status": "skipped",
+                    "reason": "realtime_refresh_coalesced",
+                }
+            _REALTIME_REFRESH_LAST[tenant_uuid] = now
     results = refresh_all_for_tenant(tenant_uuid, correlation_id)
     strategies: list[TaskOutcomeStrategy] = []
     for result in results:
