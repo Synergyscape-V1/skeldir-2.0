@@ -836,6 +836,7 @@ def test_b057_p5_full_chain_webhook_to_matview():
                 "celery_task_success_total",
                 {"task_name": "app.tasks.matviews.refresh_all_for_tenant"},
             ),
+            on_timeout=lambda: None,
         )
 
         metrics_api_after = _scrape_metrics(f"{base_url}/metrics")
