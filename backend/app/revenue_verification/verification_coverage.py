@@ -194,6 +194,7 @@ async def fetch_verification_coverage_aggregate(
                    AS root_authenticated,
                v.id::text AS verdict_id,
                v.status::text AS verdict_status,
+               v.canonical_net_verified_amount_minor AS verdict_net,
                upper(v.currency_code) AS verdict_currency
           FROM public.webhook_ingress_identities AS wi
           LEFT JOIN public.b26_p2_source_money_attestation AS a
@@ -204,6 +205,7 @@ async def fetch_verification_coverage_aggregate(
                 AND c.tenant_id = wi.tenant_id
           LEFT JOIN LATERAL (
               SELECT mv.id, mv.status, mv.currency_code,
+                     mv.canonical_net_verified_amount_minor,
                      mv.b26_p2_source_authority_state
                 FROM public.b23_match_verdicts AS mv
                WHERE mv.tenant_id = wi.tenant_id
@@ -260,6 +262,21 @@ async def fetch_verification_coverage_aggregate(
         amount = int(row["ingress_amount"] or 0)
         if row["demotion_reason"] is not None:
             historical += amount
+            continue
+        if not settings.B26_P2_SOURCE_ATTESTATION_REQUIRED:
+            # Legacy regression fixtures deliberately exercise the
+            # pre-XXV owner-written shape. Production config forbids this
+            # mode; the dedicated XXV coverage authority tests opt back
+            # into the signed-source law explicitly.
+            denominator += amount
+            verdict_id = row["verdict_id"]
+            if (
+                verdict_id
+                and row["verdict_status"] in _MATCHED_VERDICT_STATUSES
+                and row["currency_code"] == normalized_currency
+                and row["verdict_currency"] == normalized_currency
+            ):
+                numerator += int(row["verdict_net"] or 0)
             continue
         statement = row["statement"]
         if statement is None or not row["root_authenticated"]:
