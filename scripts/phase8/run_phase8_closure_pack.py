@@ -1066,6 +1066,67 @@ def _provision_source_attestation_key(env: dict[str, str]) -> None:
     env["E2E_SOURCE_EVIDENCE_JOURNAL_PATH"] = "/tmp/b26_p2_source_evidence.jsonl"
 
 
+def _probe_source_evidence_journal(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+    """Read and chain-validate the auth root's journal after the load leg."""
+    journal_path = env.get(
+        "E2E_SOURCE_EVIDENCE_JOURNAL_PATH",
+        "/tmp/b26_p2_source_evidence.jsonl",
+    )
+    code = (
+        "import json;"
+        "from app.revenue_verification.source_evidence_journal import "
+        "load_source_fact_records;"
+        f"p={journal_path!r};"
+        "r=load_source_fact_records(p) or [];"
+        "print(json.dumps({"
+        "'path':p,'record_count':len(r),"
+        "'prepared_count':sum(1 for x in r if x.get('version')!='b26-p2-source-fact-outcome-v1'),"
+        "'outcome_count':sum(1 for x in r if x.get('version')=='b26-p2-source-fact-outcome-v1'),"
+        "'tip':r[-1].get('record_hash') if r else None}))"
+    )
+    proc = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.e2e.yml",
+            "exec",
+            "-T",
+            "auth_ingress",
+            "python",
+            "-c",
+            code,
+        ],
+        cwd=str(cfg.repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "source evidence journal probe failed: "
+            f"{proc.stdout}{proc.stderr}"
+        )
+    payload = None
+    for line in reversed(proc.stdout.splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            payload = json.loads(line)
+            break
+    if payload is None:
+        raise RuntimeError("source evidence journal probe returned no JSON")
+    if int(payload.get("record_count", 0)) <= 0:
+        raise RuntimeError("source evidence journal is empty after the load leg")
+    if int(payload.get("outcome_count", 0)) <= 0:
+        raise RuntimeError("source evidence journal has no signed outcomes")
+    artifact = cfg.artifact_dir / "source_evidence_journal_probe.json"
+    artifact.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return payload
+
+
 def _wait_for_auth_root(
     env: dict[str, str], timeout_s: int = 120
 ) -> None:
@@ -1663,6 +1724,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             raise r3_step_error
         if collect_error is not None:
             raise collect_error
+        journal_probe = _probe_source_evidence_journal(cfg, env)
         r3_profile = _extract_profile_metrics_from_r3_log(
             cfg.logs_dir / "r3_ingestion_under_fire.log",
             "EG3_4_Test2_Month18",
@@ -1843,6 +1905,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         )
         _assert_secret_hygiene(cfg.logs_dir / "compose_logs.log")
         gates["eg8_7_operational_readiness_pack"] = "pass"
+        gates["eg8_8_source_evidence_journal"] = "pass"
         return {
             "run_authority": run_authority,
             "openapi_spec_sha256": openapi_spec_sha256,
@@ -1850,6 +1913,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "eg8_5": eg85_evidence,
             "negative_controls": negative_controls,
             "container_identity": container_identity_evidence,
+            "source_evidence_journal": journal_probe,
         }
     finally:
         if llm_load_proc is not None and llm_load_proc.poll() is None:
