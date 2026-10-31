@@ -163,6 +163,44 @@ def journal_record_hash(record: Mapping[str, Any]) -> str:
 #: the stat identity makes an external append/truncate invalidate the cache.
 _LAST_RECORD_HASH_CACHE: dict[str, tuple[int, int, str | None]] = {}
 
+#: In-process committed fact identities. The authentication root appends the
+#: outcome in this process, so a redelivery can answer the common case without
+#: re-reading and re-verifying the entire deployment journal. A miss falls back
+#: to the authoritative resolver and then warms this cache.
+_COMMITTED_FACT_CACHE: dict[str, set[tuple[str, str]]] = {}
+_COMMITTED_FACT_CACHE_LOCK = threading.Lock()
+
+
+def _fact_cache_key(path: str | os.PathLike[str]) -> str:
+    return str(Path(path).resolve())
+
+
+def remember_committed_fact(
+    path: str | os.PathLike[str], fact_kind: str, fact_id: str
+) -> None:
+    with _COMMITTED_FACT_CACHE_LOCK:
+        _COMMITTED_FACT_CACHE.setdefault(_fact_cache_key(path), set()).add(
+            (str(fact_kind), str(fact_id))
+        )
+
+
+def remember_committed_facts(
+    path: str | os.PathLike[str], keys: object
+) -> None:
+    with _COMMITTED_FACT_CACHE_LOCK:
+        bucket = _COMMITTED_FACT_CACHE.setdefault(_fact_cache_key(path), set())
+        for key in keys:  # type: ignore[union-attr]
+            bucket.add((str(key[0]), str(key[1])))
+
+
+def source_fact_is_committed_in_process(
+    path: str | os.PathLike[str], fact_kind: str, fact_id: str
+) -> bool:
+    with _COMMITTED_FACT_CACHE_LOCK:
+        return (str(fact_kind), str(fact_id)) in _COMMITTED_FACT_CACHE.get(
+            _fact_cache_key(path), set()
+        )
+
 
 def _last_record_hash_unlocked(journal: Path) -> str | None:
     try:
@@ -395,6 +433,10 @@ def append_source_fact_outcome(
         "key_sha256": hashlib.sha256(public_raw).hexdigest(),
     }
     _append_chained_record(journal, record_payload)
+    if outcome == "committed":
+        remember_committed_fact(
+            journal, str(record_payload["fact_kind"]), str(record_payload["fact_id"])
+        )
 
 
 @contextlib.asynccontextmanager

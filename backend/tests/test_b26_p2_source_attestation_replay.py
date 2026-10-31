@@ -48,14 +48,21 @@ def _prepare(tmp_path: Path, outcome: str) -> tuple[Path, Path]:
         private_key_path=private_path,
         path=journal,
     )
-    return private_path, public_path
+    return journal, private_path, public_path
 
 
 @pytest.mark.asyncio
 async def test_unknown_replay_requires_writer(tmp_path, monkeypatch) -> None:
-    _, public_path = _prepare(tmp_path, "unknown")
+    journal, _, public_path = _prepare(tmp_path, "unknown")
+    from app.revenue_verification.source_evidence_journal import (
+        _COMMITTED_FACT_CACHE,
+        _COMMITTED_FACT_CACHE_LOCK,
+    )
+
+    with _COMMITTED_FACT_CACHE_LOCK:
+        _COMMITTED_FACT_CACHE.clear()
     monkeypatch.setattr(server, "_source_money_attestation_exists", AsyncMock(return_value=True))
-    monkeypatch.setattr(settings, "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", str(tmp_path / "source.jsonl"))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", str(journal))
     monkeypatch.setattr(settings, "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH", str(public_path))
     assert await server._source_money_attestation_replay_required(
         _NoQuerySession(), "ingress-1"
@@ -64,10 +71,30 @@ async def test_unknown_replay_requires_writer(tmp_path, monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_committed_replay_keeps_fast_path(tmp_path, monkeypatch) -> None:
-    _, public_path = _prepare(tmp_path, "committed")
+    journal, _, public_path = _prepare(tmp_path, "committed")
     monkeypatch.setattr(server, "_source_money_attestation_exists", AsyncMock(return_value=True))
-    monkeypatch.setattr(settings, "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", str(tmp_path / "source.jsonl"))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", str(journal))
     monkeypatch.setattr(settings, "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH", str(public_path))
+    assert await server._source_money_attestation_replay_required(
+        _NoQuerySession(), "ingress-1"
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_committed_cache_avoids_full_journal_verification(
+    tmp_path, monkeypatch
+) -> None:
+    journal, _, public_path = _prepare(tmp_path, "committed")
+    monkeypatch.setattr(server, "_source_money_attestation_exists", AsyncMock(return_value=True))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", str(journal))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH", str(public_path))
+
+    from app.revenue_verification import source_evidence_journal as journal_module
+
+    def _must_not_resolve(*_args, **_kwargs):
+        raise AssertionError("committed cache miss")
+
+    monkeypatch.setattr(journal_module, "resolve_source_facts", _must_not_resolve)
     assert await server._source_money_attestation_replay_required(
         _NoQuerySession(), "ingress-1"
     ) is False

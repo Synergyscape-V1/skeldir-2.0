@@ -593,6 +593,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/attest_b26_p1_inherited_conduction.py",
     "scripts/ci/b26_p1_evidence.py",
     "scripts/ci/test_b26_p1_negative_controls.py",
+    "scripts/ci/run_b26_p1_negative_controls_isolated.py",
     "scripts/ci/validate_b26_p1_authority.py",
     # --- B2.6-P2 Corrective IV deployment-equivalence surface ---
     # Authority-only slice: the single Corrective-IV migration (FK

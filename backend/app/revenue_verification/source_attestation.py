@@ -179,23 +179,36 @@ def load_private_key(path: str | os.PathLike[str]):
     )
 
     key_path = Path(path)
+    cache_key = str(key_path)
     try:
-        before = key_path.stat()
-        cached = _PRIVATE_KEY_CACHE.get(str(key_path))
+        before_path = key_path.stat()
+        cached = _PRIVATE_KEY_CACHE.get(cache_key)
         if (
             cached is not None
-            and cached[0] == before.st_size
-            and cached[1] == before.st_mtime_ns
+            and cached[0] == before_path.st_size
+            and cached[1] == before_path.st_mtime_ns
         ):
             return cached[2]
-        raw = _b64u_decode(key_path.read_text(encoding="utf-8").strip())
-        after = key_path.stat()
+        for _attempt in range(3):
+            with key_path.open("rb") as handle:
+                before = os.fstat(handle.fileno())
+                data = handle.read()
+                after = os.fstat(handle.fileno())
+            if (
+                before.st_ino == after.st_ino
+                and before.st_size == after.st_size
+                and before.st_mtime_ns == after.st_mtime_ns
+            ):
+                break
+        else:
+            raise SourceAttestationError("attestation_private_key_changed_during_read")
+        raw = _b64u_decode(data.decode("utf-8").strip())
     except (OSError, ValueError) as exc:
         raise SourceAttestationError("attestation_private_key_unreadable") from exc
     if len(raw) != 32:
         raise SourceAttestationError("attestation_private_key_wrong_length")
     private_key = Ed25519PrivateKey.from_private_bytes(raw)
-    _PRIVATE_KEY_CACHE[str(key_path)] = (
+    _PRIVATE_KEY_CACHE[cache_key] = (
         after.st_size,
         after.st_mtime_ns,
         private_key,

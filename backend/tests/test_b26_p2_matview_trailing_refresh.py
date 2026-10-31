@@ -9,45 +9,37 @@ from app.tasks import matviews
 
 def _reset() -> None:
     matviews._REALTIME_REFRESH_LAST.clear()
+    matviews._REALTIME_REFRESH_ACTIVE.clear()
     matviews._REALTIME_REFRESH_PENDING.clear()
 
 
-def test_coalesced_arrival_is_pending_and_schedules_one_trailing_refresh(
-    monkeypatch,
-) -> None:
+def test_serial_arrival_during_refresh_keeps_the_owner_alive() -> None:
     _reset()
     tenant = uuid4()
-    assert matviews._coalesce_realtime_refresh(tenant, 100.0) is False
-    assert matviews._coalesce_realtime_refresh(tenant, 100.1) is True
+    assert matviews._begin_realtime_refresh(tenant, 100.0) is True
+    assert matviews._begin_realtime_refresh(tenant, 100.1) is False
     assert tenant in matviews._REALTIME_REFRESH_PENDING
-
-    calls = []
-    monkeypatch.setattr(
-        matviews,
-        "enqueue_tenant_task",
-        lambda task, **kwargs: calls.append((task, kwargs)),
-    )
-    matviews._schedule_trailing_realtime_refresh(tenant, "corr")
-    assert len(calls) == 1
-    task, kwargs = calls[0]
-    assert task is matviews.matview_refresh_all_for_tenant
-    assert kwargs["kwargs"]["trailing"] is True
-    assert kwargs["kwargs"]["schedule_class"] == "realtime"
+    assert matviews._finish_realtime_refresh(tenant) is True
+    assert tenant in matviews._REALTIME_REFRESH_ACTIVE
     assert tenant not in matviews._REALTIME_REFRESH_PENDING
+    assert matviews._finish_realtime_refresh(tenant) is False
+    assert tenant not in matviews._REALTIME_REFRESH_ACTIVE
 
-    matviews._schedule_trailing_realtime_refresh(tenant, "corr")
-    assert len(calls) == 1
 
-
-def test_trailing_enqueue_failure_keeps_pending(monkeypatch) -> None:
+def test_arrival_after_owner_finishes_becomes_the_next_owner() -> None:
     _reset()
     tenant = uuid4()
-    matviews._coalesce_realtime_refresh(tenant, 100.0)
-    matviews._coalesce_realtime_refresh(tenant, 100.1)
+    assert matviews._begin_realtime_refresh(tenant, 100.0) is True
+    assert matviews._finish_realtime_refresh(tenant) is False
+    assert tenant not in matviews._REALTIME_REFRESH_ACTIVE
+    assert matviews._begin_realtime_refresh(tenant, 100.2) is True
+    assert matviews._finish_realtime_refresh(tenant) is False
 
-    def _fail(*_args, **_kwargs):
-        raise RuntimeError("broker unavailable")
 
-    monkeypatch.setattr(matviews, "enqueue_tenant_task", _fail)
-    matviews._schedule_trailing_realtime_refresh(tenant, "corr")
-    assert tenant in matviews._REALTIME_REFRESH_PENDING
+def test_failed_owner_releases_claim_for_a_later_arrival() -> None:
+    _reset()
+    tenant = uuid4()
+    assert matviews._begin_realtime_refresh(tenant, 100.0) is True
+    matviews._abandon_realtime_refresh(tenant)
+    assert tenant not in matviews._REALTIME_REFRESH_ACTIVE
+    assert matviews._begin_realtime_refresh(tenant, 100.1) is True

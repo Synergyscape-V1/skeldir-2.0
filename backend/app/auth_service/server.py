@@ -415,7 +415,9 @@ async def _source_money_attestation_replay_required(session, ingress_id: str) ->
         return True
     from app.core.config import settings  # noqa: PLC0415
     from app.revenue_verification.source_evidence_journal import (  # noqa: PLC0415
+        remember_committed_facts,
         resolve_source_facts,
+        source_fact_is_committed_in_process,
     )
 
     journal_path = (
@@ -430,6 +432,10 @@ async def _source_money_attestation_replay_required(session, ingress_id: str) ->
     )
     if not public_key_path:
         return True
+    if source_fact_is_committed_in_process(
+        journal_path, "source_money", str(ingress_id)
+    ):
+        return False
     try:
         resolved = await resolve_source_facts(
             session,
@@ -442,6 +448,7 @@ async def _source_money_attestation_replay_required(session, ingress_id: str) ->
         return True
     if resolved is None:
         return False
+    remember_committed_facts(journal_path, resolved.committed)
     return ("source_money", str(ingress_id)) not in resolved.committed
 
 
