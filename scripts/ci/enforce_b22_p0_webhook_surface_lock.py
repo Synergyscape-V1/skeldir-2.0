@@ -443,7 +443,7 @@ def run_enforcement(
         _compare_set(
             name="contract_scope_runtime_transport_only_allowlist",
             observed=transport_allowlist_set,
-            expected=runtime_alias_surface,
+            expected=runtime_alias_surface | runtime_internal_surface,
             violations=violations,
         )
 
