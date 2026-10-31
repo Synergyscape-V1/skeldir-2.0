@@ -362,6 +362,14 @@ def _observe_history_witness() -> None:
             "print(asyncio.run(observe_history_integrity()))",
         )
     except subprocess.CalledProcessError as exc:
+        # A beat-scheduled observation may already hold a checkpoint at the
+        # same live ledger count. The witness deliberately refuses a second
+        # checkpoint for one count (its hash includes observed_at), so the
+        # benign fork is not a failure; the caller's wait below still proves
+        # the existing observation agrees with live state and Trust issuance
+        # verifies the signed journal.
+        if "witness_custody_fork" in str(exc.stderr or ""):
+            return
         raise AssertionError(
             "history observer failed:"
             f" stdout={exc.stdout!r} stderr={exc.stderr!r}"

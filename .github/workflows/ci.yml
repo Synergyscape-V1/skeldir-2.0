@@ -3967,7 +3967,7 @@ jobs:
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT CONNECT ON DATABASE skeldir_phase TO app_worker; GRANT USAGE ON SCHEMA public TO app_worker;"
           psql -h localhost -U postgres -d skeldir_phase -c "ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
-          psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;" -c "ALTER ROLE migration_owner CREATEROLE;"
+          psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;" -c "ALTER ROLE migration_owner CREATEROLE;" -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
           # B2.6-P2 Corrective XII: the dedicated ingress principal must
@@ -4126,7 +4126,7 @@ jobs:
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT CONNECT ON DATABASE skeldir_phase TO app_worker; GRANT USAGE ON SCHEMA public TO app_worker;"
           psql -h localhost -U postgres -d skeldir_phase -c "ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
-          psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;"
+          psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;" -c "ALTER ROLE migration_owner CREATEROLE;" -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
           # B2.6-P2 Corrective XII: the dedicated ingress principal must
@@ -5333,7 +5333,7 @@ jobs:
           # Historical migrations transfer materialized-view ownership to the
           # runtime role; membership permits that DDL without collapsing the
           # distinct runtime and migration login identities.
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;" -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;" -c "ALTER ROLE migration_owner CREATEROLE;" -c "GRANT app_worker TO migration_owner;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;" -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;" -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;" -c "ALTER ROLE migration_owner CREATEROLE;" -c "CREATE ROLE app_worker NOLOGIN;" -c "GRANT app_worker TO migration_owner;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER migration_owner;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"

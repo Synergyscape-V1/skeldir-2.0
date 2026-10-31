@@ -378,6 +378,29 @@ async def _write_source_money_attestation(
         ) from exc
 
 
+async def _source_money_attestation_exists(session, ingress_id: str) -> bool:
+    """Return whether this ingress already carries a signed source attestation.
+
+    Replay storms present the same verified bytes repeatedly. Re-signing and
+    re-inserting the same attestation serializes every replay on one unique
+    row and is unnecessary: the first authentication committed the row with
+    the authority. The check is a plain tenant-scoped SELECT (app_ingress has
+    SELECT on the attestation table); a genuinely missing inherited row still
+    takes the signing path.
+    """
+    from sqlalchemy import text  # noqa: PLC0415
+
+    return (
+        await session.execute(
+            text(
+                "SELECT 1 FROM public.b26_p2_source_money_attestation"
+                " WHERE webhook_ingress_identity_id = :ingress"
+            ),
+            {"ingress": ingress_id},
+        )
+    ).scalar() is not None
+
+
 @app.post("/v1/authenticate-ingress", response_model=AuthenticateResponse)
 async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateResponse:
     """Verify provider signature, then atomically persist auth truth."""
@@ -699,24 +722,27 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                 .one_or_none()
             )
             if inherited is not None:
-                await _write_source_money_attestation(
-                    session,
-                    tenant_id=str(tenant_uuid),
-                    ingress_id=str(inherited["iid"]),
-                    provider=provider,
-                    commerce={
-                        "event_ref": derived.provider_native_event_reference,
-                        "commerce_ref": (
-                            derived.provider_native_commerce_reference
-                        ),
-                        "norm_kind": (
-                            derived.normalized_commerce_reference_kind
-                        ),
-                        "norm_value": (
-                            derived.normalized_commerce_reference_value
-                        ),
-                        "amount_minor": int(derived.verified_amount_minor),
-                        "amount_currency": derived.verified_amount_currency,
+                if not await _source_money_attestation_exists(
+                    session, str(inherited["iid"])
+                ):
+                    await _write_source_money_attestation(
+                        session,
+                        tenant_id=str(tenant_uuid),
+                        ingress_id=str(inherited["iid"]),
+                        provider=provider,
+                        commerce={
+                            "event_ref": derived.provider_native_event_reference,
+                            "commerce_ref": (
+                                derived.provider_native_commerce_reference
+                            ),
+                            "norm_kind": (
+                                derived.normalized_commerce_reference_kind
+                            ),
+                            "norm_value": (
+                                derived.normalized_commerce_reference_value
+                            ),
+                            "amount_minor": int(derived.verified_amount_minor),
+                            "amount_currency": derived.verified_amount_currency,
                         "amount_scale": int(derived.verified_amount_scale),
                     },
                     event_timestamp=derived.event_timestamp,
@@ -750,23 +776,26 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             # is never replaced, and the statement is over the derived
             # provider bytes, so a forged row still fails the reader's
             # ingress/attestation equality checks.
-            await _write_source_money_attestation(
-                session,
-                tenant_id=str(tenant_uuid),
-                ingress_id=str(winner["iid"]),
-                provider=provider,
-                commerce={
-                    "event_ref": derived.provider_native_event_reference,
-                    "commerce_ref": derived.provider_native_commerce_reference,
-                    "norm_kind": derived.normalized_commerce_reference_kind,
-                    "norm_value": derived.normalized_commerce_reference_value,
-                    "amount_minor": int(derived.verified_amount_minor),
-                    "amount_currency": derived.verified_amount_currency,
-                    "amount_scale": int(derived.verified_amount_scale),
-                },
-                event_timestamp=derived.event_timestamp,
-                body_sha256=body_sha,
-            )
+            if not await _source_money_attestation_exists(
+                session, str(winner["iid"])
+            ):
+                await _write_source_money_attestation(
+                    session,
+                    tenant_id=str(tenant_uuid),
+                    ingress_id=str(winner["iid"]),
+                    provider=provider,
+                    commerce={
+                        "event_ref": derived.provider_native_event_reference,
+                        "commerce_ref": derived.provider_native_commerce_reference,
+                        "norm_kind": derived.normalized_commerce_reference_kind,
+                        "norm_value": derived.normalized_commerce_reference_value,
+                        "amount_minor": int(derived.verified_amount_minor),
+                        "amount_currency": derived.verified_amount_currency,
+                        "amount_scale": int(derived.verified_amount_scale),
+                    },
+                    event_timestamp=derived.event_timestamp,
+                    body_sha256=body_sha,
+                )
             return AuthenticateResponse(
                 status="authenticated",
                 provenance_status="authenticated_known",
