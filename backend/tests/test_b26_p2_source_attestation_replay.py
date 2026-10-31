@@ -116,3 +116,35 @@ async def test_no_journal_keeps_legacy_fast_path(monkeypatch) -> None:
     assert await server._source_money_attestation_replay_required(
         _NoQuerySession(), "ingress-1"
     ) is False
+
+@pytest.mark.asyncio
+async def test_committed_cache_survives_retained_history(tmp_path, monkeypatch) -> None:
+    journal, _, public_path = _prepare(tmp_path, "committed")
+    from app.revenue_verification.source_evidence_journal import append_source_fact
+
+    for index in range(250):
+        append_source_fact(
+            fact_kind="source_money",
+            fact_id=f"other-{index}",
+            tenant_id="tenant-2",
+            verdict_id="",
+            statement={"id": f"other-{index}"},
+            signature="sig",
+            key_sha256="k",
+            database_transaction_id=f"other-{index}",
+            path=journal,
+        )
+    monkeypatch.setattr(server, "_source_money_attestation_exists", AsyncMock(return_value=True))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", str(journal))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH", str(public_path))
+
+    from app.revenue_verification import source_evidence_journal as journal_module
+
+    def _must_not_resolve(*_args, **_kwargs):
+        raise AssertionError("retained history forced a full journal verification")
+
+    monkeypatch.setattr(journal_module, "resolve_source_facts", _must_not_resolve)
+    assert await server._source_money_attestation_replay_required(
+        _NoQuerySession(), "ingress-1"
+    ) is False
+
