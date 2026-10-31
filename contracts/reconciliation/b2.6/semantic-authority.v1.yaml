@@ -46,7 +46,7 @@ coverage_authority:
   aggregate_callable: app.revenue_verification.verification_coverage.fetch_verification_coverage_aggregate
   metric_object: app.revenue_verification.verification_coverage.VERIFICATION_COVERAGE
   metric_method: compute
-  implementation_ast_sha256: a881de80612ca5ceb9bfe0e1dd40e69a35b72438549b6d750ef4b41c64371f2a
+  implementation_ast_sha256: 059169780fcefecfd7b55533f944af421e857959b6a26c7ab40c0499856e83cd
   supported_provider_scope_reference: app.revenue_verification.verification_coverage.SUPPORTED_VERIFICATION_COVERAGE_PLATFORMS
   supported_currency_scope_reference: app.revenue_verification.verification_coverage.SUPPORTED_VERIFICATION_COVERAGE_CURRENCIES
   numerator:
