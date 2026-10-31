@@ -826,10 +826,32 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
         }
         # A failed INSERT aborts the database transaction; isolate the
         # attempt in a savepoint so the adopt-and-promote fallback below
-        # still runs in the outer authoritative transaction.
+        # still runs in the outer authoritative transaction. The general
+        # API normally commits a precursor before relaying, so first detect
+        # that row without attempting an INSERT that the adoption trigger
+        # would reject. Avoiding that expected error/subtransaction removes
+        # a per-request serialization cost from the sustained ingestion leg;
+        # a genuine race still falls through to the savepoint path.
         _insert_failed: Exception | None = None
         _insert_detail = ""
+        precursor_present = (
+            await session.execute(
+                text(
+                    "SELECT 1 FROM public.webhook_ingress_identities"
+                    " WHERE tenant_id = :tenant"
+                    " AND idempotency_key = :idem"
+                ),
+                {"tenant": str(tenant_uuid), "idem": idem},
+            )
+        ).scalar() is not None
+        if precursor_present:
+            _insert_failed = RuntimeError(
+                "b26_p2_ingress_precursor_present_promote_required"
+            )
+            _insert_detail = str(_insert_failed)
         try:
+            if precursor_present:
+                raise _insert_failed
             async with session.begin_nested():
                 await session.execute(
                     text(
