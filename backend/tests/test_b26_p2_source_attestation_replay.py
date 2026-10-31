@@ -174,3 +174,50 @@ async def test_cold_committed_replay_uses_writer_without_history_scan(
         _NoQuerySession(), "ingress-1"
     ) is True
 
+@pytest.mark.asyncio
+async def test_concurrent_cold_replays_do_not_scan_retained_history(
+    tmp_path, monkeypatch
+) -> None:
+    import asyncio
+
+    journal, _, public_path = _prepare(tmp_path, "committed")
+    from app.revenue_verification.source_evidence_journal import (
+        _COMMITTED_FACT_CACHE,
+        _COMMITTED_FACT_CACHE_LOCK,
+        append_source_fact,
+    )
+
+    for index in range(500):
+        append_source_fact(
+            fact_kind="source_money",
+            fact_id=f"burst-{index}",
+            tenant_id="tenant-2",
+            verdict_id="",
+            statement={"id": f"burst-{index}"},
+            signature="sig",
+            key_sha256="k",
+            database_transaction_id=f"burst-{index}",
+            path=journal,
+        )
+    with _COMMITTED_FACT_CACHE_LOCK:
+        _COMMITTED_FACT_CACHE.clear()
+    monkeypatch.setattr(server, "_source_money_attestation_exists", AsyncMock(return_value=True))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", str(journal))
+    monkeypatch.setattr(settings, "B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH", str(public_path))
+
+    from app.revenue_verification import source_evidence_journal as journal_module
+
+    def _must_not_scan(*_args, **_kwargs):
+        raise AssertionError("concurrent cold replay scanned retained history")
+
+    monkeypatch.setattr(journal_module, "resolve_source_facts", _must_not_scan)
+    results = await asyncio.gather(
+        *[
+            server._source_money_attestation_replay_required(
+                _NoQuerySession(), "ingress-1"
+            )
+            for _ in range(50)
+        ]
+    )
+    assert results == [True] * 50
+

@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 
 import httpx
 from sqlalchemy import create_engine, text
+from app.core.pg_locks import build_refresh_lock_key
 from app.core.secrets import get_database_url
 from tests.helpers.webhook_secret_seed import webhook_secret_insert_params
 
@@ -744,22 +745,43 @@ def test_b057_p5_full_chain_webhook_to_matview():
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         signature = _sign_shopify(body, tenant_a.shopify_secret)
 
-        res = httpx.post(
-            f"{base_url}/api/webhooks/shopify/order_create",
-            headers={
-                "Content-Type": "application/json",
-                "X-Skeldir-Tenant-Key": tenant_a.tenant_key,
-                "X-Shopify-Hmac-Sha256": signature,
-                # XIX: shopify family is proven by the provider-transported topic.
-                "X-Shopify-Topic": "orders/create",
-            },
-            content=body,
-            timeout=10.0,
+        lock_key = build_refresh_lock_key(
+            "mv_allocation_summary", tenant_a.tenant_id
         )
-        assert res.status_code == 200, res.text
-        data = res.json()
-        assert data.get("status") == "success"
-        event_id = UUID(data["event_id"])
+        lock_engine = create_engine(admin_db_url)
+        lock_conn = lock_engine.connect()
+        lock_tx = lock_conn.begin()
+        acquired = bool(
+            lock_conn.execute(
+                text("SELECT pg_try_advisory_xact_lock(:v, :t)"),
+                {"v": lock_key.view_key, "t": lock_key.tenant_key},
+            ).scalar()
+        )
+        assert acquired, "test could not hold the refresh lock"
+        try:
+            res = httpx.post(
+                f"{base_url}/api/webhooks/shopify/order_create",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Skeldir-Tenant-Key": tenant_a.tenant_key,
+                    "X-Shopify-Hmac-Sha256": signature,
+                    # XIX: shopify family is proven by the provider-transported topic.
+                    "X-Shopify-Topic": "orders/create",
+                },
+                content=body,
+                timeout=10.0,
+            )
+            assert res.status_code == 200, res.text
+            data = res.json()
+            assert data.get("status") == "success"
+            event_id = UUID(data["event_id"])
+            # Keep the lock through the first worker attempts. The task must
+            # retry rather than silently abandoning the final event.
+            time.sleep(5.0)
+        finally:
+            lock_tx.rollback()
+            lock_conn.close()
+            lock_engine.dispose()
 
         assert _count_events(runtime_db_url, tenant_a.tenant_id, event_id) == 1
 
