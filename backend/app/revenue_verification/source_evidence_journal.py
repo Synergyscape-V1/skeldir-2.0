@@ -23,6 +23,7 @@ import contextvars
 import hashlib
 import json
 import os
+import queue
 import threading
 import time
 from contextlib import contextmanager
@@ -65,9 +66,8 @@ def _journal_file_lock(journal: Path):
         if fcntl is not None:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         elif msvcrt is not None:
-            handle.seek(0)
-            if handle.read(1) == b"":
-                handle.seek(0)
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
                 handle.write(b"\0")
                 handle.flush()
             handle.seek(0)
@@ -190,28 +190,110 @@ def _last_record_hash_unlocked(journal: Path) -> str | None:
     return result
 
 
+@dataclass
+class _JournalAppendRequest:
+    record: dict[str, Any]
+    event: threading.Event
+    error: BaseException | None = None
+
+
+class _JournalWriter:
+    """Group-commit writer for one journal path.
+
+    Each caller waits for the fsync of the batch containing its record, so the
+    durability contract is unchanged. Batching amortises the fsync and the
+    cross-process lock across concurrent authenticated arrivals.
+    """
+
+    def __init__(self, journal: Path) -> None:
+        self.journal = journal
+        self.queue: queue.Queue[_JournalAppendRequest] = queue.Queue()
+        self.thread = threading.Thread(
+            target=self._run,
+            name=f"b26-p2-journal-writer:{journal.name}",
+            daemon=True,
+        )
+        self.thread.start()
+
+    def append(self, record: dict[str, Any]) -> None:
+        request = _JournalAppendRequest(record=record, event=threading.Event())
+        self.queue.put(request)
+        if not request.event.wait(timeout=30.0):
+            raise SourceFactJournalError("source_fact_journal_append_timeout")
+        if request.error is not None:
+            raise request.error
+
+    def _run(self) -> None:
+        while True:
+            first = self.queue.get()
+            batch = [first]
+            deadline = time.monotonic() + 0.002
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    batch.append(self.queue.get(timeout=remaining))
+                except queue.Empty:
+                    break
+            try:
+                self._append_batch(batch)
+            except BaseException as exc:  # noqa: BLE001 - delivered to callers
+                for request in batch:
+                    request.error = exc
+            finally:
+                for request in batch:
+                    request.event.set()
+
+    def _append_batch(self, batch: list[_JournalAppendRequest]) -> None:
+        with _JOURNAL_APPEND_LOCK:
+            with _journal_file_lock(self.journal):
+                previous = _last_record_hash_unlocked(self.journal)
+                lines: list[str] = []
+                for request in batch:
+                    record = request.record
+                    record["previous_record_hash"] = previous
+                    record["record_hash"] = _record_hash(record)
+                    lines.append(
+                        json.dumps(
+                            record,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            default=str,
+                        )
+                    )
+                    previous = str(record["record_hash"])
+                self.journal.parent.mkdir(parents=True, exist_ok=True)
+                with self.journal.open("a", encoding="utf-8") as handle:
+                    handle.write("\n".join(lines) + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                stat = self.journal.stat()
+                _LAST_RECORD_HASH_CACHE[str(self.journal)] = (
+                    stat.st_size,
+                    stat.st_mtime_ns,
+                    previous,
+                )
+
+
+_JOURNAL_WRITERS: dict[str, _JournalWriter] = {}
+_JOURNAL_WRITERS_LOCK = threading.Lock()
+
+
+def _writer_for(journal: Path) -> _JournalWriter:
+    key = str(journal.resolve())
+    with _JOURNAL_WRITERS_LOCK:
+        writer = _JOURNAL_WRITERS.get(key)
+        if writer is None:
+            writer = _JournalWriter(journal)
+            _JOURNAL_WRITERS[key] = writer
+        return writer
+
+
 def _append_chained_record(journal: Path, record: dict[str, Any]) -> None:
     """Append one v3 record with a durable previous/record hash chain."""
 
-    with _JOURNAL_APPEND_LOCK:
-        with _journal_file_lock(journal):
-            previous = _last_record_hash_unlocked(journal)
-            record["previous_record_hash"] = previous
-            record["record_hash"] = _record_hash(record)
-            line = json.dumps(
-                record, sort_keys=True, separators=(",", ":"), default=str
-            )
-            journal.parent.mkdir(parents=True, exist_ok=True)
-            with journal.open("a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            stat = journal.stat()
-            _LAST_RECORD_HASH_CACHE[str(journal)] = (
-                stat.st_size,
-                stat.st_mtime_ns,
-                str(record["record_hash"]),
-            )
+    _writer_for(journal).append(record)
 
 
 def _verify_outcome(
