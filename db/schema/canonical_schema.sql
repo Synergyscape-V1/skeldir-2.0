@@ -19019,10 +19019,6 @@ CREATE INDEX idx_b24_worker_process_authority_active ON public.b24_worker_proces
 
 CREATE INDEX idx_b26_p2_adjustment_evidence_verdict ON public.b26_p2_adjustment_evidence USING btree (tenant_id, verdict_id, event_timestamp DESC);
 
-CREATE INDEX idx_b26_p2_auth_consequence_lookup ON public.b26_p2_provider_auth_consequence USING btree (tenant_id, body_sha256, provider_event_reference);
-
-CREATE INDEX idx_b26_p2_auth_consequence_lookup_lower ON public.b26_p2_provider_auth_consequence USING btree (tenant_id, lower(body_sha256), provider_event_reference);
-
 
 
 CREATE INDEX idx_b26_p2_outbox_pending ON public.b26_p2_execution_outbox USING btree (state, next_retry_at);

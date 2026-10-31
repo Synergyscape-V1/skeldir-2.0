@@ -656,25 +656,23 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                         # first, identities joined on (id, tenant), the
                         # authority check remains the last gate, LIMIT 1
                         # preserved.
-                        "WITH cand AS MATERIALIZED ("
-                        " SELECT c.webhook_ingress_identity_id AS iid,"
-                        " c.tenant_id AS tenant_id"
-                        " FROM public.b26_p2_provider_auth_consequence AS c"
-                        " WHERE c.tenant_id = :tenant"
-                        " AND c.body_sha256 = :body_sha"
-                        " AND c.provider_event_reference = :event_ref"
-                        ")"
-                        " SELECT i.id::text AS iid"
+                        "SELECT i.id::text AS iid"
                         " FROM public.webhook_ingress_identities AS i"
-                        " JOIN cand ON cand.iid = i.id"
-                        " AND cand.tenant_id = i.tenant_id"
+                        " JOIN public.b26_p2_provider_auth_consequence AS c"
+                        " ON c.webhook_ingress_identity_id = i.id"
+                        " AND c.tenant_id = i.tenant_id"
                         " WHERE i.tenant_id = :tenant"
+                        " AND i.provider = :provider"
+                        " AND i.provider_native_event_reference = :event_ref"
+                        " AND i.b26_p2_provenance_status = 'authenticated_known'"
+                        " AND lower(c.body_sha256) = :body_sha"
                         " AND public.b26_p2_ingress_has_current_authority(i.id)"
                         " LIMIT 1"
                     ),
                     {
                         "tenant": str(tenant_uuid),
                         "body_sha": body_sha,
+                        "provider": provider,
                         "event_ref": derived.provider_native_event_reference,
                     },
                 )
@@ -692,28 +690,25 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                 (
                     await session.execute(
                         text(
-                            "WITH cand AS MATERIALIZED ("
-                            " SELECT c.webhook_ingress_identity_id AS iid,"
-                            " c.tenant_id AS tenant_id"
-                            " FROM public.b26_p2_provider_auth_consequence AS c"
-                            " WHERE c.tenant_id = :tenant"
-                            " AND c.body_sha256 = :body_sha"
-                            " AND c.provider_event_reference = :event_ref"
-                            ")"
-                            " SELECT i.id::text AS iid"
+                            "SELECT i.id::text AS iid"
                             " FROM public.webhook_ingress_identities AS i"
-                            " JOIN cand ON cand.iid = i.id"
-                            " AND cand.tenant_id = i.tenant_id"
+                            " JOIN public.b26_p2_provider_auth_consequence AS c"
+                            " ON c.webhook_ingress_identity_id = i.id"
+                            " AND c.tenant_id = i.tenant_id"
                             " WHERE i.tenant_id = :tenant"
+                            " AND i.provider = :provider"
+                            " AND i.provider_native_event_reference = :event_ref"
                             " AND i.b26_p2_demotion_reason ="
                             " 'pre_xxv_source_money_unattestable'"
                             " AND i.b26_p2_provenance_status ="
                             " 'authenticated_known'"
+                            " AND lower(c.body_sha256) = :body_sha"
                             " LIMIT 1"
                         ),
                         {
                             "tenant": str(tenant_uuid),
                             "body_sha": body_sha,
+                            "provider": provider,
                             "event_ref": derived.provider_native_event_reference,
                         },
                     )
@@ -1038,6 +1033,7 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                     "provider": provider,
                     "event_ref": derived.provider_native_event_reference,
                     "body_sha": body_sha,
+                    "provider": provider,
                     "sig_sha": sig_sha,
                     "method": method,
                     "version": body.auth_version or "v1",
@@ -1090,25 +1086,23 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
                             # Same MATERIALIZED fence as the pre-check
                             # above: byte filter before any authority
                             # evaluation (rare path, same shape).
-                            "WITH cand AS MATERIALIZED ("
-                            " SELECT c.webhook_ingress_identity_id AS iid,"
-                            " c.tenant_id AS tenant_id"
-                            " FROM public.b26_p2_provider_auth_consequence AS c"
-                            " WHERE c.tenant_id = :tenant"
-                            " AND c.body_sha256 = :body_sha"
-                            " AND c.provider_event_reference = :event_ref"
-                            ")"
-                            " SELECT i.id::text AS iid"
+                            "SELECT i.id::text AS iid"
                             " FROM public.webhook_ingress_identities AS i"
-                            " JOIN cand ON cand.iid = i.id"
-                            " AND cand.tenant_id = i.tenant_id"
+                            " JOIN public.b26_p2_provider_auth_consequence AS c"
+                            " ON c.webhook_ingress_identity_id = i.id"
+                            " AND c.tenant_id = i.tenant_id"
                             " WHERE i.tenant_id = :tenant"
+                            " AND i.provider = :provider"
+                            " AND i.provider_native_event_reference = :event_ref"
+                            " AND i.b26_p2_provenance_status = 'authenticated_known'"
+                            " AND lower(c.body_sha256) = :body_sha"
                             " AND public.b26_p2_ingress_has_current_authority(i.id)"
                             " LIMIT 1"
                         ),
                         {
                             "tenant": str(tenant_uuid),
                             "body_sha": body_sha,
+                            "provider": provider,
                             "event_ref": derived.provider_native_event_reference,
                         },
                     )
@@ -1363,6 +1357,7 @@ async def authenticate_adjustment(
                         "amount": int(adjusted.verified_amount_minor),
                         "event_ts": adjusted.event_timestamp,
                         "body_sha": body_sha,
+                        "provider": provider,
                         "sig_sha": sig_sha,
                     },
                 )

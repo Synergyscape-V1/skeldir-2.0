@@ -104,21 +104,6 @@ def upgrade() -> None:
         """
     )
 
-    # The authentication root's sovereign duplicate fence resolves by
-    # tenant + provider bytes + provider event. Without this index the
-    # MATERIALIZED fence scans the consequence table on every authenticated
-    # arrival, which is the dominant DB cost under sustained replay load.
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_b26_p2_auth_consequence_lookup"
-        " ON public.b26_p2_provider_auth_consequence"
-        " (tenant_id, body_sha256, provider_event_reference)"
-    )
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_b26_p2_auth_consequence_lookup_lower"
-        " ON public.b26_p2_provider_auth_consequence"
-        " (tenant_id, lower(body_sha256), provider_event_reference)"
-    )
-
     # XXV-2b. Make demotion conduct to the linked verdict.
     #
     # This function is SECURITY DEFINER and owns the UPDATE, but FORCE RLS on
