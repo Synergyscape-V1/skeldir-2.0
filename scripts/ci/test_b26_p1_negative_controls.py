@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
+import signal
 import subprocess
 import sys
 import tempfile
@@ -836,7 +838,75 @@ def _source_attestation_formatting_control() -> dict[str, Any]:
     }
 
 
+_GUARDED_TARGETS: dict[Path, bytes] = {}
+
+
+def _all_mutation_targets() -> tuple[Path, ...]:
+    targets: list[Path] = []
+    for _defect, target, _expected in STATIC_CONTROLS:
+        for path in target if isinstance(target, tuple) else (target,):
+            if path not in targets:
+                targets.append(path)
+    for path in (
+        SOURCE_ATTESTATION_MODULE,
+        CANONICAL_SINK_MODULE,
+        PROOF_MANIFEST_MODULE,
+    ):
+        if path not in targets:
+            targets.append(path)
+    return tuple(targets)
+
+
+def _restore_guarded_targets() -> None:
+    for path, original in _GUARDED_TARGETS.items():
+        try:
+            if path.exists() and path.read_bytes() != original:
+                path.write_bytes(original)
+        except OSError:
+            pass
+
+
+def _handle_mutation_signal(signum, _frame) -> None:
+    _restore_guarded_targets()
+    raise SystemExit(128 + signum)
+
+
+def _guard_mutations() -> None:
+    _GUARDED_TARGETS.clear()
+    for path in _all_mutation_targets():
+        _GUARDED_TARGETS[path] = path.read_bytes()
+    atexit.register(_restore_guarded_targets)
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(signum, _handle_mutation_signal)
+        except (ValueError, OSError):
+            pass
+
+
+def _repair_or_refuse_stale_mutation() -> None:
+    for path in _all_mutation_targets():
+        try:
+            relative = path.relative_to(ROOT).as_posix()
+            head = subprocess.check_output(
+                ["git", "show", f"HEAD:{relative}"],
+                cwd=str(ROOT),
+            )
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        current = path.read_bytes()
+        if current == head:
+            continue
+        if b"if False:  # XI-NC-19" in current:
+            path.write_bytes(head)
+            continue
+        raise RuntimeError(
+            f"engineering_checkout_dirty_refusing_mutation:{relative}"
+        )
+
+
 def run_battery() -> list[dict[str, Any]]:
+    _repair_or_refuse_stale_mutation()
+    _guard_mutations()
     pristine = _validator()
     if pristine.returncode != 0:
         raise RuntimeError(f"pristine_validator_red:{pristine.stdout}{pristine.stderr}")
