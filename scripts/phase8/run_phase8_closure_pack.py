@@ -787,7 +787,7 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
                     "E2E_WORKER_DATABASE_MAX_OVERFLOW", "0"
                 ),
                 "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", "2"),
-                "E2E_AUTH_WORKERS": os.getenv("E2E_AUTH_WORKERS", "2"),
+                "E2E_AUTH_WORKERS": os.getenv("E2E_AUTH_WORKERS", "1"),
                 # R3 fires at concurrency 80. Each API request can hold
                 # its relay session across the auth-root round trip, and
                 # the root holds an ingress session for the same call;
