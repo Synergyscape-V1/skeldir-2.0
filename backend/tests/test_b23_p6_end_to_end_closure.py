@@ -1397,10 +1397,11 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             finally:
                 await issuer_engine.dispose()
 
+        matched_reference = f"coverage-a-matched-{uuid4().hex[:8]}"
         matched_webhook_id, matched_attribution_id = await insert_verified_webhook(
             tenant_id=tenant_a,
             provider="stripe",
-            reference=f"coverage-a-matched-{uuid4().hex[:8]}",
+            reference=matched_reference,
             amount_minor=76000,
             currency="USD",
             occurred_at=now,
@@ -1437,13 +1438,14 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             currency="EUR",
             occurred_at=now,
         )
+        tenant_b_matched_reference = f"coverage-b-matched-{uuid4().hex[:8]}"
         (
             tenant_b_matched_webhook_id,
             tenant_b_attribution_id,
         ) = await insert_verified_webhook(
             tenant_id=tenant_b,
             provider="stripe",
-            reference=f"coverage-b-matched-{uuid4().hex[:8]}",
+            reference=tenant_b_matched_reference,
             amount_minor=900000,
             currency="USD",
             occurred_at=now,
@@ -1529,7 +1531,7 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
                     "attribution_event_id": str(attribution_event_id),
                     "webhook_ingress_identity_id": str(webhook_ingress_identity_id),
                     "reference": reference,
-                    "event_reference": f"{reference}-event",
+                    "event_reference": f"coverage-event-{reference}",
                     "amount_minor": amount_minor,
                     "now_utc": now,
                 },
@@ -1539,14 +1541,14 @@ async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounde
             tenant_id=tenant_a,
             attribution_event_id=matched_attribution_id,
             webhook_ingress_identity_id=matched_webhook_id,
-            reference="coverage-a-matched",
+            reference=matched_reference,
             amount_minor=76000,
         )
         await insert_matched_verdict(
             tenant_id=tenant_b,
             attribution_event_id=tenant_b_attribution_id,
             webhook_ingress_identity_id=tenant_b_matched_webhook_id,
-            reference="coverage-b-matched",
+            reference=tenant_b_matched_reference,
             amount_minor=900000,
         )
 
