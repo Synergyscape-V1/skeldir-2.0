@@ -786,7 +786,7 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
                 "E2E_WORKER_DATABASE_MAX_OVERFLOW": os.getenv(
                     "E2E_WORKER_DATABASE_MAX_OVERFLOW", "0"
                 ),
-                "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", str(api_workers)),
+                "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", "2"),
                 "E2E_AUTH_WORKERS": os.getenv("E2E_AUTH_WORKERS", "2"),
             }
         )

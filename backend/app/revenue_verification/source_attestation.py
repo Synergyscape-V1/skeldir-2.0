@@ -400,6 +400,19 @@ async def write_source_attestation(
         append_source_fact,
     )
 
+    # The transaction identity is only consumed by the append-only journal.
+    # Lanes without a journal (for example the R3 ingestion profile) must not
+    # pay an extra database round trip per authenticated amount.
+    if not (os.getenv("B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH") or "").strip():
+        return {
+            "webhook_ingress_identity_id": statement[
+                "webhook_ingress_identity_id"
+            ],
+            "signature": signature,
+            "key_sha256": key_sha256,
+            "key_id": key_id,
+        }
+
     transaction_id = (
         await session.execute(text("SELECT pg_current_xact_id()::text"))
     ).scalar_one_or_none()
