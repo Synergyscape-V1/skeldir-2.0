@@ -899,18 +899,22 @@ def _run_in_disposable_worktree(evidence_out: Path | None) -> int:
             sys.executable,
             str(temp_root / "scripts/ci/test_b26_p1_negative_controls.py"),
         ]
+        isolated_evidence: Path | None = None
         if evidence_out is not None:
-            command.extend(
-                ["--evidence-out", str(temp_root / evidence_out)]
+            isolated_evidence = (
+                evidence_out
+                if evidence_out.is_absolute()
+                else temp_root / evidence_out
             )
+            command.extend(["--evidence-out", str(isolated_evidence)])
         completed = subprocess.run(command, cwd=str(temp_root), env=env)
         if completed.returncode != 0:
             return completed.returncode
-        if evidence_out is not None:
-            source = temp_root / evidence_out
-            target = ROOT / evidence_out
+        if evidence_out is not None and isolated_evidence is not None:
+            target = evidence_out if evidence_out.is_absolute() else ROOT / evidence_out
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+            if isolated_evidence.resolve() != target.resolve():
+                shutil.copy2(isolated_evidence, target)
         return 0
     finally:
         subprocess.run(
