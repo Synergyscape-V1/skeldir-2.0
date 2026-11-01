@@ -1,0 +1,28 @@
+{
+  "status": "REPAIRED_PENDING_EXACT_HEAD_RUN",
+  "observed_failure": {
+    "head": "b5c5a0f2a46f35b55be951e54968ae35d84c846a",
+    "run_id": 41323969284,
+    "job": "B2.5-P13 C19 Context-Robust Production Closure",
+    "error": "failed to bind host port 0.0.0.0:55462/tcp: address already in use",
+    "cause": "the C19 compose default used fixed host ports; the shared runner already had 55462 occupied",
+    "dependent_checks": [
+      "B2.5-P13 E2E Trust Closure (CONTEXT_ROBUST_RESULT=failure)",
+      "B2.6-P1 Inherited Production Conduction Attestation (source_context_not_success)",
+      "B2.6 Finance Reconciliation Adjudication (INHERITED_RESULT=failure)"
+    ]
+  },
+  "repair": {
+    "file": "scripts/ci/run_b25_p13_c19_context_robust_closure.sh",
+    "mechanism": "when C19_POSTGRES_PORT/C19_API_PORT are not supplied, allocate an unused loopback port with a bind-and-close probe, require distinct ports, export them, and carry them into the teardown capsule",
+    "fixed_default_removed": true,
+    "syntax_check": "bash -n on LF-normalized script passed"
+  },
+  "separation": {
+    "performance_failure": "Phase 8 Test2 is a separate capacity/generator result recorded in the exact-head evidence; it is not attributed to C19",
+    "c19_failure": "host-port collision at compose startup, before any C19 proof ran",
+    "dependent_failures": "aggregate/source-context failures, not independent product failures",
+    "retry_disposition": "the port allocation is a structural repair; no threshold was changed and no retry is treated as repair"
+  },
+  "pending": "Exact-head C19 execution after the repair must show the dynamically selected ports and PASS; the prior failed run remains preserved."
+}

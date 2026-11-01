@@ -347,6 +347,11 @@ STATIC_CONTROLS = (
         "coverage_implementation_identity_mismatch",
     ),
     (
+        "coverage_oracle_rounding_equiv",
+        COVERAGE_AUTHORITY_MODULE,
+        "coverage_oracle_vector_mismatch",
+    ),
+    (
         "source_attestation_coverage_aggregation",
         SOURCE_ATTESTATION_MODULE,
         "b26_duplicate_coverage_authority",

@@ -27,8 +27,24 @@ python_path() {
 
 evidence_path_unix="$evidence_dir/c19_context_robust_evidence.json"
 
-export C19_POSTGRES_PORT="${C19_POSTGRES_PORT:-55462}"
-export C19_API_PORT="${C19_API_PORT:-18019}"
+# Hosts that run more than one lane cannot reserve fixed host ports. Allocate
+# an unused loopback port per process instead; the selected ports are carried
+# into the teardown capsule below so the exact topology remains removable.
+free_loopback_port() {
+  "$python_bin" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+}
+
+if [[ -z "${C19_POSTGRES_PORT:-}" ]]; then
+  C19_POSTGRES_PORT="$(free_loopback_port)"
+fi
+if [[ -z "${C19_API_PORT:-}" ]]; then
+  C19_API_PORT="$(free_loopback_port)"
+  while [[ "$C19_API_PORT" == "$C19_POSTGRES_PORT" ]]; do
+    C19_API_PORT="$(free_loopback_port)"
+  done
+fi
+export C19_POSTGRES_PORT
+export C19_API_PORT
 export C19_COMPOSE_PROJECT_NAME="$project_name"
 export C19_REPO_ROOT="$repo_root"
 export C19_TLS_DIR="$tls_dir"

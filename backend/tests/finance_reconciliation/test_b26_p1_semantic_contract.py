@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP, localcontext
 
 from app.finance_reconciliation.semantic_contract import (
     B26_DISCREPANCY_TAXONOMY_V1,
@@ -45,6 +45,48 @@ def test_b26_p1_golden_vector_uses_inherited_b23_metric() -> None:
 
     assert result.coverage_percent == Decimal("95.00")
     assert result.denominator_connected_platform_revenue_minor == 80000
+
+
+def test_b26_p1_coverage_property_vectors_not_one_spelling() -> None:
+    from datetime import datetime, timezone
+    from uuid import UUID
+
+    from app.finance_reconciliation.coverage_authority import (
+        independent_coverage_percent,
+    )
+
+    vectors = (
+        (1, 20000),
+        (3, 40000),
+        (1, 3),
+        (2, 3),
+        (1, 6),
+        (1, 8),
+        (7, 9),
+        (999999, 1000000),
+        (1, 1000000),
+        (0, 5),
+        (5, 5),
+    )
+    for numerator, denominator in vectors:
+        with localcontext() as context:
+            context.prec = 28
+            expected = (
+                (Decimal(numerator) * Decimal("100")) / Decimal(denominator)
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        assert independent_coverage_percent(numerator, denominator) == (
+            expected,
+            False,
+        )
+        aggregate = VerificationCoverageAggregate(
+            tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            currency_code="USD",
+            window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            matched_webhook_revenue_minor=numerator,
+            connected_platform_revenue_minor=denominator,
+        )
+        assert compute_verification_coverage(aggregate).coverage_percent == expected
 
 
 def test_b26_p1_provisional_coverage_is_not_confirmation() -> None:

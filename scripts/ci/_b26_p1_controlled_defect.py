@@ -1021,6 +1021,22 @@ def xi_nc19_capability_seal_removed() -> None:
     )
 
 
+def coverage_oracle_rounding_equiv() -> None:
+    """Independently equivalent wrong rounding in the independent oracle."""
+    _replace_once(
+        COVERAGE_AUTHORITY_MODULE,
+        "from decimal import Decimal, ROUND_HALF_UP, localcontext",
+        "from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP, localcontext",
+        defect="coverage_oracle_rounding_equiv",
+    )
+    _replace_once(
+        COVERAGE_AUTHORITY_MODULE,
+        "rounding=ROUND_HALF_UP",
+        "rounding=ROUND_DOWN",
+        defect="coverage_oracle_rounding_equiv",
+    )
+
+
 def source_attestation_coverage_aggregation() -> None:
     """XXV: the legitimate read allowance must not admit aggregation."""
     _replace_once(
@@ -1521,6 +1537,7 @@ DEFECTS: dict[str, Callable[[], None]] = {
     ),
     "xi_nc19_capability_seal_removed": xi_nc19_capability_seal_removed,
     "xi_nc20_denominator_regression": xi_nc20_denominator_regression,
+    "coverage_oracle_rounding_equiv": coverage_oracle_rounding_equiv,
     "source_attestation_coverage_aggregation": (
         source_attestation_coverage_aggregation
     ),

@@ -1,0 +1,33 @@
+{
+  "status": "PASS_LOCAL_RECOVERY_CONTRACT_EXTERNAL_STORAGE_UNPROVEN",
+  "head": "b5c5a0f2a46f35b55be951e54968ae35d84c846a plus custody changes",
+  "supported_topology": "docs/environment/SOURCE_EVIDENCE_JOURNAL_CUSTODY.md",
+  "live_write_custody": "auth_ingress only; API/observer read-only; DB maintenance, beat, relay and workers have no live-journal mount",
+  "custody_archive": "signed immutable bundle per journal tip; deployment contract requires S3 Object Lock COMPLIANCE (>=365d), versioning and SSE-KMS; only custody/observer role writes",
+  "restore_guard": "restore only into a missing live path or when the live chain is a prefix of the bundle; a newer live chain is left untouched; a divergent chain is refused",
+  "tests": [
+    "backend/tests/trust/test_b26_p2_source_journal_custody.py::test_export_verify_and_restore_preserve_committed_records",
+    "backend/tests/trust/test_b26_p2_source_journal_custody.py::test_restore_never_overwrites_newer_committed_history",
+    "backend/tests/trust/test_b26_p2_source_journal_custody.py::test_divergent_live_journal_is_refused",
+    "backend/tests/trust/test_b26_p2_source_journal_custody.py::test_bundle_tamper_and_signature_tamper_are_refused",
+    "backend/tests/trust/test_b26_p2_source_journal_custody.py::test_empty_committed_journal_round_trips"
+  ],
+  "test_result": "5 passed",
+  "cli_verification": {
+    "export": "status=exported, record_count=1",
+    "verify": "status=verified, record_count=1",
+    "restore_to_empty_path": "status=restored"
+  },
+  "failure_scope": [
+    "torn final line repaired before append without discarding committed lines",
+    "lost live volume recovered from a verified bundle",
+    "redeploy into an empty mount restores before new facts",
+    "stale bundle cannot overwrite newer committed history",
+    "corrupt bundle/wrong key/count/tip mismatch refused"
+  ],
+  "limits": [
+    "The S3 Object Lock bucket, EFS access points, IAM grants, backup policy and task mounts are deployment resources and were not provisioned or executed here.",
+    "This evidence does not claim that the financial-maintenance actor cannot reach the live volume unless the deployment topology and IAM are applied and audited.",
+    "No signed-customer failure is claimed."
+  ]
+}

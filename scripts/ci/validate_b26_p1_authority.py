@@ -12,7 +12,7 @@ import os
 import re
 import sys
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP, localcontext
 from pathlib import Path
 from typing import Any, Iterable
 from uuid import UUID
@@ -644,6 +644,52 @@ def _validate_contract_and_b23_binding(
             violations.append("coverage_independent_oracle_wrong_95")
         if oracle(0, 0) != (Decimal("0.00"), True):
             violations.append("coverage_independent_oracle_wrong_zero")
+        # Property vectors, not one authored spelling. An equivalent wrong
+        # implementation can agree on the 95/0 golden vector while using a
+        # different rounding law or numerator/denominator treatment. These
+        # legs distinguish half-up two-place law from truncation, banker's
+        # rounding, float rounding and percent scaling errors.
+        coverage_vectors = (
+            (1, 20000),
+            (3, 40000),
+            (1, 3),
+            (2, 3),
+            (1, 6),
+            (1, 8),
+            (7, 9),
+            (999999, 1000000),
+            (1, 1000000),
+            (0, 5),
+            (5, 5),
+        )
+        for numerator, denominator in coverage_vectors:
+            with localcontext() as context:
+                context.prec = 28
+                expected = (
+                    (Decimal(numerator) * Decimal("100")) / Decimal(denominator)
+                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            actual = oracle(numerator, denominator)
+            if actual != (expected, False):
+                violations.append(
+                    "coverage_oracle_vector_mismatch:"
+                    f"{numerator}/{denominator}:"
+                    f"expected={expected}:actual={actual[0]}"
+                )
+            vector_aggregate = VerificationCoverageAggregate(
+                tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                currency_code="USD",
+                window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+                matched_webhook_revenue_minor=numerator,
+                connected_platform_revenue_minor=denominator,
+            )
+            observed_vector = metric.compute(vector_aggregate).coverage_percent
+            if observed_vector != expected:
+                violations.append(
+                    "coverage_compute_vector_mismatch:"
+                    f"{numerator}/{denominator}:"
+                    f"expected={expected}:actual={observed_vector}"
+                )
         # Diagnostic must project only the one-way tenant hash, never raw UUID.
         rendered = diagnostic(forged_correct)
         if "tenant_id" in rendered:
