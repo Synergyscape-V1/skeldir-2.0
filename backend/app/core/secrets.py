@@ -1036,11 +1036,36 @@ def reset_jwt_verification_pg_cache_for_testing() -> None:
     try:
         with _open_pg_conn() as conn:
             with conn.cursor() as cursor:
-                _ensure_pg_jwt_cache_table(cursor)
                 cursor.execute(f"DELETE FROM {_JWT_PG_CACHE_TABLE} WHERE singleton_id = 1")
             conn.commit()
+        return
+    except psycopg2.errors.InsufficientPrivilege:
+        # Runtime roles intentionally lack DELETE (and schema CREATE for
+        # _ensure_pg_jwt_cache_table) on this table; tests still need an empty
+        # cache and have UPDATE. A null ring is a cache miss.
+        pass
     except Exception:
         # Some unit tests run without Postgres; keep tests that don't require DB unaffected.
+        return
+    try:
+        with _open_pg_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    UPDATE {_JWT_PG_CACHE_TABLE}
+                       SET jwks_json = NULL,
+                           fetched_at = NULL,
+                           next_allowed_refresh_at = NOW(),
+                           last_refresh_error_at = NULL,
+                           refresh_error_count = 0,
+                           refresh_event_count = 0,
+                           last_refresh_reason = NULL,
+                           updated_at = NOW()
+                     WHERE singleton_id = 1
+                    """
+                )
+            conn.commit()
+    except Exception:
         return
 
 
