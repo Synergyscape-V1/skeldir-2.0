@@ -3116,14 +3116,20 @@ jobs:
           # failing after a passing proof, and the B0.5.3.3 Gate C guard refuses
           # to run without an explicit runtime DSN rather than let conftest fall
           # back to stale credentials.
-          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:55462/skeldir_c19
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:55462/skeldir_c19
-          B23_DATABASE_URL: postgresql+asyncpg://app_worker:app_worker@127.0.0.1:55462/skeldir_c19
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
+          # The C19 runner selects free loopback ports because a shared host
+          # may already own the historical defaults. Consume the exact
+          # topology capsule instead of re-introducing a fixed port.
+          set -a
+          . "$RUNNER_TEMP/c19-teardown.env"
+          set +a
+          export DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
+          export MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
+          export B23_DATABASE_URL="postgresql+asyncpg://app_worker:app_worker@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
           physics="backend/tests/trust/test_b25_p13_c19_legitimate_source_physics.py"
-          admin="postgresql://postgres:postgres@127.0.0.1:55462/skeldir_c19"
+          admin="postgresql://postgres:postgres@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
           python -m pytest "$physics" -q --no-header -p no:randomly
 
           # Severance 1: allocation verification is no longer stripped of
