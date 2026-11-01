@@ -552,31 +552,49 @@ def load_source_fact_records(
     if not journal.exists():
         return []
     records: list[dict[str, Any]] = []
-    with _journal_file_lock(journal):
+
+    def _read_locked() -> list[dict[str, Any]]:
+        parsed: list[dict[str, Any]] = []
         with journal.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                record = json.loads(line)
-                version = record.get("version")
-                if version not in {
-                    SOURCE_FACT_JOURNAL_VERSION,
-                    SOURCE_FACT_JOURNAL_V2,
-                    LEGACY_SOURCE_FACT_JOURNAL_VERSION,
-                    SOURCE_FACT_OUTCOME_VERSION,
-                }:
-                    raise SourceFactJournalError(
-                        "source_fact_journal_version_unsupported"
-                    )
-                if version in {
-                    SOURCE_FACT_JOURNAL_VERSION,
-                    SOURCE_FACT_JOURNAL_V2,
-                } and not str(record.get("database_transaction_id") or "").strip():
-                    raise SourceFactJournalError(
-                        "source_fact_journal_transaction_identity_missing"
-                    )
-                records.append(record)
+            lines = handle.readlines()
+        # A writer may be mid-append on a read-only mount. A trailing line
+        # without its newline is not yet a record; the next read sees it.
+        if lines and not lines[-1].endswith("\n"):
+            lines.pop()
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            version = record.get("version")
+            if version not in {
+                SOURCE_FACT_JOURNAL_VERSION,
+                SOURCE_FACT_JOURNAL_V2,
+                LEGACY_SOURCE_FACT_JOURNAL_VERSION,
+                SOURCE_FACT_OUTCOME_VERSION,
+            }:
+                raise SourceFactJournalError(
+                    "source_fact_journal_version_unsupported"
+                )
+            if version in {
+                SOURCE_FACT_JOURNAL_VERSION,
+                SOURCE_FACT_JOURNAL_V2,
+            } and not str(record.get("database_transaction_id") or "").strip():
+                raise SourceFactJournalError(
+                    "source_fact_journal_transaction_identity_missing"
+                )
+            parsed.append(record)
+        return parsed
+
+    try:
+        with _journal_file_lock(journal):
+            records = _read_locked()
+    except OSError:
+        # Consumers mount the journal read-only; the sidecar lock cannot be
+        # created there. The writer still holds the lock and appends complete
+        # lines, so the read-only path skips only an in-progress tail line.
+        records = _read_locked()
+
     # v3 records carry an explicit previous/record hash chain. v2/v1 records
     # are still accepted as legacy prefixes; their computed hash is the link
     # the first v3 record must cite, so modifying or deleting a legacy record

@@ -9,6 +9,7 @@ commit/rollback path.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -517,4 +518,21 @@ def test_concurrent_writers_preserve_one_chain(tmp_path: Path) -> None:
     records = load_source_fact_records(journal)
     assert records is not None
     assert len(records) == 400
+
+def test_read_only_consumer_does_not_require_a_writable_lock(
+    tmp_path: Path, monkeypatch
+) -> None:
+    journal = tmp_path / "source.jsonl"
+    _append(journal, kind="source_money", fact_id="s1", xid="100")
+    from app.revenue_verification import source_evidence_journal as journal_module
+
+    @contextlib.contextmanager
+    def _read_only_lock(_journal):
+        raise OSError(30, "Read-only file system")
+        yield
+
+    monkeypatch.setattr(journal_module, "_journal_file_lock", _read_only_lock)
+    records = load_source_fact_records(journal)
+    assert records is not None
+    assert len(records) == 1
 
