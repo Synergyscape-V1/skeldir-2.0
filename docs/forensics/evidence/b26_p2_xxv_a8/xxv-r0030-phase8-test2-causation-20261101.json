@@ -1,0 +1,113 @@
+{
+  "check": "R-0030 Phase8 Test2 failure causation from comparable governed runs",
+  "run_at": "2026-11-01",
+  "workload": {
+    "profile": "EG3_4_Test2_Month18",
+    "target_rps": 46.0,
+    "duration_s": 60,
+    "target_request_count": 2760,
+    "http_timeout_count_all_runs": 0
+  },
+  "same_commit_runs": [
+    {
+      "role": "failed_attempt_1",
+      "run_id": "41341830038",
+      "artifact_id": "13097564038",
+      "head_sha": "38698a188",
+      "achieved_rps": 41.974,
+      "observed_request_count": 2760,
+      "passed": false,
+      "latency_p50_ms": 1474.894,
+      "latency_p95_ms": 2783.454,
+      "latency_p99_ms": 3418.941,
+      "semaphore_wait_p50_ms": 1890.924,
+      "semaphore_wait_p95_ms": 3983.087,
+      "semaphore_wait_max_ms": 4601.606,
+      "send_lag_p50_ms": 1892.418,
+      "send_lag_p95_ms": 3984.161,
+      "send_lag_max_ms": 4602.585,
+      "send_lag_over_1000ms_count": 1693,
+      "client_drain_s": 5.7542,
+      "http_connection_errors": 0,
+      "resource_stable": true,
+      "resource_snapshot_before": {
+        "active_connections": 1,
+        "app_user_connections": 75,
+        "max_connections": 200,
+        "total_connections": 105,
+        "waiting_connections": 0
+      },
+      "resource_snapshot_after": {
+        "active_connections": 2,
+        "app_user_connections": 99,
+        "max_connections": 200,
+        "total_connections": 129,
+        "waiting_connections": 0
+      }
+    },
+    {
+      "role": "passed_attempt_2",
+      "run_id": "41341830038",
+      "artifact_id": "13099100361",
+      "head_sha": "38698a188",
+      "achieved_rps": 45.939,
+      "observed_request_count": 2760,
+      "passed": true,
+      "latency_p50_ms": 96.554,
+      "latency_p95_ms": 182.741,
+      "latency_p99_ms": 314.979,
+      "semaphore_wait_p50_ms": 0.035,
+      "semaphore_wait_p95_ms": 0.063,
+      "semaphore_wait_max_ms": 5.607,
+      "send_lag_p50_ms": 0.781,
+      "send_lag_p95_ms": 1.905,
+      "send_lag_max_ms": 5.796,
+      "send_lag_over_1000ms_count": 0,
+      "client_drain_s": 0.0797,
+      "http_connection_errors": 0,
+      "resource_stable": true,
+      "resource_snapshot_before": {
+        "active_connections": 2,
+        "app_user_connections": 76,
+        "max_connections": 200,
+        "total_connections": 108,
+        "waiting_connections": 0
+      },
+      "resource_snapshot_after": {
+        "active_connections": 2,
+        "app_user_connections": 76,
+        "max_connections": 200,
+        "total_connections": 108,
+        "waiting_connections": 0
+      }
+    }
+  ],
+  "later_independent_run": {
+    "role": "passed_f6b_attempt_1",
+    "run_id": "41347349067",
+    "artifact_id": "13100362183",
+    "head_sha": "f6b57453ab21ebe24391157b60a6a18da0b65bec",
+    "achieved_rps": 45.857,
+    "observed_request_count": 2760,
+    "passed": true,
+    "latency_p95_ms": 616.688,
+    "semaphore_wait_p95_ms": 0.238,
+    "send_lag_p95_ms": 2.489,
+    "http_timeout_count": 0
+  },
+  "causation": {
+    "established": "The failing run delivered all 2760 target requests with zero HTTP timeouts/connection errors while client completion was delayed by the request semaphore/send queue: 3983.087 ms semaphore p95, 3984.161 ms send-lag p95, 1693 requests over 1 s send lag, and a 5.7542 s drain. The passed run had the same target and delivered all 2760 requests with 0.063 ms semaphore p95 and 1.905 ms send-lag p95.",
+    "not_the_cause": [
+      "Target workload under-delivery: observed_request_count was 2760 in both runs.",
+      "HTTP failure: http_timeout_count and http_connection_errors were 0 in both runs.",
+      "Database connection exhaustion: waiting_connections was 0 before and after in both runs; max_connections 200 was not approached.",
+      "A code or threshold change: both runs used the same commit 38698a188 and the same target/threshold contract."
+    ],
+    "bounded_conclusion": "The throughput miss was client-side queueing while requests completed, not a reduced workload, HTTP failure, or DB connection wait. The remaining first-attempt-to-second-attempt trigger is not proven by these counters; no retry is offered as the cause."
+  },
+  "limits": [
+    "The two same-commit artifacts are attempts from one run; they are comparable workloads, not a controlled CPU/memory-capped experiment.",
+    "No claim is made that the passed f6b run proves every future cold run will pass.",
+    "This does not replace the governed Phase8 gate; it localizes the prior failure."
+  ]
+}

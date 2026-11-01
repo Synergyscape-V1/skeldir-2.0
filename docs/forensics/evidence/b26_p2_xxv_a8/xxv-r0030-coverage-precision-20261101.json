@@ -1,0 +1,33 @@
+{
+  "check": "R-0030 ordinary precision-loss vector is refused by the exact coverage oracle",
+  "run_at": "2026-11-01",
+  "function": "app.finance_reconciliation.coverage_authority.independent_coverage_percent",
+  "ambient_decimal_precision": 6,
+  "vectors": [
+    {
+      "numerator_minor": 100,
+      "denominator_minor": 2000001,
+      "expected_percent": "0.00",
+      "observed_percent": "0.00",
+      "zero_denominator": false
+    },
+    {
+      "numerator_minor": 1999999,
+      "denominator_minor": 2000001,
+      "expected_percent": "100.00",
+      "observed_percent": "100.00",
+      "zero_denominator": false
+    },
+    {
+      "numerator_minor": 1,
+      "denominator_minor": 3,
+      "expected_percent": "33.33",
+      "observed_percent": "33.33",
+      "zero_denominator": false
+    }
+  ],
+  "test": "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py::test_coverage_percent_oracle_matches_exact_contract_vectors",
+  "limits": [
+    "This proves the local exact oracle under hostile ambient Decimal precision; it does not replace the held-out SQL guard or a source-validating CI run."
+  ]
+}

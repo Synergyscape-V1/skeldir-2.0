@@ -11,6 +11,7 @@ import pytest
 from app.revenue_verification.source_attestation import generate_keypair
 from app.revenue_verification.source_evidence_journal import (
     append_source_fact,
+    journal_record_hash,
     load_source_fact_records,
 )
 from app.revenue_verification.source_journal_custody import (
@@ -155,6 +156,106 @@ def test_bundle_tamper_and_signature_tamper_are_refused(tmp_path: Path) -> None:
         )
 
 
+
+def test_valid_live_prefix_is_extended_to_archived_commitment(tmp_path: Path) -> None:
+    private_path, public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+    _append(journal, "s2", "200")
+    _append(journal, "s3", "300")
+    custody = tmp_path / "custody"
+    exported = export_custody_bundle(
+        journal=journal,
+        custody_dir=custody,
+        private_key_path=private_path,
+    )
+    lines = journal.read_bytes().splitlines(keepends=True)
+    journal.write_bytes(b"".join(lines[:2]))
+
+    disposition = restore_custody_bundle(
+        manifest_path=exported.manifest_path,
+        journal=journal,
+        public_key_path=public_path,
+    )
+    assert disposition == "restored_prefix"
+    restored = load_source_fact_records(journal)
+    assert restored is not None
+    assert [record["fact_id"] for record in restored] == ["s1", "s2", "s3"]
+
+
+def test_retry_completes_interrupted_publication(tmp_path: Path) -> None:
+    private_path, public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+    custody = tmp_path / "custody"
+    exported = export_custody_bundle(
+        journal=journal,
+        custody_dir=custody,
+        private_key_path=private_path,
+    )
+    os.chmod(exported.manifest_path, 0o644)
+    exported.manifest_path.unlink()
+    assert not exported.manifest_path.exists()
+
+    completed = export_custody_bundle(
+        journal=journal,
+        custody_dir=custody,
+        private_key_path=private_path,
+    )
+    assert completed.manifest_path.exists()
+    assert verify_custody_bundle(
+        manifest_path=completed.manifest_path,
+        public_key_path=public_path,
+    ).manifest["record_count"] == 1
+
+
+
+def test_restore_at_or_above_accepted_witness_prefix_is_allowed(tmp_path: Path) -> None:
+    private_path, public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+    _append(journal, "s2", "200")
+    _append(journal, "s3", "300")
+    records = load_source_fact_records(journal)
+    assert records is not None
+    custody = tmp_path / "custody"
+    exported = export_custody_bundle(
+        journal=journal,
+        custody_dir=custody,
+        private_key_path=private_path,
+    )
+    restored = tmp_path / "restored.jsonl"
+    disposition = restore_custody_bundle(
+        manifest_path=exported.manifest_path,
+        journal=restored,
+        public_key_path=public_path,
+        accepted_source_count=2,
+        accepted_source_tip=journal_record_hash(records[1]),
+    )
+    assert disposition == "restored"
+    assert len(load_source_fact_records(restored) or []) == 3
+def test_restore_below_accepted_witness_prefix_is_refused(tmp_path: Path) -> None:
+    private_path, public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+    _append(journal, "s2", "200")
+    custody = tmp_path / "custody"
+    exported = export_custody_bundle(
+        journal=journal,
+        custody_dir=custody,
+        private_key_path=private_path,
+    )
+    with pytest.raises(
+        SourceJournalCustodyError,
+        match="restore_below_accepted_commitment",
+    ):
+        restore_custody_bundle(
+            manifest_path=exported.manifest_path,
+            journal=tmp_path / "empty.jsonl",
+            public_key_path=public_path,
+            accepted_source_count=3,
+            accepted_source_tip="f" * 64,
+        )
 def test_empty_committed_journal_round_trips(tmp_path: Path) -> None:
     private_path, public_path = _keys(tmp_path)
     journal = tmp_path / "empty.jsonl"
@@ -173,6 +274,6 @@ def test_empty_committed_journal_round_trips(tmp_path: Path) -> None:
             journal=restored,
             public_key_path=public_path,
         )
-        == "restored"
+        == "already_current"
     )
     assert load_source_fact_records(restored) == []

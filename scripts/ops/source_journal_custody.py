@@ -21,6 +21,10 @@ from app.revenue_verification.source_journal_custody import (  # noqa: E402
     restore_custody_bundle,
     verify_custody_bundle,
 )
+from app.trust.history_witness import (  # noqa: E402
+    HistoryWitnessError,
+    verify_journal,
+)
 
 
 def main() -> int:
@@ -42,6 +46,11 @@ def main() -> int:
     restore.add_argument("--journal", required=True)
     restore.add_argument("--public-key", required=True)
     restore.add_argument("--public-key-is-private-seed", action="store_true")
+    restore.add_argument("--accepted-source-count", type=int)
+    restore.add_argument("--accepted-source-tip")
+    restore.add_argument("--witness-journal")
+    restore.add_argument("--witness-public-key")
+    restore.add_argument("--witness-genesis-hash")
 
     args = parser.parse_args()
     try:
@@ -70,14 +79,39 @@ def main() -> int:
                 "journal_tip": bundle.manifest["journal_tip"],
             }
         else:
+            accepted_count = args.accepted_source_count
+            accepted_tip = args.accepted_source_tip
+            if args.witness_journal is not None:
+                if accepted_count is not None or accepted_tip is not None:
+                    raise SourceJournalCustodyError(
+                        "custody_accepted_source_arguments_conflict"
+                    )
+                if args.witness_public_key is None:
+                    raise SourceJournalCustodyError(
+                        "custody_witness_public_key_required"
+                    )
+                witness = verify_journal(
+                    args.witness_journal,
+                    public_key_path=args.witness_public_key,
+                    genesis_hash=args.witness_genesis_hash,
+                )
+                latest = witness.latest
+                accepted_count = latest.source_journal_count
+                accepted_tip = latest.source_journal_tip
+                if accepted_count is None:
+                    raise SourceJournalCustodyError(
+                        "custody_witness_source_commitment_missing"
+                    )
             disposition = restore_custody_bundle(
                 manifest_path=args.manifest,
                 journal=args.journal,
                 public_key_path=args.public_key,
                 public_key_is_private_seed=args.public_key_is_private_seed,
+                accepted_source_count=accepted_count,
+                accepted_source_tip=accepted_tip,
             )
             outcome = {"status": disposition}
-    except (OSError, SourceJournalCustodyError) as exc:
+    except (OSError, SourceJournalCustodyError, HistoryWitnessError) as exc:
         print(f"SOURCE_JOURNAL_CUSTODY_FAIL {exc}", file=sys.stderr)
         return 1
     print(json.dumps(outcome, sort_keys=True))

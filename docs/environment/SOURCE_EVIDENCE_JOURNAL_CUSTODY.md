@@ -54,12 +54,22 @@ archive):
 python scripts/ops/source_journal_custody.py restore \
   --manifest <manifest.json> \
   --journal "$B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH" \
-  --public-key "$B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH"
+  --public-key "$B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH" \
+  --witness-journal "$B26_P2_HISTORY_WITNESS_JOURNAL_PATH" \
+  --witness-public-key "$B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH"
 ```
 
-Restore returns `live_is_newer` and leaves the live journal untouched when the
-live chain already contains the archived prefix plus later committed facts.
-It refuses `custody_restore_diverged` rather than deleting committed history.
+The witness journal is the independent accepted commitment. The CLI verifies
+it and refuses a bundle whose verified prefix is below the latest accepted
+source count/tip (`custody_restore_below_accepted_commitment`). An operator
+may instead pass `--accepted-source-count` and `--accepted-source-tip` from a
+separately verified witness record. Supplying neither is allowed only for
+non-production recovery drills.
+
+Restore returns `restored`, `restored_prefix`, `already_current` or
+`live_is_newer`. It leaves the live journal untouched when the live chain
+already contains the archived prefix plus later committed facts, and it
+refuses `custody_restore_diverged` rather than deleting committed history.
 
 ## Failure scope
 
@@ -70,6 +80,8 @@ It refuses `custody_restore_diverged` rather than deleting committed history.
 - A redeploy with an empty live mount restores before the auth root accepts
   new facts.
 - A stale archive cannot overwrite a newer live chain.
+- A restore below the independently accepted witness prefix is refused; the
+  accepted commitment is never reset to bless missing facts.
 - A corrupt bundle, wrong key, altered manifest, count/tip mismatch or
   divergent live chain is refused.
 

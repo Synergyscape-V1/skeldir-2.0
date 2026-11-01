@@ -1,0 +1,40 @@
+{
+  "check": "R-0030 independent custody probe rerun against corrected custody source",
+  "run_at": "2026-11-01",
+  "probe": "C:/Users/ayewhy/Downloads/quick_files/correspondence-test/R-0030/codex/probe_custody.py",
+  "probe_source_artifact_at_export": "f6b57453ab21ebe24391157b60a6a18da0b65bec",
+  "corrected_source_sha256": "688AF5774BA9640D9F42A5E50F37E85D849F02DBA9CC8DDD55DDF4D56797D6F7",
+  "result_sha256": "DFB7F405FC612343DBBCFEF7C54A88E9050C1C5A4D6D8D69EB8CA7468C69007D",
+  "claim": "The corrected source was copied over the pinned probe source before execution. The probe's physical files, Ed25519 keys, concurrent append schedule, and subprocess kill barrier were unchanged.",
+  "observed": {
+    "baseline": {
+      "verified_record_count": 6,
+      "missing_restore": "restored",
+      "exact_bytes": true
+    },
+    "supported_exact_prefix_restore": {
+      "valid_prefix_records": 2,
+      "actual": "restored_prefix",
+      "archived_bytes_written": true
+    },
+    "concurrent_export": {
+      "declared_records": 2,
+      "actual_bundle_records": 2,
+      "verify": 2,
+      "coherent": true
+    },
+    "interrupted_export_retry": {
+      "actual_process_killed": true,
+      "data_files_before_retry": 1,
+      "manifests_before_retry": 0,
+      "retry1": 6,
+      "retry2": 6
+    },
+    "verification_temp_lock_files_created": []
+  },
+  "limits": [
+    "Does not claim cloud retention policy, EFS/Object Lock, IAM, real database commit, shipping worker, or provider execution.",
+    "The probe records the pinned artifact string in its own output field; the corrected source hash above binds the code actually exercised.",
+    "Reader/witness consistency is additionally covered by the accepted-prefix custody tests; a real shipped builder run remains required."
+  ]
+}

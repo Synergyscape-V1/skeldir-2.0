@@ -652,6 +652,7 @@ def _validate_contract_and_b23_binding(
         coverage_vectors = (
             (1, 20000),
             (3, 40000),
+            (100, 2000001),
             (1, 3),
             (2, 3),
             (1, 6),
@@ -956,6 +957,13 @@ def _string_values(tree: ast.AST):
             yield node.lineno, value
 
 
+def _normalize_sql_text(value: str) -> str:
+    """Strip SQL comments and formatting before authority matching."""
+    without_block = re.sub(r"/\*.*?\*/", "", value, flags=re.DOTALL)
+    without_line = re.sub(r"--[^\n]*", "", without_block)
+    return re.sub(r"\s+", "", without_line.lower())
+
+
 def _call_is_sum(node: ast.Call) -> bool:
     func = node.func
     if isinstance(func, ast.Name) and func.id == "sum":
@@ -970,7 +978,7 @@ def _node_mentions_coverage_money(node: ast.AST) -> bool:
         if isinstance(child, ast.Attribute) and child.attr in COVERAGE_MONEY_SQL_TOKENS:
             return True
         if isinstance(child, ast.Constant) and isinstance(child.value, str):
-            compact = re.sub(r"\s+", "", child.value.lower())
+            compact = _normalize_sql_text(child.value)
             if any(token in compact for token in COVERAGE_MONEY_SQL_TOKENS):
                 return True
     return False
@@ -983,7 +991,7 @@ def _call_is_func_sum(node: ast.Call) -> bool:
 def _node_has_coverage_string_literal(node: ast.AST) -> bool:
     for child in ast.walk(node):
         if isinstance(child, ast.Constant) and isinstance(child.value, str):
-            compact = re.sub(r"\s+", "", child.value.lower())
+            compact = _normalize_sql_text(child.value)
             if any(token in compact for token in COVERAGE_MONEY_SQL_TOKENS):
                 return True
     return False
@@ -1002,9 +1010,16 @@ def _check_repo_wide_coverage_and_denominator(
     without new coverage SQL stays GREEN (LG-09).
     """
     rel = path.relative_to(REPO_ROOT).as_posix()
+    file_mentions_coverage_money = (not path.is_relative_to(B26_PACKAGE)) and any(
+        any(
+            token in _normalize_sql_text(value)
+            for token in COVERAGE_MONEY_SQL_TOKENS
+        )
+        for _, value in _string_values(tree)
+    )
     if rel not in COVERAGE_SQL_GRANDFATHERED_FILES:
         for lineno, value in _string_values(tree):
-            compact = re.sub(r"\s+", "", value.lower())
+            compact = _normalize_sql_text(value)
             if not any(
                 marker in compact
                 for marker in (
@@ -1038,7 +1053,7 @@ def _check_repo_wide_coverage_and_denominator(
                     if _call_is_func_sum(node)
                     else _node_has_coverage_string_literal(node)
                 )
-                if mentions:
+                if mentions or file_mentions_coverage_money:
                     violations.append(
                         f"b26_duplicate_coverage_authority:{rel}:{node.lineno}"
                     )
@@ -1633,6 +1648,11 @@ def _validate_corrective_v_authority(
                 False,
             ):
                 violations.append("coverage_oracle_context_coupled")
+            if independent_coverage_percent(100, 2000001) != (
+                Decimal("0.00"),
+                False,
+            ):
+                violations.append("coverage_oracle_precision_coupled")
         finally:
             getcontext().prec = previous
     except Exception as exc:  # noqa: BLE001

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP, localcontext
 
@@ -58,6 +58,7 @@ def test_b26_p1_coverage_property_vectors_not_one_spelling() -> None:
     vectors = (
         (1, 20000),
         (3, 40000),
+        (100, 2000001),
         (1, 3),
         (2, 3),
         (1, 6),
@@ -87,6 +88,28 @@ def test_b26_p1_coverage_property_vectors_not_one_spelling() -> None:
             connected_platform_revenue_minor=denominator,
         )
         assert compute_verification_coverage(aggregate).coverage_percent == expected
+
+
+def test_b26_p1_coverage_oracle_is_pinned_against_ambient_precision() -> None:
+    from decimal import getcontext
+
+    from app.finance_reconciliation.coverage_authority import (
+        independent_coverage_percent,
+    )
+
+    previous = getcontext().prec
+    getcontext().prec = 2
+    try:
+        assert independent_coverage_percent(100, 2000001) == (
+            Decimal("0.00"),
+            False,
+        )
+        assert independent_coverage_percent(76000, 80000) == (
+            Decimal("95.00"),
+            False,
+        )
+    finally:
+        getcontext().prec = previous
 
 
 def test_b26_p1_provisional_coverage_is_not_confirmation() -> None:
@@ -566,6 +589,39 @@ def test_b26_p1_canonical_sinks_are_executably_registered() -> None:
     # Session injection is structurally impossible: the executor takes no
     # session/engine/factory capability parameter at all.
     assert executor_signature_has_no_session_capability() is True
+
+
+def test_coverage_guard_rejects_inline_comment_alternate_sum() -> None:
+    import ast
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "ci"))
+    from validate_b26_p1_authority import (  # noqa: PLC0415
+        REPO_ROOT,
+        _check_repo_wide_coverage_and_denominator,
+    )
+
+    source = (
+        "def alternate_coverage(connection):\n"
+        "    with connection.cursor() as cursor:\n"
+        '        cursor.execute("SELECT 100.0*SUM /* independently chosen */ '
+        "(canonical_net_verified_amount_minor)/(SUM /* independently chosen */ "
+        '(verified_amount_minor)+100) FROM r30_coverage")\n'
+        "        return cursor.fetchone()[0]\n"
+    )
+    path = REPO_ROOT / "backend/app/revenue_verification/r0030_fixture.py"
+    violations: list[str] = []
+    _check_repo_wide_coverage_and_denominator(
+        path, source, ast.parse(source), violations
+    )
+    assert any(
+        item.startswith(
+            "b26_duplicate_coverage_authority:"
+            "backend/app/revenue_verification/r0030_fixture.py:"
+        )
+        for item in violations
+    )
 
 
 def test_b26_p1_migration_graph_is_alembic_native() -> None:

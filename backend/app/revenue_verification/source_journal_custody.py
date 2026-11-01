@@ -1,12 +1,12 @@
 """Signed custody bundles for the XXV source-evidence journal.
 
 The live journal is writable only by the authentication root. This module
-makes an independently signed, immutable snapshot of the committed journal
+makes an independently signed, immutable snapshot of one coherent committed
 prefix available outside that live volume, and restores it without ever
-discarding committed history. It is intentionally filesystem-agnostic: the
-custody directory must be a separately administered object/volume (for
-example an S3 Object Lock prefix or an EFS access point) whose write
-authority is not the financial database maintenance actor.
+discarding newer committed history. It is deliberately filesystem-agnostic:
+the custody directory must be separately administered storage (for example
+an S3 Object Lock prefix or an EFS access point) whose write authority is not
+the financial database maintenance actor.
 """
 
 from __future__ import annotations
@@ -16,12 +16,14 @@ import contextlib
 import hashlib
 import json
 import os
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
 from app.revenue_verification.source_evidence_journal import (
+    _journal_file_lock,
     journal_record_hash,
     load_source_fact_records,
 )
@@ -76,13 +78,31 @@ def _committed_journal_bytes(journal: Path) -> bytes:
     return raw
 
 
-def _bundle_identity(journal: Path) -> tuple[int, str | None, str]:
-    records = load_source_fact_records(journal)
+def _records_from_raw(raw: bytes) -> list[dict[str, Any]]:
+    """Parse exactly the supplied bytes; never re-read the live journal."""
+
+    if not raw:
+        return []
+    handle = tempfile.NamedTemporaryFile(
+        prefix="b26-custody-parse-", suffix=".jsonl", delete=False
+    )
+    temporary = Path(handle.name)
+    try:
+        handle.write(raw)
+        handle.flush()
+        os.fsync(handle.fileno())
+        handle.close()
+        records = load_source_fact_records(temporary)
+    finally:
+        with contextlib.suppress(OSError):
+            handle.close()
+        with contextlib.suppress(FileNotFoundError):
+            temporary.unlink()
+        with contextlib.suppress(FileNotFoundError):
+            temporary.with_name(temporary.name + ".lock").unlink()
     if records is None:
-        raise SourceJournalCustodyError("custody_journal_missing")
-    raw = _committed_journal_bytes(journal)
-    tip = journal_record_hash(records[-1]) if records else None
-    return len(records), tip, hashlib.sha256(raw).hexdigest()
+        raise SourceJournalCustodyError("custody_bundle_missing")
+    return records
 
 
 def _manifest_payload(manifest: Mapping[str, Any]) -> dict[str, Any]:
@@ -100,41 +120,26 @@ def _write_atomic(path: Path, payload: bytes, mode: int) -> None:
     os.replace(temporary, path)
 
 
-def export_custody_bundle(
-    *,
-    journal: str | os.PathLike[str],
-    custody_dir: str | os.PathLike[str],
-    private_key_path: str | os.PathLike[str],
-) -> CustodyBundle:
-    """Write an immutable signed bundle for the committed journal prefix."""
-
+def _signed_manifest(
+    raw: bytes, records: list[dict[str, Any]], private_key_path: Path
+) -> dict[str, Any]:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    journal_path = Path(journal)
-    if not journal_path.exists():
-        raise SourceJournalCustodyError("custody_journal_missing")
-    records = load_source_fact_records(journal_path)
-    if records is None:
-        raise SourceJournalCustodyError("custody_journal_missing")
-    raw = _committed_journal_bytes(journal_path)
-    count = len(records)
-    tip = journal_record_hash(records[-1]) if records else None
-    digest = hashlib.sha256(raw).hexdigest()
-
     seed = _decode_ed25519_seed(
-        Path(private_key_path).read_text(encoding="utf-8")
+        private_key_path.read_text(encoding="utf-8")
     )
     key = Ed25519PrivateKey.from_private_bytes(seed)
     public_raw = key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
     )
+    tip = journal_record_hash(records[-1]) if records else None
     manifest: dict[str, Any] = {
         "version": CUSTODY_BUNDLE_VERSION,
-        "journal_sha256": digest,
+        "journal_sha256": hashlib.sha256(raw).hexdigest(),
         "journal_size": len(raw),
-        "record_count": count,
+        "record_count": len(records),
         "journal_tip": tip,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "key_sha256": hashlib.sha256(public_raw).hexdigest(),
@@ -143,33 +148,74 @@ def export_custody_bundle(
     manifest["signature"] = "ed25519:" + base64.urlsafe_b64encode(
         signature
     ).rstrip(b"=").decode("ascii")
+    return manifest
 
-    custody_root = Path(custody_dir)
-    bundle_name = tip or "empty"
-    bundle_path = custody_root / f"source-evidence-{bundle_name}.jsonl"
-    manifest_path = custody_root / f"source-evidence-{bundle_name}.manifest.json"
-    if bundle_path.exists() or manifest_path.exists():
-        existing = verify_custody_bundle(
-            manifest_path=manifest_path,
-            public_key_path=Path(private_key_path),
-            public_key_is_private_seed=True,
+
+def _bundle_paths(custody_dir: Path, tip: str | None) -> tuple[Path, Path]:
+    name = tip or "empty"
+    return (
+        custody_dir / f"source-evidence-{name}.jsonl",
+        custody_dir / f"source-evidence-{name}.manifest.json",
+    )
+
+
+def export_custody_bundle(
+    *,
+    journal: str | os.PathLike[str],
+    custody_dir: str | os.PathLike[str],
+    private_key_path: str | os.PathLike[str],
+) -> CustodyBundle:
+    """Write one coherent committed prefix, completing an interrupted export."""
+
+    journal_path = Path(journal)
+    if not journal_path.exists():
+        raise SourceJournalCustodyError("custody_journal_missing")
+
+    # One lock, one byte read, one parse: a concurrent append cannot split the
+    # manifest identity from the bytes it describes.
+    with _journal_file_lock(journal_path):
+        raw = _committed_journal_bytes(journal_path)
+        records = _records_from_raw(raw)
+        tip = journal_record_hash(records[-1]) if records else None
+        bundle_path, manifest_path = _bundle_paths(Path(custody_dir), tip)
+
+        if manifest_path.exists():
+            verified = verify_custody_bundle(
+                manifest_path=manifest_path,
+                public_key_path=Path(private_key_path),
+                public_key_is_private_seed=True,
+            )
+            return verified
+
+        if bundle_path.exists():
+            # A previous process died after publishing bytes but before the
+            # manifest. Complete that publication from the exact bytes.
+            existing_raw = bundle_path.read_bytes()
+            existing_records = _records_from_raw(existing_raw)
+            manifest = _signed_manifest(
+                existing_raw, existing_records, Path(private_key_path)
+            )
+            _write_atomic(
+                manifest_path,
+                json.dumps(manifest, sort_keys=True, indent=2).encode("utf-8"),
+                0o444,
+            )
+            return CustodyBundle(
+                manifest=manifest,
+                journal_bytes=existing_raw,
+                manifest_path=manifest_path,
+            )
+
+        manifest = _signed_manifest(raw, records, Path(private_key_path))
+        _write_atomic(bundle_path, raw, 0o444)
+        _write_atomic(
+            manifest_path,
+            json.dumps(manifest, sort_keys=True, indent=2).encode("utf-8"),
+            0o444,
         )
-        if (
-            existing.manifest.get("journal_sha256") == digest
-            and existing.journal_bytes == raw
-        ):
-            return existing
-        raise SourceJournalCustodyError("custody_bundle_conflict")
-
-    _write_atomic(bundle_path, raw, 0o444)
-    _write_atomic(
-        manifest_path,
-        json.dumps(manifest, sort_keys=True, indent=2).encode("utf-8"),
-        0o444,
-    )
-    return CustodyBundle(
-        manifest=manifest, journal_bytes=raw, manifest_path=manifest_path
-    )
+        return CustodyBundle(
+            manifest=manifest, journal_bytes=raw, manifest_path=manifest_path
+        )
 
 
 def verify_custody_bundle(
@@ -233,24 +279,7 @@ def verify_custody_bundle(
     if len(raw) != int(manifest.get("journal_size", -1)):
         raise SourceJournalCustodyError("custody_bundle_size_mismatch")
 
-    import tempfile
-
-    temporary_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix="b26-custody-verify-", suffix=".jsonl", delete=False
-        ) as temporary_handle:
-            temporary_path = Path(temporary_handle.name)
-            temporary_handle.write(raw)
-            temporary_handle.flush()
-            os.fsync(temporary_handle.fileno())
-        records = load_source_fact_records(temporary_path)
-    finally:
-        if temporary_path is not None:
-            with contextlib.suppress(FileNotFoundError):
-                temporary_path.unlink()
-    if records is None:
-        raise SourceJournalCustodyError("custody_bundle_missing")
+    records = _records_from_raw(raw)
     if len(records) != int(manifest.get("record_count", -1)):
         raise SourceJournalCustodyError("custody_record_count_mismatch")
     tip = journal_record_hash(records[-1]) if records else None
@@ -261,18 +290,48 @@ def verify_custody_bundle(
     )
 
 
+def _assert_accepted_prefix(
+    records: list[dict[str, Any]],
+    *,
+    accepted_count: int | None,
+    accepted_tip: str | None,
+) -> None:
+    if accepted_count is None and accepted_tip is None:
+        return
+    if accepted_count is None:
+        raise SourceJournalCustodyError("custody_accepted_count_required")
+    if accepted_count < 0:
+        raise SourceJournalCustodyError("custody_accepted_count_invalid")
+    if len(records) < accepted_count:
+        raise SourceJournalCustodyError(
+            "custody_restore_below_accepted_commitment"
+        )
+    if accepted_tip is not None:
+        if accepted_count == 0:
+            raise SourceJournalCustodyError(
+                "custody_restore_below_accepted_commitment"
+            )
+        if journal_record_hash(records[accepted_count - 1]) != accepted_tip:
+            raise SourceJournalCustodyError(
+                "custody_restore_below_accepted_commitment"
+            )
+
+
 def restore_custody_bundle(
     *,
     manifest_path: str | os.PathLike[str],
     journal: str | os.PathLike[str],
     public_key_path: str | os.PathLike[str],
     public_key_is_private_seed: bool = False,
+    accepted_source_count: int | None = None,
+    accepted_source_tip: str | None = None,
 ) -> str:
-    """Restore only when the live journal is absent or a prefix of the bundle.
+    """Restore a bundle without discarding newer committed history.
 
-    A newer live journal is never overwritten: committed history wins over a
-    stale archive. Returns ``restored``, ``already_current`` or
-    ``live_is_newer``.
+    A live journal that is an exact prefix of the bundle receives the archived
+    newer prefix. A live journal that already contains the bundle is left
+    untouched. Anything divergent is refused. When the independently accepted
+    witness prefix is supplied, a bundle that does not contain it is refused.
     """
 
     bundle = verify_custody_bundle(
@@ -280,23 +339,35 @@ def restore_custody_bundle(
         public_key_path=public_key_path,
         public_key_is_private_seed=public_key_is_private_seed,
     )
+    bundle_records = _records_from_raw(bundle.journal_bytes)
+    _assert_accepted_prefix(
+        bundle_records,
+        accepted_count=accepted_source_count,
+        accepted_tip=accepted_source_tip,
+    )
     journal_path = Path(journal)
-    if journal_path.exists():
-        live_records = load_source_fact_records(journal_path) or []
-        bundle_records = load_source_fact_records(
-            bundle.manifest_path.with_name(
-                bundle.manifest_path.name.replace(".manifest.json", ".jsonl")
-            )
-        ) or []
+    with _journal_file_lock(journal_path):
+        live_records = (
+            _records_from_raw(_committed_journal_bytes(journal_path))
+            if journal_path.exists()
+            else []
+        )
         if live_records == bundle_records:
             return "already_current"
-        if len(live_records) >= len(bundle_records) and live_records[: len(bundle_records)] == bundle_records:
+        if (
+            len(live_records) <= len(bundle_records)
+            and bundle_records[: len(live_records)] == live_records
+        ):
+            _write_atomic(journal_path, bundle.journal_bytes, 0o600)
+            restored = _records_from_raw(_committed_journal_bytes(journal_path))
+            if restored != bundle_records:
+                raise SourceJournalCustodyError(
+                    "custody_restore_verification_failed"
+                )
+            return "restored_prefix" if live_records else "restored"
+        if (
+            len(live_records) > len(bundle_records)
+            and live_records[: len(bundle_records)] == bundle_records
+        ):
             return "live_is_newer"
         raise SourceJournalCustodyError("custody_restore_diverged")
-    _write_atomic(journal_path, bundle.journal_bytes, 0o600)
-    restored = load_source_fact_records(journal_path)
-    if restored is None or len(restored) != int(
-        bundle.manifest.get("record_count", -1)
-    ):
-        raise SourceJournalCustodyError("custody_restore_verification_failed")
-    return "restored"
