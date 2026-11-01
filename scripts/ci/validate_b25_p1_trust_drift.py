@@ -79,6 +79,7 @@ ALLOWED_NON_RUNTIME_PATHS = (
     "backend/tests/trust/conftest.py",
     "backend/tests/trust/test_b26_p2_history_witness.py",
     "backend/tests/trust/test_b26_p2_source_evidence_journal.py",
+    "backend/tests/trust/test_b26_p2_source_journal_custody.py",
     "backend/tests/trust/test_b26_p2_xxv_source_attestation.py",
     "backend/tests/trust/test_b25_p6_reason_truth_matrix.py",
     "backend/tests/trust/test_b25_p7_provenance_audit.py",
