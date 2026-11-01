@@ -1,0 +1,424 @@
+{
+  "actor": "provider (three signed amendment events over one payment intent) + shipping correction caller + real B2.3 worker + live beat schedule + Trust builder/signer + independent verification",
+  "all_three_established": true,
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
+    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
+    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
+    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
+    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "baseline": {
+    "authority_state": "current",
+    "captured_minor": 4321,
+    "correction_events": 0,
+    "expected_minor": 4321,
+    "linked_event_reference": "evt_xxv3Aa35045777c54",
+    "linked_ingress_id": "4f61947e-2c7f-49e9-91fa-bdf43220ba1c",
+    "net_minor": 4321,
+    "supersession_rows": 0,
+    "verdicts_for_identity": 1
+  },
+  "commerce_reference": "pi_xxv3corr91ef21595f6d41",
+  "cycles": [
+    {
+      "after_worker": {
+        "authority_state": "current",
+        "captured_minor": 5100,
+        "correction_events": 1,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B10c43c5f96a",
+        "linked_ingress_id": "cc8a1835-feb9-41b5-add1-e97d0d803628",
+        "net_minor": 5100,
+        "supersession_rows": 2,
+        "verdicts_for_identity": 1
+      },
+      "amending_event": {
+        "amount_minor": 5100,
+        "body_sha256": "9bff50fbb8f96768591d14b1795c73ea1b85944aca3b48ed546dfeb5f3743a70",
+        "event_reference": "evt_xxv3B10c43c5f96a",
+        "http": {
+          "body": "{\"status\":\"success\",\"event_id\":\"3f09d168-74ae-480b-b28b-c69af06e1381\",\"idempotency_key\":\"d9f01fbe-91bf-4d28-8db3-1c7d4dbe8e47\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+          "status": 200
+        }
+      },
+      "amending_event_created_its_own_verdict": 0,
+      "before": {
+        "authority_state": "current",
+        "captured_minor": 4321,
+        "correction_events": 0,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3Aa35045777c54",
+        "linked_ingress_id": "4f61947e-2c7f-49e9-91fa-bdf43220ba1c",
+        "net_minor": 4321,
+        "supersession_rows": 0,
+        "verdicts_for_identity": 1
+      },
+      "correction_http": {
+        "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"a65ca402-fb6d-40bb-bbee-c8f6fe030a43\",\"revenue_event_written\":false,\"net_verified_amount_minor\":4321}",
+        "status": 200
+      },
+      "cycle": 1,
+      "history_after_worker": {
+        "ledger_prefix_digest": "0f8710363d07c58319e868f65db8a7db51628de1f6caacd76585a0c1da958ca9",
+        "ledger_rows": 2,
+        "ledger_tip_hash": "8625a7319846a842300d90249e8ffc3c5c403f5f2cfe9db250a3e42710f3b7b8",
+        "ledger_tip_seq": 2
+      },
+      "history_before": {
+        "ledger_prefix_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ledger_rows": 0,
+        "ledger_tip_hash": null,
+        "ledger_tip_seq": null
+      },
+      "ingress": {
+        "amount_minor": 5100,
+        "commerce_reference": "pi_xxv3corr91ef21595f6d41",
+        "created_at": "2026-11-01 07:53:13.304648+00:00",
+        "currency": "USD",
+        "demotion_reason": null,
+        "event_reference": "evt_xxv3B10c43c5f96a",
+        "event_timestamp": "2026-11-01 07:53:09+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "cc8a1835-feb9-41b5-add1-e97d0d803628",
+        "is_current": true,
+        "provenance": "authenticated_known"
+      },
+      "last_observation_before": {
+        "author": "app_worker",
+        "ledger_count": 0,
+        "observation_id": 2,
+        "observed_at": "2026-11-01T07:53:11.548190+00:00",
+        "observed_at_epoch": 1793519591.54819,
+        "violations": ""
+      },
+      "old_source": {
+        "amount_minor": 4321,
+        "commerce_reference": "pi_xxv3corr91ef21595f6d41",
+        "created_at": "2026-11-01 07:53:08.832937+00:00",
+        "currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_xxv3B10c43c5f96a",
+        "event_reference": "evt_xxv3Aa35045777c54",
+        "event_timestamp": "2026-11-01 07:53:08+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "4f61947e-2c7f-49e9-91fa-bdf43220ba1c",
+        "is_current": false,
+        "provenance": "authenticated_known"
+      },
+      "reconciliation": {
+        "attestation_status": "xxv_attested",
+        "net": 5100,
+        "source_authority_state": "current",
+        "status": 200
+      },
+      "scheduled_observation": {
+        "author": "app_worker",
+        "ledger_count": 2,
+        "observation_id": 5,
+        "observed_at": "2026-11-01T08:00:10.955775+00:00",
+        "violations": ""
+      },
+      "signed_financial_result": {
+        "currency": "USD",
+        "established": true,
+        "trust_status": 200,
+        "verification_status": "verified",
+        "verified_revenue_minor": 5100
+      }
+    },
+    {
+      "after_worker": {
+        "authority_state": "current",
+        "captured_minor": 6200,
+        "correction_events": 2,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B25c57657e77",
+        "linked_ingress_id": "7f3f973b-4618-4f7c-a31e-2ae05e160e94",
+        "net_minor": 6200,
+        "supersession_rows": 4,
+        "verdicts_for_identity": 1
+      },
+      "amending_event": {
+        "amount_minor": 6200,
+        "body_sha256": "890949fcf34ea0c1d9df045c7a9703fe6ed97a2c96276ee911d262c7f3535d0b",
+        "event_reference": "evt_xxv3B25c57657e77",
+        "http": {
+          "body": "{\"status\":\"success\",\"event_id\":\"3d45717a-f4e5-4d2c-b8c5-f7024c4e10ae\",\"idempotency_key\":\"adc57994-a4ec-4be3-ab53-d24ee1668737\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+          "status": 200
+        }
+      },
+      "amending_event_created_its_own_verdict": 0,
+      "before": {
+        "authority_state": "current",
+        "captured_minor": 5100,
+        "correction_events": 1,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B10c43c5f96a",
+        "linked_ingress_id": "cc8a1835-feb9-41b5-add1-e97d0d803628",
+        "net_minor": 5100,
+        "supersession_rows": 2,
+        "verdicts_for_identity": 1
+      },
+      "correction_http": {
+        "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"a65ca402-fb6d-40bb-bbee-c8f6fe030a43\",\"revenue_event_written\":false,\"net_verified_amount_minor\":5100}",
+        "status": 200
+      },
+      "cycle": 2,
+      "history_after_worker": {
+        "ledger_prefix_digest": "601ed8e0f9227b9add5b717c2463a912b3e696d8b3e20e644bc71d3f4ec2171d",
+        "ledger_rows": 4,
+        "ledger_tip_hash": "0d8b32c62499e5c68a7198ba07bb3a48d6c2b6df9f8e26a9054fb13779d9db28",
+        "ledger_tip_seq": 4
+      },
+      "history_before": {
+        "ledger_prefix_digest": "0f8710363d07c58319e868f65db8a7db51628de1f6caacd76585a0c1da958ca9",
+        "ledger_rows": 2,
+        "ledger_tip_hash": "8625a7319846a842300d90249e8ffc3c5c403f5f2cfe9db250a3e42710f3b7b8",
+        "ledger_tip_seq": 2
+      },
+      "ingress": {
+        "amount_minor": 6200,
+        "commerce_reference": "pi_xxv3corr91ef21595f6d41",
+        "created_at": "2026-11-01 08:00:14.169654+00:00",
+        "currency": "USD",
+        "demotion_reason": null,
+        "event_reference": "evt_xxv3B25c57657e77",
+        "event_timestamp": "2026-11-01 07:53:10+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "7f3f973b-4618-4f7c-a31e-2ae05e160e94",
+        "is_current": true,
+        "provenance": "authenticated_known"
+      },
+      "last_observation_before": {
+        "author": "app_worker",
+        "ledger_count": 2,
+        "observation_id": 5,
+        "observed_at": "2026-11-01T08:00:10.955775+00:00",
+        "observed_at_epoch": 1793520010.955775,
+        "violations": ""
+      },
+      "old_source": {
+        "amount_minor": 5100,
+        "commerce_reference": "pi_xxv3corr91ef21595f6d41",
+        "created_at": "2026-11-01 07:53:13.304648+00:00",
+        "currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_xxv3B25c57657e77",
+        "event_reference": "evt_xxv3B10c43c5f96a",
+        "event_timestamp": "2026-11-01 07:53:09+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "cc8a1835-feb9-41b5-add1-e97d0d803628",
+        "is_current": false,
+        "provenance": "authenticated_known"
+      },
+      "reconciliation": {
+        "attestation_status": "xxv_attested",
+        "net": 6200,
+        "source_authority_state": "current",
+        "status": 200
+      },
+      "scheduled_observation": {
+        "author": "app_worker",
+        "ledger_count": 4,
+        "observation_id": 7,
+        "observed_at": "2026-11-01T08:05:11.241783+00:00",
+        "violations": ""
+      },
+      "signed_financial_result": {
+        "currency": "USD",
+        "established": true,
+        "trust_status": 200,
+        "verification_status": "verified",
+        "verified_revenue_minor": 6200
+      }
+    },
+    {
+      "after_worker": {
+        "authority_state": "current",
+        "captured_minor": 7300,
+        "correction_events": 3,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B3ec8b376701",
+        "linked_ingress_id": "807373fe-b7dd-43f4-93d4-7b12df8359a2",
+        "net_minor": 7300,
+        "supersession_rows": 6,
+        "verdicts_for_identity": 1
+      },
+      "amending_event": {
+        "amount_minor": 7300,
+        "body_sha256": "06bf4bc1225f397320b1851c11ec42808ef14a429177904e4f8614d6fce17b42",
+        "event_reference": "evt_xxv3B3ec8b376701",
+        "http": {
+          "body": "{\"status\":\"success\",\"event_id\":\"8dcd0419-ef8b-4a00-9bf9-714184685e2a\",\"idempotency_key\":\"11ac8255-9ca3-4e81-ab66-306f48aff1a2\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+          "status": 200
+        }
+      },
+      "amending_event_created_its_own_verdict": 0,
+      "before": {
+        "authority_state": "current",
+        "captured_minor": 6200,
+        "correction_events": 2,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B25c57657e77",
+        "linked_ingress_id": "7f3f973b-4618-4f7c-a31e-2ae05e160e94",
+        "net_minor": 6200,
+        "supersession_rows": 4,
+        "verdicts_for_identity": 1
+      },
+      "correction_http": {
+        "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"a65ca402-fb6d-40bb-bbee-c8f6fe030a43\",\"revenue_event_written\":false,\"net_verified_amount_minor\":6200}",
+        "status": 200
+      },
+      "cycle": 3,
+      "history_after_worker": {
+        "ledger_prefix_digest": "4b2b8b3323bbd3d4462b75c4d167c856636c231c2c86d40b193200d94bddefc5",
+        "ledger_rows": 6,
+        "ledger_tip_hash": "c9614acb70d80ed1a4f35f43cde9f590de2a41ae198b6f7b6bcf11ec3abe2d3c",
+        "ledger_tip_seq": 6
+      },
+      "history_before": {
+        "ledger_prefix_digest": "601ed8e0f9227b9add5b717c2463a912b3e696d8b3e20e644bc71d3f4ec2171d",
+        "ledger_rows": 4,
+        "ledger_tip_hash": "0d8b32c62499e5c68a7198ba07bb3a48d6c2b6df9f8e26a9054fb13779d9db28",
+        "ledger_tip_seq": 4
+      },
+      "ingress": {
+        "amount_minor": 7300,
+        "commerce_reference": "pi_xxv3corr91ef21595f6d41",
+        "created_at": "2026-11-01 08:05:13.701840+00:00",
+        "currency": "USD",
+        "demotion_reason": null,
+        "event_reference": "evt_xxv3B3ec8b376701",
+        "event_timestamp": "2026-11-01 07:53:11+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "807373fe-b7dd-43f4-93d4-7b12df8359a2",
+        "is_current": true,
+        "provenance": "authenticated_known"
+      },
+      "last_observation_before": {
+        "author": "app_worker",
+        "ledger_count": 4,
+        "observation_id": 7,
+        "observed_at": "2026-11-01T08:05:11.241783+00:00",
+        "observed_at_epoch": 1793520311.241783,
+        "violations": ""
+      },
+      "old_source": {
+        "amount_minor": 6200,
+        "commerce_reference": "pi_xxv3corr91ef21595f6d41",
+        "created_at": "2026-11-01 08:00:14.169654+00:00",
+        "currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_xxv3B3ec8b376701",
+        "event_reference": "evt_xxv3B25c57657e77",
+        "event_timestamp": "2026-11-01 07:53:10+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "7f3f973b-4618-4f7c-a31e-2ae05e160e94",
+        "is_current": false,
+        "provenance": "authenticated_known"
+      },
+      "reconciliation": {
+        "attestation_status": "xxv_attested",
+        "net": 7300,
+        "source_authority_state": "current",
+        "status": 200
+      },
+      "scheduled_observation": {
+        "author": "app_worker",
+        "ledger_count": 6,
+        "observation_id": 9,
+        "observed_at": "2026-11-01T08:10:11.242659+00:00",
+        "violations": ""
+      },
+      "signed_financial_result": {
+        "currency": "USD",
+        "established": true,
+        "trust_status": 200,
+        "verification_status": "verified",
+        "verified_revenue_minor": 7300
+      }
+    }
+  ],
+  "event_references": [
+    "evt_xxv3Aa35045777c54",
+    "evt_xxv3B10c43c5f96a",
+    "evt_xxv3B25c57657e77",
+    "evt_xxv3B3ec8b376701"
+  ],
+  "expected_amounts_minor": [
+    4321,
+    5100,
+    6200,
+    7300
+  ],
+  "falsifier": "xxv-a2b10-natural-corrections",
+  "initial_event": {
+    "amount_minor": 4321,
+    "body_sha256": "6393e719b2caaab4ba48a60f436ec520eb0d2345d61aed5e43edb0dd6a60c418",
+    "event_reference": "evt_xxv3Aa35045777c54",
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"a442570a-c081-4130-b1a0-9e06bec252b3\",\"idempotency_key\":\"01184642-691d-4e70-8546-94a61eb150af\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    }
+  },
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "limit_of_inference": "three corrections establish the A2/B10 positive path on this artifact. They do not establish READY-FOR-AUDIT, exact historical restoration, or any other XXV gate.",
+  "observation_control": "the beat schedule was never paused and the observer was never invoked by this run; observations are the live scheduled rows and their ids/timestamps are recorded per cycle",
+  "property": "P-XXV A2/B10: three lawful amount-changing corrections conduct through the shipping correction surface and the real B2.3 worker, are witnessed by the live scheduled observer, and are served by the signed Trust consumer",
+  "recorded_at_utc": "2026-11-01T08:10:13.035634Z",
+  "scheduler_after": {
+    "beat_instance_id": "16119078-40c3-4934-badb-4186e9e43aec",
+    "last_tick": "2026-11-01T08:10:11.930783+00:00",
+    "tenant_rows": 2
+  },
+  "scheduler_before": {
+    "beat_instance_id": "16119078-40c3-4934-badb-4186e9e43aec",
+    "last_tick": "2026-11-01T07:53:10.538341+00:00",
+    "tenant_rows": 2
+  },
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "1e854c40-3e6e-40b6-b031-c964a374af81"
+    }
+  ],
+  "verdict_id": "a65ca402-fb6d-40bb-bbee-c8f6fe030a43"
+}
