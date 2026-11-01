@@ -1,0 +1,122 @@
+{
+  "after_worker": {
+    "authority_state": "current",
+    "captured_minor": 5100,
+    "correction_events": 1,
+    "expected_minor": 4321,
+    "linked_event_reference": "evt_xxva8B7db01117e7d6",
+    "linked_ingress_id": "77a359e2-fd72-4961-99d3-3255648721db",
+    "net_minor": 5100,
+    "supersession_rows": 2,
+    "verdicts_for_identity": 1
+  },
+  "amendment_http": {
+    "body": "{\"status\":\"success\",\"event_id\":\"ec76972e-8618-41b6-811b-d4b5a0b4c8bf\",\"idempotency_key\":\"35eea27c-58e5-4a10-a15b-0d0b79324d1b\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+    "status": 200
+  },
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:32:51.022559Z",
+    "commit_sha": "3d2f7a20b9be65b2019b4fc2cd6d36082bf39dbb",
+    "compiled_genesis_hash": "0a8d37d4a4a740538b95ac94d2ac0469484dcbf4977a411915a6ec35e1b42fca",
+    "compiled_public_key_sha256": "6e22b8c5311fcd6c425d7e5776bfeae3616872198d5e0d15fa8850073ade2e43",
+    "compiled_source_attestation_public_key_sha256": "ce5eb97eb2dde5fdee579a19bc6d8e14bc4754058641714a00a1f8f5805ec0e2",
+    "image_id": "sha256:30706fa533c58af213c05f135327e8c03d06a9db3bf7958f158b325e31a1767c",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "bc2442b9277d45818fc8a8bc29b0ce57c9128929",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "8f43604d-2904-48ff-b867-dca38a123010",
+  "baseline_signed": {
+    "currency": "USD",
+    "established": true,
+    "trust_status": 200,
+    "verification_status": "verified",
+    "verified_revenue_minor": 4321
+  },
+  "before": {
+    "authority_state": "historically_unverifiable",
+    "captured_minor": 4321,
+    "correction_events": 0,
+    "expected_minor": 4321,
+    "linked_event_reference": "evt_xxva8A655c75abeb9d",
+    "linked_ingress_id": "bd0c6761-daa6-493e-a6b0-4f115bfbbe8f",
+    "net_minor": 4321,
+    "supersession_rows": 1,
+    "verdicts_for_identity": 1
+  },
+  "commerce_reference": "pi_xxva825bee5af183a4c",
+  "correction_http": {
+    "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"3cb28955-503b-4a82-9896-d4062c7f7af4\",\"revenue_event_written\":false,\"net_verified_amount_minor\":4321}",
+    "status": 200
+  },
+  "falsifier": "xxv-a8-crash-recovery",
+  "history_after_worker": {
+    "ledger_prefix_digest": "8024d95e8d21101ee3c4077ea9278966c244e0895db0e190a96896bd8540f6e0",
+    "ledger_rows": 2,
+    "ledger_tip_hash": "4c944aa53694d35c46d9d1fdc226da9e06bcb8891f5414626c6c39a23c3aa84e",
+    "ledger_tip_seq": 2
+  },
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:30706fa533c58af213c05f135327e8c03d06a9db3bf7958f158b325e31a1767c",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "limit_of_inference": "This is a hard observer-container kill after a committed correction, not an arbitrary worker/database crash.",
+  "observer_kill": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-observer"
+  },
+  "observer_start": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-observer"
+  },
+  "property": "A8: unwitnessed finance must not issue as complete, and a legitimate correction must recover through the observer",
+  "recorded_at_utc": "2026-11-01T07:36:58.655886Z",
+  "recovered_observation": {
+    "author": "app_worker",
+    "ledger_count": 2,
+    "observation_id": 3,
+    "observed_at": "2026-11-01T07:36:56.380728+00:00",
+    "violations": ""
+  },
+  "recovered_signed_result": {
+    "currency": "USD",
+    "established": true,
+    "trust_status": 200,
+    "verification_status": "verified",
+    "verified_revenue_minor": 5100
+  },
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "6dc63754-41d9-4f8a-8c87-04bb26e4f44a"
+    }
+  ],
+  "unwitnessed_durable_reason": "refused:history_integrity_unverifiable",
+  "unwitnessed_trust_read": {
+    "body_head": "{'detail': 'Subject not found.'}",
+    "status": 404
+  },
+  "verdict_id": "3cb28955-503b-4a82-9896-d4062c7f7af4"
+}
