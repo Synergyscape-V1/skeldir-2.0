@@ -1155,6 +1155,27 @@ def _auth_replay_request(
     }
 
 
+def _auth_logs_tail(cfg: _Phase8Config, env: dict[str, str], lines: int = 80) -> str:
+    proc = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.e2e.yml",
+            "logs",
+            "auth_ingress",
+            "--no-color",
+        ],
+        cwd=str(cfg.repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    text = (proc.stdout or "") + (proc.stderr or "")
+    return "\n".join(text.splitlines()[-lines:])
+
+
 def _post_auth_request(payload: dict[str, Any], timeout_s: float = 30.0) -> dict[str, Any]:
     started = time.monotonic()
     request = urllib.request.Request(
@@ -1841,7 +1862,12 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         journal_probe = _probe_source_evidence_journal(cfg, env)
         replay_tenant = _seed_replay_tenant(cfg)
         replay_request = _auth_replay_request(replay_tenant)
-        first_replay = _post_auth_request(replay_request)
+        try:
+            first_replay = _post_auth_request(replay_request)
+        except Exception as exc:
+            raise RuntimeError(
+                f"{exc}\nAUTH_ROOT_LOGS_TAIL:\n{_auth_logs_tail(cfg, env)}"
+            ) from exc
         if int(first_replay.get("status_code", 0)) != 200:
             raise RuntimeError(
                 "auth-root replay seed request failed: "
