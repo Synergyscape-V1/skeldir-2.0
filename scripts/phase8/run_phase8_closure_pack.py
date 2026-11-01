@@ -1063,14 +1063,16 @@ def _provision_source_attestation_key(env: dict[str, str]) -> None:
     env["E2E_SOURCE_ATTESTATION_KEY_FILE"] = key_path
     env["E2E_SOURCE_ATTESTATION_PUBLIC_KEY_FILE"] = public_path
     env["E2E_SOURCE_ATTESTATION_REQUIRED"] = "true"
-    env["E2E_SOURCE_EVIDENCE_JOURNAL_PATH"] = "/tmp/b26_p2_source_evidence.jsonl"
+    env["E2E_SOURCE_EVIDENCE_JOURNAL_PATH"] = "/var/lib/b26_p2/source_evidence.jsonl"
 
 
-def _probe_source_evidence_journal(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+def _probe_source_evidence_journal(
+    cfg: _Phase8Config, env: dict[str, str], *, artifact_name: str = "source_evidence_journal_probe.json"
+) -> dict[str, Any]:
     """Read and chain-validate the auth root's journal after the load leg."""
     journal_path = env.get(
         "E2E_SOURCE_EVIDENCE_JOURNAL_PATH",
-        "/tmp/b26_p2_source_evidence.jsonl",
+        "/var/lib/b26_p2/source_evidence.jsonl",
     )
     code = (
         "import json;"
@@ -1120,7 +1122,7 @@ def _probe_source_evidence_journal(cfg: _Phase8Config, env: dict[str, str]) -> d
         raise RuntimeError("source evidence journal is empty after the load leg")
     if int(payload.get("outcome_count", 0)) <= 0:
         raise RuntimeError("source evidence journal has no signed outcomes")
-    artifact = cfg.artifact_dir / "source_evidence_journal_probe.json"
+    artifact = cfg.artifact_dir / artifact_name
     artifact.write_text(
         json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
     )
@@ -1725,6 +1727,33 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         if collect_error is not None:
             raise collect_error
         journal_probe = _probe_source_evidence_journal(cfg, env)
+        # The journal is mounted on a durable volume in the e2e topology.
+        # Restart the sole writer and re-read the chain; a restart must not
+        # erase the retained source history used by cold redelivery.
+        run_step(
+            "restart_auth_ingress_for_journal",
+            [
+                "docker",
+                "compose",
+                "-f",
+                "docker-compose.e2e.yml",
+                "restart",
+                "auth_ingress",
+            ],
+        )
+        _wait_for_auth_root(env)
+        journal_restart_probe = _probe_source_evidence_journal(
+            cfg, env, artifact_name="source_evidence_journal_restart_probe.json"
+        )
+        if (
+            int(journal_restart_probe.get("record_count", 0))
+            != int(journal_probe.get("record_count", 0))
+            or str(journal_restart_probe.get("tip", ""))
+            != str(journal_probe.get("tip", ""))
+        ):
+            raise RuntimeError(
+                "source evidence journal was not preserved across auth-root restart"
+            )
         r3_profile = _extract_profile_metrics_from_r3_log(
             cfg.logs_dir / "r3_ingestion_under_fire.log",
             "EG3_4_Test2_Month18",
@@ -1914,6 +1943,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "negative_controls": negative_controls,
             "container_identity": container_identity_evidence,
             "source_evidence_journal": journal_probe,
+            "source_evidence_journal_restart": journal_restart_probe,
         }
     finally:
         if llm_load_proc is not None and llm_load_proc.poll() is None:
