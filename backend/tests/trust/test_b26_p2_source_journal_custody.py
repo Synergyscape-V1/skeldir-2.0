@@ -233,7 +233,11 @@ def test_restore_at_or_above_accepted_witness_prefix_is_allowed(tmp_path: Path) 
         accepted_source_tip=journal_record_hash(records[1]),
     )
     assert disposition == "restored"
-    assert len(load_source_fact_records(restored) or []) == 3
+    restored_records = load_source_fact_records(restored) or []
+    assert len(restored_records) == 3
+    assert journal_record_hash(restored_records[1]) == journal_record_hash(records[1])
+
+
 def test_restore_below_accepted_witness_prefix_is_refused(tmp_path: Path) -> None:
     private_path, public_path = _keys(tmp_path)
     journal = tmp_path / "live.jsonl"
@@ -256,6 +260,8 @@ def test_restore_below_accepted_witness_prefix_is_refused(tmp_path: Path) -> Non
             accepted_source_count=3,
             accepted_source_tip="f" * 64,
         )
+
+
 def test_empty_committed_journal_round_trips(tmp_path: Path) -> None:
     private_path, public_path = _keys(tmp_path)
     journal = tmp_path / "empty.jsonl"
