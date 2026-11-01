@@ -148,6 +148,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/validation/evidence/contracts/",
     "docs/environment/",
     "docs/forensics/evidence/b14_p0/",
+    "docs/forensics/evidence/b26_p2_xxv_a8/",
     "docs/forensics/validation/runtime/R6_context_gathering/",
     "tmp/",
     "tmp_asyncpg_check.py",
