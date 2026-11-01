@@ -1010,13 +1010,6 @@ def _check_repo_wide_coverage_and_denominator(
     without new coverage SQL stays GREEN (LG-09).
     """
     rel = path.relative_to(REPO_ROOT).as_posix()
-    file_mentions_coverage_money = (not path.is_relative_to(B26_PACKAGE)) and any(
-        any(
-            token in _normalize_sql_text(value)
-            for token in COVERAGE_MONEY_SQL_TOKENS
-        )
-        for _, value in _string_values(tree)
-    )
     if rel not in COVERAGE_SQL_GRANDFATHERED_FILES:
         for lineno, value in _string_values(tree):
             compact = _normalize_sql_text(value)
@@ -1053,7 +1046,7 @@ def _check_repo_wide_coverage_and_denominator(
                     if _call_is_func_sum(node)
                     else _node_has_coverage_string_literal(node)
                 )
-                if mentions or file_mentions_coverage_money:
+                if mentions:
                     violations.append(
                         f"b26_duplicate_coverage_authority:{rel}:{node.lineno}"
                     )

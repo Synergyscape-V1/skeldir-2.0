@@ -3,7 +3,7 @@
   "run_at": "2026-11-01",
   "heldout_module": "backend/app/revenue_verification/r0030_alt.py",
   "heldout_module_sha256": "84B15EC18EA887D1D89E81907F6B0521EB89147CE5F9C0C2F7CBD05116662A05",
-  "validator_source_sha256": "14BB2C7EB416DD18B4E30152132BCFD6704C07722B9FFCFE0E2A6B8DDECCF07F",
+  "validator_source_sha256": "42D25C92468F05FF68829DFA67A44612EA83C1282829DE87464EE55E2FA05DC1",
   "command": "PYTHONPATH=<heldout>;<heldout>/backend python scripts/ci/validate_b26_p1_authority.py",
   "expected": "B26_P1_AUTHORITY_FAIL containing b26_duplicate_coverage_authority",
   "observed": {
