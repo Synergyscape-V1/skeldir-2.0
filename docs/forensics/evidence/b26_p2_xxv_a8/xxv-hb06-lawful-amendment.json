@@ -1,0 +1,214 @@
+{
+  "actor": "provider (second signed EVENT over the same payment intent) + shipping correction caller + real B2.3 worker + scheduled observer",
+  "after": {
+    "consumers_green": true,
+    "db": {
+      "attributed_amount_minor": 4321,
+      "attribution_revenue_cents": 4321,
+      "ingress_verified_amount_minor": 5500,
+      "source_authority_state": "current",
+      "supersession_rows": 2,
+      "verdict_captured_minor": 5500,
+      "verdict_expected_minor": 4321,
+      "verdict_net_minor": 5500,
+      "verified_amount_minor": 5500
+    },
+    "history_identity": {
+      "ledger_prefix_digest": "129184c99d4927023d924cad11a631b4959cd923d7c1bba414a3af536d0d368f",
+      "ledger_rows": 6,
+      "ledger_tip_hash": "8f1df91cf8917c34817d5af6d754907d48813e5f13ea97114fa5451ff3ad1db7",
+      "ledger_tip_seq": 12
+    },
+    "mandatory_proof": "PASS",
+    "mandatory_proof_stdout_tail": "B26_P2_XXII_COMPOSITION_PASS\n{\"checks\": {\"live_chronology_triggers\": true, \"live_coherent_rewrite_refused\": true, \"live_conduction_completeness\": true, \"live_conservation_cells\": true, \"live_conservation_surface\": true, \"live_creation_law\": true, \"live_external_false_world_chain_preserved\": true, \"live_external_false_world_refused\": true, \"live_external_false_world_restored\": true, \"live_future_refusals\": true, \"live_head\": true, \"live_prefix_digest\": true, \"live_reader_surface\": true, \"live_source_evidence\": \"SKIPPED:no_witness_env\", \"live_truncate_refused\": true, \"live_xxv_attestation_census\": {\"attested_but_not_claimed_current\": 0, \"source_not_root_authenticated\": 2, \"unattested_not_claimed_current\": 0, \"xxv_attested\": 1}, \"live_xxv_attestation_sweep\": true, \"live_xxv_verdicts_examined\": 3, \"static_laws\": true, \"static_xxv_2_amendment_law\": true, \"static_xxv_a3_observation_on_growth\": true, \"static_xxv_attestation_law\": true, \"static_xxv_no_owner_written_instant\": true}}\n",
+    "reconciliation": {
+      "attestation_status": "xxv_attested",
+      "net": 5500,
+      "source_authority_state": "current",
+      "status": 200
+    },
+    "signed_financial_result": {
+      "currency": "USD",
+      "established": true,
+      "trust_status": 200,
+      "verification_status": "verified",
+      "verified_revenue_minor": 5500
+    },
+    "unsigned_observation_available": true,
+    "unsigned_read_attempts": 1,
+    "witness_catchup": {
+      "observer_cycles": 2,
+      "runs": [
+        {
+          "returncode": 0,
+          "stdout_tail": "23d7c1bba414a3af536d0d368f\", \"checkpoint_hash\": \"279b4ee666d74c484f3957660e3f3192f11f5f701a2cfe060681e49be848aa41\", \"observed_at\": \"2026-11-01T10:09:30.611872+00:00\", \"source_evidence_failures\": {}}}\n"
+        },
+        {
+          "returncode": 0,
+          "stdout_tail": "23d7c1bba414a3af536d0d368f\", \"checkpoint_hash\": \"279b4ee666d74c484f3957660e3f3192f11f5f701a2cfe060681e49be848aa41\", \"observed_at\": \"2026-11-01T10:09:33.051882+00:00\", \"source_evidence_failures\": {}}}\n"
+        }
+      ]
+    }
+  },
+  "amending_event": {
+    "amount_minor": 5500,
+    "body_sha256": "954538cef81d7137246c28f2d2a62ddd92b6782c00c648bf78a2e6a6a3917a39",
+    "distinct_event_reference": true,
+    "event_reference": "evt_xxvBe83dd0ee06814f",
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"3d39eebc-dd9e-470d-8b93-9b17c635f594\",\"idempotency_key\":\"af4ad7f7-e4ef-4ffa-9174-29a8d6e94ac7\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    },
+    "same_commerce_reference": true
+  },
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T10:05:54.607768Z",
+    "commit_sha": "d73150bf32284289cfcc7a55679793cd8065419f",
+    "compiled_genesis_hash": "c8b2df53456aa94c30dc88056fdf54adf25997502c2fb66a9e2cf78c869ef055",
+    "compiled_public_key_sha256": "6ad3338941d9b0c867d104a6032fc1779cfe4956dadad7e0b3e1eb22993b8cfc",
+    "compiled_source_attestation_public_key_sha256": "5e6b8a398fc1f036e73ff018adc7ef7f0707dac398d10093570e76d69bcce011",
+    "image_id": "sha256:0fc0053992963d8e9cb313c0fa217be838e7d12075b249089835bc1bf0fe4bd6",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "acc91a160658f1addcc52000fff19423c32a6c15",
+    "worktree_status_summary": {
+      "entries": 11,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-a3-observation-on-growth.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-a4-foreign-universe.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-b4-coverage.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-b6-worker-loss.json"
+      ]
+    }
+  },
+  "attestations_for_commerce_reference": [
+    {
+      "attested_amount_minor": 4321,
+      "attested_by": "app_ingress",
+      "ingress_id": "6e331744-4022-4a96-941e-e1eef8e3e5a2"
+    },
+    {
+      "attested_amount_minor": 5500,
+      "attested_by": "app_ingress",
+      "ingress_id": "cc217aa2-956a-4915-ad61-13afaf3dd06b"
+    }
+  ],
+  "authority_universe": "782de55b-e445-46a2-aae6-ea05533d84a1",
+  "before": {
+    "consumers_green": true,
+    "db": {
+      "attributed_amount_minor": 4321,
+      "attribution_revenue_cents": 4321,
+      "ingress_verified_amount_minor": 4321,
+      "source_authority_state": "current",
+      "supersession_rows": 0,
+      "verdict_captured_minor": 4321,
+      "verdict_expected_minor": 4321,
+      "verdict_net_minor": 4321,
+      "verified_amount_minor": 4321
+    },
+    "history_identity": {
+      "ledger_prefix_digest": "adf585d917def5a60ea87441dd82795f8c95518d80a1390141fd69d1138e31e3",
+      "ledger_rows": 2,
+      "ledger_tip_hash": "1dbd10d52a24ac252973a3a4a5d1e53725f23d484aae396affcf1faac045c087",
+      "ledger_tip_seq": 5
+    },
+    "mandatory_proof": "PASS",
+    "mandatory_proof_stdout_tail": "B26_P2_XXII_COMPOSITION_PASS\n{\"checks\": {\"live_chronology_triggers\": true, \"live_coherent_rewrite_refused\": true, \"live_conduction_completeness\": true, \"live_conservation_cells\": true, \"live_conservation_surface\": true, \"live_creation_law\": true, \"live_external_false_world_chain_preserved\": true, \"live_external_false_world_refused\": true, \"live_external_false_world_restored\": true, \"live_future_refusals\": true, \"live_head\": true, \"live_prefix_digest\": true, \"live_reader_surface\": true, \"live_source_evidence\": \"SKIPPED:no_witness_env\", \"live_truncate_refused\": true, \"live_xxv_attestation_census\": {\"attested_but_not_claimed_current\": 0, \"source_not_root_authenticated\": 1, \"unattested_not_claimed_current\": 0, \"xxv_attested\": 1}, \"live_xxv_attestation_sweep\": true, \"live_xxv_verdicts_examined\": 2, \"static_laws\": true, \"static_xxv_2_amendment_law\": true, \"static_xxv_a3_observation_on_growth\": true, \"static_xxv_attestation_law\": true, \"static_xxv_no_owner_written_instant\": true}}\n",
+    "reconciliation": {
+      "attestation_status": "xxv_attested",
+      "net": 4321,
+      "source_authority_state": "current",
+      "status": 200
+    },
+    "signed_financial_result": {
+      "currency": "USD",
+      "established": true,
+      "trust_status": 200,
+      "verification_status": "verified",
+      "verified_revenue_minor": 4321
+    },
+    "unsigned_observation_available": true,
+    "unsigned_read_attempts": 1,
+    "witness_catchup": {
+      "observer_cycles": 2,
+      "runs": [
+        {
+          "returncode": 0,
+          "stdout_tail": "8d80a1390141fd69d1138e31e3\", \"checkpoint_hash\": \"2b94b21e4de4a396d98916ac42f719a7ce11ea11b04bcf13bbf5829a4c186700\", \"observed_at\": \"2026-11-01T10:08:55.072853+00:00\", \"source_evidence_failures\": {}}}\n"
+        },
+        {
+          "returncode": 0,
+          "stdout_tail": "8d80a1390141fd69d1138e31e3\", \"checkpoint_hash\": \"2b94b21e4de4a396d98916ac42f719a7ce11ea11b04bcf13bbf5829a4c186700\", \"observed_at\": \"2026-11-01T10:08:57.579539+00:00\", \"source_evidence_failures\": {}}}\n"
+        }
+      ]
+    }
+  },
+  "commerce_reference": "pi_xxv667100b1b5904918",
+  "correction_http": {
+    "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"9bdd7fdf-41f6-4864-95c9-c3c5a9f85942\",\"revenue_event_written\":false,\"net_verified_amount_minor\":4321}",
+    "status": 200
+  },
+  "dead_events_tail": [],
+  "expected_independently": "current money becomes 5500; one supersession row is appended; the observer appends a checkpoint; the signed envelope carries verified_revenue_minor=5500",
+  "falsifier": "xxv-hb06-lawful-amendment",
+  "first_event": {
+    "amount_minor": 4321,
+    "body_sha256": "9bd7c9b47eaeeeed10c9452a96c424f259356612366087fc759c74df6d6b14c0",
+    "event_reference": "evt_xxvA46b34e2e80f845",
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"ce3a027d-cb49-45f2-b438-f227d95c6f24\",\"idempotency_key\":\"bd85332b-3ad0-4d33-82bb-dd80206517d3\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    }
+  },
+  "history_advanced": true,
+  "ingress_rows": [
+    {
+      "amount_minor": 4321,
+      "commerce_reference": "pi_xxv667100b1b5904918",
+      "event_reference": "evt_xxvA46b34e2e80f845",
+      "id": "6e331744-4022-4a96-941e-e1eef8e3e5a2",
+      "ingress_state": "authenticity_verified",
+      "provenance": "authenticated_known"
+    },
+    {
+      "amount_minor": 5500,
+      "commerce_reference": "pi_xxv667100b1b5904918",
+      "event_reference": "evt_xxvBe83dd0ee06814f",
+      "id": "cc217aa2-956a-4915-ad61-13afaf3dd06b",
+      "ingress_state": "authenticity_verified",
+      "provenance": "authenticated_known"
+    }
+  ],
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:0fc0053992963d8e9cb313c0fa217be838e7d12075b249089835bc1bf0fe4bd6",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "money_changed": true,
+  "money_equals_amended": true,
+  "observed_result": "RED unless the amended provider amount becomes the current money, a supersession row is appended, the history identity advances, and the signed consumer serves the amended integer-minor figure",
+  "property": "P-XXV 1(a)(ii) / A2 / B10: a provider-authenticated amendment must change the money, advance the supersession history, be witnessed, and be served by the signed consumer",
+  "quarantine": [],
+  "recorded_at_utc": "2026-11-01T10:09:33.867644Z",
+  "signed_consumer_serves_amended": true,
+  "supersession_growth": 2,
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "e569b3d9-db26-45a5-ba33-5cc2e5f16049"
+    }
+  ]
+}

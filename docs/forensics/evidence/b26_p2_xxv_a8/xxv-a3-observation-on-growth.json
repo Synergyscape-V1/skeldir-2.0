@@ -1,0 +1,160 @@
+{
+  "actor": "provider amendment + shipping correction + real B2.3 worker (append path) + shipping observer queue + two concurrent observer processes + Trust builder",
+  "after_worker": {
+    "authority_state": "current",
+    "captured_minor": 5100,
+    "correction_events": 1,
+    "expected_minor": 4321,
+    "linked_event_reference": "evt_xxva3B73fb7eaa51f2",
+    "linked_ingress_id": "dca0fa94-036c-4c1b-807b-ed9d7ef8161e",
+    "net_minor": 5100,
+    "supersession_rows": 2,
+    "verdicts_for_identity": 1
+  },
+  "amending_event": {
+    "amount_minor": 5100,
+    "body_sha256": "b8d8bcd0b593ca6ab52d2f398659c86b4f0ebc954d320772d477bf4113b3a90b",
+    "event_reference": "evt_xxva3B73fb7eaa51f2",
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"3a19f23e-d28f-4160-9d0f-9c1d1997f6ae\",\"idempotency_key\":\"dbacf317-af59-40b1-a3d9-4b8fc9660ee6\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    }
+  },
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
+    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
+    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
+    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
+    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "before": {
+    "authority_state": "current",
+    "captured_minor": 4321,
+    "correction_events": 0,
+    "expected_minor": 4321,
+    "linked_event_reference": "evt_xxva3A400d5ad1b25d",
+    "linked_ingress_id": "08515f48-0726-4e13-b2f9-53ed68e11e97",
+    "net_minor": 4321,
+    "supersession_rows": 0,
+    "verdicts_for_identity": 1
+  },
+  "commerce_reference": "pi_xxva3e13c72809c5240",
+  "concurrent_observers": [
+    {
+      "returncode": 0,
+      "stderr_tail": "",
+      "stdout_tail": "{\"observation_id\": \"63\", \"observed_at\": \"2026-11-01T09:14:34.783731+00:00\", \"ledger_count\": 14, \"ledger_tip\": \"a69c9c295bd263b8fcd2b9b40847bf23de1d1042a97f97315c5a72a7f5ca939a\", \"violations\": [], \"witness\": {\"ledger_count\": 14, \"ledger_tip_seq\": 23, \"ledger_tip_hash\": \"a69c9c295bd263b8fcd2b9b40847bf23de1d1042a97f97315c5a72a7f5ca939a\", \"ledger_prefix_digest\": \"defed13c946fef4bc63b9c3467a23c6902011f1a91872de61e7ea106875f17d2\", \"checkpoint_hash\": \"c76f4bd94e7aeb1f175727d683305eae223c0bd9542864efa62e1fff00f317e4\", \"observed_at\": \"2026-11-01T09:14:34.943027+00:00\", \"source_evidence_failures\": {}}}\n"
+    },
+    {
+      "returncode": 0,
+      "stderr_tail": "",
+      "stdout_tail": "{\"observation_id\": \"62\", \"observed_at\": \"2026-11-01T09:14:34.737209+00:00\", \"ledger_count\": 14, \"ledger_tip\": \"a69c9c295bd263b8fcd2b9b40847bf23de1d1042a97f97315c5a72a7f5ca939a\", \"violations\": [], \"witness\": {\"ledger_count\": 14, \"ledger_tip_seq\": 23, \"ledger_tip_hash\": \"a69c9c295bd263b8fcd2b9b40847bf23de1d1042a97f97315c5a72a7f5ca939a\", \"ledger_prefix_digest\": \"defed13c946fef4bc63b9c3467a23c6902011f1a91872de61e7ea106875f17d2\", \"checkpoint_hash\": \"c76f4bd94e7aeb1f175727d683305eae223c0bd9542864efa62e1fff00f317e4\", \"observed_at\": \"2026-11-01T09:14:34.908041+00:00\", \"source_evidence_failures\": {}}}\n"
+    }
+  ],
+  "correction_http": {
+    "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"a47ed1fc-66b5-433b-a8a1-8e64b2835bf4\",\"revenue_event_written\":false,\"net_verified_amount_minor\":4321}",
+    "status": 200
+  },
+  "falsifier": "xxv-a3-observation-on-growth",
+  "history_after": {
+    "ledger_prefix_digest": "defed13c946fef4bc63b9c3467a23c6902011f1a91872de61e7ea106875f17d2",
+    "ledger_rows": 14,
+    "ledger_tip_hash": "a69c9c295bd263b8fcd2b9b40847bf23de1d1042a97f97315c5a72a7f5ca939a",
+    "ledger_tip_seq": 23
+  },
+  "ingress": {
+    "amount_minor": 5100,
+    "commerce_reference": "pi_xxva3e13c72809c5240",
+    "created_at": "2026-11-01 09:14:28.527370+00:00",
+    "currency": "USD",
+    "demotion_reason": null,
+    "event_reference": "evt_xxva3B73fb7eaa51f2",
+    "event_timestamp": "2026-11-01 09:14:25+00:00",
+    "has_attestation": true,
+    "has_root_evidence": true,
+    "has_witness": true,
+    "ingress_id": "dca0fa94-036c-4c1b-807b-ed9d7ef8161e",
+    "is_current": true,
+    "provenance": "authenticated_known"
+  },
+  "initial_event": {
+    "amount_minor": 4321,
+    "body_sha256": "f89a02cc90ce850e9312a95467aaa70dd689e78d1a29d1e234a58b112fd0d2b4",
+    "event_reference": "evt_xxva3A400d5ad1b25d",
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"0a164c74-7c40-41f3-a42f-f94f02310817\",\"idempotency_key\":\"510241e0-f489-45cd-800f-a196af427b38\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    }
+  },
+  "journal_chain_ok": true,
+  "journal_lines": 21,
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "last_observation_before": {
+    "author": "app_worker",
+    "ledger_count": 12,
+    "observation_id": 60,
+    "observed_at": "2026-11-01T09:14:25.800935+00:00",
+    "observed_at_epoch": 1793524465.800935,
+    "violations": ""
+  },
+  "limit_of_inference": "This establishes the append-path observation and concurrent observer serialization on this artifact. It does not establish the A3 crash-window or every observer restart ordering; those remain separate A3/A8 evidence.",
+  "observation_latency_seconds": 1.7117059230804443,
+  "observation_on_growth": {
+    "author": "app_worker",
+    "ledger_count": 14,
+    "observation_id": 61,
+    "observed_at": "2026-11-01T09:14:29.816733+00:00",
+    "violations": ""
+  },
+  "property": "P-XXV A3/HB-08: a real ledger append is witnessed from the append path at task latency, and concurrent observers preserve one signed journal chain",
+  "recorded_at_utc": "2026-11-01T09:14:36.045055Z",
+  "signed_after_concurrent_observers": {
+    "currency": "USD",
+    "established": true,
+    "trust_status": 200,
+    "verification_status": "verified",
+    "verified_revenue_minor": 5100
+  },
+  "signed_after_growth": {
+    "currency": "USD",
+    "established": true,
+    "trust_status": 200,
+    "verification_status": "verified",
+    "verified_revenue_minor": 5100
+  },
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "1e854c40-3e6e-40b6-b031-c964a374af81"
+    }
+  ],
+  "verdict_id": "a47ed1fc-66b5-433b-a8a1-8e64b2835bf4"
+}

@@ -1,0 +1,132 @@
+{
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
+    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
+    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
+    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
+    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "confirmed_event": {
+    "amount_minor": 76000,
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"316b0c4d-da0f-4a6d-891b-23105ed76707\",\"idempotency_key\":\"57751c8c-f5f0-4166-abc1-a23ec91a540d\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    },
+    "intent": "pi_xxvb4aef884056668743",
+    "verdict": {
+      "attributed_amount_minor": 76000,
+      "attribution_event_id": "316b0c4d-da0f-4a6d-891b-23105ed76707",
+      "canonical_net_verified_amount_minor": 76000,
+      "commerce_reference": "pi_xxvb4aef884056668743",
+      "currency_code": "USD",
+      "match_status": "matched_confirmed",
+      "source_authority_state": "current",
+      "verdict_id": "70030c5d-ed4e-4c80-99cc-1742ce8aebbf",
+      "verified_amount_minor": 76000
+    }
+  },
+  "coverage_provisional": {
+    "coverage_percent": "100.00",
+    "denominator_minor": 80000,
+    "http_status": 200,
+    "numerator_minor": 80000
+  },
+  "coverage_unresolved": {
+    "coverage_percent": "95.00",
+    "denominator_minor": 80000,
+    "http_status": 200,
+    "numerator_minor": 76000
+  },
+  "expected": {
+    "provisional_coverage_percent": "100.00",
+    "unresolved_coverage_percent": "95.00"
+  },
+  "falsifier": "xxv-b4-coverage",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "property": "B4: canonical coverage counts provisional matches; the 95.00% witness requires a genuine unresolved leg and becomes 100.00% when that leg gains a provisional match",
+  "provisional_event": {
+    "intent": "pi_xxvb4b6f05b52273324a",
+    "verdict": {
+      "attributed_amount_minor": 4000,
+      "attribution_event_id": "94003ae2-04b3-4b63-ada0-423f0b25b394",
+      "canonical_net_verified_amount_minor": 4000,
+      "commerce_reference": "pi_xxvb4b6f05b52273324a",
+      "currency_code": "USD",
+      "match_status": "matched_provisional",
+      "source_authority_state": "current",
+      "verdict_id": "838ac7b3-46aa-4cce-aa8d-5165c3fd673d",
+      "verified_amount_minor": 4000
+    }
+  },
+  "recorded_at_utc": "2026-11-01T08:45:21.607695Z",
+  "tenant_id": "4deebbb6-c0ed-498a-a71e-156b869fc341",
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "4deebbb6-c0ed-498a-a71e-156b869fc341"
+    }
+  ],
+  "unresolved_event": {
+    "amount_minor": 4000,
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"94003ae2-04b3-4b63-ada0-423f0b25b394\",\"idempotency_key\":\"c84c57d5-97eb-4039-b4ac-9f922ba5dc96\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    },
+    "ingress": {
+      "amount_minor": 4000,
+      "commerce_reference": "pi_xxvb4b6f05b52273324a",
+      "created_at": "2026-11-01 08:45:15.398077+00:00",
+      "currency": "USD",
+      "demotion_reason": null,
+      "event_reference": "pi_xxvb4b6f05b52273324a",
+      "event_timestamp": "2026-11-01 08:45:14+00:00",
+      "has_attestation": true,
+      "has_root_evidence": true,
+      "has_witness": true,
+      "ingress_id": "9f1f7be6-6bc0-4708-9e1a-3836fdbce78d",
+      "is_current": true,
+      "provenance": "authenticated_known"
+    },
+    "intent": "pi_xxvb4b6f05b52273324a"
+  },
+  "window_end": "2026-11-01T08:45:20+00:00",
+  "window_start": "2026-10-30T07:43:30+00:00",
+  "worker_start": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-worker-b23"
+  },
+  "worker_stop": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-worker-b23"
+  }
+}

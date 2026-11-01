@@ -1,0 +1,52 @@
+{
+  "actor": "custody writer (filesystem reach over the witness volume)",
+  "adverse_trust_read": {
+    "body_head": "{'detail': 'Subject not found.'}",
+    "status": 404
+  },
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
+    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
+    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
+    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
+    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "custody_record_removed": "total 100\n-rw-------    1 root     root         85683 Nov  1 09:37 history_witness.jsonl\n-rw-r--r--    1 root     root             0 Nov  1 07:49 history_witness.jsonl.lock\n-rw-r--r--    1 root     root            43 Nov  1 09:30 history_witness_ed25519.pub\n-rw-------    1 root     root          5963 Nov  1 09:37 history_witness_heartbeat.json\n-rw-r--r--    1 root     root            43 Nov  1 07:49 source_attestation_ed25519.pub\n",
+  "exact_restoration_trust_read": {
+    "body_head": "{'artifact_hash': None, 'artifact_ref': None, 'audience_binding': {'audience_id_hash': 'sha256:0d04179037df1879ba199df8b33481bbb65c3712cfca2cab24aa5485a24c8fc2', 'audience_mode': 'tenant_internal', 'audience_scope': ['trust.envelope.read', 'trust.envelope.verify'], 'presentation_policy': 'bearer_not_authority', 'replay_context_required': True}, 'audit_hash': 'sha256:7a61a0d428a0c06970768ca81a44ccd",
+    "status": 200
+  },
+  "expected_independently": "issuance refuses with witness_custody_missing",
+  "falsifier": "xxv-hb02-custody",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "observed_result": "RED if the adverse read still issues (HTTP 200 with a signature) \u2014 the custody guard sits behind the unreachable production branch",
+  "pristine_trust_read": {
+    "body_head": "{'artifact_hash': None, 'artifact_ref': None, 'audience_binding': {'audience_id_hash': 'sha256:0d04179037df1879ba199df8b33481bbb65c3712cfca2cab24aa5485a24c8fc2', 'audience_mode': 'tenant_internal', 'audience_scope': ['trust.envelope.read', 'trust.envelope.verify'], 'presentation_policy': 'bearer_not_authority', 'replay_context_required': True}, 'audit_hash': 'sha256:de1d0021a762350a960f5883fc467db",
+    "status": 200
+  },
+  "property": "P-XXV 1(a)(i): required historical custody cannot be silently removed",
+  "recorded_at_utc": "2026-11-01T09:37:20.260897Z",
+  "verdict_id": "430ac2bf-b722-46b2-afd5-a2b55f4fe979"
+}

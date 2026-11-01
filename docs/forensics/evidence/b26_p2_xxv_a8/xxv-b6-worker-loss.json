@@ -1,0 +1,74 @@
+{
+  "actor": "B2.3 consumer worker removed from the production topology",
+  "adverse_proof": {
+    "conduction_missing": true,
+    "stdout_tail": "B26_P2_XXII_COMPOSITION_FAIL\nxxii_comp_conduction_missing:7ebaf19b-f9da-449f-b138-41816feb5ddc:stripe\n",
+    "verdict": "FAIL"
+  },
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
+    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
+    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
+    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
+    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "baseline_proof": {
+    "stdout_tail": "e_conservation_surface\": true, \"live_creation_law\": true, \"live_external_false_world_chain_preserved\": true, \"live_external_false_world_refused\": true, \"live_external_false_world_restored\": true, \"live_future_refusals\": true, \"live_head\": true, \"live_prefix_digest\": true, \"live_reader_surface\": true, \"live_source_evidence\": \"SKIPPED:no_witness_env\", \"live_truncate_refused\": true, \"live_xxv_attestation_census\": {\"attested_but_not_claimed_current\": 0, \"source_not_root_authenticated\": 1, \"unattested_not_claimed_current\": 0, \"xxv_attested\": 7}, \"live_xxv_attestation_sweep\": true, \"live_xxv_verdicts_examined\": 8, \"static_laws\": true, \"static_xxv_2_amendment_law\": true, \"static_xxv_a3_observation_on_growth\": true, \"static_xxv_attestation_law\": true, \"static_xxv_no_owner_written_instant\": true}}\n",
+    "verdict": "PASS"
+  },
+  "event_http": {
+    "body": "{\"status\":\"success\",\"event_id\":\"bb467c8d-15f9-41dd-8907-4fa5f4713eaf\",\"idempotency_key\":\"d5dfa26c-0967-4eb6-b425-ebad255b332f\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+    "status": 200
+  },
+  "falsifier": "xxv-b6-worker-loss",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "property": "B6/HB-14: an accepted authenticated source with its required financial consumer absent must RED the governing proof",
+  "recorded_at_utc": "2026-11-01T08:55:20.850470Z",
+  "restored_proof": {
+    "stdout_tail": "_conservation_surface\": true, \"live_creation_law\": true, \"live_external_false_world_chain_preserved\": true, \"live_external_false_world_refused\": true, \"live_external_false_world_restored\": true, \"live_future_refusals\": true, \"live_head\": true, \"live_prefix_digest\": true, \"live_reader_surface\": true, \"live_source_evidence\": \"SKIPPED:no_witness_env\", \"live_truncate_refused\": true, \"live_xxv_attestation_census\": {\"attested_but_not_claimed_current\": 0, \"source_not_root_authenticated\": 3, \"unattested_not_claimed_current\": 0, \"xxv_attested\": 8}, \"live_xxv_attestation_sweep\": true, \"live_xxv_verdicts_examined\": 11, \"static_laws\": true, \"static_xxv_2_amendment_law\": true, \"static_xxv_a3_observation_on_growth\": true, \"static_xxv_attestation_law\": true, \"static_xxv_no_owner_written_instant\": true}}\n",
+    "verdict": "PASS"
+  },
+  "verdict_after_restart": {
+    "attributed_amount_minor": 4321,
+    "attribution_event_id": "bb467c8d-15f9-41dd-8907-4fa5f4713eaf",
+    "canonical_net_verified_amount_minor": 4321,
+    "commerce_reference": "pi_xxvb67995e882d9634356",
+    "currency_code": "USD",
+    "match_status": "matched_provisional",
+    "source_authority_state": "current",
+    "verdict_id": "670b5a21-2f43-4fa6-be32-501316af749b",
+    "verified_amount_minor": 4321
+  },
+  "worker_start": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-worker-b23"
+  },
+  "worker_stop": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-worker-b23"
+  }
+}
