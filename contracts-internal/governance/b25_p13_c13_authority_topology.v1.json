@@ -28,6 +28,7 @@
     {"path":"backend/app/trust/query_continuation.py","domain":"TrustQueryContinuation","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"cursor payload validator"},
     {"path":"backend/app/trust/history_witness.py","domain":"HistoryWitnessCheckpoint","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"append-only history witness checkpoint chain"},
     {"path":"backend/app/revenue_verification/source_attestation.py","domain":"SourceMoneyAttestation","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"canonical source-money statement + auth-root custody"},
-    {"path":"backend/app/revenue_verification/source_evidence_journal.py","domain":"SourceFactJournalOutcome","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"committed outcome payload + signed journal prefix"}
+    {"path":"backend/app/revenue_verification/source_evidence_journal.py","domain":"SourceFactJournalOutcome","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"committed outcome payload + signed journal prefix"},
+    {"path":"backend/app/revenue_verification/source_journal_custody.py","domain":"SourceJournalCustody","classification":"PRODUCTION_AUTHORITY","semantic_boundary":"signed custody manifest over the committed source-journal prefix"}
   ]
 }

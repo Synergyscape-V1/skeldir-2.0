@@ -30,12 +30,13 @@ EXPECTED_PRIVATE_KEY_ROUTES = {
     "backend/app/trust/export_artifact.py",
     "backend/app/trust/query_continuation.py",
     "backend/app/trust/history_witness.py",
-    # XXV source-money attestation and its append-only source-fact journal
-    # are separate Ed25519 signing routes. They are not Trust-envelope
-    # signing, and this census classifies them explicitly rather than
-    # letting a new `.sign()` route appear unclassified.
+    # XXV source-money attestation, its append-only source-fact journal and
+    # the signed custody bundle are separate Ed25519 signing routes. They are
+    # not Trust-envelope signing, and this census classifies them explicitly
+    # rather than letting a new `.sign()` route appear unclassified.
     "backend/app/revenue_verification/source_attestation.py",
     "backend/app/revenue_verification/source_evidence_journal.py",
+    "backend/app/revenue_verification/source_journal_custody.py",
 }
 # Corrective XVII removed the private key from the public API process. The
 # process-local capability entry point therefore has exactly one referencing

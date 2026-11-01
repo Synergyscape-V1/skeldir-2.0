@@ -49,6 +49,7 @@ EXPECTED_SIGN_ROUTES = {
     "backend/app/trust/history_witness.py",
     "backend/app/revenue_verification/source_attestation.py",
     "backend/app/revenue_verification/source_evidence_journal.py",
+    "backend/app/revenue_verification/source_journal_custody.py",
 }
 LOAD_BEARING_JOBS = {
     "b25-p13-e2e-trust-closure-core",
