@@ -1205,7 +1205,7 @@ def _post_api_webhook(cfg: _Phase8Config, payload: dict[str, Any]) -> dict[str, 
     raw = base64.b64decode(payload["raw_body_b64"])
     started = time.monotonic()
     request = urllib.request.Request(
-        f"{cfg.api_base_url}/api/webhooks/stripe/payment_intent_succeeded",
+        f"{cfg.api_base_url}/api/webhooks/stripe/payment_intent/succeeded",
         data=raw,
         headers={
             "Content-Type": "application/json",
