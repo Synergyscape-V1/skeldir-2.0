@@ -4,26 +4,28 @@
   "amount_minor": 4321,
   "artifact": {
     "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
-    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
-    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
-    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
-    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
-    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
-    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "captured_at_utc": "2026-11-01T12:59:56.815725Z",
+    "commit_sha": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+    "compiled_genesis_hash": "085571c1a477b143ab4a98bad175c745acf072177e675f26b5d4f89d1b65971b",
+    "compiled_public_key_sha256": "456f13765b47465a955540cba96fcfe9fe68c7071c1202902ed6acd8c08af85e",
+    "compiled_source_attestation_public_key_sha256": "b208bc8d778f0e6f746397066f51d44b654b6271b0822c59624e2fafc6d50ac3",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
     "image_tag": "b26p2xxv-final:latest",
     "migration_head": "202610280001",
-    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "tree_sha": "0aae8ce5a801e613556ab60f6900e9d63655b7f3",
     "worktree_status_summary": {
-      "entries": 2,
+      "entries": 5,
       "image_bytes_match_committed_tree": true,
       "image_copied_path_entries": [],
       "non_image_entry_sample": [
-        "?? session-ses_ebfe.md",
-        "?? session-ses_efc3.md"
+        " M docs/forensics/B2.6-P2-XXV-Verified-Checkpoint.md",
+        " M docs/forensics/evidence/b26_p2_xxv_a8/xxv-b5-p13-exact-head-20261101.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-exact-head-ci-f0f-20261101.json",
+        "?? session-ses_ebfe.md"
       ]
     }
   },
-  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "authority_universe": "95bc8913-4522-4573-a9fd-0003df969bf1",
   "checks": {
     "conservation_empty": true,
     "history_verified_after_catchup": true,
@@ -40,46 +42,46 @@
   },
   "conservation_violations": [],
   "continuity": {
-    "n": 12,
-    "tip": "d216af4bdfde49b7772773833590125e46efc29b4d07b7cb657d42cac4761fe4"
+    "n": 18,
+    "tip": "e71a2f209b44b9d172604e740112117282f72f28ce733758d308c840e1c68210"
   },
   "falsifier": "xxv-b9-same-cohort",
   "lane": {
     "database": "skeldir_xxv",
     "environment": "prod",
-    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
     "image_tag": "b26p2xxv-final:latest",
     "migration_head": "202610280001",
     "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
   },
   "post_history_integrity_status": "verified",
   "pre_reader_boundary": {
-    "history_integrity_status": "verified",
+    "history_integrity_status": "unverifiable",
     "reconciliation_status": 200,
-    "signed_trust_status": 200,
-    "source_authority_state": "current"
+    "signed_trust_status": 404,
+    "source_authority_state": "historically_unverifiable"
   },
-  "prefix_digest": "55ffdd2ce405bb73378a7d511983e68612f1e2956e22e8406673c6aeeca2544c",
+  "prefix_digest": "394a8ca6132550f217f37d42c8836c4c5728e9210708224fbb90e2932a652dad",
   "property": "B9: the independent canonical readers agree about one persisted cohort's ledger tip, universe, scope, conservation, and money",
   "provider": "stripe",
-  "recorded_at_utc": "2026-11-01T09:04:10.749200Z",
+  "recorded_at_utc": "2026-11-01T13:35:03.712005Z",
   "scope_identity": {
-    "first": "dd26600e44f107544302ae70f34942f2a4733e4417ef8076a38a4f87556041a1",
-    "second": "dd26600e44f107544302ae70f34942f2a4733e4417ef8076a38a4f87556041a1"
+    "first": "462054cf8a5d4ce09006a90b7850d1e7ed3d1736d2cbb5413641dc9afdcaa236",
+    "second": "462054cf8a5d4ce09006a90b7850d1e7ed3d1736d2cbb5413641dc9afdcaa236"
   },
   "signed_trust": {
     "status": 200,
     "verified_revenue_minor": 4321
   },
   "snapshot": {
-    "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
-    "n": 12,
-    "prefix_digest": "55ffdd2ce405bb73378a7d511983e68612f1e2956e22e8406673c6aeeca2544c",
-    "tip_hash": "d216af4bdfde49b7772773833590125e46efc29b4d07b7cb657d42cac4761fe4",
-    "tip_seq": 21,
+    "authority_universe": "95bc8913-4522-4573-a9fd-0003df969bf1",
+    "n": 18,
+    "prefix_digest": "394a8ca6132550f217f37d42c8836c4c5728e9210708224fbb90e2932a652dad",
+    "tip_hash": "e71a2f209b44b9d172604e740112117282f72f28ce733758d308c840e1c68210",
+    "tip_seq": 27,
     "violations": ""
   },
-  "tenant_id": "1e854c40-3e6e-40b6-b031-c964a374af81",
+  "tenant_id": "d99ea4d5-963d-448f-92c5-fa609b914325",
   "token_warmup": [
     {
       "scopes": [
@@ -87,21 +89,20 @@
         "manager"
       ],
       "statuses": [
-        401,
         200
       ],
-      "tenant_id": "1e854c40-3e6e-40b6-b031-c964a374af81"
+      "tenant_id": "d99ea4d5-963d-448f-92c5-fa609b914325"
     }
   ],
   "unsigned_reconciliation": {
     "canonical_net_verified_amount_minor": 4321,
     "status": 200
   },
-  "verdict_id": "670b5a21-2f43-4fa6-be32-501316af749b",
+  "verdict_id": "2a90d92b-b2e5-47c6-a2f2-816a9c6658c8",
   "verdict_status": "matched_provisional",
   "witness_state": {
-    "n": 12,
-    "tip_hash": "d216af4bdfde49b7772773833590125e46efc29b4d07b7cb657d42cac4761fe4",
-    "tip_seq": 21
+    "n": 18,
+    "tip_hash": "e71a2f209b44b9d172604e740112117282f72f28ce733758d308c840e1c68210",
+    "tip_seq": 27
   }
 }
