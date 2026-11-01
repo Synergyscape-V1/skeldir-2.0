@@ -26,7 +26,7 @@
       "zero_denominator": false
     }
   ],
-  "test": "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py::test_coverage_percent_oracle_matches_exact_contract_vectors",
+  "test": "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py::test_b26_p1_coverage_oracle_is_pinned_against_ambient_precision",
   "limits": [
     "This proves the local exact oracle under hostile ambient Decimal precision; it does not replace the held-out SQL guard or a source-validating CI run."
   ]
