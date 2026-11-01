@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import traceback
+import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -1071,32 +1072,36 @@ def _provision_source_attestation_key(env: dict[str, str]) -> None:
 
 
 def _seed_replay_tenant(cfg: _Phase8Config) -> dict[str, Any]:
-    """Seed a dedicated tenant and a known Stripe webhook secret for replay."""
-    tenant_id = uuid4()
-    api_key = f"phase8_restart_replay_{tenant_id.hex[:12]}"
-    secret = f"phase8-restart-stripe-{tenant_id.hex[:12]}"
+    """Bind a known key/secret to an existing R3 tenant for the replay leg."""
+    api_key = f"phase8_restart_replay_{uuid4().hex[:12]}"
+    secret = f"phase8-restart-stripe-{uuid4().hex[:12]}"
     api_key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
     with psycopg2.connect(cfg.migration_dsn) as conn:
         with conn.cursor() as cursor:
             cursor.execute(
+                "SELECT id FROM public.tenants"
+                " WHERE name LIKE %s ORDER BY created_at LIMIT 1",
+                ("R3 Tenant%",),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise RuntimeError("no R3 tenant available for restart replay proof")
+            tenant_id = row[0]
+            cursor.execute(
                 """
-                INSERT INTO public.tenants (
-                  id, name, api_key_hash, notification_email,
-                  stripe_webhook_secret_ciphertext,
-                  stripe_webhook_secret_key_id
-                ) VALUES (
-                  %s, %s, %s, %s,
-                  pgp_sym_encrypt(%s, %s), %s
-                )
+                UPDATE public.tenants
+                SET api_key_hash = %s,
+                    stripe_webhook_secret_ciphertext =
+                      pgp_sym_encrypt(%s, %s),
+                    stripe_webhook_secret_key_id = %s
+                WHERE id = %s
                 """,
                 (
-                    str(tenant_id),
-                    f"Phase8 Restart Replay {tenant_id.hex[:8]}",
                     api_key_hash,
-                    f"phase8-{tenant_id.hex[:8]}@example.invalid",
                     secret,
                     "e2e-platform-key",
                     "e2e-key",
+                    tenant_id,
                 ),
             )
     return {"tenant_id": str(tenant_id), "api_key": api_key, "secret": secret}
@@ -1158,13 +1163,19 @@ def _post_auth_request(payload: dict[str, Any], timeout_s: float = 30.0) -> dict
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=timeout_s) as response:
-        body = json.loads(response.read().decode("utf-8"))
-        return {
-            "status_code": int(response.status),
-            "elapsed_ms": (time.monotonic() - started) * 1000.0,
-            "body": body,
-        }
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            return {
+                "status_code": int(response.status),
+                "elapsed_ms": (time.monotonic() - started) * 1000.0,
+                "body": body,
+            }
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"auth-root HTTP {exc.code}: {detail}"
+        ) from exc
 
 
 def _probe_source_evidence_journal(
