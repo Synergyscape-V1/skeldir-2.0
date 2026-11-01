@@ -1199,6 +1199,35 @@ def _post_auth_request(payload: dict[str, Any], timeout_s: float = 30.0) -> dict
         ) from exc
 
 
+def _post_api_webhook(cfg: _Phase8Config, payload: dict[str, Any]) -> dict[str, Any]:
+    import base64
+
+    raw = base64.b64decode(payload["raw_body_b64"])
+    started = time.monotonic()
+    request = urllib.request.Request(
+        f"{cfg.api_base_url}/api/webhooks/stripe/payment_intent_succeeded",
+        data=raw,
+        headers={
+            "Content-Type": "application/json",
+            "X-Skeldir-Tenant-Key": str(payload["api_key"]),
+            "Stripe-Signature": str(payload["signature_header"]),
+            "X-Idempotency-Key": str(payload["idempotency_key"]),
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30.0) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            return {
+                "status_code": int(response.status),
+                "elapsed_ms": (time.monotonic() - started) * 1000.0,
+                "body": body,
+            }
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"api webhook HTTP {exc.code}: {detail}") from exc
+
+
 def _probe_source_evidence_journal(
     cfg: _Phase8Config, env: dict[str, str], *, artifact_name: str = "source_evidence_journal_probe.json"
 ) -> dict[str, Any]:
@@ -1862,6 +1891,23 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         journal_probe = _probe_source_evidence_journal(cfg, env)
         replay_tenant = _seed_replay_tenant(cfg)
         replay_request = _auth_replay_request(replay_tenant)
+        try:
+            api_seed = _post_api_webhook(cfg, replay_request)
+        except Exception as exc:
+            raise RuntimeError(
+                f"{exc}\nAUTH_ROOT_LOGS_TAIL:\n{_auth_logs_tail(cfg, env)}"
+            ) from exc
+        if int(api_seed.get("status_code", 0)) != 200:
+            raise RuntimeError(
+                "api replay seed request failed: "
+                f"{api_seed.get('status_code')} {api_seed.get('body')}"
+            )
+        api_event_id = (api_seed.get("body") or {}).get("event_id")
+        if not api_event_id:
+            raise RuntimeError(
+                f"api replay seed returned no event_id: {api_seed.get('body')}"
+            )
+        replay_request["event_id"] = str(api_event_id)
         try:
             first_replay = _post_auth_request(replay_request)
         except Exception as exc:
