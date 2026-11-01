@@ -305,7 +305,13 @@ class _JournalWriter:
                 with self.journal.open("a", encoding="utf-8") as handle:
                     handle.write("\n".join(lines) + "\n")
                     handle.flush()
-                    os.fsync(handle.fileno())
+                    # fdatasync flushes the appended data and the size
+                    # metadata needed to retrieve it, without paying for
+                    # unrelated file metadata on durable volumes.
+                    if hasattr(os, "fdatasync"):
+                        os.fdatasync(handle.fileno())
+                    else:
+                        os.fsync(handle.fileno())
                 stat = self.journal.stat()
                 _LAST_RECORD_HASH_CACHE[str(self.journal)] = (
                     stat.st_size,
