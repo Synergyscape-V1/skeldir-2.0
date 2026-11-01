@@ -156,6 +156,61 @@ def test_cached_tip_invalidates_on_external_append(tmp_path: Path) -> None:
     assert records[-1]["previous_record_hash"] == journal_record_hash(legacy)
 
 
+def test_incomplete_tail_does_not_block_later_appends(tmp_path: Path) -> None:
+    journal = tmp_path / "source.jsonl"
+    _append(journal, kind="source_money", fact_id="s1", xid="100")
+    committed_prefix = journal.read_bytes()
+    with journal.open("ab") as handle:
+        handle.write(b'{"version":"b26-p2-source-fact-journal-v3","fact_id":"torn')
+        handle.flush()
+
+    _append(journal, kind="source_money", fact_id="s2", xid="200")
+
+    records = load_source_fact_records(journal)
+    assert records is not None
+    assert [record["fact_id"] for record in records] == ["s1", "s2"]
+    assert records[1]["previous_record_hash"] == journal_record_hash(records[0])
+    assert b'"torn' not in journal.read_bytes()
+    assert journal.read_bytes().startswith(committed_prefix)
+
+
+def test_json_valid_but_incomplete_tail_is_not_a_committed_record(tmp_path: Path) -> None:
+    journal = tmp_path / "source.jsonl"
+    journal.write_text(
+        '{"version":"b26-p2-source-fact-journal-v3","fact_id":"torn"}',
+        encoding="utf-8",
+    )
+
+    _append(journal, kind="source_money", fact_id="s1", xid="100")
+
+    records = load_source_fact_records(journal)
+    assert records is not None
+    assert [record["fact_id"] for record in records] == ["s1"]
+    assert journal.read_text(encoding="utf-8").count("torn") == 0
+
+
+def test_complete_tail_without_newline_is_preserved(tmp_path: Path) -> None:
+    journal = tmp_path / "source.jsonl"
+    legacy = {
+        "version": LEGACY_SOURCE_FACT_JOURNAL_VERSION,
+        "fact_kind": "source_money",
+        "fact_id": "s1",
+        "tenant_id": "t",
+        "verdict_id": "",
+        "statement": {"id": "s1"},
+        "signature": "sig",
+        "key_sha256": "k",
+    }
+    journal.write_text(json.dumps(legacy), encoding="utf-8")
+
+    _append(journal, kind="source_money", fact_id="s2", xid="200")
+
+    records = load_source_fact_records(journal)
+    assert records is not None
+    assert [record["fact_id"] for record in records] == ["s1", "s2"]
+    assert records[1]["previous_record_hash"] == journal_record_hash(legacy)
+
+
 @pytest.mark.asyncio
 async def test_signed_outcome_survives_transaction_status_aging(tmp_path: Path) -> None:
     private_seed, public_b64 = generate_keypair()

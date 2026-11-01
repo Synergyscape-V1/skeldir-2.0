@@ -293,10 +293,24 @@ def _apply_strategy(
 ) -> dict:
     if strategy == TaskOutcomeStrategy.RETRY:
         lock_contention = result.outcome == RefreshOutcome.SKIPPED_LOCK_HELD
+        if lock_contention:
+            # A held advisory lock is transient, not a failed refresh. A
+            # bounded retry budget used to strand the last update until a
+            # later event happened to arrive. The task-level retry limit is
+            # now unbounded (``max_retries=None`` on the task) and this
+            # backoff is capped, so the chain survives arbitrarily long
+            # legitimate lock contention without a hot loop.
+            attempt = int(getattr(getattr(task, "request", None), "retries", 0) or 0)
+            countdown = min(30, max(1, 2 ** min(attempt, 5)))
+            raise task.retry(
+                exc=RuntimeError("matview_refresh_retry"),
+                countdown=countdown,
+                max_retries=None,
+            )
         raise task.retry(
             exc=RuntimeError("matview_refresh_retry"),
-            countdown=1 if lock_contention else retry_delay_s,
-            max_retries=10 if lock_contention else None,
+            countdown=retry_delay_s,
+            max_retries=10,
         )
     if strategy == TaskOutcomeStrategy.DEAD_LETTER:
         raise MatviewTaskFailure(
@@ -314,7 +328,7 @@ def _apply_strategy(
     base=TenantTask,
     name="app.tasks.matviews.refresh_single",
     routing_key="maintenance.task",
-    max_retries=3,
+    max_retries=None,
     default_retry_delay=60,
 )
 def matview_refresh_single(
@@ -365,7 +379,7 @@ def matview_refresh_single(
     base=TenantTask,
     name="app.tasks.matviews.refresh_all_for_tenant",
     routing_key="maintenance.task",
-    max_retries=3,
+    max_retries=None,
     default_retry_delay=60,
 )
 def matview_refresh_all_for_tenant(

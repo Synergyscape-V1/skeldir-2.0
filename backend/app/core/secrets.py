@@ -990,6 +990,16 @@ def resolve_jwt_verification_keys(*, kid: str | None) -> tuple[str, list[str], b
                 refreshed = _resolve_verification_ring_via_postgres(reason="unknown_kid", kid=kid)
             except Exception:
                 refreshed = ring
+            if kid not in refreshed.keys:
+                # A held refresh lease can outlast the bounded poll. Read the
+                # sanctioned source directly for this request rather than
+                # returning the stale ring until some later arrival happens to
+                # retry. This does not write the shared cache while another
+                # process owns the refresh lease.
+                try:
+                    refreshed = _refresh_jwt_verification_ring()
+                except Exception:
+                    refreshed = ring
             selected_after_refresh = refreshed.keys.get(kid)
             if selected_after_refresh:
                 return selected_after_refresh, [], refreshed.requires_kid

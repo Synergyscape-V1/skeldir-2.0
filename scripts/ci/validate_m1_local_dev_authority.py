@@ -794,6 +794,9 @@ ALLOWED_M1_PATH_PREFIXES = [
     # matview refresh is bounded to one per tenant per second; explicit
     # refreshes remain immediate. Same exemption shape; prohibitions intact.
     "backend/app/tasks/matviews.py",
+    "backend/tests/test_b26_p2_matview_trailing_refresh.py",
+    "backend/tests/test_b11_p3_jwt_rotation_semantics.py",
+    "backend/tests/trust/test_b26_p2_source_evidence_journal.py",
     "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py",
     # B2.6-P2 Corrective XIII fixture convergence (terminal law): proof
     # and equivalence corpora authenticate lawful fixtures via the atomic

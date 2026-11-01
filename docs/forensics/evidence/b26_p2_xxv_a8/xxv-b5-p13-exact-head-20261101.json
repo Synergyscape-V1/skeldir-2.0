@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "head": "667d615a3ef32fe1e4ab16c66e5bf97c9e8fc46a",
+  "head_caveat": "this run also covers the preceding head fa72fa825; later durable-recovery commits require a fresh B2.5-P13 run before final exact-head certification",
+  "workflow": "B2.5-P13 E2E Trust Closure",
+  "run_id": 41302320854,
+  "run_conclusion": "success",
+  "jobs": {
+    "B2.5-P13 C9 Positive Confidence Composition": {
+      "job_id": 124835669602,
+      "conclusion": "success"
+    },
+    "B2.5-P13 C17 Consequence Lineage": {
+      "job_id": 124835669559,
+      "conclusion": "success"
+    },
+    "B2.5-P13 C19 Context-Robust Production Closure": {
+      "job_id": 124835669582,
+      "conclusion": "success"
+    },
+    "B2.5-P13 C20 Verdict Authority Conservation": {
+      "job_id": 124835669681,
+      "conclusion": "success"
+    },
+    "B2.5-P13 C21 Freshness and Issuance Authority Conservation": {
+      "job_id": 124835669431,
+      "conclusion": "success"
+    },
+    "B2.5-P13 E2E Trust Closure": {
+      "job_id": 124839421713,
+      "conclusion": "success"
+    }
+  },
+  "meaning": "The positive confidence composition, lineage, production topology and issuance/freshness conservation gates composed successfully on the exact head that contained the durable journal/lock fixes' parent. This is not a current-head certification of the later uncommitted durable-recovery edits."
+}

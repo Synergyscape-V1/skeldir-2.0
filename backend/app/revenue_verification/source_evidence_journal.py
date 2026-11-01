@@ -202,6 +202,86 @@ def source_fact_is_committed_in_process(
         )
 
 
+def _repair_incomplete_tail_unlocked(journal: Path) -> None:
+    """Remove or terminate a torn final line before appending.
+
+    A crash can leave a byte prefix that no transaction durably committed.
+    Readers already ignore a final line without its newline, but the append
+    path used to parse it as the previous record and fail forever. Truncating
+    only that uncommitted fragment preserves every complete committed line. A
+    complete JSON record that merely lacks its newline is preserved and
+    terminated instead, so legacy/manual carriers are not erased.
+    """
+    try:
+        size = journal.stat().st_size
+    except FileNotFoundError:
+        return
+    if size == 0:
+        return
+
+    with journal.open("r+b") as handle:
+        handle.seek(-1, os.SEEK_END)
+        if handle.read(1) == b"\n":
+            return
+
+        chunk_size = 8192
+        position = size
+        last_newline = -1
+        while position > 0 and last_newline < 0:
+            start = max(0, position - chunk_size)
+            handle.seek(start)
+            chunk = handle.read(position - start)
+            index = chunk.rfind(b"\n")
+            if index >= 0:
+                last_newline = start + index
+                break
+            position = start
+
+        tail_start = last_newline + 1
+        handle.seek(tail_start)
+        tail = handle.read()
+
+        complete = False
+        try:
+            parsed = json.loads(tail.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            parsed = None
+        if isinstance(parsed, dict):
+            version = parsed.get("version")
+            if version in {
+                SOURCE_FACT_JOURNAL_VERSION,
+                SOURCE_FACT_JOURNAL_V2,
+                LEGACY_SOURCE_FACT_JOURNAL_VERSION,
+                SOURCE_FACT_OUTCOME_VERSION,
+            }:
+                complete = all(
+                    key in parsed for key in ("fact_kind", "fact_id", "tenant_id")
+                )
+                if version in {
+                    SOURCE_FACT_JOURNAL_VERSION,
+                    SOURCE_FACT_JOURNAL_V2,
+                }:
+                    complete = complete and bool(
+                        str(parsed.get("database_transaction_id") or "").strip()
+                    )
+                elif version == SOURCE_FACT_OUTCOME_VERSION:
+                    complete = complete and bool(
+                        str(parsed.get("outcome") or "").strip()
+                    ) and bool(str(parsed.get("signature") or "").strip())
+            elif version is not None:
+                raise SourceFactJournalError(
+                    "source_fact_journal_tail_version_unsupported"
+                )
+
+        if complete:
+            handle.seek(0, os.SEEK_END)
+            handle.write(b"\n")
+        else:
+            handle.truncate(tail_start)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 def _last_record_hash_unlocked(journal: Path) -> str | None:
     try:
         stat = journal.stat()
@@ -213,9 +293,14 @@ def _last_record_hash_unlocked(journal: Path) -> str | None:
         return cached[2]
     last: str | None = None
     with journal.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if line.strip():
-                last = line.strip()
+        lines = handle.readlines()
+    # The append path repairs an incomplete tail before reaching this point.
+    # Keep this read robust for callers that observed a concurrent append.
+    if lines and not lines[-1].endswith("\n"):
+        lines.pop()
+    for line in lines:
+        if line.strip():
+            last = line.strip()
     if last is None:
         result = None
     else:
@@ -286,6 +371,7 @@ class _JournalWriter:
     def _append_batch(self, batch: list[_JournalAppendRequest]) -> None:
         with _JOURNAL_APPEND_LOCK:
             with _journal_file_lock(self.journal):
+                _repair_incomplete_tail_unlocked(self.journal)
                 previous = _last_record_hash_unlocked(self.journal)
                 lines: list[str] = []
                 for request in batch:

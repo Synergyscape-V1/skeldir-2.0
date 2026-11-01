@@ -79,7 +79,12 @@ def test_lock_held_is_retry_not_silent_success() -> None:
         is matviews.TaskOutcomeStrategy.RETRY
     )
 
+    class _Request:
+        retries = 12
+
     class _Task:
+        request = _Request()
+
         def retry(self, **kwargs):
             raise RuntimeError(kwargs)
 
@@ -93,6 +98,8 @@ def test_lock_held_is_retry_not_silent_success() -> None:
         kwargs = exc.args[0]
     else:  # pragma: no cover - defensive
         raise AssertionError("lock-held refresh did not request a retry")
-    assert kwargs["countdown"] == 1
-    assert kwargs["max_retries"] == 10
+    assert kwargs["countdown"] == 30
+    assert kwargs["max_retries"] is None
+    assert matviews.matview_refresh_single.max_retries is None
+    assert matviews.matview_refresh_all_for_tenant.max_retries is None
 
