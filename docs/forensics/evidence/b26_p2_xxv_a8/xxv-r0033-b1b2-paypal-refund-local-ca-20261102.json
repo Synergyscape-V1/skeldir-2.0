@@ -1,0 +1,84 @@
+{
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T16:17:27.229440Z",
+    "commit_sha": "dde1e86f0b35719369b8ad9c9be717557c64d372",
+    "compiled_genesis_hash": "e168e4fdad7964ce2a4b2a067babf07d66f062e2f4df09d64c7cc99a464f7c33",
+    "compiled_public_key_sha256": "08e6a542b0dbbf4826cee98baf1dcde5d4547707be17901ded9fa3f07492c67b",
+    "compiled_source_attestation_public_key_sha256": "2e1ff0bea6d65faa176ee640bd21c0bb31a09d650a79ba2de00cde194c729d38",
+    "image_id": "sha256:9bed39801583ce25ecb00cddd8194bc20bd7f039af0feb8e03aba2fbb99438a6",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "f15820e439fdd2c2e8345a075f7f7483491735ac",
+    "worktree_status_summary": {
+      "entries": 3,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M scripts/ci/b26_p2_xxv_falsify.py",
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "4fbc9cbb-cc69-4012-b858-f9f4f1b6ae20",
+  "cert_sha256": "c6a3dc3777edfa7fad9e68515be8903b16ef8ceaaae7a2529451fa28aa081f69",
+  "cert_url": "https://api.paypal.com/v1/notifications/certs/CERT-XXV-LOCAL-TEST",
+  "falsifier": "xxv-b1b2-paypal-local-ca",
+  "http": {
+    "body": "{\"status\":\"success\",\"event_id\":\"1e0aa8eb-c7cf-490c-950a-a5e1aaa9cda8\",\"idempotency_key\":\"023333dc-270e-5b8b-8e92-8bb26e1973e5\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+    "status": 200
+  },
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:9bed39801583ce25ecb00cddd8194bc20bd7f039af0feb8e03aba2fbb99438a6",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "limit_of_inference": "Local CA physical verifier test only; external PayPal connectivity and PayPal-hosted certificate retrieval are not established.",
+  "paypal_id": "PAY-XXV-8F41363B1DB64FFB",
+  "paypal_refund": {
+    "body": "{\"status\":\"success\",\"event_id\":\"fe6c923c-21eb-4454-9f59-5381ff1feceb\",\"idempotency_key\":\"6bca49d8-7877-494a-a2e5-48e8cfa5cba9\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+    "http_status": 200,
+    "net_minor_after_refund": 5555,
+    "refund_id": "REF-XXV-3D1791D7B4834D0D"
+  },
+  "property": "B1/B2 PayPal physical verifier and refund consequence: a local-CA signed sale becomes attested, and a signed capture refund through the shipping route adjusts net money and remains verifiable",
+  "reconciliation": {
+    "source_money_attestation_status": "xxv_attested",
+    "status": 200,
+    "verified_amount_minor": 5555
+  },
+  "recorded_at_utc": "2026-11-02T16:33:10.787565Z",
+  "source_attestation_count": 1,
+  "tenant_id": "f0308e60-b1ca-4f04-a034-b8e77c75937a",
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "f0308e60-b1ca-4f04-a034-b8e77c75937a"
+    }
+  ],
+  "trust": {
+    "status": 200,
+    "verified_revenue_minor": 5555
+  },
+  "verdict": {
+    "attributed_amount_minor": 7777,
+    "attribution_event_id": "1e0aa8eb-c7cf-490c-950a-a5e1aaa9cda8",
+    "canonical_net_verified_amount_minor": 7777,
+    "commerce_reference": "PAY-XXV-8F41363B1DB64FFB",
+    "currency_code": "USD",
+    "match_status": "matched_provisional",
+    "source_authority_state": "current",
+    "verdict_id": "df0d0a8e-e6cc-4ca8-840c-1480972ae1db",
+    "verified_amount_minor": 7777
+  }
+}

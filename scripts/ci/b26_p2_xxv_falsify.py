@@ -4829,6 +4829,23 @@ def f_hb12_control_plane(args: argparse.Namespace) -> int:
         which_aws = docker(
             "run", "--rm", image, "sh", "-c", "command -v aws || echo ABSENT"
         )
+    signer_positive = docker(
+        "run", "--rm",
+        "-e", "ENVIRONMENT=prod",
+        "-e", "SKELDIR_CONTROL_PLANE_ENABLED=0",
+        "-e", f"DATABASE_URL={role_dsn('app_trust_signer', host='pg', port=5432)}",
+        "-e", f"TRUST_SIGNER_DATABASE_URL={role_dsn('app_trust_signer', host='pg', port=5432)}",
+        "-e", "SKELDIR_PROCESS_ROLE=trust_signer",
+        "-e", f"SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL={state['material']['trust_seed_b64url']}",
+        "-e", "SKELDIR_TRUST_SIGNING_KEY_ID=kid:b26-p2-xxv",
+        "-e", "TRUST_SIGNER_SHARED_SECRET=" + "x" * 64,
+        "-e", "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH=/tmp/source.jsonl",
+        "-e", "B26_P2_HISTORY_WITNESS_GENESIS_HASH=" + state["genesis_hash"],
+        "--network", f"{PREFIX}-net",
+        image,
+        "sh", "-c",
+        "touch /tmp/source.jsonl; python -c \"from app.trust.signer_service import assert_signer_process_custody as a; a(); print('CUSTODY_OK')\"",
+    )
     signer_with_migration = docker(
         "run", "--rm",
         "-e", "ENVIRONMENT=prod",
@@ -4838,13 +4855,14 @@ def f_hb12_control_plane(args: argparse.Namespace) -> int:
         "-e", f"MIGRATION_DATABASE_URL={role_dsn('migration_owner', host='pg', port=5432)}",
         "-e", "SKELDIR_PROCESS_ROLE=trust_signer",
         "-e", f"SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL={state['material']['trust_seed_b64url']}",
-        "-e", "SKELDIR_TRUST_SIGNING_KEY_ID=" + "kid:b26-p2-xxv",
+        "-e", "SKELDIR_TRUST_SIGNING_KEY_ID=kid:b26-p2-xxv",
+        "-e", "TRUST_SIGNER_SHARED_SECRET=" + "x" * 64,
+        "-e", "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH=/tmp/source.jsonl",
         "-e", "B26_P2_HISTORY_WITNESS_GENESIS_HASH=" + state["genesis_hash"],
         "--network", f"{PREFIX}-net",
         image,
-        "python", "-c",
-        "from app.trust.signer_service import assert_signer_process_custody as a; a();"
-        " print('CUSTODY_OK')",
+        "sh", "-c",
+        "touch /tmp/source.jsonl; python -c \"from app.trust.signer_service import assert_signer_process_custody as a; a(); print('CUSTODY_OK')\"",
     )
     preload_scope = subprocess.run(
         [
@@ -4864,6 +4882,16 @@ def f_hb12_control_plane(args: argparse.Namespace) -> int:
         "printf 'control=%s\\n' \"$SKELDIR_CONTROL_PLANE_ENABLED\";"
         " printf 'migration=%s\\n' \"$MIGRATION_DATABASE_URL\"",
     )
+    positive_ok = (
+        signer_positive.returncode == 0
+        and "CUSTODY_OK" in signer_positive.stdout
+    )
+    denial_ok = (
+        signer_with_migration.returncode != 0
+        and "trust_signer_forbidden_authority:MIGRATION_DATABASE_URL"
+        in signer_with_migration.stderr
+    )
+    hb12_passed = positive_ok and denial_ok
     record = {
         "property": "P-XXV 1(b)(iii): production process authority must be process-scoped and resolvable from the shipped artifact",
         "actor": "secrets-manager/IAM principal and the deployment control plane",
@@ -4877,10 +4905,18 @@ def f_hb12_control_plane(args: argparse.Namespace) -> int:
             "stdout_tail": no_cli.stdout[-400:],
             "stderr_tail": no_cli.stderr[-900:],
         },
+        "signer_positive_operation": {
+            "returncode": signer_positive.returncode,
+            "stdout_tail": signer_positive.stdout[-300:],
+            "stderr_tail": signer_positive.stderr[-700:],
+            "custody_ok": positive_ok,
+        },
         "signer_custody_with_migration_dsn_present": {
             "returncode": signer_with_migration.returncode,
             "stdout_tail": signer_with_migration.stdout[-300:],
             "stderr_tail": signer_with_migration.stderr[-700:],
+            "intended_denial": denial_ok,
+            "expected_token": "trust_signer_forbidden_authority:MIGRATION_DATABASE_URL",
         },
         "control_plane_process_scope_present": preload_scope,
         "running_signer_process_scope": {
@@ -4889,14 +4925,18 @@ def f_hb12_control_plane(args: argparse.Namespace) -> int:
             "stderr_tail": running_signer.stderr[-300:],
         },
         "observed_result": (
-            "PASS when the image carries a supported AWS client, the control"
-            " plane resolves only the role's declared keys, and the running"
-            " signer has no MIGRATION_DATABASE_URL; the explicit migration-DSN"
-            " signer remains a negative control. Real-AWS equivalence is external."
+            "PASS: the valid signer process boots with only its declared"
+            " credentials, and the same process with MIGRATION_DATABASE_URL is"
+            " denied specifically with"
+            " trust_signer_forbidden_authority:MIGRATION_DATABASE_URL. Real-AWS"
+            " equivalence is external."
+            if hb12_passed
+            else "RED: the positive process or the intended migration-authority denial did not hold"
         ),
+        "hb12_passed": hb12_passed,
     }
     write_evidence("xxv-hb12-control-plane", record)
-    return 0
+    return 0 if hb12_passed else 1
 
 
 def _net(body) -> object:
@@ -5808,6 +5848,59 @@ def f_b1b2_paypal_local_ca(args: argparse.Namespace) -> int:
             headers=headers,
         )
         verdict = wait_verdict(tenant["tenant_id"], paypal_id, timeout_s=180)
+        refund_id = f"REF-XXV-{uuid.uuid4().hex[:16].upper()}"
+        refund_body = json.dumps(
+            {
+                "event_type": "PAYMENT.CAPTURE.REFUNDED",
+                "resource": {
+                    "id": refund_id,
+                    "status": "COMPLETED",
+                    "supplementary_data": {
+                        "related_ids": {"capture_id": paypal_id}
+                    },
+                    "amount": {"value": "22.22", "currency_code": "USD"},
+                    "create_time": now.isoformat().replace("+00:00", "Z"),
+                },
+            },
+            separators=(",", ":"),
+        ).encode()
+        refund_transmission_id = f"xxv-{uuid.uuid4()}"
+        refund_transmission_time = now.isoformat().replace("+00:00", "Z")
+        refund_canonical = (
+            f"{refund_transmission_id}|{refund_transmission_time}|"
+            f"{tenant['paypal_secret']}|{zlib.crc32(refund_body) & 0xFFFFFFFF}"
+        ).encode()
+        refund_signature = base64.b64encode(
+            key.sign(refund_canonical, padding.PKCS1v15(), hashes.SHA256())
+        ).decode()
+        refund_headers = dict(headers)
+        refund_headers.update(
+            {
+                "X-Correlation-ID": str(uuid.uuid4()),
+                "X-Idempotency-Key": str(uuid.uuid4()),
+                "PayPal-Transmission-Id": refund_transmission_id,
+                "PayPal-Transmission-Time": refund_transmission_time,
+                "PayPal-Transmission-Sig": refund_signature,
+            }
+        )
+        refund_status, refund_text = http(
+            "POST",
+            f"http://127.0.0.1:{API_PORT}/api/webhooks/paypal/payment_capture_refunded",
+            body=refund_body,
+            headers=refund_headers,
+        )
+        refund_net = None
+        for _attempt in range(30):
+            if verdict is None:
+                break
+            _status, _recon = read_reconciliation(
+                state, tenant, verdict["verdict_id"]
+            )
+            if isinstance(_recon, dict):
+                refund_net = _recon.get("canonical_net_verified_amount_minor")
+                if refund_net == 5555:
+                    break
+            time.sleep(2)
         # The test-only verifier override is not part of the customer trust
         # configuration. Restore the production process before observing the
         # downstream readers, then let the finally block confirm it again.
@@ -5837,8 +5930,10 @@ def f_b1b2_paypal_local_ca(args: argparse.Namespace) -> int:
             time.sleep(2)
         record = {
             "property": (
-                "B1/B2 PayPal physical verifier: a local-CA signed sale passes"
-                " the shipped RSA-SHA256 envelope verifier and becomes attested"
+                "B1/B2 PayPal physical verifier and refund consequence: a"
+                " local-CA signed sale becomes attested, and a signed capture"
+                " refund through the shipping route adjusts net money and"
+                " remains verifiable"
             ),
             "tenant_id": tenant["tenant_id"],
             "paypal_id": paypal_id,
@@ -5846,6 +5941,12 @@ def f_b1b2_paypal_local_ca(args: argparse.Namespace) -> int:
             "cert_sha256": hashlib.sha256(cert_pem.encode()).hexdigest(),
             "http": {"status": status, "body": text[:500]},
             "verdict": verdict,
+            "paypal_refund": {
+                "refund_id": refund_id,
+                "http_status": refund_status,
+                "body": refund_text[:500],
+                "net_minor_after_refund": refund_net,
+            },
             "source_attestation_count": int(attestation),
             "reconciliation": {
                 "status": recon_status,
@@ -5883,7 +5984,9 @@ def f_b1b2_paypal_local_ca(args: argparse.Namespace) -> int:
             and record["reconciliation"]["source_money_attestation_status"]
             == "xxv_attested"
             and trust_status == 200
-            and record["trust"]["verified_revenue_minor"] == 7777
+            and record["trust"]["verified_revenue_minor"] == 5555
+            and refund_status == 200
+            and refund_net == 5555
         ) else 1
     finally:
         start_auth(state)
