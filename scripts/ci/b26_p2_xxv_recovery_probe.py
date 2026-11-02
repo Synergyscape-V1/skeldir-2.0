@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -30,8 +31,10 @@ from b26_p2_xxv_falsify import (  # noqa: E402
     AUTH_PORT,
     docker,
     load_state,
-    observe_once,
     post_stripe,
+    post_stripe_envelope,
+    http,
+    viewer_headers,
     read_reconciliation,
     read_trust,
     start_api,
@@ -39,6 +42,7 @@ from b26_p2_xxv_falsify import (  # noqa: E402
     verify_trust,
     volume_get,
     volume_put,
+    volume_rm,
     wait_http,
     wait_verdict,
     witness_files,
@@ -111,6 +115,7 @@ def main() -> int:
         # back exactly the restored signed prefix, then restart shipping.
         docker("stop", AUTH)
         docker("stop", API)
+        volume_rm(SOURCE_EVIDENCE_VOL, "source_evidence.jsonl")
         volume_put(
             SOURCE_EVIDENCE_VOL,
             {"source_evidence.jsonl": restored_path.read_bytes()},
@@ -122,17 +127,47 @@ def main() -> int:
 
         after_restore = witness_files()
         before_money = read_reconciliation(state, tenant, verdict["verdict_id"])
-        new_intent = f"pi_xxvrec2{uuid_hex()}"
-        second_status, second_body, _ = post_stripe(
-            state, tenant, new_intent, amended
+        event_ref = f"evt_xxvrec{uuid_hex()}"
+        second_status, second_body, _ = post_stripe_envelope(
+            state,
+            tenant,
+            event_reference=event_ref,
+            commerce_reference=intent,
+            amount=amended,
         )
-        amendment = wait_verdict(
-            tenant["tenant_id"], new_intent, timeout_s=180
-        )
+        amendment = wait_verdict(tenant["tenant_id"], intent, timeout_s=180)
         if amendment is None:
             raise RuntimeError("new_money_verdict_missing")
-        observed = observe_once(state)
+        correction_status, correction_body = http(
+            "POST",
+            f"http://127.0.0.1:{API_PORT}/api/reconciliation/match-verdicts/"
+            f"{verdict['verdict_id']}/corrections",
+            body=json.dumps(
+                {
+                    "provider": "stripe",
+                    "event_type": "payment_capture",
+                    "provider_native_event_reference": event_ref,
+                    "is_gross_capture_correction": True,
+                }
+            ).encode(),
+            headers=viewer_headers(state, tenant),
+        )
         witness_after = witness_files()
+        trust_status, trust = (0, "no_verdict")
+        for _attempt in range(90):
+            witness_after = witness_files()
+            trust_status, trust = read_trust(
+                tenant, verdict["verdict_id"]
+            )
+            payload = (
+                witness_after.get("history_witness_heartbeat.json") or {}
+            ).get("payload") or {}
+            if (
+                int(payload.get("source_journal_count", 0)) > accepted_count
+                and trust_status == 200
+            ):
+                break
+            time.sleep(4)
         recon_status, recon = read_reconciliation(
             state, tenant, amendment["verdict_id"]
         )
@@ -167,6 +202,11 @@ def main() -> int:
                 "http": second_status,
                 "amount_minor": amended,
                 "verdict": amendment,
+                "event_reference": event_ref,
+                "correction_http": {
+                    "status": correction_status,
+                    "body": correction_body[:400],
+                },
                 "witness_after": witness_after,
             },
             "readers": {
@@ -175,7 +215,6 @@ def main() -> int:
                 "trust": {"status": trust_status, "body": trust},
                 "trust_verify": verified_trust,
             },
-            "observer": observed,
             "result": {
                 "initial_4321": True,
                 "restored_at_accepted": disposition == "restored",
@@ -187,6 +226,7 @@ def main() -> int:
                     trust_status == 200
                     and isinstance(trust, dict)
                     and trust.get("verified_revenue_minor") == amended
+                    and trust.get("currency") == "USD"
                     and verified_trust[0] == 200
                 ),
             },
