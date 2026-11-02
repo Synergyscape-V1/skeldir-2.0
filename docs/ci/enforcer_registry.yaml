@@ -7144,6 +7144,27 @@
   subsumed_by: ''
   registry_action: enforce
 
+- id: b26-p2-xxv-recovery-probe
+  path: scripts/ci/b26_p2_xxv_recovery_probe.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: Accepted-history custody recovery is followed by new authenticated money through the real worker, scheduled witness and signed consumer.
+  command: python scripts/ci/b26_p2_xxv_recovery_probe.py
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_recovery_probe.py
+  expected_failure_meaning: The XXV recovery/progression invariant this instrument protects no longer holds.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_recovery_probe.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: local_proof
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: enforce
+
 - id: b26-p2-xxv-lane
   path: scripts/ci/b26_p2_xxv_lane.py
   status: required

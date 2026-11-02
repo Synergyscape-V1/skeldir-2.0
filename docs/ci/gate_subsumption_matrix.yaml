@@ -5175,6 +5175,22 @@
   risk_if_removed: The XXV invariant could regress while every broader gate remains green.
   decision: keep_required
 
+- gate_id: b26-p2-xxv-recovery-probe
+  workflow: ''
+  job: ''
+  script: scripts/ci/b26_p2_xxv_recovery_probe.py
+  owning_phase: B2.6-P2
+  protected_invariant: Accepted-history custody recovery is followed by new authenticated money through the real worker, scheduled witness and signed consumer.
+  current_status: required
+  default_execution: false
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: No required workflow gate executes this XXV recovery proof instrument.
+  negative_control_preserved_by: python scripts/ci/b26_p2_xxv_recovery_probe.py
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_recovery_probe.py
+  risk_if_removed: The recovery/progression invariant could regress while every broader gate remains green.
+  decision: keep_required
+
 - gate_id: b26-p2-xxv-lane
   workflow: ''
   job: ''
