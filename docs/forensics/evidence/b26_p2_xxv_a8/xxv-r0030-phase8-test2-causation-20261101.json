@@ -148,6 +148,43 @@
       }
     }
   ],
+  "repeated_failures_9d39": {
+    "run_id": "41405182924",
+    "head_sha": "9d39a9aec75fc8a6dc9099de45737986a207889e",
+    "attempts": [
+      {
+        "artifact_id": "13124160317",
+        "achieved_rps": 40.994,
+        "latency_p95_ms": 2815.796,
+        "semaphore_wait_p95_ms": 5927.042,
+        "send_lag_p95_ms": 5928.812,
+        "host_busy_pct_avg": 96.39,
+        "psi_cpu_some_avg10_max": 64.8,
+        "load1_max": 8.3
+      },
+      {
+        "artifact_id": "13125027799",
+        "achieved_rps": 43.909,
+        "latency_p95_ms": 2543.05,
+        "semaphore_wait_p95_ms": 1540.025,
+        "send_lag_p95_ms": 1541.076,
+        "host_busy_pct_avg": 96.23,
+        "psi_cpu_some_avg10_max": 67.66,
+        "load1_max": 8.23
+      },
+      {
+        "artifact_id": "13127291922",
+        "achieved_rps": 41.373,
+        "latency_p95_ms": 2809.489,
+        "semaphore_wait_p95_ms": 5373.196,
+        "send_lag_p95_ms": 5374.73,
+        "host_busy_pct_avg": 96.73,
+        "psi_cpu_some_avg10_max": 68.39,
+        "load1_max": 11.22
+      }
+    ],
+    "conclusion": "Three consecutive staging attempts at the same head reproduced 41.0-43.9 rps with 96.2-96.7 percent host busy, PSI 64.8-68.4 and load 8.2-11.2. The recurrence is resource saturation, not an isolated retry."
+  },
   "later_independent_run": {
     "role": "passed_f6b_attempt_1",
     "run_id": "41347349067",
