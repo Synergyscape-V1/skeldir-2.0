@@ -569,6 +569,13 @@ def test_concurrent_writers_preserve_one_chain(tmp_path: Path) -> None:
         writer.start()
     for writer in writers:
         writer.join(timeout=60)
+        if writer.is_alive():
+            writer.terminate()
+            writer.join(timeout=10)
+            if writer.is_alive():
+                writer.kill()
+                writer.join(timeout=10)
+            raise AssertionError("concurrent writer did not terminate within 60s")
         assert writer.exitcode == 0
     records = load_source_fact_records(journal)
     assert records is not None
