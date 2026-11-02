@@ -620,25 +620,17 @@ def _validate_contract_and_b23_binding(
             coverage_percent=Decimal("76.00"),
             zero_denominator=False,
         )
-        forged_wrong = CanonicalVerificationCoverage(
-            aggregate=golden_aggregate,
-            result=wrong_result,
-            producer=producer,
-            supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
-        )
         try:
-            scope_verifier(
-                forged_wrong,
-                tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
-                currency_code="USD",
-                window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
-                supported_platforms=["paypal", "shopify", "stripe", "woocommerce"],
+            CanonicalVerificationCoverage(
+                aggregate=golden_aggregate,
+                result=wrong_result,
+                producer=producer,
+                supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
             )
         except Exception:  # noqa: BLE001
             pass
         else:
-            violations.append("coverage_scope_verifier_trusts_wrong_mathematics")
+            violations.append("coverage_wrong_math_carrier_constructed")
         # Independent oracle (never calls sovereign compute for expected):
         if oracle(76000, 80000) != (Decimal("95.00"), False):
             violations.append("coverage_independent_oracle_wrong_95")

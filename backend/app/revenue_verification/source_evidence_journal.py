@@ -43,13 +43,18 @@ _JOURNAL_APPEND_LOCK = threading.Lock()
 
 
 @contextmanager
-def _journal_file_lock(journal: Path):
+def _journal_file_lock(journal: Path, *, read_only: bool = False):
     """Serialise append/read across processes sharing one journal file.
 
     The process-local ``threading.Lock`` above is not sufficient for the
     supported two-auth-root topology: two uvicorn processes read the same tip
     and append competing hashes. The OS lock is the cross-process boundary.
     A separate ``.lock`` file keeps the journal itself append-only.
+
+    ``read_only`` opens the existing sidecar without creating or modifying it,
+    using a shared lock where the OS supports it. This is the observer's
+    documented read-only mount path: it must never need write access to the
+    live source-history volume merely to take a coherent snapshot.
     """
     try:
         import fcntl
@@ -61,6 +66,39 @@ def _journal_file_lock(journal: Path):
         msvcrt = None
 
     lock_path = journal.with_name(journal.name + ".lock")
+    if read_only:
+        try:
+            handle = lock_path.open("rb")
+        except FileNotFoundError as exc:
+            if journal.exists() and journal.stat().st_size:
+                raise RuntimeError("source_journal_lock_missing") from exc
+            # An empty journal can be exported as an empty prefix without a
+            # creator sidecar; no write to the live volume is permitted.
+            yield
+            return
+        try:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_SH)
+            elif msvcrt is not None:
+                handle.seek(0)
+                while True:
+                    try:
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError:
+                        time.sleep(0.01)
+            yield
+        finally:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                elif msvcrt is not None:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            finally:
+                handle.close()
+        return
+
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as handle:
         if fcntl is not None:

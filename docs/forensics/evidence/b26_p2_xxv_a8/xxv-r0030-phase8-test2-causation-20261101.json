@@ -161,15 +161,46 @@
     "send_lag_p95_ms": 2.489,
     "http_timeout_count": 0
   },
+  "in_window_host_contention": {
+    "method": "runner_cpu_probe.jsonl samples inside the R3 Test2 window, not whole-run averages",
+    "failed_41365869342": {
+      "total_busy_pct_avg": 96.14,
+      "total_busy_pct_max": 98.44,
+      "psi_cpu_some_avg10_max": 62.59,
+      "load1_max": 8.46,
+      "api_cpu_pct_avg": 32.75,
+      "postgres_cpu_pct_avg": 124.53,
+      "other_cpu_pct_avg": 135.74
+    },
+    "passed_41365869342": {
+      "total_busy_pct_avg": 79.42,
+      "total_busy_pct_max": 88.78,
+      "psi_cpu_some_avg10_max": 37.74,
+      "load1_max": 3.7,
+      "api_cpu_pct_avg": 25.7,
+      "postgres_cpu_pct_avg": 92.96,
+      "other_cpu_pct_avg": 92.72
+    },
+    "failed_41372479385": {
+      "total_busy_pct_avg": 96.9,
+      "total_busy_pct_max": 99.28,
+      "psi_cpu_some_avg10_max": 68.43,
+      "load1_max": 8.09,
+      "api_cpu_pct_avg": 33.49,
+      "postgres_cpu_pct_avg": 126.22,
+      "other_cpu_pct_avg": 137.83
+    },
+    "conclusion": "Both failed windows saturate the four-core host (busy near 96 percent, PSI 62-68, load about 8) while the passing window is at 79 percent busy, PSI 37.7, load 3.7. The client semaphore/send delay is the queueing consequence of service/host delay in the failed windows, not an independent client-side cause."
+  },
   "causation": {
-    "established": "Two independent attempts pairs reproduced the same shape. Run 41341830038 delivered all 2760 requests with zero HTTP/connection errors while failing at 3983.087 ms semaphore p95, 3984.161 ms send-lag p95, 1693 requests over 1 s send lag, and 5.7542 s drain; its passing attempt had 0.063/1.905 ms p95. Run 41365869342 reproduced it with 3684.696/3685.048 ms p95, 1869 requests over 1 s, and 4.8809 s drain; its passing attempt had 0.096/1.942 ms p95. DB waiting connections were zero throughout.",
+    "established": "Two independent attempts pairs reproduced the same shape. Run 41341830038 delivered all 2760 requests with zero HTTP/connection errors while failing at 3983.087 ms semaphore p95, 3984.161 ms send-lag p95, 1693 requests over 1 s send lag, and 5.7542 s drain; its passing attempt had 0.063/1.905 ms p95. Run 41365869342 reproduced it with 3684.696/3685.048 ms p95, 1869 requests over 1 s, and 4.8809 s drain; its passing attempt had 0.096/1.942 ms p95. In-window host CPU/PSI/load shows the failed windows saturated at 96-97 percent busy, PSI 62-68, load 8+, versus the passing window at 79 percent, PSI 37.7, load 3.7. DB waiting connections were zero throughout.",
     "not_the_cause": [
       "Target workload under-delivery: observed_request_count was 2760 in both runs.",
       "HTTP failure: http_timeout_count and http_connection_errors were 0 in both runs.",
       "Database connection exhaustion: waiting_connections was 0 before and after in both runs; max_connections 200 was not approached.",
       "A code or threshold change: both runs used the same commit 38698a188 and the same target/threshold contract."
     ],
-    "bounded_conclusion": "The throughput miss was client-side queueing while requests completed, not a reduced workload, HTTP failure, or DB connection wait. The remaining first-attempt-to-second-attempt trigger is not proven by these counters; no retry is offered as the cause."
+    "bounded_conclusion": "The throughput miss was service/host delay in the failed windows: 96-97 percent host busy, PSI 62-68 and load about 8 versus 79 percent, PSI 37.7 and load 3.7 in the passing window. The client semaphore/send queue is the observed consequence, not the initiating cause; no retry is offered as the cause."
   },
   "limits": [
     "The two same-commit artifacts are attempts from one run; they are comparable workloads, not a controlled CPU/memory-capped experiment.",

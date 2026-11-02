@@ -1,0 +1,38 @@
+{
+  "check": "R-0031: observer read-only capture and orphan substitution rejection",
+  "run_at": "2026-11-02",
+  "source_hashes": {
+    "source_evidence_journal.py": "66AB33EA1F67003D8FFD02E0170796DE5566C8BF9B08628986E6DD0C9BDF43E9",
+    "source_journal_custody.py": "92BD7E7310DF0355721E721C65DC27770C87EC758EA8614446182467EB4FF2E7",
+    "test_b26_p2_source_journal_custody.py": "137E3BBE692FCAFA7AE3E1D241653A51FA3C3623419A4F5A1D08F2483E37FDF7"
+  },
+  "read_only_mount_physical": {
+    "command": "docker run --rm -v <repo>/backend/app/revenue_verification:/source/backend/app/revenue_verification:ro -v <input>:/input:ro -v <probe>:/probe.py:ro b26p2xxv-final:latest python /probe.py ro",
+    "observed": {
+      "mount_mode": "ro",
+      "existing_lock_file": true,
+      "reader_count": 2,
+      "export_succeeded": true,
+      "count": 2,
+      "verified": 2,
+      "uid": 0
+    },
+    "claim": "The exact candidate custody module exported and verified under a read-only source mount without creating or writing the live lock."
+  },
+  "component_tests": {
+    "test_readonly_capture_never_opens_lock_for_write": "PASS",
+    "test_export_refuses_missing_writer_lock_without_creating_one": "PASS",
+    "test_export_refuses_planted_orphan_bundle": "PASS",
+    "custody_suite": "12 passed"
+  },
+  "substitution_law": {
+    "rule": "An existing tip-named bundle without a manifest is completed only when its bytes equal the exact live prefix captured under the read-only lock.",
+    "false_behavior": "A planted 2-record prefix of a 3-record live journal previously received a signed manifest.",
+    "new_behavior": "The same attempt refuses with custody_bundle_substitution and does not publish a manifest."
+  },
+  "limits": [
+    "The container probe is component-level, not a shipped observer task or S3/EFS deployment.",
+    "The read-only probe uses the existing writer-created sidecar; production must retain that sidecar on the observer's read-only mount.",
+    "A missing sidecar on a non-empty read-only journal refuses rather than creating one."
+  ]
+}

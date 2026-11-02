@@ -1,0 +1,26 @@
+{
+  "check": "R-0031: alternate coverage arithmetic cannot construct canonical authority",
+  "run_at": "2026-11-02",
+  "coverage_authority_source_sha256": "F902FEDA983397909CDEC353EFC7CB67BD7FF9FC58CAAA9E4BACB9319C939389",
+  "alternate_computation": {
+    "source": "SELECT canonical_net_verified_amount_minor, verified_amount_minor; Python sum; 100.0 * numerator / (denominator + 100)",
+    "cohort": {
+      "numerator_minor": 1900,
+      "denominator_minor": 2000
+    },
+    "alternate_percent": "90.47619047619048",
+    "canonical_expected_percent": "95.00"
+  },
+  "observed": {
+    "construction_refused": true,
+    "error": "CanonicalCoverageAuthorityError: canonical_coverage_percent_not_derived_from_integer_legs",
+    "legitimate_95_construction": "accepted and scope-coherent",
+    "test": "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py::test_alternate_python_aggregation_cannot_construct_canonical_coverage"
+  },
+  "property": "CanonicalVerificationCoverage validates aggregate/result legs in __post_init__; a wrong SQL/Python aggregate cannot become a canonical carrier regardless of spelling, quoting, comments, or execution language.",
+  "limits": [
+    "This is a component/type-boundary proof, not a shipped signed-money bypass.",
+    "The source-level duplicate-authority scanner remains defense in depth; it is not the governing authority.",
+    "The canonical resolver's sovereign re-derivation and scope checks remain required for actual authority."
+  ]
+}

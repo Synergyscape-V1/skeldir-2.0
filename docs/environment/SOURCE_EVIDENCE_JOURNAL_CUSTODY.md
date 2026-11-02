@@ -39,6 +39,18 @@ The shipped CLI accepts a mounted object-store path. Object-store upload and
 Object Lock enforcement are the deployment adapter's responsibility; the
 bundle bytes and manifest signature are produced and verified identically.
 
+Capture opens the writer's existing `.lock` sidecar read-only and takes a
+shared OS lock. It never creates or writes the sidecar, the journal, or the
+live directory, so the observer can run with the documented read-only journal
+mount. A missing sidecar on a non-empty journal is refused
+(`source_journal_lock_missing`) rather than creating one. An empty journal may
+be exported as the empty prefix without a sidecar.
+
+If a previous publication left tip-named bytes without a manifest, retry
+completes the publication only when those bytes are byte-identical to the
+captured live prefix. A planted, stale, or substituted orphan is refused with
+`custody_bundle_substitution`; it never receives a custody signature.
+
 Verify:
 
 ```text

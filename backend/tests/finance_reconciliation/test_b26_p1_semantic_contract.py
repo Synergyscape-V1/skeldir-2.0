@@ -454,16 +454,97 @@ def test_b26_p1_wrong_mathematics_is_refused_at_scope_boundary() -> None:
         supported_platforms=["paypal", "shopify", "stripe", "woocommerce"],
     )
     for bad_percent in (Decimal("76.00"), Decimal("94.99"), Decimal("95.01")):
-        bad = CanonicalVerificationCoverage(
+        with pytest.raises(CanonicalCoverageAuthorityError):
+            CanonicalVerificationCoverage(
+                aggregate=aggregate,
+                result=VerificationCoverageResult(
+                    tenant_id=aggregate.tenant_id,
+                    currency_code="USD",
+                    window_start=aggregate.window_start,
+                    window_end=aggregate.window_end,
+                    numerator_matched_webhook_revenue_minor=76000,
+                    denominator_connected_platform_revenue_minor=80000,
+                    coverage_percent=bad_percent,
+                    zero_denominator=False,
+                ),
+                producer="app.revenue_verification.verification_coverage."
+                "fetch_verification_coverage_aggregate"
+                "+app.revenue_verification.verification_coverage."
+                "VERIFICATION_COVERAGE.compute",
+                supported_platforms=(
+                    "paypal",
+                    "shopify",
+                    "stripe",
+                    "woocommerce",
+                ),
+            )
+    coherent = CanonicalVerificationCoverage(
+        aggregate=aggregate,
+        result=VerificationCoverageResult(
+            tenant_id=aggregate.tenant_id,
+            currency_code="USD",
+            window_start=aggregate.window_start,
+            window_end=aggregate.window_end,
+            numerator_matched_webhook_revenue_minor=76000,
+            denominator_connected_platform_revenue_minor=80000,
+            coverage_percent=Decimal("95.00"),
+            zero_denominator=False,
+        ),
+        producer="app.revenue_verification.verification_coverage."
+        "fetch_verification_coverage_aggregate"
+        "+app.revenue_verification.verification_coverage."
+        "VERIFICATION_COVERAGE.compute",
+        supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
+    )
+    assert require_canonical_scope(coherent, **scope) is coherent
+
+
+def test_alternate_python_aggregation_cannot_construct_canonical_coverage() -> None:
+    """R-0031 F2: wrong arithmetic is refused at the type boundary.
+
+    This deliberately uses an unremarkable Python aggregation over the two
+    integer legs: `100 * 1900 / (2000 + 100) = 90.476...`. The source spelling
+    cannot acquire authority because the carrier validates the legs before it
+    exists; the canonical consumer never sees a wrong numeric claim.
+    """
+
+    import pytest
+
+    from datetime import datetime, timezone
+    from uuid import UUID
+
+    from app.finance_reconciliation.coverage_authority import (
+        CanonicalCoverageAuthorityError,
+        CanonicalVerificationCoverage,
+    )
+    from app.revenue_verification.verification_coverage import (
+        VerificationCoverageAggregate,
+        VerificationCoverageResult,
+    )
+
+    aggregate = VerificationCoverageAggregate(
+        tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        currency_code="USD",
+        window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        matched_webhook_revenue_minor=1900,
+        connected_platform_revenue_minor=2000,
+    )
+    wrong_percent = Decimal(100.0 * 1900 / (2000 + 100))
+    with pytest.raises(
+        CanonicalCoverageAuthorityError,
+        match="canonical_coverage_percent_not_derived_from_integer_legs",
+    ):
+        CanonicalVerificationCoverage(
             aggregate=aggregate,
             result=VerificationCoverageResult(
                 tenant_id=aggregate.tenant_id,
                 currency_code="USD",
                 window_start=aggregate.window_start,
                 window_end=aggregate.window_end,
-                numerator_matched_webhook_revenue_minor=76000,
-                denominator_connected_platform_revenue_minor=80000,
-                coverage_percent=bad_percent,
+                numerator_matched_webhook_revenue_minor=1900,
+                denominator_connected_platform_revenue_minor=2000,
+                coverage_percent=wrong_percent,
                 zero_denominator=False,
             ),
             producer="app.revenue_verification.verification_coverage."
@@ -472,8 +553,6 @@ def test_b26_p1_wrong_mathematics_is_refused_at_scope_boundary() -> None:
             "VERIFICATION_COVERAGE.compute",
             supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
         )
-        with pytest.raises(CanonicalCoverageAuthorityError):
-            require_canonical_scope(bad, **scope)
 
 
 def test_b26_p1_diagnostic_is_tenant_safe_and_non_reconstructible() -> None:

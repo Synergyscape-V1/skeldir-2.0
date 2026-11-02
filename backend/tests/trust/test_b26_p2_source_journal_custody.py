@@ -210,6 +210,79 @@ def test_retry_completes_interrupted_publication(tmp_path: Path) -> None:
 
 
 
+def test_export_refuses_planted_orphan_bundle(tmp_path: Path) -> None:
+    private_path, public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+    _append(journal, "s2", "200")
+    _append(journal, "s3", "300")
+    custody = tmp_path / "custody"
+    exported = export_custody_bundle(
+        journal=journal,
+        custody_dir=custody,
+        private_key_path=private_path,
+    )
+    bundle_path = exported.manifest_path.with_name(
+        exported.manifest_path.name.replace(".manifest.json", ".jsonl")
+    )
+    prefix = b"".join(exported.journal_bytes.splitlines(keepends=True)[:2])
+    bundle_path.chmod(0o644)
+    bundle_path.write_bytes(prefix)
+    exported.manifest_path.chmod(0o644)
+    exported.manifest_path.unlink()
+
+    with pytest.raises(
+        SourceJournalCustodyError,
+        match="custody_bundle_substitution",
+    ):
+        export_custody_bundle(
+            journal=journal,
+            custody_dir=custody,
+            private_key_path=private_path,
+        )
+    assert not exported.manifest_path.exists()
+
+
+def test_export_refuses_missing_writer_lock_without_creating_one(
+    tmp_path: Path,
+) -> None:
+    private_path, _public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+    journal.with_name(journal.name + ".lock").unlink()
+
+    with pytest.raises(RuntimeError, match="source_journal_lock_missing"):
+        export_custody_bundle(
+            journal=journal,
+            custody_dir=tmp_path / "custody",
+            private_key_path=private_path,
+        )
+    assert not journal.with_name(journal.name + ".lock").exists()
+
+
+def test_readonly_capture_never_opens_lock_for_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    private_path, _public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+    lock_name = journal.name + ".lock"
+    original_open = Path.open
+
+    def guarded_open(self: Path, mode: str = "r", *args, **kwargs):
+        if self.name == lock_name and ("w" in mode or "+" in mode):
+            raise AssertionError("custody opened the live lock for write")
+        return original_open(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    exported = export_custody_bundle(
+        journal=journal,
+        custody_dir=tmp_path / "custody",
+        private_key_path=private_path,
+    )
+    assert exported.manifest["record_count"] == 1
+
+
 def test_restore_at_or_above_accepted_witness_prefix_is_allowed(tmp_path: Path) -> None:
     private_path, public_path = _keys(tmp_path)
     journal = tmp_path / "live.jsonl"

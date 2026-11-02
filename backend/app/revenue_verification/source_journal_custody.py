@@ -171,9 +171,10 @@ def export_custody_bundle(
     if not journal_path.exists():
         raise SourceJournalCustodyError("custody_journal_missing")
 
-    # One lock, one byte read, one parse: a concurrent append cannot split the
-    # manifest identity from the bytes it describes.
-    with _journal_file_lock(journal_path):
+    # One read-only shared lock, one byte read, one parse: the observer never
+    # needs write access to the live volume, and a concurrent append cannot
+    # split the manifest identity from the bytes it describes.
+    with _journal_file_lock(journal_path, read_only=True):
         raw = _committed_journal_bytes(journal_path)
         records = _records_from_raw(raw)
         tip = journal_record_hash(records[-1]) if records else None
@@ -189,8 +190,14 @@ def export_custody_bundle(
 
         if bundle_path.exists():
             # A previous process died after publishing bytes but before the
-            # manifest. Complete that publication from the exact bytes.
+            # manifest. Complete that publication only when the bytes are the
+            # exact captured live prefix. An orphan planted or replaced by a
+            # store writer without the key must never receive a signature.
             existing_raw = bundle_path.read_bytes()
+            if existing_raw != raw:
+                raise SourceJournalCustodyError(
+                    "custody_bundle_substitution"
+                )
             existing_records = _records_from_raw(existing_raw)
             manifest = _signed_manifest(
                 existing_raw, existing_records, Path(private_key_path)
