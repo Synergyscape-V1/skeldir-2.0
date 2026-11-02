@@ -881,6 +881,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/b26_p2_xxv_falsify.py",
     "scripts/ci/b26_p2_xxv_falsify_lineage.py",
     "scripts/ci/b26_p2_xxv_lane.py",
+    "scripts/ci/b26_p2_xxv_recovery_probe.py",
     "scripts/ci/b26_p2_xxv_r21_aging.py",
     "scripts/ci/b26_p2_xxv_r21_cluster.py",
     "scripts/ci/b26_p2_xxv_r21_currentness.py",
