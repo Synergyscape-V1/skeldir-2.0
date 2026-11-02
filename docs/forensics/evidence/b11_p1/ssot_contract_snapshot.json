@@ -114,7 +114,9 @@
       ],
       "key": "AUTH_JWT_PUBLIC_KEY_RING",
       "owner": "platform-security",
-      "process_roles": null,
+      "process_roles": [
+        "api"
+      ],
       "rotation_criticality": "critical"
     },
     {
@@ -132,7 +134,9 @@
       ],
       "key": "AUTH_JWT_SECRET",
       "owner": "platform-security",
-      "process_roles": null,
+      "process_roles": [
+        "api"
+      ],
       "rotation_criticality": "critical"
     },
     {
@@ -150,7 +154,9 @@
       ],
       "key": "AUTH_LOGIN_IDENTIFIER_PEPPER",
       "owner": "platform-security",
-      "process_roles": null,
+      "process_roles": [
+        "api"
+      ],
       "rotation_criticality": "high"
     },
     {
@@ -680,7 +686,16 @@
       ],
       "key": "CELERY_BROKER_URL",
       "owner": "backend-platform",
-      "process_roles": null,
+      "process_roles": [
+        "api",
+        "worker",
+        "worker_bayesian",
+        "worker_bayesian_publisher",
+        "worker_b23",
+        "observer_b26_p2",
+        "b26_p2_relay",
+        "beat"
+      ],
       "rotation_criticality": "high"
     },
     {
@@ -752,7 +767,16 @@
       ],
       "key": "CELERY_RESULT_BACKEND",
       "owner": "backend-platform",
-      "process_roles": null,
+      "process_roles": [
+        "api",
+        "worker",
+        "worker_bayesian",
+        "worker_bayesian_publisher",
+        "worker_b23",
+        "observer_b26_p2",
+        "b26_p2_relay",
+        "beat"
+      ],
       "rotation_criticality": "high"
     },
     {
@@ -1370,7 +1394,10 @@
       ],
       "key": "LLM_PROVIDER_API_KEY",
       "owner": "ai-platform",
-      "process_roles": null,
+      "process_roles": [
+        "worker",
+        "worker_bayesian"
+      ],
       "rotation_criticality": "high"
     },
     {
@@ -1519,7 +1546,10 @@
       ],
       "key": "PLATFORM_TOKEN_ENCRYPTION_KEY",
       "owner": "platform-security",
-      "process_roles": null,
+      "process_roles": [
+        "api",
+        "worker"
+      ],
       "rotation_criticality": "critical"
     },
     {
