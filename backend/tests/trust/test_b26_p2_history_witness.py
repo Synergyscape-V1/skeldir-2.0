@@ -864,6 +864,16 @@ def test_restored_source_journal_satisfies_actual_builder_witness(
         authority_universe=UNIVERSE,
     ) == (True, "")
 
+    # Legitimate progression after recovery: a later append is lawful and
+    # does not reset the accepted witness commitment.
+    _append_source(source, "s3", "300")
+    assert _verify_signed_history_witness(
+        ledger_count=0,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=hashlib.sha256(b"").hexdigest(),
+        authority_universe=UNIVERSE,
+    ) == (True, "")
+
 
 def test_tenant_failure_is_committed_without_erasing_healthy_progress(
     tmp_path: Path,
