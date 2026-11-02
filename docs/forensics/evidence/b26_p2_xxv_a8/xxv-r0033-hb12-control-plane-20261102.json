@@ -1,0 +1,55 @@
+{
+  "actor": "secrets-manager/IAM principal and the deployment control plane",
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T14:54:12.899974Z",
+    "commit_sha": "95a1a8f70cd6e8758e00f5a6c1283b21f81eb84d",
+    "compiled_genesis_hash": "757258127bd6db1f85e731cc028cbee2ffcdb546529333dc74945f1279e1f3ca",
+    "compiled_public_key_sha256": "be333435cf20abb3045257abfb24ef38edb90a55fcfc85207b8c1e4693a57397",
+    "compiled_source_attestation_public_key_sha256": "134aa07d9e042cd6f777ad63e09a2db70d70c8e5152122691d1921fdadbd8354",
+    "image_id": "sha256:9e44c0592d2bdbdeb8a0fbf202622a65fc45a498d34d1f8c244ab8a8a6a80813",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "58a7ce58837edecb963bd3d88822c4af9c763c5f",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "018b99aa-da14-4714-a535-6fec5f12439c",
+  "aws_client_in_production_image": "boto3:1.43.119",
+  "control_plane_process_scope_present": "backend/app/core/control_plane.py:15:    process_role_allows,\nbackend/app/core/control_plane.py:182:        if not process_role_allows(process_role, key):\nbackend/app/core/control_plane.py:202:        if not process_role_allows(process_role, key):",
+  "expected_independently": "every shipping process boots under the shipped production control plane with only the credentials its role declares",
+  "falsifier": "xxv-hb12-control-plane",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:9e44c0592d2bdbdeb8a0fbf202622a65fc45a498d34d1f8c244ab8a8a6a80813",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "observed_result": "PASS when the image carries a supported AWS client, the control plane resolves only the role's declared keys, and the running signer has no MIGRATION_DATABASE_URL; the explicit migration-DSN signer remains a negative control. Real-AWS equivalence is external.",
+  "prod_boot_with_control_plane_enabled": {
+    "returncode": 1,
+    "stderr_tail": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/app/backend/app/core/config.py\", line 26, in <module>\n    preload_environment_from_control_plane()\n  File \"/app/backend/app/core/control_plane.py\", line 186, in preload_environment_from_control_plane\n    path = _path_for_key(\n           ^^^^^^^^^^^^^^\n  File \"/app/backend/app/core/control_plane.py\", line 169, in _path_for_key\n    raise RuntimeError(\nRuntimeError: process_role_required_for_database_url\n",
+    "stdout_tail": ""
+  },
+  "property": "P-XXV 1(b)(iii): production process authority must be process-scoped and resolvable from the shipped artifact",
+  "recorded_at_utc": "2026-11-02T15:03:30.210043Z",
+  "running_signer_process_scope": {
+    "returncode": 0,
+    "stderr_tail": "",
+    "stdout_tail": "control=1\nmigration=\n"
+  },
+  "signer_custody_with_migration_dsn_present": {
+    "returncode": 1,
+    "stderr_tail": "3.11/site-packages/pydantic_settings/main.py\", line 194, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.11/site-packages/pydantic/main.py\", line 250, in __init__\n    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\npydantic_core._pydantic_core.ValidationError: 1 validation error for Settings\n  Value error, B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH must be set in production [type=value_error, input_value={'DATABASE_URL': 'postgre...9333dc74945f1279e1f3ca'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/value_error\n",
+    "stdout_tail": ""
+  }
+}
