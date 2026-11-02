@@ -264,7 +264,7 @@
     "stderr_tail": "",
     "stdout_tail": "OBS={\"observation_id\": \"16\", \"observed_at\": \"2026-11-02T17:13:06.056617+00:00\", \"ledger_count\": 0, \"ledger_tip\": null, \"violations\": [], \"witness\": {\"ledger_count\": 0, \"ledger_tip_seq\": null, \"ledger_tip_hash\": null, \"ledger_prefix_digest\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"checkpoint_hash\": \"d818b47ea0832c0c4029128fed025b4dbd3914b1b1a94f446647a46961c2d0bc\", \"observed_at\": \"2026-11-02T17:13:06.161836+00:00\", \"source_evidence_failures\": {}}}\n"
   },
-  "passed": true,
+  "passed": false,
   "property": "accepted-history custody recovery followed by new authenticated money through the shipping worker, scheduled witness and signed customer result in one continuous runtime history",
   "readers": {
     "before_money": [
@@ -662,9 +662,11 @@
     ]
   },
   "result": {
-    "initial_4321": true,
-    "new_amount_5100": true,
-    "restored_at_accepted": true,
-    "trust_verified_5100": true
-  }
+    "initial_4321": false,
+    "new_amount_5100": false,
+    "restored_at_accepted": false,
+    "trust_verified_5100": false
+  },
+  "withdrawn": true,
+  "withdrawal_reason": "Restores a host copy over an intact live journal, uses a different commerce identity, invokes the observer manually, and bypasses the guard against discarding newer journal records; acceptance is not tied to signature/currency/subject failure. Component evidence only."
 }
