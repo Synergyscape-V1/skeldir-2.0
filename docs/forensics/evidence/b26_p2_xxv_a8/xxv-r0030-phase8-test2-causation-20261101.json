@@ -82,6 +82,72 @@
       }
     }
   ],
+  "independent_staging_attempt_pair": [
+    {
+      "role": "failed_attempt_1",
+      "run_id": "41365869342",
+      "artifact_id": "13107223742",
+      "head_sha": "eacb1cb74f743bb3321205a346b68a8b63b265cf",
+      "achieved_rps": 42.539,
+      "target_request_count": 2760,
+      "observed_request_count": 2760,
+      "passed": false,
+      "http_timeout_count": 0,
+      "http_connection_errors": 0,
+      "latency_p95_ms": 2789.901,
+      "semaphore_wait_p95_ms": 3684.696,
+      "send_lag_p95_ms": 3685.048,
+      "send_lag_over_1000ms_count": 1869,
+      "client_drain_s": 4.8809,
+      "resource_stable": true,
+      "resource_snapshot_before": {
+        "active_connections": 2,
+        "app_user_connections": 83,
+        "max_connections": 200,
+        "total_connections": 115,
+        "waiting_connections": 0
+      },
+      "resource_snapshot_after": {
+        "active_connections": 1,
+        "app_user_connections": 105,
+        "max_connections": 200,
+        "total_connections": 137,
+        "waiting_connections": 0
+      }
+    },
+    {
+      "role": "passed_attempt_2",
+      "run_id": "41365869342",
+      "artifact_id": "13107839586",
+      "head_sha": "eacb1cb74f743bb3321205a346b68a8b63b265cf",
+      "achieved_rps": 45.975,
+      "target_request_count": 2760,
+      "observed_request_count": 2760,
+      "passed": true,
+      "http_timeout_count": 0,
+      "http_connection_errors": 0,
+      "latency_p95_ms": 183.052,
+      "semaphore_wait_p95_ms": 0.096,
+      "send_lag_p95_ms": 1.942,
+      "send_lag_over_1000ms_count": 0,
+      "client_drain_s": 0.0329,
+      "resource_stable": true,
+      "resource_snapshot_before": {
+        "active_connections": 1,
+        "app_user_connections": 82,
+        "max_connections": 200,
+        "total_connections": 114,
+        "waiting_connections": 0
+      },
+      "resource_snapshot_after": {
+        "active_connections": 1,
+        "app_user_connections": 82,
+        "max_connections": 200,
+        "total_connections": 114,
+        "waiting_connections": 0
+      }
+    }
+  ],
   "later_independent_run": {
     "role": "passed_f6b_attempt_1",
     "run_id": "41347349067",
@@ -96,7 +162,7 @@
     "http_timeout_count": 0
   },
   "causation": {
-    "established": "The failing run delivered all 2760 target requests with zero HTTP timeouts/connection errors while client completion was delayed by the request semaphore/send queue: 3983.087 ms semaphore p95, 3984.161 ms send-lag p95, 1693 requests over 1 s send lag, and a 5.7542 s drain. The passed run had the same target and delivered all 2760 requests with 0.063 ms semaphore p95 and 1.905 ms send-lag p95.",
+    "established": "Two independent attempts pairs reproduced the same shape. Run 41341830038 delivered all 2760 requests with zero HTTP/connection errors while failing at 3983.087 ms semaphore p95, 3984.161 ms send-lag p95, 1693 requests over 1 s send lag, and 5.7542 s drain; its passing attempt had 0.063/1.905 ms p95. Run 41365869342 reproduced it with 3684.696/3685.048 ms p95, 1869 requests over 1 s, and 4.8809 s drain; its passing attempt had 0.096/1.942 ms p95. DB waiting connections were zero throughout.",
     "not_the_cause": [
       "Target workload under-delivery: observed_request_count was 2760 in both runs.",
       "HTTP failure: http_timeout_count and http_connection_errors were 0 in both runs.",
