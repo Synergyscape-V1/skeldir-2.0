@@ -352,6 +352,11 @@ STATIC_CONTROLS = (
         "coverage_oracle_vector_mismatch",
     ),
     (
+        "coverage_carrier_math_unchecked",
+        COVERAGE_AUTHORITY_MODULE,
+        "coverage_wrong_math_carrier_constructed",
+    ),
+    (
         "source_attestation_coverage_aggregation",
         SOURCE_ATTESTATION_MODULE,
         "b26_duplicate_coverage_authority",

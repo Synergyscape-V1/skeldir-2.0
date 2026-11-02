@@ -1037,6 +1037,16 @@ def coverage_oracle_rounding_equiv() -> None:
     )
 
 
+def coverage_carrier_math_unchecked() -> None:
+    """Remove the type-boundary leg validation; alternate arithmetic passes."""
+    _replace_once(
+        COVERAGE_AUTHORITY_MODULE,
+        "        _verify_math_against_legs(self)",
+        "        pass  # NC-R0031-CARRIER",
+        defect="coverage_carrier_math_unchecked",
+    )
+
+
 def source_attestation_coverage_aggregation() -> None:
     """XXV: the legitimate read allowance must not admit aggregation."""
     _replace_once(
@@ -1538,6 +1548,7 @@ DEFECTS: dict[str, Callable[[], None]] = {
     "xi_nc19_capability_seal_removed": xi_nc19_capability_seal_removed,
     "xi_nc20_denominator_regression": xi_nc20_denominator_regression,
     "coverage_oracle_rounding_equiv": coverage_oracle_rounding_equiv,
+    "coverage_carrier_math_unchecked": coverage_carrier_math_unchecked,
     "source_attestation_coverage_aggregation": (
         source_attestation_coverage_aggregation
     ),
