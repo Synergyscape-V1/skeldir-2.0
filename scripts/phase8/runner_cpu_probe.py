@@ -162,8 +162,8 @@ def _classify(cmdline: str, comm: str) -> str:
     return "other"
 
 
-def _snapshot_processes() -> dict[int, tuple[str, str, int]]:
-    snapshot: dict[int, tuple[str, str, int]] = {}
+def _snapshot_processes() -> dict[int, tuple[str, str, int, str]]:
+    snapshot: dict[int, tuple[str, str, int, str]] = {}
     for entry in os.scandir("/proc"):
         if not entry.name.isdigit():
             continue
@@ -190,7 +190,12 @@ def _snapshot_processes() -> dict[int, tuple[str, str, int]]:
         cmdline = cmdline_text.replace("\x00", " ").strip()
         if not cmdline:
             continue
-        snapshot[pid] = (_classify(cmdline, comm), comm[:40], utime + stime)
+        snapshot[pid] = (
+            _classify(cmdline, comm),
+            comm[:40],
+            utime + stime,
+            cmdline[:240],
+        )
     return snapshot
 
 
@@ -215,7 +220,7 @@ def main() -> int:
     class_cpu_ticks: dict[str, int] = {}
     class_cpu_max_pct: dict[str, float] = {}
     pid_cpu_ticks: dict[int, int] = {}
-    pid_meta: dict[int, tuple[str, str]] = {}
+    pid_meta: dict[int, tuple[str, str, str]] = {}
     busy_pct_samples: list[float] = []
     psi_some_avg10_samples: list[float] = []
     psi_io_some_avg10_samples: list[float] = []
@@ -250,13 +255,13 @@ def main() -> int:
 
             pid_delta_ticks: dict[int, int] = {}
             class_delta_ticks: dict[str, int] = {}
-            for pid, (cls, comm, ticks) in cur_procs.items():
+            for pid, (cls, comm, ticks, cmdline) in cur_procs.items():
                 prev_entry = prev_procs.get(pid)
                 delta = max(0, ticks - prev_entry[2]) if prev_entry else 0
                 if delta <= 0:
                     continue
                 pid_delta_ticks[pid] = delta
-                pid_meta[pid] = (cls, comm)
+                pid_meta[pid] = (cls, comm, cmdline)
                 pid_cpu_ticks[pid] = pid_cpu_ticks.get(pid, 0) + delta
                 class_delta_ticks[cls] = class_delta_ticks.get(cls, 0) + delta
 
@@ -305,6 +310,7 @@ def main() -> int:
                         "pid": pid,
                         "class": pid_meta[pid][0],
                         "comm": pid_meta[pid][1],
+                        "cmdline": pid_meta[pid][2],
                         "cpu_pct": round(100.0 * (delta / _CLK_TCK) / interval_s, 3),
                     }
                     for pid, delta in pid_delta_ticks.items()
@@ -350,6 +356,7 @@ def main() -> int:
                 "pid": pid,
                 "class": pid_meta[pid][0],
                 "comm": pid_meta[pid][1],
+                "cmdline": pid_meta[pid][2],
                 "cpu_s_total": round(ticks / _CLK_TCK, 3),
             }
             for pid, ticks in pid_cpu_ticks.items()
