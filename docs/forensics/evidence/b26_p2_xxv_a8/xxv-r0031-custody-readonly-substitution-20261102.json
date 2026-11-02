@@ -27,7 +27,7 @@
     "custody_suite": "15 passed",
     "test_export_refuses_complete_older_bundle_under_current_name": "PASS",
     "test_verify_refuses_relocated_complete_bundle": "PASS",
-    "test_object_store_uri_is_not_treated_as_a_local_directory": "PASS"
+    "test_object_store_uri_is_not_treated_as_a_local_directory": "PASS (7 sibling URI forms)"
   },
   "actual_reader": {
     "path": "app.trust.builder._verify_signed_history_witness",
@@ -47,6 +47,6 @@
   "archive_identity": {
     "rule": "A reused manifest must be named for its own journal_tip and its bytes must equal the captured live prefix.",
     "relocated_valid_bundle": "refused with custody_bundle_identity_mismatch",
-    "s3_uri": "refused with custody_object_store_adapter_unavailable; no local s3: directory"
+    "s3_uri": "case-insensitive schemes and s3:/ forms are refused with custody_object_store_adapter_unavailable; no local s3: directory"
   }
 }

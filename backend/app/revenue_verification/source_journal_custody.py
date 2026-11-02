@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from app.revenue_verification.source_evidence_journal import (
     _journal_file_lock,
@@ -171,7 +172,11 @@ def export_custody_bundle(
     if not journal_path.exists():
         raise SourceJournalCustodyError("custody_journal_missing")
     custody_text = str(custody_dir)
-    if custody_text.startswith(("s3://", "gs://", "az://")):
+    scheme = urlsplit(custody_text).scheme.lower()
+    windows_drive = (
+        os.name == "nt" and len(scheme) == 1 and custody_text[1:2] == ":"
+    )
+    if scheme and not windows_drive:
         raise SourceJournalCustodyError(
             "custody_object_store_adapter_unavailable"
         )

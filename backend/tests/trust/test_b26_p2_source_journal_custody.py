@@ -307,15 +307,24 @@ def test_object_store_uri_is_not_treated_as_a_local_directory(
     journal = tmp_path / "live.jsonl"
     _append(journal, "s1", "100")
 
-    with pytest.raises(
-        SourceJournalCustodyError,
-        match="custody_object_store_adapter_unavailable",
+    for target in (
+        "s3://bucket/source-evidence",
+        "S3://bucket/source-evidence",
+        "s3:/bucket/source-evidence",
+        "S3:/bucket/source-evidence",
+        "gs://bucket/source-evidence",
+        "az://container/source-evidence",
+        "file:///tmp/source-evidence",
     ):
-        export_custody_bundle(
-            journal=journal,
-            custody_dir="s3://bucket/source-evidence",
-            private_key_path=private_path,
-        )
+        with pytest.raises(
+            SourceJournalCustodyError,
+            match="custody_object_store_adapter_unavailable",
+        ):
+            export_custody_bundle(
+                journal=journal,
+                custody_dir=target,
+                private_key_path=private_path,
+            )
     assert not (tmp_path / "s3:").exists()
 
 
