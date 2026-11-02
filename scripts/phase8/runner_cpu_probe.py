@@ -162,6 +162,13 @@ def _classify(cmdline: str, comm: str) -> str:
     return "other"
 
 
+def _read_cmdline(pid: int) -> str | None:
+    text = _read_text(f"/proc/{pid}/cmdline")
+    if not text:
+        return None
+    return text.replace("\x00", " ").strip()[:240] or None
+
+
 def _read_ppid(pid: int) -> int | None:
     text = _read_text(f"/proc/{pid}/stat")
     if not text:
@@ -326,6 +333,7 @@ def main() -> int:
                         "comm": pid_meta[pid][1],
                         "cmdline": pid_meta[pid][2],
                         "ppid": _read_ppid(pid),
+                        "parent_cmdline": _read_cmdline(_read_ppid(pid) or 0),
                         "cpu_pct": round(100.0 * (delta / _CLK_TCK) / interval_s, 3),
                     }
                     for pid, delta in pid_delta_ticks.items()
@@ -373,6 +381,7 @@ def main() -> int:
                 "comm": pid_meta[pid][1],
                 "cmdline": pid_meta[pid][2],
                 "ppid": _read_ppid(pid),
+                "parent_cmdline": _read_cmdline(_read_ppid(pid) or 0),
                 "cpu_s_total": round(ticks / _CLK_TCK, 3),
             }
             for pid, ticks in pid_cpu_ticks.items()
