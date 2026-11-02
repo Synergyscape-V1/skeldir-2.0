@@ -1,0 +1,84 @@
+{
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T23:43:07.348251Z",
+    "commit_sha": "9ce9f8b041da1104c3025d82829e2560e3f2f7ba",
+    "compiled_genesis_hash": "3cf2c1b5680d5670727807d6edcca3569a94c30ed9d5a5a4ad6ff1a68760c59d",
+    "compiled_public_key_sha256": "c01e20ca7b1e55dfa7167be2b2cec2adef681e4a27bd54a28d9d29e8ba6b472d",
+    "compiled_source_attestation_public_key_sha256": "593ef11183b6042d61fde8934a72bc7afe9e4372b396c871c90573d7eaa70dd0",
+    "image_id": "sha256:b2b251eacf4de34f13ead784c99a5b6a312a5a0af8e2ea241b07ab54c199914e",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "f917f60fc02adff17c2e8605abcf240ec0d8f312",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "checks": {
+    "api_database": true,
+    "api_jwt": true,
+    "api_migration": true,
+    "auth_ingress_database": true,
+    "auth_ingress_jwt": true,
+    "observer_celery": true,
+    "observer_jwt": true,
+    "signer_celery": true,
+    "signer_database": true
+  },
+  "direct": {
+    "api_database": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    },
+    "api_jwt": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    },
+    "api_migration": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "RuntimeError:process_role_forbidden_setting:MIGRATION_DATABASE_URL"
+    },
+    "auth_ingress_database": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    },
+    "auth_ingress_jwt": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "RuntimeError:process_role_forbidden_setting:AUTH_JWT_SECRET"
+    },
+    "observer_celery": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    },
+    "observer_jwt": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "RuntimeError:process_role_forbidden_setting:AUTH_JWT_SECRET"
+    },
+    "signer_celery": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "RuntimeError:process_role_forbidden_setting:CELERY_BROKER_URL"
+    },
+    "signer_database": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    }
+  },
+  "passed": true,
+  "property": "process role binds direct secret reads and preload; allowed credentials remain usable",
+  "scope": "direct process-scoped secret reads on the exact compiled image; preload filtering is covered by the B11 contract test and the boot of every lane process"
+}
