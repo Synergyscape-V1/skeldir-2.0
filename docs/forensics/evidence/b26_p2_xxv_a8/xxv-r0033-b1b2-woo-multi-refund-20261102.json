@@ -1,0 +1,86 @@
+{
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T14:23:09.933070Z",
+    "commit_sha": "4d3e7c4354b2a6dafe03aa08524c87b47e8598de",
+    "compiled_genesis_hash": "e019bab976b77e9240172011140773cd310189152275eb9af827dae079339710",
+    "compiled_public_key_sha256": "8fa538607875a3b23ec4ddabf339be76286dc47140c2345c3bfe582ea27ebf25",
+    "compiled_source_attestation_public_key_sha256": "cb7c6b993072b4a18dd20be7ccacebc3aa4db93e6630b9d3dc3bc9074534ceb9",
+    "image_id": "sha256:960ab36f82a8aaf7653030228085914fb77d981145cb32dbe3cfe49d97ab8f5d",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "4a53dc788743d6a0f8995190b30ec383d5ee8bb4",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "ae804afd-e865-4945-aeed-cd3113e85768",
+  "capture": {
+    "body": "{\"status\":\"success\",\"event_id\":\"5707e1c3-2e44-46b4-8213-450316bec407\",\"idempotency_key\":\"d8bd8c05-d4aa-5359-9aa3-be461e951bc7\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+    "http": 200
+  },
+  "duplicate": {
+    "body": "{\"status\":\"success\",\"event_id\":\"3267f5bd-e19b-4928-9695-da827c7eb0a4\",\"idempotency_key\":\"697923957\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+    "evidence_count": 2,
+    "http": 200,
+    "net_minor": 2700
+  },
+  "falsifier": "xxv-b1b2-woocommerce-multi-refund",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:960ab36f82a8aaf7653030228085914fb77d981145cb32dbe3cfe49d97ab8f5d",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "missing_time": {
+    "body": "{\"detail\":\"b26_p2_ingress_relay_refused: status=400\"}",
+    "evidence_count_before_refund": 0,
+    "http": 409,
+    "net_before_refund": 4200
+  },
+  "property": "B1/B2: two unseen WooCommerce refunds in one snapshot are both accounted exactly once; overlapping delivery does not repeat",
+  "readers": {
+    "attestation_status": "xxv_attested",
+    "reconciliation_status": 200,
+    "source_authority_state": "current",
+    "trust_status": 200,
+    "trust_verified_revenue_minor": 2700
+  },
+  "recorded_at_utc": "2026-11-02T14:43:19.023133Z",
+  "refund": {
+    "body": "{\"status\":\"success\",\"event_id\":\"3267f5bd-e19b-4928-9695-da827c7eb0a4\",\"idempotency_key\":\"697923957\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+    "captured_minor": 4200,
+    "evidence_count": 2,
+    "http": 200,
+    "net_minor": 2700
+  },
+  "timing": {
+    "evidence_timestamps": [
+      "2026-11-02T13:43:09",
+      "2026-11-02T13:43:09"
+    ],
+    "expected_refund_timestamp": "2026-11-02T13:43:09",
+    "order_completed": "2026-11-02T12:43:09+00:00",
+    "refund_created": "2026-11-02T13:43:09+00:00"
+  },
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "e06ae6da-d7be-4de8-a888-5b33d7c11780"
+    }
+  ]
+}
