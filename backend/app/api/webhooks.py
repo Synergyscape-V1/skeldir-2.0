@@ -1852,10 +1852,10 @@ async def paypal_payment_capture_refunded(
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     tenant_info=Depends(paypal_webhook_auth),
 ):
-    """Authenticate every completed WooCommerce refund in an order snapshot."""
+    """Authenticate every completed PayPal refund in a capture snapshot."""
     return await _conduct_adjustment_events(
         tenant_info=tenant_info,
-        provider="woocommerce",
+        provider="paypal",
         x_idempotency_key=x_idempotency_key,
     )
 
