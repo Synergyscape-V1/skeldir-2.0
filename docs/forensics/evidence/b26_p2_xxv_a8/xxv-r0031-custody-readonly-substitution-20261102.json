@@ -1,10 +1,10 @@
 {
-  "check": "R-0031: observer read-only capture and orphan substitution rejection",
+  "check": "R-0031/R-0032: observer read-only capture, archive identity, and substitution rejection",
   "run_at": "2026-11-02",
   "source_hashes": {
     "source_evidence_journal.py": "66AB33EA1F67003D8FFD02E0170796DE5566C8BF9B08628986E6DD0C9BDF43E9",
-    "source_journal_custody.py": "92BD7E7310DF0355721E721C65DC27770C87EC758EA8614446182467EB4FF2E7",
-    "test_b26_p2_source_journal_custody.py": "137E3BBE692FCAFA7AE3E1D241653A51FA3C3623419A4F5A1D08F2483E37FDF7"
+    "source_journal_custody.py": "56AA00EF8CFA2C40941D9882CE59800FBA72314DF74803C25ECD553CEF00C327",
+    "test_b26_p2_source_journal_custody.py": "14A6ED5FBBE79A9637B55FC73754DC0DEA3100B49DDDE6C11360FCBCEA46117D"
   },
   "read_only_mount_physical": {
     "command": "docker run --rm -v <repo>/backend/app/revenue_verification:/source/backend/app/revenue_verification:ro -v <input>:/input:ro -v <probe>:/probe.py:ro b26p2xxv-final:latest python /probe.py ro",
@@ -24,7 +24,10 @@
     "test_export_refuses_missing_writer_lock_without_creating_one": "PASS",
     "test_export_refuses_planted_orphan_bundle": "PASS",
     "test_restored_source_journal_satisfies_actual_builder_witness": "PASS",
-    "custody_suite": "12 passed"
+    "custody_suite": "15 passed",
+    "test_export_refuses_complete_older_bundle_under_current_name": "PASS",
+    "test_verify_refuses_relocated_complete_bundle": "PASS",
+    "test_object_store_uri_is_not_treated_as_a_local_directory": "PASS"
   },
   "actual_reader": {
     "path": "app.trust.builder._verify_signed_history_witness",
@@ -40,5 +43,10 @@
     "The container probe is component-level, not a shipped observer task or S3/EFS deployment.",
     "The read-only probe uses the existing writer-created sidecar; production must retain that sidecar on the observer's read-only mount.",
     "A missing sidecar on a non-empty read-only journal refuses rather than creating one."
-  ]
+  ],
+  "archive_identity": {
+    "rule": "A reused manifest must be named for its own journal_tip and its bytes must equal the captured live prefix.",
+    "relocated_valid_bundle": "refused with custody_bundle_identity_mismatch",
+    "s3_uri": "refused with custody_object_store_adapter_unavailable; no local s3: directory"
+  }
 }
