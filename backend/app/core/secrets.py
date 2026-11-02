@@ -1158,7 +1158,15 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
 
     if get_secret("DATABASE_URL") is None:
         missing.append("DATABASE_URL")
-    if role in {"readiness", "worker"} and get_secret("MIGRATION_DATABASE_URL") is None:
+    from app.core.managed_settings_contract import (  # noqa: PLC0415
+        process_role_allows,
+    )
+
+    if (
+        role in {"readiness", "worker"}
+        and process_role_allows(role, "MIGRATION_DATABASE_URL")
+        and get_secret("MIGRATION_DATABASE_URL") is None
+    ):
         env_name = _read_setting("ENVIRONMENT")
         if env_name not in {"local", "dev", "ci"}:
             missing.append("MIGRATION_DATABASE_URL")

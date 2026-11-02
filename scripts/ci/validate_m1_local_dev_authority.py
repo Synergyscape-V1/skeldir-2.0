@@ -572,6 +572,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/enforce_b21_p4_benchmark_adjudication.py",
     "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py",
     "scripts/phase8/run_phase8_closure_pack.py",
+    "scripts/phase8/runner_cpu_probe.py",
     # Relocated to scripts/migrations/ci_topology/; the deletions still appear in the
     # diff against the baseline, so the former paths stay listed.
     "scripts/ci/apply_throughput_topology.py",

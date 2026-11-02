@@ -195,6 +195,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="critical",
         owner="platform-security",
         call_sites=("backend/app/security/auth.py",),
+        process_roles=("api",),
     ),
     "AUTH_JWT_PUBLIC_KEY_RING": _contract(
         key="AUTH_JWT_PUBLIC_KEY_RING",
@@ -203,6 +204,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="critical",
         owner="platform-security",
         call_sites=("backend/app/security/auth.py",),
+        process_roles=("api",),
     ),
     "AUTH_JWT_ALGORITHM": _contract(
         key="AUTH_JWT_ALGORITHM",
@@ -243,6 +245,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="high",
         owner="platform-security",
         call_sites=("backend/app/services/auth_tokens.py",),
+        process_roles=("api",),
     ),
     "PLATFORM_TOKEN_ENCRYPTION_KEY": _contract(
         key="PLATFORM_TOKEN_ENCRYPTION_KEY",
@@ -251,6 +254,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="critical",
         owner="platform-security",
         call_sites=("backend/app/api/platforms.py", "backend/app/services/realtime_revenue_providers.py"),
+        process_roles=("api", "worker"),
     ),
     "PLATFORM_TOKEN_KEY_ID": _contract(
         key="PLATFORM_TOKEN_KEY_ID",
@@ -307,6 +311,7 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="high",
         owner="ai-platform",
         call_sites=("backend/app/llm/provider_boundary.py",),
+        process_roles=("worker", "worker_bayesian"),
     ),
     "LLM_PROVIDER_MODEL": _contract(
         key="LLM_PROVIDER_MODEL",
@@ -506,6 +511,16 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="high",
         owner="backend-platform",
         call_sites=("backend/app/celery_app.py",),
+        process_roles=(
+            "api",
+            "worker",
+            "worker_bayesian",
+            "worker_bayesian_publisher",
+            "worker_b23",
+            "observer_b26_p2",
+            "b26_p2_relay",
+            "beat",
+        ),
     ),
     "CELERY_RESULT_BACKEND": _contract(
         key="CELERY_RESULT_BACKEND",
@@ -514,6 +529,16 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         rotation_criticality="high",
         owner="backend-platform",
         call_sites=("backend/app/celery_app.py",),
+        process_roles=(
+            "api",
+            "worker",
+            "worker_bayesian",
+            "worker_bayesian_publisher",
+            "worker_b23",
+            "observer_b26_p2",
+            "b26_p2_relay",
+            "beat",
+        ),
     ),
     "CELERY_TASK_ACKS_LATE": _contract(
         key="CELERY_TASK_ACKS_LATE",

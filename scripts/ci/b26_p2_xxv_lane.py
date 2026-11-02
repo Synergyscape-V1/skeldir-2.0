@@ -768,7 +768,6 @@ def start_signer(state: dict) -> None:
     state["tls_volume"] = tls_vol
     cp = write_control_plane("trust_signer", state)
     dsn = f"postgresql+asyncpg://app_trust_signer:app_trust_signer@pg:5432/{DB_NAME}"
-    transport = role_dsn("app_celery_transport", host="pg", port=5432)
     # XXV-F-CP2: the control plane is process-scoped. The signer role is not
     # allowed to resolve MIGRATION_DATABASE_URL, so the signer boots with the
     # control plane enabled and its custody law holds without a workaround.
@@ -776,8 +775,6 @@ def start_signer(state: dict) -> None:
         "SKELDIR_CONTROL_PLANE_ENABLED": "1",
         "DATABASE_URL": dsn,
         "TRUST_SIGNER_DATABASE_URL": dsn,
-        "CELERY_BROKER_URL": f"sqla+{transport}",
-        "CELERY_RESULT_BACKEND": f"db+{transport}",
         "TRUST_SIGNER_SHARED_SECRET": material["trust_signer_shared_secret"],
         "SKELDIR_TRUST_SIGNING_KEY_SEED_B64URL": material["trust_seed_b64url"],
         "SKELDIR_TRUST_SIGNING_KEY_ID": TRUST_KID,
