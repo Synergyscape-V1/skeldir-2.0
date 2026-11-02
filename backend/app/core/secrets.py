@@ -189,7 +189,25 @@ def was_loaded_from_control_plane(key: str) -> bool:
     return os.getenv(_control_plane_source_marker(key), "0").strip() == "1"
 
 
+def _assert_process_secret_role(key: str) -> None:
+    """Bind every secret read to the declaring process role.
+
+    The preload filter alone left direct ``get_secret`` calls able to resolve
+    a foreign process's credential. The process role is the deployed identity,
+    not an advisory label; a role that does not declare the key is refused
+    before the control-plane fetch.
+    """
+    from app.core.managed_settings_contract import (  # noqa: PLC0415
+        process_role_allows,
+    )
+
+    role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+    if role and not process_role_allows(role, key):
+        raise RuntimeError(f"process_role_forbidden_setting:{key}")
+
+
 def _read_secret_source_of_truth_value(key: str) -> str | None:
+    _assert_process_secret_role(key)
     if should_enable_control_plane():
         canonical_env = resolve_control_plane_env(
             os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
@@ -1244,7 +1262,10 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
             ]
             if llm_required:
                 control_plane_keys.append("LLM_PROVIDER_API_KEY")
+            process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip() or role
             for key in control_plane_keys:
+                if not process_role_allows(process_role, key):
+                    continue
                 try:
                     _read_secret_source_of_truth_value(key)
                 except Exception:
