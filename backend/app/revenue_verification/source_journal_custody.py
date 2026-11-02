@@ -170,6 +170,11 @@ def export_custody_bundle(
     journal_path = Path(journal)
     if not journal_path.exists():
         raise SourceJournalCustodyError("custody_journal_missing")
+    custody_text = str(custody_dir)
+    if custody_text.startswith(("s3://", "gs://", "az://")):
+        raise SourceJournalCustodyError(
+            "custody_object_store_adapter_unavailable"
+        )
 
     # One read-only shared lock, one byte read, one parse: the observer never
     # needs write access to the live volume, and a concurrent append cannot
@@ -186,6 +191,10 @@ def export_custody_bundle(
                 public_key_path=Path(private_key_path),
                 public_key_is_private_seed=True,
             )
+            if verified.journal_bytes != raw:
+                raise SourceJournalCustodyError(
+                    "custody_bundle_identity_mismatch"
+                )
             return verified
 
         if bundle_path.exists():
@@ -247,6 +256,12 @@ def verify_custody_bundle(
         raise SourceJournalCustodyError("custody_manifest_unreadable") from exc
     if manifest.get("version") != CUSTODY_BUNDLE_VERSION:
         raise SourceJournalCustodyError("custody_bundle_version_unsupported")
+    expected_name = (
+        "source-evidence-"
+        f"{manifest.get('journal_tip') or 'empty'}.manifest.json"
+    )
+    if manifest_file.name != expected_name:
+        raise SourceJournalCustodyError("custody_bundle_identity_mismatch")
     signature_text = str(manifest.get("signature") or "")
     if not signature_text.startswith("ed25519:"):
         raise SourceJournalCustodyError("custody_signature_missing")

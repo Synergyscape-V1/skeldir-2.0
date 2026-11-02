@@ -243,6 +243,82 @@ def test_export_refuses_planted_orphan_bundle(tmp_path: Path) -> None:
     assert not exported.manifest_path.exists()
 
 
+def test_export_refuses_complete_older_bundle_under_current_name(
+    tmp_path: Path,
+) -> None:
+    private_path, public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+    custody = tmp_path / "custody"
+    old = export_custody_bundle(
+        journal=journal,
+        custody_dir=custody,
+        private_key_path=private_path,
+    )
+    _append(journal, "s2", "200")
+    records = load_source_fact_records(journal)
+    assert records is not None
+    tip = journal_record_hash(records[-1])
+    new_manifest = custody / f"source-evidence-{tip}.manifest.json"
+    new_bundle = custody / f"source-evidence-{tip}.jsonl"
+    old_bundle = old.manifest_path.with_name(
+        old.manifest_path.name.replace(".manifest.json", ".jsonl")
+    )
+    new_bundle.write_bytes(old_bundle.read_bytes())
+    new_manifest.write_bytes(old.manifest_path.read_bytes())
+
+    with pytest.raises(
+        SourceJournalCustodyError,
+        match="custody_bundle_identity_mismatch",
+    ):
+        export_custody_bundle(
+            journal=journal,
+            custody_dir=custody,
+            private_key_path=private_path,
+        )
+
+
+def test_verify_refuses_relocated_complete_bundle(tmp_path: Path) -> None:
+    private_path, public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+    exported = export_custody_bundle(
+        journal=journal,
+        custody_dir=tmp_path / "custody",
+        private_key_path=private_path,
+    )
+    relocated = tmp_path / "relocated.manifest.json"
+    relocated.write_bytes(exported.manifest_path.read_bytes())
+
+    with pytest.raises(
+        SourceJournalCustodyError,
+        match="custody_bundle_identity_mismatch",
+    ):
+        verify_custody_bundle(
+            manifest_path=relocated,
+            public_key_path=public_path,
+        )
+
+
+def test_object_store_uri_is_not_treated_as_a_local_directory(
+    tmp_path: Path,
+) -> None:
+    private_path, _public_path = _keys(tmp_path)
+    journal = tmp_path / "live.jsonl"
+    _append(journal, "s1", "100")
+
+    with pytest.raises(
+        SourceJournalCustodyError,
+        match="custody_object_store_adapter_unavailable",
+    ):
+        export_custody_bundle(
+            journal=journal,
+            custody_dir="s3://bucket/source-evidence",
+            private_key_path=private_path,
+        )
+    assert not (tmp_path / "s3:").exists()
+
+
 def test_export_refuses_missing_writer_lock_without_creating_one(
     tmp_path: Path,
 ) -> None:

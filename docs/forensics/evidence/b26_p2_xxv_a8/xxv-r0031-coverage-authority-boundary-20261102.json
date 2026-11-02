@@ -1,5 +1,5 @@
 {
-  "check": "R-0031: alternate coverage arithmetic cannot construct canonical authority",
+  "check": "R-0031: alternate coverage arithmetic cannot construct a mathematically consistent carrier",
   "run_at": "2026-11-02",
   "coverage_authority_source_sha256": "F902FEDA983397909CDEC353EFC7CB67BD7FF9FC58CAAA9E4BACB9319C939389",
   "alternate_computation": {
@@ -17,10 +17,16 @@
     "legitimate_95_construction": "accepted and scope-coherent",
     "test": "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py::test_alternate_python_aggregation_cannot_construct_canonical_coverage"
   },
-  "property": "CanonicalVerificationCoverage validates aggregate/result legs in __post_init__; a wrong SQL/Python aggregate cannot become a canonical carrier regardless of spelling, quoting, comments, or execution language.",
+  "property": "CanonicalVerificationCoverage validates aggregate/result legs in __post_init__; a wrong SQL/Python aggregate cannot become a mathematically consistent carrier regardless of spelling, quoting, comments, or execution language. This is not a source-authority grant.",
   "limits": [
     "This is a component/type-boundary proof, not a shipped signed-money bypass.",
     "The source-level duplicate-authority scanner remains defense in depth; it is not the governing authority.",
     "The canonical resolver's sovereign re-derivation and scope checks remain required for actual authority."
+  ],
+  "does_not_prove": [
+    "financial provenance",
+    "source authority",
+    "that a real signed-money consumer was bypassed",
+    "that the SQL/Python source itself is safe"
   ]
 }

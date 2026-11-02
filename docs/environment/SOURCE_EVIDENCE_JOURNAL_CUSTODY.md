@@ -31,13 +31,16 @@ Export (observer/custody task, never a financial-maintenance worker):
 ```text
 python scripts/ops/source_journal_custody.py export \
   --journal "$B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH" \
-  --custody-dir s3://<custody-bucket>/<environment>/source-evidence \
+  --custody-dir /mnt/custody/source-evidence \
   --private-key "$B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH"
 ```
 
-The shipped CLI accepts a mounted object-store path. Object-store upload and
-Object Lock enforcement are the deployment adapter's responsibility; the
-bundle bytes and manifest signature are produced and verified identically.
+`--custody-dir` must be a mounted local path. An object-store URI such as
+`s3://bucket/prefix` is refused with
+`custody_object_store_adapter_unavailable`; this CLI does not silently write a
+local directory named `s3:`. Object-store upload and Object Lock enforcement
+are the deployment adapter's responsibility; the bundle bytes and manifest
+signature are produced and verified identically once mounted.
 
 Capture opens the writer's existing `.lock` sidecar read-only and takes a
 shared OS lock. It never creates or writes the sidecar, the journal, or the
@@ -96,6 +99,10 @@ refuses `custody_restore_diverged` rather than deleting committed history.
   accepted commitment is never reset to bless missing facts.
 - A corrupt bundle, wrong key, altered manifest, count/tip mismatch or
   divergent live chain is refused.
+- A valid older signed bundle relocated under the current snapshot name is
+  refused with `custody_bundle_identity_mismatch`; success requires the
+  manifest tip to match its filename and the bundle bytes to equal the
+  captured live prefix.
 
 ## Limits
 
