@@ -19,6 +19,15 @@ from app.trust.history_witness import (
     public_key_fingerprint,
     verify_journal,
 )
+from app.revenue_verification.source_evidence_journal import (
+    append_source_fact,
+    journal_record_hash,
+    load_source_fact_records,
+)
+from app.revenue_verification.source_journal_custody import (
+    export_custody_bundle,
+    restore_custody_bundle,
+)
 
 UNIVERSE = "11111111-1111-1111-1111-111111111111"
 OTHER_UNIVERSE = "22222222-2222-2222-2222-222222222222"
@@ -31,6 +40,20 @@ def _witness_files(tmp_path: Path) -> tuple[Path, Path]:
     private_path.write_text(private_seed, encoding="utf-8")
     public_path.write_text(public_key, encoding="utf-8")
     return private_path, public_path
+
+
+def _append_source(journal: Path, fact_id: str, xid: str) -> None:
+    append_source_fact(
+        fact_kind="source_money",
+        fact_id=fact_id,
+        tenant_id="custody-tenant",
+        verdict_id="custody-verdict",
+        statement={"id": fact_id},
+        signature="sig",
+        key_sha256="k",
+        database_transaction_id=xid,
+        path=journal,
+    )
 
 
 def _enable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **paths: Path) -> Path:
@@ -789,6 +812,57 @@ def test_xxv_missing_custody_refuses_outside_production(
     )
     assert accepted is False
     assert reason.endswith("witness_custody_missing")
+
+
+def test_restored_source_journal_satisfies_actual_builder_witness(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    private_path, public_path = _witness_files(tmp_path)
+    witness_journal = _enable(monkeypatch, tmp_path, public=public_path)
+    source = tmp_path / "source.jsonl"
+    monkeypatch.setattr(
+        settings, "B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH", str(source)
+    )
+    _append_source(source, "s1", "100")
+    _append_source(source, "s2", "200")
+    records = load_source_fact_records(source)
+    assert records is not None
+    accepted_tip = journal_record_hash(records[-1])
+    append_checkpoint(
+        witness_journal,
+        private_key_path=private_path,
+        ledger_count=0,
+        ledger_tip_seq=None,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=hashlib.sha256(b"").hexdigest(),
+        authority_universe=UNIVERSE,
+        source_journal_count=len(records),
+        source_journal_tip=accepted_tip,
+        custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
+        heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
+    )
+    bundle = export_custody_bundle(
+        journal=source,
+        custody_dir=tmp_path / "custody",
+        private_key_path=private_path,
+    )
+    source.unlink()
+    assert (
+        restore_custody_bundle(
+            manifest_path=bundle.manifest_path,
+            journal=source,
+            public_key_path=public_path,
+            accepted_source_count=len(records),
+            accepted_source_tip=accepted_tip,
+        )
+        == "restored"
+    )
+    assert _verify_signed_history_witness(
+        ledger_count=0,
+        ledger_tip_hash=None,
+        ledger_prefix_digest=hashlib.sha256(b"").hexdigest(),
+        authority_universe=UNIVERSE,
+    ) == (True, "")
 
 
 def test_tenant_failure_is_committed_without_erasing_healthy_progress(
