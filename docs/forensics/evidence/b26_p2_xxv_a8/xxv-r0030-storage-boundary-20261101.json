@@ -1,0 +1,31 @@
+{
+  "check": "R-0030 physical custody archive boundary against the finance actor",
+  "run_at": "2026-11-01",
+  "scope": "Separate PostgreSQL archive database with an archive owner, a write-only/read-only custody writer, and a finance actor that is denied CONNECT. The actual signed custody bundle bytes were stored, the local live copy was removed, and the bundle was downloaded, verified and restored.",
+  "probe_source_sha256": "A2452087BF104535D352BB7FAC88EE8FF6737541586274F9B7867250AA815241",
+  "database_roles": [
+    "archive owner: NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE",
+    "custody writer: LOGIN, INSERT/SELECT only on custody_objects",
+    "finance actor: LOGIN, no CONNECT on the archive database",
+    "custody_objects: primary key on tip; update/delete also refused by privilege and a deny-mutation trigger"
+  ],
+  "observed": {
+    "finance_connect": "OperationalError: permission denied for database",
+    "writer_delete": "InsufficientPrivilege: permission denied for table custody_objects",
+    "writer_update": "InsufficientPrivilege: permission denied for table custody_objects",
+    "stored_bundle_sha256": "6ddc4a5476f39c62c411f5ebebe27c4c1f7626fc281a9697af2b0e38d6d1034b",
+    "stored_record_count": 2,
+    "local_live_copy_removed_before_restore": true,
+    "restore_disposition": "restored",
+    "restored_record_count": 2,
+    "restored_matches": true,
+    "passed": true
+  },
+  "limits": [
+    "This is an archive-authority equivalence probe, not the production S3 Object Lock COMPLIANCE / EFS access-point deployment.",
+    "A database-cluster superuser can drop the probe database; the financial actor cannot connect or mutate it.",
+    "Object Lock retention, KMS grants, EFS IAM and task mounts still require the deployment account audit.",
+    "The probe database and temporary roles were dropped after the observation."
+  ],
+  "command": "DATABASE_URL=postgresql://fixture@127.0.0.1:1/fixture SKELDIR_CONTROL_PLANE_ENABLED=0 python <probe>"
+}
