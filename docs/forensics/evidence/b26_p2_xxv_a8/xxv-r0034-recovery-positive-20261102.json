@@ -1,0 +1,80 @@
+{
+  "amendment": {
+    "amount_minor": 5100,
+    "correction_http": {
+      "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"edd5fab6-dbd2-476c-9926-41bbca7aabc9\",\"revenue_event_written\":false,\"net_verified_amount_minor\":4321}",
+      "status": 200
+    },
+    "http": 200,
+    "same_verdict": true,
+    "subject": "pi_xxvrec91062147bb0a4c1a",
+    "witness_advanced": true
+  },
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T22:44:03.344338Z",
+    "commit_sha": "9d331ebb36dfe47d03057ecb45436a258e4bd9af",
+    "compiled_genesis_hash": "122096afac868b539d8936e04565bc0a2515938d61bd92c5be2b86f57c85cfe6",
+    "compiled_public_key_sha256": "8bb42434bba2dc4514a80a9350ab5fa71571d00b84f361bdc23e53e2d5ce244e",
+    "compiled_source_attestation_public_key_sha256": "28fe71bdebecf04a847c431c712842f116908f4086b25bff94942f49d6b59256",
+    "image_id": "sha256:237223a1bf60311680e1cb135f3535a34f2c137fb4994a217cac57294429ecab",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "d3d7f0328f2360f048e0040d37dc737c8bee3515",
+    "worktree_status_summary": {
+      "entries": 6,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M scripts/ci/b26_p2_xxv_recovery_probe.py",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-r0034-recovery-omit-restore-20261102.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-r0034-recovery-positive-20261102.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-r0034-recovery-tamper-signature-20261102.json"
+      ]
+    }
+  },
+  "custody": {
+    "accepted_count": 4,
+    "accepted_tip": "bb4be4d673fd914e77c5f4c37449359c38663593fc38ebdf57141cad0bb54ab2",
+    "disposition": "restored",
+    "restored_count": 4,
+    "restored_tip": "bb4be4d673fd914e77c5f4c37449359c38663593fc38ebdf57141cad0bb54ab2",
+    "signature_verified": true,
+    "stage": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\opencode\\xxv-lane-r0044\\recovery-staged"
+  },
+  "initial": {
+    "amount_minor": 4321,
+    "http": 200,
+    "subject": "pi_xxvrec91062147bb0a4c1a",
+    "verdict_id": "edd5fab6-dbd2-476c-9926-41bbca7aabc9"
+  },
+  "manual_observer": false,
+  "mode": "positive",
+  "passed": true,
+  "property": "recovery acceptance: accepted history restoration, same-subject progression, natural witnessing, verified signed money/currency",
+  "readers": {
+    "reconciliation": {
+      "net_minor": 5100,
+      "status": 200
+    },
+    "trust": {
+      "currency": "USD",
+      "status": 200,
+      "verified_revenue_minor": 5100
+    },
+    "trust_verify": [
+      200,
+      {
+        "canonicalization_version": "trust-canonical-json-v1",
+        "reason_code": null,
+        "schema_version": "trust-envelope-schema-v2",
+        "semantic_truth_hash": "sha256:1922d3820b68c2f9c99bea42f864a0ef84b1e506345b47aaf377d10fc65500c2",
+        "signature_hash": "sha256:2189d37208c64a30b7ccd235343cfe862d787cdb551716c375c4bc5608820100",
+        "signing_algorithm": "ed25519",
+        "signing_key_id": "kid:b26-p2-xxv",
+        "temporal_scope": "truth-at-issuance",
+        "verification_status": "verified"
+      }
+    ]
+  }
+}

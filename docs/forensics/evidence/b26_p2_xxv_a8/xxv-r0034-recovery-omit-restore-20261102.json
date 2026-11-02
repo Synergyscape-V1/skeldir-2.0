@@ -1,0 +1,39 @@
+{
+  "acceptance": false,
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T22:44:03.344338Z",
+    "commit_sha": "9d331ebb36dfe47d03057ecb45436a258e4bd9af",
+    "compiled_genesis_hash": "122096afac868b539d8936e04565bc0a2515938d61bd92c5be2b86f57c85cfe6",
+    "compiled_public_key_sha256": "8bb42434bba2dc4514a80a9350ab5fa71571d00b84f361bdc23e53e2d5ce244e",
+    "compiled_source_attestation_public_key_sha256": "28fe71bdebecf04a847c431c712842f116908f4086b25bff94942f49d6b59256",
+    "image_id": "sha256:237223a1bf60311680e1cb135f3535a34f2c137fb4994a217cac57294429ecab",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "d3d7f0328f2360f048e0040d37dc737c8bee3515",
+    "worktree_status_summary": {
+      "entries": 6,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M scripts/ci/b26_p2_xxv_recovery_probe.py",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-r0034-recovery-omit-restore-20261102.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-r0034-recovery-positive-20261102.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-r0034-recovery-tamper-signature-20261102.json"
+      ]
+    }
+  },
+  "compensation": {
+    "restored_original": true
+  },
+  "initial": {
+    "amount_minor": 4321,
+    "http": 200,
+    "verdict_id": "6f4adaaa-497d-4aae-84ae-11d1a33a7461"
+  },
+  "manual_observer": false,
+  "mode": "omit-restore",
+  "passed": true,
+  "property": "recovery acceptance: accepted history restoration, same-subject progression, natural witnessing, verified signed money/currency",
+  "refusal": "trust_status=404:amount=None"
+}
