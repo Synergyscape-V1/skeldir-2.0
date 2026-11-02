@@ -1180,6 +1180,7 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
         process_role_allows,
     )
 
+    process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip() or role
     if (
         role in {"readiness", "worker"}
         and process_role_allows(role, "MIGRATION_DATABASE_URL")
@@ -1242,7 +1243,11 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
         env_name in {"stage", "prod"}
         or os.getenv("SKELDIR_REQUIRE_PROVIDER_SECRETS", "0").strip().lower() in {"1", "true", "yes", "on"}
     )
-    if role in {"api", "worker", "readiness"} and llm_required:
+    if (
+        role in {"api", "worker", "readiness"}
+        and llm_required
+        and process_role_allows(process_role, "LLM_PROVIDER_API_KEY")
+    ):
         llm_secret = get_secret("LLM_PROVIDER_API_KEY")
         if llm_secret is None:
             missing.append("LLM_PROVIDER_API_KEY")
@@ -1262,7 +1267,6 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
             ]
             if llm_required:
                 control_plane_keys.append("LLM_PROVIDER_API_KEY")
-            process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip() or role
             for key in control_plane_keys:
                 if not process_role_allows(process_role, key):
                     continue
