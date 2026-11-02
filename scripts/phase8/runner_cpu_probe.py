@@ -162,6 +162,20 @@ def _classify(cmdline: str, comm: str) -> str:
     return "other"
 
 
+def _read_ppid(pid: int) -> int | None:
+    text = _read_text(f"/proc/{pid}/stat")
+    if not text:
+        return None
+    close_idx = text.rfind(")")
+    if close_idx < 0:
+        return None
+    fields = text[close_idx + 2 :].split()
+    try:
+        return int(fields[1])
+    except (IndexError, ValueError):
+        return None
+
+
 def _snapshot_processes() -> dict[int, tuple[str, str, int, str]]:
     snapshot: dict[int, tuple[str, str, int, str]] = {}
     for entry in os.scandir("/proc"):
@@ -311,6 +325,7 @@ def main() -> int:
                         "class": pid_meta[pid][0],
                         "comm": pid_meta[pid][1],
                         "cmdline": pid_meta[pid][2],
+                        "ppid": _read_ppid(pid),
                         "cpu_pct": round(100.0 * (delta / _CLK_TCK) / interval_s, 3),
                     }
                     for pid, delta in pid_delta_ticks.items()
@@ -357,6 +372,7 @@ def main() -> int:
                 "class": pid_meta[pid][0],
                 "comm": pid_meta[pid][1],
                 "cmdline": pid_meta[pid][2],
+                "ppid": _read_ppid(pid),
                 "cpu_s_total": round(ticks / _CLK_TCK, 3),
             }
             for pid, ticks in pid_cpu_ticks.items()
