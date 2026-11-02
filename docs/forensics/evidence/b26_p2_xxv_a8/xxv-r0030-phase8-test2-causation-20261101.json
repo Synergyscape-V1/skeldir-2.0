@@ -229,6 +229,32 @@
     },
     "conclusion": "Both failed windows saturate the four-core host (busy near 96 percent, PSI 62-68, load about 8) while the passing window is at 79 percent busy, PSI 37.7, load 3.7. The client semaphore/send delay is the queueing consequence of service/host delay in the failed windows, not an independent client-side cause."
   },
+  "same_code_fail_pass_pair_41447_41452": {
+    "fail": {
+      "run_id": "41447434117",
+      "head_sha": "8308391ccd14f6caf39b63ddd94e1e422e9ef7b7",
+      "achieved_rps": 37.588,
+      "latency_p95_ms": 4770.216,
+      "host_busy_pct_avg": 65.12,
+      "psi_cpu_some_avg10_max": 44.41,
+      "load1_max": 8.49,
+      "auth_ingress_mean_ms": 13.18,
+      "mv_allocation_mean_ms": 28.21
+    },
+    "pass": {
+      "run_id": "41452207982",
+      "head_sha": "4d3e7c4354b2a6dafe03aa08524c87b47e8598de",
+      "achieved_rps": 45.98,
+      "latency_p95_ms": 148.125,
+      "host_busy_pct_avg": 75.6,
+      "psi_cpu_some_avg10_max": 29.89,
+      "load1_max": 2.94,
+      "auth_ingress_mean_ms": 5.44,
+      "mv_allocation_mean_ms": 22.11
+    },
+    "shared_code": "Both runs execute the 9bd34adc3 product tree; only docs/evidence differ.",
+    "observed": "The failing run has lower CPU busy but higher runnable/uninterruptible load, PSI, auth statement time and WAL waits; the passing run has higher CPU busy but low load and roughly 2.4x lower auth time. This is I/O/commit-wait pressure, not uniform CPU saturation or client queueing alone."
+  },
   "causation": {
     "established": "Two independent attempts pairs reproduced the same shape. Run 41341830038 delivered all 2760 requests with zero HTTP/connection errors while failing at 3983.087 ms semaphore p95, 3984.161 ms send-lag p95, 1693 requests over 1 s send lag, and 5.7542 s drain; its passing attempt had 0.063/1.905 ms p95. Run 41365869342 reproduced it with 3684.696/3685.048 ms p95, 1869 requests over 1 s, and 4.8809 s drain; its passing attempt had 0.096/1.942 ms p95. In-window host CPU/PSI/load shows the failed windows saturated at 96-97 percent busy, PSI 62-68, load 8+, versus the passing window at 79 percent, PSI 37.7, load 3.7. DB waiting connections were zero throughout.",
     "not_the_cause": [
