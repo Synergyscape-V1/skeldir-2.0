@@ -78,6 +78,28 @@ def _read_psi_cpu() -> dict[str, dict[str, float]] | None:
     return out
 
 
+def _read_psi_io() -> dict[str, dict[str, float]] | None:
+    text = _read_text("/proc/pressure/io")
+    if not text:
+        return None
+    out: dict[str, dict[str, float]] = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        values: dict[str, float] = {}
+        for part in parts[1:]:
+            if "=" not in part:
+                continue
+            key, _, raw = part.partition("=")
+            try:
+                values[key] = float(raw)
+            except ValueError:
+                continue
+        out[parts[0]] = values
+    return out
+
+
 def _read_cgroup_throttle() -> dict[str, int] | None:
     for path in ("/sys/fs/cgroup/cpu.stat", "/sys/fs/cgroup/cpu/cpu.stat"):
         text = _read_text(path)
@@ -196,6 +218,7 @@ def main() -> int:
     pid_meta: dict[int, tuple[str, str]] = {}
     busy_pct_samples: list[float] = []
     psi_some_avg10_samples: list[float] = []
+    psi_io_some_avg10_samples: list[float] = []
     psi_first: dict[str, float] = {}
     psi_last: dict[str, float] = {}
     throttle_first: dict[str, int] | None = None
@@ -218,6 +241,7 @@ def main() -> int:
             cur_stat = _read_proc_stat_busy()
             cur_procs = _snapshot_processes()
             cur_psi = _read_psi_cpu()
+            cur_psi_io = _read_psi_io()
             cur_throttle = _read_cgroup_throttle()
             if throttle_first is None and cur_throttle is not None:
                 throttle_first = dict(cur_throttle)
@@ -270,6 +294,10 @@ def main() -> int:
                     if kind == "some" and "avg10" in values:
                         psi_some_avg10_samples.append(values["avg10"])
                     psi_entry[kind] = entry
+            if cur_psi_io:
+                io_some = cur_psi_io.get("some") or {}
+                if "avg10" in io_some:
+                    psi_io_some_avg10_samples.append(io_some["avg10"])
 
             top_interval = sorted(
                 (
@@ -291,6 +319,7 @@ def main() -> int:
                 "total_busy_pct": round(total_busy_pct, 3),
                 "classes_cpu_pct": classes_pct,
                 "psi": psi_entry,
+                "psi_io": cur_psi_io,
                 "loadavg": _read_loadavg(),
                 "top": top_interval,
             }
@@ -365,6 +394,9 @@ def main() -> int:
         ),
         "psi_cpu_some_avg10_max": max(psi_some_avg10_samples)
         if psi_some_avg10_samples
+        else None,
+        "psi_io_some_avg10_max": max(psi_io_some_avg10_samples)
+        if psi_io_some_avg10_samples
         else None,
         "throttle_delta": throttle_delta,
         "loadavg_end": _read_loadavg(),
