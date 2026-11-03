@@ -348,7 +348,7 @@ def run_enforcement(
     *,
     governance_contract: Path,
     webhooks_file: Path,
-    webhook_registry_file: Path,
+    webhook_registry_file: Path = REPO_ROOT / WEBHOOK_REGISTRY_FILE,
     signatures_file: Path,
     paypal_contract_file: Path,
     ci_workflow: Path,
