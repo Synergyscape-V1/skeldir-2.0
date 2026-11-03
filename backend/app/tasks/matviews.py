@@ -52,7 +52,7 @@ _REALTIME_REFRESH_LAST: dict[UUID, float] = {}
 _REALTIME_REFRESH_ACTIVE: set[UUID] = set()
 _REALTIME_REFRESH_PENDING: set[UUID] = set()
 _REALTIME_REFRESH_LOCK = threading.Lock()
-_REALTIME_REFRESH_MIN_INTERVAL_S = 5.0
+_REALTIME_REFRESH_MIN_INTERVAL_S = 1.0
 
 
 def _begin_realtime_refresh(tenant_uuid: UUID, now: float) -> bool:
