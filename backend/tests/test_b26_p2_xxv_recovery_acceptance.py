@@ -11,6 +11,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
 from b26_p2_xxv_recovery_probe import (  # noqa: E402
     _acceptance,
     _negative_decision,
+    _subject_ref_hash,
 )
 
 
@@ -26,18 +27,55 @@ def _baseline() -> dict:
     }
 
 
-def _verified() -> dict:
+def _artifact(amount: int) -> dict:
+    urn = "urn:skeldir:match_verdict:v1"
+    digest = _subject_ref_hash(urn)
+    return {
+        "subject_type": "match_verdict",
+        "subject_ref": urn,
+        "subject_ref_hash": digest,
+        "truth_type": "deterministic_match_verdict",
+        "truth_authority": {
+            "authority_class": "deterministic_machine_fact",
+            "source_system": "skeldir_b23_match_engine",
+            "source_snapshot_hash": "sha256:snapshot",
+        },
+        "verified_revenue_minor": amount,
+        "currency": "USD",
+        "fallback_applied": False,
+        "policy_action_authority": {"policy_state": "read_only"},
+        "evidence_temporal_boundary": {
+            "staleness_status": "current",
+            "snapshot_consistency_status": "consistent",
+            "evidence_age_status": "within_supported_horizon",
+            "evidence_snapshot_hash": "sha256:snapshot",
+        },
+        "provenance_chain": [
+            {
+                "authority_table": "b23_match_verdicts",
+                "provenance_type": "match_verdict",
+                "source_ref": "urn:skeldir:b23_match_verdicts:v1",
+            }
+        ],
+        "signing_key_id": "kid",
+        "created_at": "2026-11-03T06:00:00Z",
+    }
+
+
+def _verified(amount: int = 4321) -> dict:
     return {
         "status": 200,
-        "artifact": {
-            "verified_revenue_minor": 4321,
-            "currency": "USD",
-        },
+        "artifact": _artifact(amount),
         "verification": [
             200,
-            {"verification_status": "verified", "signature_hash": "sig",
-             "signing_key_id": "kid"},
+            {
+                "verification_status": "verified",
+                "signature_hash": "sig",
+                "signing_key_id": "kid",
+                "temporal_scope": "truth-at-issuance",
+            },
         ],
+        "established": True,
     }
 
 
@@ -54,6 +92,7 @@ def _positive() -> dict:
             "reason": "history_integrity_unverifiable",
         },
         "restored_baseline": _verified(),
+        "final_signed": _verified(5100),
         "custody": {
             "accepted_count": 3,
             "accepted_tip": "tip",
@@ -192,3 +231,23 @@ def test_subject_refusal_cannot_be_borrowed() -> None:
         "restored_baseline": _verified(),
     }
     assert _negative_decision(record) is False
+
+
+def test_signed_5100_cannot_satisfy_4321_baseline() -> None:
+    record = _positive()
+    record["baseline_signed"] = _verified(5100)
+    assert _acceptance(record) is False
+
+
+def test_signed_4321_for_another_subject_cannot_satisfy_baseline() -> None:
+    record = _positive()
+    artifact = _artifact(4321)
+    artifact["subject_ref"] = "urn:skeldir:match_verdict:other"
+    record["baseline_signed"]["artifact"] = artifact
+    assert _acceptance(record) is False
+
+
+def test_final_4321_cannot_satisfy_5100_progression() -> None:
+    record = _positive()
+    record["final_signed"] = _verified(4321)
+    assert _acceptance(record) is False

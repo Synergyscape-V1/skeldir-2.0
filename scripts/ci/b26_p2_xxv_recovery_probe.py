@@ -67,6 +67,7 @@ from app.revenue_verification.source_evidence_journal import (  # noqa: E402
     load_source_fact_records,
 )
 from app.trust.audit_hash import idempotency_key_hash  # noqa: E402
+from app.trust.builder import _subject_ref_hash  # noqa: E402
 from app.trust.refusal import tenant_hash  # noqa: E402
 
 
@@ -248,6 +249,127 @@ def _read_trust_attributed(tenant: dict, verdict_id: str) -> dict:
     }
 
 
+_JWKS_CACHE: dict[str, object] = {}
+
+
+def _trust_jwks() -> dict:
+    if _JWKS_CACHE:
+        return _JWKS_CACHE  # type: ignore[return-value]
+    import uuid  # noqa: PLC0415
+
+    status, text = http(
+        "GET",
+        f"http://127.0.0.1:{API_PORT}/api/trust/v1/keys/jwks",
+        headers={"X-Correlation-ID": str(uuid.uuid4())},
+    )
+    if status != 200:
+        raise RuntimeError(f"trust_jwks_unavailable:{status}")
+    payload = json.loads(text)
+    if not isinstance(payload, dict):
+        raise RuntimeError("trust_jwks_malformed")
+    _JWKS_CACHE.update(payload)
+    return payload
+
+
+def _public_key_basis(artifact: dict) -> dict:
+    jwks = _trust_jwks()
+    kid = str(artifact.get("signing_key_id") or "")
+    keys = jwks.get("keys") if isinstance(jwks, dict) else None
+    matching = None
+    for key in keys or []:
+        if isinstance(key, dict) and str(key.get("kid") or "") == kid:
+            matching = key
+            break
+    if matching is None:
+        return {"jwks": jwks, "matching_key": None, "valid": False}
+    created = str(artifact.get("created_at") or "")
+    valid_from = str(matching.get("skeldir_valid_from") or "")
+    valid = bool(
+        matching.get("kty") == "OKP"
+        and matching.get("crv") == "Ed25519"
+        and matching.get("alg") == "EdDSA"
+        and matching.get("use") == "sig"
+        and matching.get("skeldir_key_state") == "active"
+        and matching.get("x")
+        and created
+        and valid_from
+        and created >= valid_from
+    )
+    return {"jwks": jwks, "matching_key": matching, "valid": valid}
+
+
+def _signed_structure(observation: dict, verdict_id: str, amount: int, currency: str) -> tuple[bool, str]:
+    artifact = observation.get("artifact")
+    verification = observation.get("verification") or [0, {}]
+    if observation.get("status") != 200 or not isinstance(artifact, dict):
+        return False, "signed_artifact_unavailable"
+    if verification[0] != 200 or not isinstance(verification[1], dict):
+        return False, "public_verification_unavailable"
+    if verification[1].get("verification_status") != "verified":
+        return False, "signature_not_verified"
+    if verification[1].get("temporal_scope") != "truth-at-issuance":
+        return False, "signed_phase_not_issuance"
+    urn = f"urn:skeldir:match_verdict:{verdict_id}"
+    if artifact.get("subject_type") != "match_verdict":
+        return False, "signed_subject_type_mismatch"
+    if artifact.get("subject_ref") != urn:
+        return False, "signed_subject_mismatch"
+    if artifact.get("subject_ref_hash") != _subject_ref_hash(urn):
+        return False, "signed_subject_hash_mismatch"
+    if artifact.get("truth_type") != "deterministic_match_verdict":
+        return False, "signed_truth_type_mismatch"
+    authority = artifact.get("truth_authority") or {}
+    if (
+        authority.get("authority_class") != "deterministic_machine_fact"
+        or authority.get("source_system") != "skeldir_b23_match_engine"
+    ):
+        return False, "signed_financial_authority_mismatch"
+    if artifact.get("verified_revenue_minor") != amount:
+        return False, "signed_amount_mismatch"
+    if artifact.get("currency") != currency:
+        return False, "signed_currency_mismatch"
+    if artifact.get("fallback_applied") is not False:
+        return False, "signed_fallback_state"
+    policy = artifact.get("policy_action_authority") or {}
+    if policy.get("policy_state") != "read_only":
+        return False, "signed_policy_state"
+    boundary = artifact.get("evidence_temporal_boundary") or {}
+    if (
+        boundary.get("staleness_status") != "current"
+        or boundary.get("snapshot_consistency_status") != "consistent"
+        or boundary.get("evidence_age_status") != "within_supported_horizon"
+    ):
+        return False, "signed_history_phase"
+    if (
+        not authority.get("source_snapshot_hash")
+        or authority.get("source_snapshot_hash")
+        != boundary.get("evidence_snapshot_hash")
+    ):
+        return False, "signed_history_binding"
+    provenance = artifact.get("provenance_chain") or []
+    if not any(
+        isinstance(entry, dict)
+        and entry.get("authority_table") == "b23_match_verdicts"
+        and entry.get("provenance_type") == "match_verdict"
+        and entry.get("source_ref")
+        == f"urn:skeldir:b23_match_verdicts:{verdict_id}"
+        for entry in provenance
+    ):
+        return False, "signed_financial_history_missing"
+    return True, ""
+
+
+def _signed_observation(observation: dict, verdict_id: str, amount: int, currency: str) -> tuple[bool, str]:
+    ok, reason = _signed_structure(observation, verdict_id, amount, currency)
+    if not ok:
+        return ok, reason
+    basis = _public_key_basis(observation.get("artifact") or {})
+    observation["public_key_basis"] = basis
+    if not basis.get("valid"):
+        return False, "signed_public_key_basis_invalid"
+    return True, ""
+
+
 def _wait_signed(
     tenant: dict, verdict_id: str, amount: int, currency: str, *, attempts: int = 60
 ) -> dict:
@@ -261,13 +383,18 @@ def _wait_signed(
                 "artifact": body,
                 "verification": verification,
             }
-            if (
-                verification[0] == 200
-                and isinstance(verification[1], dict)
-                and verification[1].get("verification_status") == "verified"
-                and body.get("verified_revenue_minor") == amount
-                and body.get("currency") == currency
-            ):
+            observation = {
+                "status": status,
+                "artifact": body,
+                "verification": verification,
+            }
+            established, reason = _signed_observation(
+                observation, verdict_id, amount, currency
+            )
+            observation["established"] = established
+            observation["invalid_reason"] = reason or None
+            last = observation
+            if established:
                 return last
         else:
             last = {"status": status, "artifact": None, "verification": None}
@@ -322,6 +449,24 @@ def _acceptance(record: dict) -> bool:
     fault = record.get("fault") or {}
     restored_baseline = record.get("restored_baseline") or {}
     restored_verify = restored_baseline.get("verification") or [0, {}]
+    final_signed = record.get("final_signed") or {}
+    final_verify = final_signed.get("verification") or [0, {}]
+    subject = baseline.get("subject")
+    verdict_id = baseline.get("verdict_id")
+    baseline_structure_ok = False
+    restored_structure_ok = False
+    final_structure_ok = False
+    if isinstance(expected_amount, int) and isinstance(verdict_id, str) and subject:
+        currency = str(baseline.get("currency") or "")
+        baseline_structure_ok, _ = _signed_structure(
+            baseline_signed, verdict_id, expected_amount, currency
+        )
+        restored_structure_ok, _ = _signed_structure(
+            restored_baseline, verdict_id, expected_amount, currency
+        )
+        final_structure_ok, _ = _signed_structure(
+            final_signed, verdict_id, amended_amount, currency
+        )
     return all(
         (
             baseline.get("http") == 200,
@@ -332,6 +477,8 @@ def _acceptance(record: dict) -> bool:
             baseline.get("reconciliation_net_minor") == expected_amount,
             record.get("initial_subject") == baseline.get("subject"),
             baseline_signed.get("status") == 200,
+            baseline_signed.get("established") is True,
+            baseline_structure_ok is True,
             baseline_verify[0] == 200,
             isinstance(baseline_verify[1], dict)
             and baseline_verify[1].get("verification_status") == "verified",
@@ -339,6 +486,8 @@ def _acceptance(record: dict) -> bool:
             fault.get("new_row") is True,
             fault.get("money_minor") is None,
             restored_baseline.get("status") == 200,
+            restored_baseline.get("established") is True,
+            restored_structure_ok is True,
             (restored_baseline.get("artifact") or {}).get(
                 "verified_revenue_minor"
             )
@@ -364,6 +513,16 @@ def _acceptance(record: dict) -> bool:
             trust.get("status") == 200,
             trust.get("verified_revenue_minor") == amended_amount,
             trust.get("currency") == baseline.get("currency"),
+            final_signed.get("established") is True,
+            final_structure_ok is True,
+            final_signed.get("status") == 200,
+            (final_signed.get("artifact") or {}).get(
+                "verified_revenue_minor"
+            )
+            == amended_amount,
+            (final_signed.get("artifact") or {}).get("currency")
+            == baseline.get("currency"),
+            final_verify[0] == 200,
             verify[0] == 200,
             verify[1].get("verification_status") == "verified",
             bool(verify[1].get("signature_hash")),
@@ -495,6 +654,24 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             if trust_status == 200 and isinstance(trust, dict)
             else (0, "not_attempted")
         )
+        final_observation = {
+            "status": trust_status,
+            "artifact": trust if isinstance(trust, dict) else None,
+            "verification": verified_trust,
+        }
+        final_established, final_reason = (
+            _signed_observation(
+                final_observation,
+                initial["verdict_id"],
+                amended_amount,
+                baseline["currency"],
+            )
+            if isinstance(trust, dict)
+            else (False, "final_signed_artifact_unavailable")
+        )
+        final_observation["established"] = final_established
+        final_observation["invalid_reason"] = final_reason or None
+        record["final_signed"] = final_observation
         prefix_records = restored_records[: staged["accepted_count"]]
         record.update(
             {
