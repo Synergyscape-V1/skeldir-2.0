@@ -46,7 +46,7 @@ SECRET_KEYS = {
         "CELERY_BROKER_URL",
         "CELERY_RESULT_BACKEND",
     ),
-    "auth_ingress": (),
+    "auth_ingress": ("PLATFORM_TOKEN_ENCRYPTION_KEY",),
     "worker": (
         "PLATFORM_TOKEN_ENCRYPTION_KEY",
         "CELERY_BROKER_URL",

@@ -161,7 +161,8 @@
         "/skeldir/{env}/config/webhooks/auth-max-body-bytes"
       ],
       "secrets": [
-        "/skeldir/{env}/secret/database/runtime-auth_ingress-url"
+        "/skeldir/{env}/secret/database/runtime-auth_ingress-url",
+        "/skeldir/{env}/secret/platform/token-encryption-key"
       ]
     },
     "worker": {

@@ -253,8 +253,12 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         aws_path_template="/skeldir/{env}/secret/platform/token-encryption-key",
         rotation_criticality="critical",
         owner="platform-security",
-        call_sites=("backend/app/api/platforms.py", "backend/app/services/realtime_revenue_providers.py"),
-        process_roles=("api", "worker"),
+        call_sites=(
+            "backend/app/api/platforms.py",
+            "backend/app/services/realtime_revenue_providers.py",
+            "backend/app/core/tenant_context.py",
+        ),
+        process_roles=("api", "worker", "auth_ingress"),
     ),
     "PLATFORM_TOKEN_KEY_ID": _contract(
         key="PLATFORM_TOKEN_KEY_ID",

@@ -1534,7 +1534,8 @@
       "aws_path_template": "/skeldir/{env}/secret/platform/token-encryption-key",
       "call_sites": [
         "backend/app/api/platforms.py",
-        "backend/app/services/realtime_revenue_providers.py"
+        "backend/app/services/realtime_revenue_providers.py",
+        "backend/app/core/tenant_context.py"
       ],
       "classification": "secret",
       "env_scopes": [
@@ -1548,7 +1549,8 @@
       "owner": "platform-security",
       "process_roles": [
         "api",
-        "worker"
+        "worker",
+        "auth_ingress"
       ],
       "rotation_criticality": "critical"
     },
