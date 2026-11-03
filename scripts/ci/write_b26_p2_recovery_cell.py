@@ -55,6 +55,9 @@ def main() -> int:
         "public_verification_basis": positive.get("readers", {}).get(
             "trust_verify"
         ),
+        "public_key_registry": (
+            (positive.get("final_signed") or {}).get("public_key_basis")
+        ),
         "restored_baseline": positive.get("restored_baseline"),
         "signed_amount_minor": positive.get("readers", {})
         .get("trust", {})

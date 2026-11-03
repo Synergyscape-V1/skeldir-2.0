@@ -24,6 +24,7 @@ def _baseline() -> dict:
         "currency": "USD",
         "reconciliation_status": 200,
         "reconciliation_net_minor": 4321,
+        "tenant_id_hash": "sha256:tenant",
     }
 
 
@@ -34,6 +35,8 @@ def _artifact(amount: int) -> dict:
         "subject_type": "match_verdict",
         "subject_ref": urn,
         "subject_ref_hash": digest,
+        "tenant_id_hash": "sha256:tenant",
+        "match_verdict_status": "ambiguous",
         "truth_type": "deterministic_match_verdict",
         "truth_authority": {
             "authority_class": "deterministic_machine_fact",
@@ -76,6 +79,7 @@ def _verified(amount: int = 4321) -> dict:
             },
         ],
         "established": True,
+        "offline_verification": {"verification_status": "verified"},
     }
 
 
