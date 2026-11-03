@@ -255,6 +255,10 @@ def _read_trust_attributed(tenant: dict, verdict_id: str) -> dict:
 
 
 _JWKS_CACHE: dict[str, object] = {}
+_CONTRACT_ENUM_CACHE: dict[str, frozenset[str]] = {}
+_AUDIT_PROVENANCE_TYPES = frozenset(
+    {"audit_access_record", "audit_issuance_record", "audit_hash"}
+)
 
 
 def _trust_jwks() -> dict:
@@ -276,6 +280,67 @@ def _trust_jwks() -> dict:
     return payload
 
 
+def _contract_enum(field: str) -> frozenset[str]:
+    cached = _CONTRACT_ENUM_CACHE.get(field)
+    if cached is not None:
+        return cached
+    import yaml  # noqa: PLC0415
+
+    schema = yaml.safe_load(
+        (REPO / "contracts/trust-api/trust-envelope.v2.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    values = (schema.get("properties", {}).get(field) or {}).get("enum")
+    if not isinstance(values, list) or not values:
+        raise RuntimeError(f"trust_contract_enum_missing:{field}")
+    enum = frozenset(str(value) for value in values)
+    _CONTRACT_ENUM_CACHE[field] = enum
+    return enum
+
+
+def _key_lifecycle_valid(artifact: dict, key: dict) -> bool:
+    if (
+        key.get("kty") != "OKP"
+        or key.get("crv") != "Ed25519"
+        or key.get("alg") != "EdDSA"
+        or key.get("use") != "sig"
+        or key.get("skeldir_key_state") not in {"active", "verification_only"}
+        or not key.get("x")
+    ):
+        return False
+    try:
+        created_at = datetime.fromisoformat(
+            str(artifact.get("created_at") or "").replace("Z", "+00:00")
+        )
+        valid_from = datetime.fromisoformat(
+            str(key["skeldir_valid_from"]).replace("Z", "+00:00")
+        )
+        valid_until = (
+            datetime.fromisoformat(
+                str(key["skeldir_valid_until"]).replace("Z", "+00:00")
+            )
+            if key.get("skeldir_valid_until")
+            else None
+        )
+        retired_at = (
+            datetime.fromisoformat(
+                str(key["skeldir_retired_at"]).replace("Z", "+00:00")
+            )
+            if key.get("skeldir_retired_at")
+            else None
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    if created_at < valid_from:
+        return False
+    if valid_until is not None and created_at > valid_until:
+        return False
+    if retired_at is not None and created_at > retired_at:
+        return False
+    return True
+
+
 def _public_key_basis(artifact: dict) -> dict:
     jwks = _trust_jwks()
     kid = str(artifact.get("signing_key_id") or "")
@@ -287,20 +352,70 @@ def _public_key_basis(artifact: dict) -> dict:
             break
     if matching is None:
         return {"jwks": jwks, "matching_key": None, "valid": False}
-    created = str(artifact.get("created_at") or "")
-    valid_from = str(matching.get("skeldir_valid_from") or "")
-    valid = bool(
-        matching.get("kty") == "OKP"
-        and matching.get("crv") == "Ed25519"
-        and matching.get("alg") == "EdDSA"
-        and matching.get("use") == "sig"
-        and matching.get("skeldir_key_state") == "active"
-        and matching.get("x")
-        and created
-        and valid_from
-        and created >= valid_from
-    )
+    valid = bool(matching.get("x") and _key_lifecycle_valid(artifact, matching))
     return {"jwks": jwks, "matching_key": matching, "valid": valid}
+
+
+def _financial_lineage(artifact: object) -> dict | None:
+    if not isinstance(artifact, dict):
+        return None
+    boundary = artifact.get("evidence_temporal_boundary")
+    provenance = artifact.get("provenance_chain")
+    if not isinstance(boundary, dict) or not isinstance(provenance, list):
+        return None
+    lineage = []
+    for entry in provenance:
+        if not isinstance(entry, dict):
+            return None
+        if entry.get("provenance_type") in _AUDIT_PROVENANCE_TYPES:
+            continue
+        lineage.append(entry)
+    if not lineage:
+        return None
+    return {
+        "subject_type": artifact.get("subject_type"),
+        "subject_ref": artifact.get("subject_ref"),
+        "subject_ref_hash": artifact.get("subject_ref_hash"),
+        "tenant_id_hash": artifact.get("tenant_id_hash"),
+        "truth_type": artifact.get("truth_type"),
+        "truth_authority": artifact.get("truth_authority"),
+        "verified_revenue_minor": artifact.get("verified_revenue_minor"),
+        "currency": artifact.get("currency"),
+        "match_verdict_status": artifact.get("match_verdict_status"),
+        "data_completeness_status": artifact.get(
+            "data_completeness_status"
+        ),
+        "subject_authority": artifact.get("subject_authority"),
+        "policy_action_authority": artifact.get("policy_action_authority"),
+        "evidence_snapshot_at": boundary.get("evidence_snapshot_at"),
+        "evidence_snapshot_hash": boundary.get("evidence_snapshot_hash"),
+        "provenance_chain": lineage,
+    }
+
+
+def _lineage_digest(lineage: dict | None) -> str | None:
+    if lineage is None:
+        return None
+    encoded = json.dumps(
+        lineage, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _restored_lineage_matches(baseline_signed: dict, restored: dict) -> bool:
+    baseline = _financial_lineage(baseline_signed.get("artifact"))
+    restored_lineage = _financial_lineage(restored.get("artifact"))
+    return baseline is not None and baseline == restored_lineage
+
+
+def _lineage_evidence(baseline_signed: dict, restored: dict) -> dict:
+    baseline = _financial_lineage(baseline_signed.get("artifact"))
+    restored_lineage = _financial_lineage(restored.get("artifact"))
+    return {
+        "baseline_digest": _lineage_digest(baseline),
+        "restored_digest": _lineage_digest(restored_lineage),
+        "matches": baseline is not None and baseline == restored_lineage,
+    }
 
 
 def _signed_structure(
@@ -346,12 +461,14 @@ def _signed_structure(
     policy = artifact.get("policy_action_authority") or {}
     if policy.get("policy_state") != "read_only":
         return False, "signed_policy_state"
-    if artifact.get("match_verdict_status") not in {
-        "ambiguous",
-        "matched_confirmed",
-        "adjusted",
-    }:
+    if artifact.get("match_verdict_status") not in _contract_enum(
+        "match_verdict_status"
+    ):
         return False, "signed_financial_qualification"
+    if artifact.get("data_completeness_status") not in _contract_enum(
+        "data_completeness_status"
+    ):
+        return False, "signed_data_completeness"
     boundary = artifact.get("evidence_temporal_boundary") or {}
     if (
         boundary.get("staleness_status") != "current"
@@ -564,6 +681,7 @@ def _acceptance(record: dict) -> bool:
     baseline_structure_ok = False
     restored_structure_ok = False
     final_structure_ok = False
+    restored_lineage_bound = False
     if isinstance(expected_amount, int) and isinstance(verdict_id, str) and subject:
         currency = str(baseline.get("currency") or "")
         tenant_id_hash = str(baseline.get("tenant_id_hash") or "")
@@ -575,6 +693,9 @@ def _acceptance(record: dict) -> bool:
         )
         final_structure_ok, _ = _signed_structure(
             final_signed, verdict_id, amended_amount, currency, tenant_id_hash
+        )
+        restored_lineage_bound = _restored_lineage_matches(
+            baseline_signed, restored_baseline
         )
     return all(
         (
@@ -601,6 +722,7 @@ def _acceptance(record: dict) -> bool:
             restored_baseline.get("status") == 200,
             restored_baseline.get("established") is True,
             restored_structure_ok is True,
+            restored_lineage_bound is True,
             (restored_baseline.get("offline_verification") or {}).get(
                 "verification_status"
             )
@@ -724,6 +846,9 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             baseline["currency"],
         )
         record["restored_baseline"] = restored_baseline
+        record["lineage"] = _lineage_evidence(
+            baseline_signed, restored_baseline
+        )
         restored_records = _records(restored_path.read_bytes(), temp)
         event_ref = f"evt_xxvrec{_uuid_hex()}"
         second_status, _, _ = post_stripe_envelope(
@@ -888,6 +1013,7 @@ def _negative_decision(record: dict) -> bool:
         and record.get("original_unchanged") is True
         and restored.get("status") == 200
         and restored.get("established") is True
+        and _restored_lineage_matches(record.get("baseline_signed") or {}, restored)
         and (restored.get("offline_verification") or {}).get(
             "verification_status"
         )
@@ -1031,6 +1157,9 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
             baseline["amount_minor"],
             baseline["currency"],
         )
+        record["lineage"] = _lineage_evidence(
+            baseline_signed, record["restored_baseline"]
+        )
     record["passed"] = _negative_decision(record)
     return record
 
@@ -1054,8 +1183,9 @@ def main() -> int:
         )
         record["artifact"] = state.get("artifact")
         record["property"] = (
-            "recovery acceptance: accepted history restoration, same-subject"
-            " progression, natural witnessing, verified signed money/currency"
+            "recovery acceptance: accepted history restoration bound to the"
+            " baseline financial lineage, same-subject progression, natural"
+            " witnessing, verified signed money/currency"
         )
         out = (
             REPO

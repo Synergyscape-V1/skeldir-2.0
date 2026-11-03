@@ -13,6 +13,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
 
 from b26_p2_xxv_recovery_probe import (  # noqa: E402
     _acceptance,
+    _key_lifecycle_valid,
     _negative_decision,
     _offline_verification,
     _signed_structure,
@@ -51,6 +52,7 @@ def _artifact(amount: int) -> dict:
         "verified_revenue_minor": amount,
         "currency": "USD",
         "fallback_applied": False,
+        "data_completeness_status": "insufficient_evidence",
         "policy_action_authority": {"policy_state": "read_only"},
         "evidence_temporal_boundary": {
             "staleness_status": "current",
@@ -127,8 +129,11 @@ def _positive() -> dict:
             },
             "trust_verify": [
                 200,
-                {"verification_status": "verified", "signature_hash": "sig",
-                 "signing_key_id": "kid"},
+                {
+                    "verification_status": "verified",
+                    "signature_hash": "sig",
+                    "signing_key_id": "kid",
+                },
             ],
         },
     }
@@ -136,6 +141,70 @@ def _positive() -> dict:
 
 def test_valid_recovery_progression_is_accepted() -> None:
     assert _acceptance(_positive()) is True
+
+
+def test_contract_confirmed_match_is_consumable() -> None:
+    record = _positive()
+    record["final_signed"]["artifact"]["match_verdict_status"] = "matched"
+    record["final_signed"]["artifact"]["data_completeness_status"] = "complete"
+    assert _acceptance(record) is True
+
+
+def test_contract_confirmed_baseline_and_restore_are_consumable() -> None:
+    record = _positive()
+    for observation in (record["baseline_signed"], record["restored_baseline"]):
+        observation["artifact"]["match_verdict_status"] = "matched"
+        observation["artifact"]["data_completeness_status"] = "complete"
+    assert _acceptance(record) is True
+
+
+def test_internal_lifecycle_spelling_is_not_a_public_qualification() -> None:
+    record = _positive()
+    record["final_signed"]["artifact"]["match_verdict_status"] = "matched_confirmed"
+    assert _acceptance(record) is False
+
+
+def test_restored_artifact_with_other_journey_lineage_fails_acceptance() -> None:
+    record = _positive()
+    record["restored_baseline"]["artifact"]["provenance_chain"].append(
+        {
+            "authority_table": "b23_match_verdicts",
+            "provenance_type": "provider_native_reference",
+            "source_ref": "urn:skeldir:provider_native_reference:other",
+            "source_ref_hash": "sha256:other",
+            "source_snapshot_hash": "sha256:snapshot",
+            "observed_at": "2026-11-03T06:00:00Z",
+            "display_metadata": {
+                "text_trust_class": "none",
+                "raw_text_sha256": None,
+                "display_transform": "none",
+            },
+        }
+    )
+    assert _acceptance(record) is False
+
+
+def test_restored_post_amendment_lineage_with_baseline_money_fails() -> None:
+    record = _positive()
+    artifact = record["restored_baseline"]["artifact"]
+    artifact["truth_authority"]["source_snapshot_hash"] = "sha256:amended"
+    artifact["evidence_temporal_boundary"]["evidence_snapshot_hash"] = "sha256:amended"
+    for entry in artifact["provenance_chain"]:
+        if entry["provenance_type"] == "match_verdict":
+            entry["source_snapshot_hash"] = "sha256:amended"
+    assert _acceptance(record) is False
+
+
+def test_restored_artifact_with_changed_completeness_fails_acceptance() -> None:
+    record = _positive()
+    record["restored_baseline"]["artifact"]["data_completeness_status"] = "complete"
+    assert _acceptance(record) is False
+
+
+def test_restored_artifact_with_changed_qualification_fails_acceptance() -> None:
+    record = _positive()
+    record["restored_baseline"]["artifact"]["match_verdict_status"] = "matched"
+    assert _acceptance(record) is False
 
 
 def test_wrong_subject_fails_acceptance() -> None:
@@ -172,7 +241,12 @@ def test_money_after_history_loss_fails_omitted_control() -> None:
     record = {
         "mode": "omit-restore",
         "baseline_signed": _verified(),
-        "observed": {"http": 200, "money_minor": 5100, "specific": False, "new_row": True},
+        "observed": {
+            "http": 200,
+            "money_minor": 5100,
+            "specific": False,
+            "new_row": True,
+        },
         "compensation": {"restored_original": True},
         "original_unchanged": True,
         "restored_baseline": _verified(),
@@ -242,6 +316,28 @@ def test_subject_refusal_cannot_be_borrowed() -> None:
     assert _negative_decision(record) is False
 
 
+def test_restored_other_journey_history_fails_omitted_control() -> None:
+    restored = _verified()
+    restored["artifact"]["provenance_chain"][0][
+        "source_ref"
+    ] = "urn:skeldir:b23_match_verdicts:other"
+    record = {
+        "mode": "omit-restore",
+        "baseline_signed": _verified(),
+        "observed": {
+            "http": 404,
+            "money_minor": None,
+            "specific": True,
+            "new_row": True,
+            "reason": "history_integrity_unverifiable",
+        },
+        "compensation": {"restored_original": True},
+        "original_unchanged": True,
+        "restored_baseline": restored,
+    }
+    assert _negative_decision(record) is False
+
+
 def test_signed_5100_cannot_satisfy_4321_baseline() -> None:
     record = _positive()
     record["baseline_signed"] = _verified(5100)
@@ -281,6 +377,50 @@ def test_incompatible_public_key_cannot_verify_retained_artifact() -> None:
     keys[0]["x"] = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode("ascii")
     result = _offline_verification(observation)
     assert result["verification_status"] == "rejected"
+
+
+def _matching_public_key(observation: dict) -> dict:
+    kid = observation["artifact"]["signing_key_id"]
+    return next(
+        key
+        for key in observation["public_key_basis"]["jwks"]["keys"]
+        if key["kid"] == kid
+    )
+
+
+def test_verification_only_key_verifies_historical_signature() -> None:
+    observation = _real_baseline()
+    key = _matching_public_key(observation)
+    key["skeldir_key_state"] = "verification_only"
+    key["skeldir_retired_at"] = "2099-01-01T00:00:00Z"
+    assert _key_lifecycle_valid(observation["artifact"], key) is True
+    result = _offline_verification(observation)
+    assert result["verification_status"] == "verified"
+
+
+def test_retired_key_cannot_authenticate_a_new_result() -> None:
+    observation = _real_baseline()
+    key = _matching_public_key(observation)
+    key["skeldir_key_state"] = "verification_only"
+    key["skeldir_retired_at"] = "2026-11-03T00:00:00Z"
+    assert _key_lifecycle_valid(observation["artifact"], key) is False
+    result = _offline_verification(observation)
+    assert result["verification_status"] == "rejected"
+
+
+def test_revoked_or_expired_key_is_not_a_verification_basis() -> None:
+    observation = _real_baseline()
+    key = _matching_public_key(observation)
+    for state in ("revoked", "expired"):
+        key["skeldir_key_state"] = state
+        assert _key_lifecycle_valid(observation["artifact"], key) is False
+
+
+def test_key_cannot_verify_result_created_before_its_validity() -> None:
+    observation = _real_baseline()
+    key = _matching_public_key(observation)
+    key["skeldir_valid_from"] = "2099-01-01T00:00:00Z"
+    assert _key_lifecycle_valid(observation["artifact"], key) is False
 
 
 def test_changed_tenant_cannot_satisfy_signed_structure() -> None:

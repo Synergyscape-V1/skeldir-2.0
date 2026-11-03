@@ -38,6 +38,7 @@ def main() -> int:
                 "baseline_signed": record.get("baseline_signed"),
                 "fault": record.get("fault"),
                 "restored_baseline": record.get("restored_baseline"),
+                "lineage": record.get("lineage"),
                 "final_signed": record.get("final_signed"),
                 "observed": record.get("observed"),
                 "compensation": record.get("compensation"),
