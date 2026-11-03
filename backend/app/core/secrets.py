@@ -202,7 +202,11 @@ def _assert_process_secret_role(key: str) -> None:
     )
 
     role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
-    if role and not process_role_allows(role, key):
+    if not role:
+        contract = _contract_for(key)
+        if contract.process_roles is not None:
+            raise RuntimeError(f"process_role_required_for_setting:{key}")
+    elif not process_role_allows(role, key):
         raise RuntimeError(f"process_role_forbidden_setting:{key}")
 
 

@@ -1,5 +1,4 @@
 {
-  "acceptance": false,
   "artifact": {
     "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
     "captured_at_utc": "2026-11-03T00:34:34.596619Z",
@@ -21,14 +20,24 @@
       ]
     }
   },
-  "initial": {
+  "baseline": {
     "amount_minor": 4321,
+    "currency": "USD",
     "http": 200,
-    "verdict_id": "cccd60e3-0554-4ac9-9304-5c5f689662a7"
+    "reconciliation_net_minor": 4321,
+    "reconciliation_status": 200,
+    "subject": "pi_xxvrecc3e074f8cf124826",
+    "verdict_id": "76e7a21f-f7b5-4dee-b5f0-27c09a96df21"
   },
+  "initial_subject": "pi_xxvrecc3e074f8cf124826",
   "manual_observer": false,
   "mode": "tamper-signature",
+  "observed": {
+    "signature_refusal": "SourceJournalCustodyError:custody_signature_invalid",
+    "signature_refused": true
+  },
+  "original_sha256": "baef9fdc97dba0e9c2ec2c9488277dc26cc5cfa374756672d2580a8427b41958",
+  "original_unchanged": true,
   "passed": true,
-  "property": "recovery acceptance: accepted history restoration, same-subject progression, natural witnessing, verified signed money/currency",
-  "refusal": "SourceJournalCustodyError:custody_signature_invalid"
+  "property": "recovery acceptance: accepted history restoration, same-subject progression, natural witnessing, verified signed money/currency"
 }

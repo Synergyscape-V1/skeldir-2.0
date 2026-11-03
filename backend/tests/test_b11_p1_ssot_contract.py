@@ -196,3 +196,37 @@ def test_declared_process_secret_read_is_allowed(
         lambda _contract, _path: "ring",
     )
     assert secrets_module.get_secret("AUTH_JWT_SECRET") == "ring"
+
+
+def test_control_plane_direct_read_requires_process_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SKELDIR_CONTROL_PLANE_ENABLED", "1")
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.delenv("SKELDIR_PROCESS_ROLE", raising=False)
+    from app.core import secrets as secrets_module
+
+    with pytest.raises(
+        RuntimeError, match="process_role_required_for_setting:AUTH_JWT_SECRET"
+    ):
+        secrets_module.get_secret("AUTH_JWT_SECRET")
+
+
+def test_control_plane_direct_config_read_requires_process_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SKELDIR_CONTROL_PLANE_ENABLED", "1")
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.delenv("SKELDIR_PROCESS_ROLE", raising=False)
+    from app.core import secrets as secrets_module
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "process_role_required_for_setting:"
+            "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH"
+        ),
+    ):
+        secrets_module._read_secret_source_of_truth_value(
+            "B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH"
+        )

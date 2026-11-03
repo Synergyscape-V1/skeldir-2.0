@@ -5175,6 +5175,22 @@
   risk_if_removed: The XXV invariant could regress while every broader gate remains green.
   decision: keep_required
 
+- gate_id: b26-p2-xxv-recovery-cell
+  workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
+  job: b26-p2-xxv-recovery
+  script: scripts/ci/write_b26_p2_recovery_cell.py
+  owning_phase: B2.6-P2
+  protected_invariant: The recovery acceptance result is a required proof cell in the protected B2.6-P2 adjudication.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: B26-P2-G13-RECOVERY-ACCEPTANCE is required by the proof-requirements contract and consumed by the protected adjudicator.
+  negative_control_preserved_by: python scripts/ci/b26_p2_xxv_recovery_probe.py --mode omit-restore
+  local_reproduction_command: python scripts/ci/write_b26_p2_recovery_cell.py --evidence-dir docs/forensics/evidence/b26_p2_xxv_a8 --out artifacts/b26_p2/recovery/recovery-acceptance.json
+  risk_if_removed: A red recovery result could be absent from the protected B2.6 aggregate decision.
+  decision: keep_required
+
 - gate_id: b26-p2-xxv-recovery-probe
   workflow: .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml
   job: b26-p2-xxv-recovery
@@ -5185,7 +5201,7 @@
   default_execution: true
   candidate_action: keep_required
   subsuming_gate: ''
-  subsumption_evidence: The required B2.6-P1 workflow executes the compiled lane positive, omitted-restoration and tampered-signature modes.
+  subsumption_evidence: The required B2.6-P1 workflow executes the compiled lane positive, omitted-restoration, tampered-signature and restoration-failure modes, and B26-P2-G13-RECOVERY-ACCEPTANCE is a required cell in the protected B2.6-P2 adjudication.
   negative_control_preserved_by: python scripts/ci/b26_p2_xxv_recovery_probe.py --mode omit-restore; python scripts/ci/b26_p2_xxv_recovery_probe.py --mode tamper-signature
   local_reproduction_command: python scripts/ci/b26_p2_xxv_recovery_probe.py
   risk_if_removed: The recovery/progression invariant could regress while every broader gate remains green.

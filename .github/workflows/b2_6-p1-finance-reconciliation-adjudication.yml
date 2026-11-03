@@ -805,8 +805,24 @@ jobs:
       - name: Refuse tampered custody signature
         run: python scripts/ci/b26_p2_xxv_recovery_probe.py --mode tamper-signature
 
+      - name: Refuse restoration below the accepted commitment
+        run: python scripts/ci/b26_p2_xxv_recovery_probe.py --mode restore-failure
+
       - name: Accept restored same-subject progression
         run: python scripts/ci/b26_p2_xxv_recovery_probe.py --mode positive
+
+      - name: Bind recovery evidence into the protected proof cell
+        run: |
+          python scripts/ci/write_b26_p2_recovery_cell.py \
+            --evidence-dir docs/forensics/evidence/b26_p2_xxv_a8 \
+            --out artifacts/b26_p2/recovery/recovery-acceptance.json
+
+      - name: Upload recovery proof cell
+        uses: actions/upload-artifact@v4
+        with:
+          name: b26-p2-recovery-${{ github.run_id }}
+          path: artifacts/b26_p2/recovery/*.json
+          if-no-files-found: error
 
       - name: Tear down the lane
         if: always()
@@ -1110,6 +1126,7 @@ jobs:
       - b26-p1-inherited-conduction
       - b26-p2-production-topology
       - b26-p2-in-image-proof
+      - b26-p2-xxv-recovery
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1120,12 +1137,14 @@ jobs:
           INHERITED_RESULT: ${{ needs['b26-p1-inherited-conduction'].result }}
           TOPOLOGY_RESULT: ${{ needs['b26-p2-production-topology'].result }}
           IN_IMAGE_RESULT: ${{ needs['b26-p2-in-image-proof'].result }}
+          RECOVERY_RESULT: ${{ needs['b26-p2-xxv-recovery'].result }}
         run: |
           test "$STATIC_RESULT" = success
           test "$CONTAINER_RESULT" = success
           test "$INHERITED_RESULT" = success
           test "$TOPOLOGY_RESULT" = success
           test "$IN_IMAGE_RESULT" = success
+          test "$RECOVERY_RESULT" = success
 
       - name: Checkout exact candidate
         uses: actions/checkout@v4

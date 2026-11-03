@@ -7144,6 +7144,28 @@
   subsumed_by: ''
   registry_action: enforce
 
+- id: b26-p2-xxv-recovery-cell
+  path: scripts/ci/write_b26_p2_recovery_cell.py
+  status: required
+  owning_phase: B2.6-P2
+  protected_invariant: The recovery acceptance result is a required proof cell in the protected B2.6-P2 adjudication.
+  command: python scripts/ci/write_b26_p2_recovery_cell.py --evidence-dir docs/forensics/evidence/b26_p2_xxv_a8 --out artifacts/b26_p2/recovery/recovery-acceptance.json
+  workflow_references:
+    - .github/workflows/b2_6-p1-finance-reconciliation-adjudication.yml#b26-p2-xxv-recovery
+  local_reproduction_command: python scripts/ci/write_b26_p2_recovery_cell.py --evidence-dir docs/forensics/evidence/b26_p2_xxv_a8 --out artifacts/b26_p2/recovery/recovery-acceptance.json
+  expected_failure_meaning: The recovery controls or signed result no longer satisfy the protected B2.6 acceptance cell.
+  first_diagnostic_command: python scripts/ci/write_b26_p2_recovery_cell.py --help
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-6-p2-xxv-proof
+  ci_visibility: required
+  registry_action: enforce
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+
 - id: b26-p2-xxv-recovery-probe
   path: scripts/ci/b26_p2_xxv_recovery_probe.py
   status: required

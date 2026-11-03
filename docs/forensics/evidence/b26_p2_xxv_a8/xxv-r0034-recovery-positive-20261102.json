@@ -2,12 +2,13 @@
   "amendment": {
     "amount_minor": 5100,
     "correction_http": {
-      "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"06d0c2a3-5774-466d-85df-d042ebca15dd\",\"revenue_event_written\":false,\"net_verified_amount_minor\":4321}",
+      "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"5be69b44-51ac-4fde-a183-4feabee827b4\",\"revenue_event_written\":false,\"net_verified_amount_minor\":4321}",
       "status": 200
     },
     "http": 200,
     "same_verdict": true,
-    "subject": "pi_xxvrece8034993ec964b25",
+    "subject": "pi_xxvrec376e0c5ec1a245d0",
+    "verdict_id": "5be69b44-51ac-4fde-a183-4feabee827b4",
     "witness_advanced": true
   },
   "artifact": {
@@ -31,21 +32,25 @@
       ]
     }
   },
+  "baseline": {
+    "amount_minor": 4321,
+    "currency": "USD",
+    "http": 200,
+    "reconciliation_net_minor": 4321,
+    "reconciliation_status": 200,
+    "subject": "pi_xxvrec376e0c5ec1a245d0",
+    "verdict_id": "5be69b44-51ac-4fde-a183-4feabee827b4"
+  },
   "custody": {
-    "accepted_count": 4,
-    "accepted_tip": "190ffb8dacd703fb1575cce0f12dbc5bd97ccff116ad457865141ca6d8bc58e4",
+    "accepted_count": 16,
+    "accepted_tip": "566e45c735f1765e0b941322ee49f133d4b838e8c2377692e06f52b0f71f569f",
     "disposition": "restored",
-    "restored_count": 4,
-    "restored_tip": "190ffb8dacd703fb1575cce0f12dbc5bd97ccff116ad457865141ca6d8bc58e4",
+    "restored_count": 16,
+    "restored_prefix_tip": "566e45c735f1765e0b941322ee49f133d4b838e8c2377692e06f52b0f71f569f",
     "signature_verified": true,
     "stage": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\opencode\\xxv-lane-r0049\\recovery-staged"
   },
-  "initial": {
-    "amount_minor": 4321,
-    "http": 200,
-    "subject": "pi_xxvrece8034993ec964b25",
-    "verdict_id": "06d0c2a3-5774-466d-85df-d042ebca15dd"
-  },
+  "initial_subject": "pi_xxvrec376e0c5ec1a245d0",
   "manual_observer": false,
   "mode": "positive",
   "passed": true,
@@ -66,8 +71,8 @@
         "canonicalization_version": "trust-canonical-json-v1",
         "reason_code": null,
         "schema_version": "trust-envelope-schema-v2",
-        "semantic_truth_hash": "sha256:2cdadbcb942f32e0e54949180332b54e4fb6301670746310b9f91d96ec7b11f0",
-        "signature_hash": "sha256:ff17b7bf8ff0462991a88390fdb4e5481e5c165f162ab3232f066403f454f89f",
+        "semantic_truth_hash": "sha256:ba24e68cdbf71ac16dd823a92e2d4ee4e1d953368cd8e7ec1ce03bb820832485",
+        "signature_hash": "sha256:f5ec106aa727c243a4fddc4623672284b5d79af259a997079b066f4365bf5a81",
         "signing_algorithm": "ed25519",
         "signing_key_id": "kid:b26-p2-xxv",
         "temporal_scope": "truth-at-issuance",

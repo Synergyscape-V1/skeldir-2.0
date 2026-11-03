@@ -16,6 +16,7 @@ custody bundle.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -36,6 +37,7 @@ from b26_p2_xxv_falsify import (  # noqa: E402
     API_PORT,
     AUTH_PORT,
     docker,
+    durable_trust_refusal_reason,
     http,
     load_state,
     post_stripe,
@@ -175,52 +177,134 @@ def _stage(state: dict, temp: Path) -> dict:
         "verified": verified,
         "accepted_count": accepted_count,
         "accepted_tip": accepted_tip,
+        "signature_verified": bool(verified),
         "stage": stage,
         "journal_bytes": exported.journal_bytes,
         "records": _records(original_raw, temp),
     }
 
 
+def _baseline(state: dict, tenant: dict, amount: int = 4321) -> tuple[dict, dict]:
+    intent = f"pi_xxvrec{_uuid_hex()}"
+    first_status, _, _ = post_stripe(state, tenant, intent, amount)
+    initial = wait_verdict(tenant["tenant_id"], intent, timeout_s=180)
+    if initial is None:
+        raise RuntimeError("initial_verdict_missing")
+    recon_status, recon = read_reconciliation(
+        state, tenant, initial["verdict_id"]
+    )
+    observed_amount = initial.get("canonical_net_verified_amount_minor")
+    if not isinstance(observed_amount, int) or observed_amount <= 0:
+        raise RuntimeError("initial_amount_unobserved")
+    baseline = {
+        "http": first_status,
+        "verdict_id": initial["verdict_id"],
+        "subject": intent,
+        "amount_minor": observed_amount,
+        "currency": str(initial.get("currency_code") or ""),
+        "reconciliation_status": recon_status,
+        "reconciliation_net_minor": (
+            recon.get("canonical_net_verified_amount_minor")
+            if isinstance(recon, dict)
+            else None
+        ),
+    }
+    return baseline, initial
+
+
+def _specific_trust_refusal(state: dict, tenant: dict, verdict_id: str) -> dict:
+    """Observe the broken state's refusal, not transport unavailability."""
+    try:
+        status, body = read_trust(tenant, verdict_id)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "http": 0,
+            "read_error": f"{type(exc).__name__}:{exc}",
+            "specific": False,
+        }
+    reason = durable_trust_refusal_reason(str(tenant["tenant_id"]))
+    amount = body.get("verified_revenue_minor") if isinstance(body, dict) else None
+    specific = (
+        status == 404
+        and isinstance(reason, str)
+        and any(
+            token in reason
+            for token in (
+                "history_integrity_unverifiable",
+                "history_integrity_source_evidence_unverifiable",
+                "history_integrity_witness_refused",
+            )
+        )
+    )
+    return {
+        "http": status,
+        "money_minor": amount,
+        "durable_reason": reason,
+        "body_head": str(body)[:300],
+        "specific": specific,
+    }
+
+
 def _acceptance(record: dict) -> bool:
-    initial = record.get("initial") or {}
+    baseline = record.get("baseline") or {}
     custody = record.get("custody") or {}
     amendment = record.get("amendment") or {}
     readers = record.get("readers") or {}
     recon = readers.get("reconciliation") or {}
     trust = readers.get("trust") or {}
     verify = readers.get("trust_verify") or [0, ""]
+    if not isinstance(verify[1], dict):
+        verify = (verify[0], {})
+    expected_amount = baseline.get("amount_minor")
+    amended_amount = (
+        expected_amount + 779 if isinstance(expected_amount, int) else None
+    )
     return all(
         (
-            initial.get("http") == 200,
-            initial.get("amount_minor") == 4321,
-            custody.get("signature_verified") is True,
+            baseline.get("http") == 200,
+            isinstance(expected_amount, int) and expected_amount > 0,
+            bool(baseline.get("subject")),
+            bool(baseline.get("currency")),
+            baseline.get("reconciliation_status") == 200,
+            baseline.get("reconciliation_net_minor") == expected_amount,
+            record.get("initial_subject") == baseline.get("subject"),
+            custody.get("accepted_count", -1) >= 0,
             custody.get("restored_count", -1) >= custody.get("accepted_count", 0),
-            custody.get("restored_tip") == custody.get("accepted_tip"),
+            custody.get("restored_prefix_tip") == custody.get("accepted_tip"),
+            custody.get("signature_verified") is True,
             amendment.get("http") == 200,
+            amendment.get("subject") == baseline.get("subject"),
+            amendment.get("verdict_id") == baseline.get("verdict_id"),
+            amendment.get("same_verdict") is True,
+            amendment.get("amount_minor") == amended_amount,
             amendment.get("correction_http", {}).get("status") == 200,
             amendment.get("witness_advanced") is True,
             recon.get("status") == 200,
-            recon.get("net_minor") == 5100,
+            recon.get("net_minor") == amended_amount,
             trust.get("status") == 200,
-            trust.get("verified_revenue_minor") == 5100,
-            trust.get("currency") == "USD",
+            trust.get("verified_revenue_minor") == amended_amount,
+            trust.get("currency") == baseline.get("currency"),
             verify[0] == 200,
-            isinstance(verify[1], dict)
-            and verify[1].get("verification_status") == "verified",
+            verify[1].get("verification_status") == "verified",
+            bool(verify[1].get("signature_hash")),
+            bool(verify[1].get("signing_key_id")),
         )
     )
 
 
 def _positive(state: dict, tenant: dict, temp: Path) -> dict:
-    intent = f"pi_xxvrec{_uuid_hex()}"
-    first_status, _, _ = post_stripe(state, tenant, intent, 4321)
-    initial = wait_verdict(tenant["tenant_id"], intent, timeout_s=180)
-    if initial is None:
-        raise RuntimeError("initial_verdict_missing")
+    baseline, initial = _baseline(state, tenant, 4321)
+    amended_amount = baseline["amount_minor"] + 779
+    intent = baseline["subject"]
     staged = _stage(state, temp)
     kept = False
     mutated = False
-    record: dict = {"mode": "positive", "manual_observer": False}
+    record: dict = {
+        "mode": "positive",
+        "baseline": baseline,
+        "initial_subject": initial.get("commerce_reference"),
+        "manual_observer": False,
+    }
     try:
         restored_path = temp / "restored.jsonl"
         disposition = restore_custody_bundle(
@@ -246,7 +330,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             tenant,
             event_reference=event_ref,
             commerce_reference=intent,
-            amount=5100,
+            amount=amended_amount,
         )
         amended = wait_verdict(tenant["tenant_id"], intent, timeout_s=180)
         correction_status, correction_body = http(
@@ -290,29 +374,25 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             if trust_status == 200 and isinstance(trust, dict)
             else (0, "not_attempted")
         )
+        prefix_records = restored_records[: staged["accepted_count"]]
         record.update(
             {
-                "initial": {
-                    "http": first_status,
-                    "amount_minor": 4321,
-                    "verdict_id": initial["verdict_id"],
-                    "subject": intent,
-                },
                 "custody": {
                     "accepted_count": staged["accepted_count"],
                     "accepted_tip": staged["accepted_tip"],
                     "restored_count": len(restored_records),
-                    "restored_tip": journal_record_hash(restored_records[-1])
-                    if restored_records
+                    "restored_prefix_tip": journal_record_hash(prefix_records[-1])
+                    if prefix_records
                     else None,
-                    "signature_verified": True,
+                    "signature_verified": staged.get("signature_verified"),
                     "disposition": disposition,
                     "stage": str(staged["stage"]),
                 },
                 "amendment": {
                     "http": second_status,
-                    "amount_minor": 5100,
+                    "amount_minor": amended_amount,
                     "subject": amended.get("commerce_reference") if amended else None,
+                    "verdict_id": amended.get("verdict_id") if amended else None,
                     "same_verdict": bool(
                         amended and amended["verdict_id"] == initial["verdict_id"]
                     ),
@@ -351,14 +431,17 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
 
 
 def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
-    intent = f"pi_xxvrec{_uuid_hex()}"
-    first_status, _, _ = post_stripe(state, tenant, intent, 4321)
-    initial = wait_verdict(tenant["tenant_id"], intent, timeout_s=180)
-    if initial is None:
-        raise RuntimeError("initial_verdict_missing")
+    baseline, initial = _baseline(state, tenant, 4321)
     staged = _stage(state, temp)
     original_raw = staged["original_raw"]
-    record: dict = {"mode": mode, "manual_observer": False}
+    original_sha = hashlib.sha256(original_raw).hexdigest()
+    record: dict = {
+        "mode": mode,
+        "baseline": baseline,
+        "initial_subject": initial.get("commerce_reference"),
+        "original_sha256": original_sha,
+        "manual_observer": False,
+    }
     mutated = False
     try:
         if mode == "tamper-signature":
@@ -375,15 +458,39 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
                 json.dumps(manifest, sort_keys=True, indent=2),
                 encoding="utf-8",
             )
+            refusal = "NONE"
             try:
                 verify_custody_bundle(
                     manifest_path=staged["manifest_path"],
                     public_key_path=staged["public"],
                 )
             except SourceJournalCustodyError as exc:
-                record["refusal"] = f"{type(exc).__name__}:{exc}"
-            else:
-                record["refusal"] = "NONE"
+                refusal = f"{type(exc).__name__}:{exc}"
+            except Exception as exc:  # noqa: BLE001
+                refusal = f"unrelated:{type(exc).__name__}:{exc}"
+            record["observed"] = {
+                "signature_refusal": refusal,
+                "signature_refused": refusal == "SourceJournalCustodyError:custody_signature_invalid",
+            }
+        elif mode == "restore-failure":
+            refusal = "NONE"
+            try:
+                restore_custody_bundle(
+                    manifest_path=staged["manifest_path"],
+                    journal=temp / "must-not-restore.jsonl",
+                    public_key_path=staged["public"],
+                    accepted_source_count=staged["accepted_count"] + 1,
+                    accepted_source_tip=staged["accepted_tip"],
+                )
+            except SourceJournalCustodyError as exc:
+                refusal = f"{type(exc).__name__}:{exc}"
+            except Exception as exc:  # noqa: BLE001
+                refusal = f"unrelated:{type(exc).__name__}:{exc}"
+            record["observed"] = {
+                "restoration_refusal": refusal,
+                "restoration_refused": "custody_restore_below_accepted_commitment"
+                in refusal,
+            }
         else:
             docker("stop", AUTH)
             docker("stop", API)
@@ -391,26 +498,44 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
             mutated = True
             try:
                 _start_services(state)
+                record["start_error"] = None
             except Exception as exc:  # noqa: BLE001
                 record["start_error"] = f"{type(exc).__name__}:{exc}"
-            try:
-                status, trust = read_trust(tenant, initial["verdict_id"])
-                record["refusal"] = (
-                    f"trust_status={status}:amount="
-                    f"{trust.get('verified_revenue_minor') if isinstance(trust, dict) else None}"
-                )
-            except Exception as exc:  # noqa: BLE001
-                record["refusal"] = f"{type(exc).__name__}:{exc}"
-        record["initial"] = {
-            "http": first_status,
-            "amount_minor": 4321,
-            "verdict_id": initial["verdict_id"],
-        }
-        record["acceptance"] = _acceptance(record)
-        record["passed"] = not record["acceptance"] and record["refusal"] != "NONE"
+            record["observed"] = _specific_trust_refusal(
+                state, tenant, initial["verdict_id"]
+            )
     finally:
         if mutated:
             record["compensation"] = _restore_original(state, original_raw)
+            record["original_unchanged"] = (
+                hashlib.sha256(
+                    volume_get(SOURCE_EVIDENCE_VOL, "source_evidence.jsonl")
+                ).hexdigest()
+                == original_sha
+            )
+        else:
+            record["original_unchanged"] = (
+                hashlib.sha256(
+                    volume_get(SOURCE_EVIDENCE_VOL, "source_evidence.jsonl")
+                ).hexdigest()
+                == original_sha
+            )
+    if mode == "tamper-signature":
+        record["passed"] = (
+            record["observed"].get("signature_refused") is True
+            and record["original_unchanged"] is True
+        )
+    elif mode == "restore-failure":
+        record["passed"] = (
+            record["observed"].get("restoration_refused") is True
+            and record["original_unchanged"] is True
+        )
+    else:
+        record["passed"] = (
+            record["observed"].get("specific") is True
+            and record.get("compensation", {}).get("restored_original") is True
+            and record["original_unchanged"] is True
+        )
     return record
 
 
@@ -418,7 +543,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
-        choices=("positive", "omit-restore", "tamper-signature"),
+        choices=("positive", "omit-restore", "tamper-signature", "restore-failure"),
         default="positive",
     )
     args = parser.parse_args()

@@ -1,5 +1,4 @@
 {
-  "acceptance": false,
   "artifact": {
     "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
     "captured_at_utc": "2026-11-03T00:34:34.596619Z",
@@ -21,17 +20,31 @@
       ]
     }
   },
+  "baseline": {
+    "amount_minor": 4321,
+    "currency": "USD",
+    "http": 200,
+    "reconciliation_net_minor": 4321,
+    "reconciliation_status": 200,
+    "subject": "pi_xxvrec5c4dff7007a44cf7",
+    "verdict_id": "296e50f7-1155-496e-a802-512aee9feec7"
+  },
   "compensation": {
     "restored_original": true
   },
-  "initial": {
-    "amount_minor": 4321,
-    "http": 200,
-    "verdict_id": "b9aaf0e5-1517-4457-9963-cbbd829ace09"
-  },
+  "initial_subject": "pi_xxvrec5c4dff7007a44cf7",
   "manual_observer": false,
   "mode": "omit-restore",
+  "observed": {
+    "body_head": "{'detail': 'Subject not found.'}",
+    "durable_reason": "refused:history_integrity_unverifiable",
+    "http": 404,
+    "money_minor": null,
+    "specific": true
+  },
+  "original_sha256": "552e6fab7e87a08310d87c6156a5589934061a7f3b0106826d81a6adbe6ba958",
+  "original_unchanged": true,
   "passed": true,
   "property": "recovery acceptance: accepted history restoration, same-subject progression, natural witnessing, verified signed money/currency",
-  "refusal": "trust_status=404:amount=None"
+  "start_error": null
 }
