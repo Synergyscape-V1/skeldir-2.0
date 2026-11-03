@@ -761,6 +761,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     # manufacturing-law content scan still applies beneath it.
     "alembic/versions/007_skeldir_foundation/202609280001_b26_p2_corrective_xv_binding_closure.py",
     "backend/app/webhooks/commerce_derivation.py",
+    "backend/app/webhooks/verification_contract.py",
     "scripts/ci/validate_b26_p2_xv_binding.py",
     "scripts/ci/validate_b26_p2_xv_physics.py",
     # --- B2.6-P2 Corrective XVI sovereign closure surface ---

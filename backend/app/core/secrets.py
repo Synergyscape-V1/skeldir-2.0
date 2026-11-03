@@ -207,8 +207,8 @@ def _assert_process_secret_role(key: str) -> None:
 
 
 def _read_secret_source_of_truth_value(key: str) -> str | None:
-    _assert_process_secret_role(key)
     if should_enable_control_plane():
+        _assert_process_secret_role(key)
         canonical_env = resolve_control_plane_env(
             os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
         )
@@ -1180,7 +1180,11 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
         process_role_allows,
     )
 
-    process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip() or role
+    process_role = (
+        os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+        if should_enable_control_plane()
+        else role
+    ) or role
     if (
         role in {"readiness", "worker"}
         and process_role_allows(role, "MIGRATION_DATABASE_URL")
@@ -1246,7 +1250,10 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
     if (
         role in {"api", "worker", "readiness"}
         and llm_required
-        and process_role_allows(process_role, "LLM_PROVIDER_API_KEY")
+        and (
+            not should_enable_control_plane()
+            or process_role_allows(process_role, "LLM_PROVIDER_API_KEY")
+        )
     ):
         llm_secret = get_secret("LLM_PROVIDER_API_KEY")
         if llm_secret is None:
