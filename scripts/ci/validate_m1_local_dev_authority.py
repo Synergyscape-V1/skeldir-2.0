@@ -763,6 +763,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/app/webhooks/commerce_derivation.py",
     "backend/app/webhooks/verification_contract.py",
     "scripts/ci/enforce_b13_p0_scope_truth.py",
+    "scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py",
     "scripts/ci/validate_b26_p2_xv_binding.py",
     "scripts/ci/validate_b26_p2_xv_physics.py",
     # --- B2.6-P2 Corrective XVI sovereign closure surface ---

@@ -17,6 +17,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GOVERNANCE_CONTRACT = "contracts-internal/governance/b22_p1_authenticity_semantics.main.json"
 WEBHOOKS_FILE = "backend/app/api/webhooks.py"
+WEBHOOK_REGISTRY_FILE = "backend/app/webhooks/verification_contract.py"
 SIGNATURES_FILE = "backend/app/webhooks/signatures.py"
 PAYPAL_CONTRACT_FILE = "api-contracts/openapi/v1/webhooks/paypal.yaml"
 CI_WORKFLOW = ".github/workflows/ci.yml"
@@ -277,11 +278,17 @@ def _validate_webhooks_file(path: Path, violations: list[str]) -> None:
         'alias="PayPal-Cert-Url"',
         "_paypal_auth_envelope_header(",
         "provider=\"paypal\"",
-        "paypal_webhook_secret",
     )
     for token in required_tokens:
         if token not in text:
             violations.append(f"webhooks_missing_paypal_semantics_token:{token}")
+
+
+def _validate_webhook_registry_file(path: Path, violations: list[str]) -> None:
+    text = _read_text(path)
+    for provider in EXPECTED_PROVIDERS:
+        if f"{provider}_webhook_secret" not in text:
+            violations.append(f"webhook_registry_missing_secret:{provider}")
 
 
 def _validate_ci(path: Path, violations: list[str]) -> None:
@@ -341,6 +348,7 @@ def run_enforcement(
     *,
     governance_contract: Path,
     webhooks_file: Path,
+    webhook_registry_file: Path,
     signatures_file: Path,
     paypal_contract_file: Path,
     ci_workflow: Path,
@@ -352,6 +360,7 @@ def run_enforcement(
     required_paths = (
         governance_contract,
         webhooks_file,
+        webhook_registry_file,
         signatures_file,
         paypal_contract_file,
         ci_workflow,
@@ -370,6 +379,7 @@ def run_enforcement(
     _validate_paypal_contract(paypal_contract_file, violations)
     _validate_signatures_file(signatures_file, violations)
     _validate_webhooks_file(webhooks_file, violations)
+    _validate_webhook_registry_file(webhook_registry_file, violations)
     _validate_ci(ci_workflow, violations)
     _validate_test_surfaces(
         b12_p8_test=b12_p8_test,
@@ -388,6 +398,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
     parser.add_argument("--governance-contract", default=GOVERNANCE_CONTRACT)
     parser.add_argument("--webhooks-file", default=WEBHOOKS_FILE)
+    parser.add_argument(
+        "--webhook-registry-file", default=WEBHOOK_REGISTRY_FILE
+    )
     parser.add_argument("--signatures-file", default=SIGNATURES_FILE)
     parser.add_argument("--paypal-contract-file", default=PAYPAL_CONTRACT_FILE)
     parser.add_argument("--ci-workflow", default=CI_WORKFLOW)
@@ -409,6 +422,7 @@ def main(argv: list[str]) -> int:
     status, violations = run_enforcement(
         governance_contract=_resolve(repo_root, args.governance_contract),
         webhooks_file=_resolve(repo_root, args.webhooks_file),
+        webhook_registry_file=_resolve(repo_root, args.webhook_registry_file),
         signatures_file=_resolve(repo_root, args.signatures_file),
         paypal_contract_file=_resolve(repo_root, args.paypal_contract_file),
         ci_workflow=_resolve(repo_root, args.ci_workflow),
