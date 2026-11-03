@@ -97,6 +97,20 @@
     "The before window is from an older full-physics run; after is the exact-head corrected Phase8 run.",
     "The coalescing store is process-local and the E2E maintenance worker is solo; multi-process worker coalescing is not claimed.",
     "The dedicated R3 comparison has follow-up tasks disabled and is a boundary control, not a substitute for the composed Phase8 gate.",
-    "No performance threshold was weakened or changed."
-  ]
+    "No performance threshold was weakened or changed.",
+    "Refresh-work reduction and one passing governed run are demonstrated; elimination of the intermittent slow regime is not.",
+    "B1.7 P4 failed once at the same exact head and passed on a same-head rerun; it remains independently noisy."
+  ],
+  "claim_scope": {
+    "demonstrated": [
+      "realtime refresh execution falls from one full refresh set per event to approximately one per tenant interval",
+      "one exact-head Phase8 Test2 pass after the repair"
+    ],
+    "not_demonstrated": [
+      "elimination of the intermittent Phase8 slow regime",
+      "repeatable governed performance across repeated exact-head runs",
+      "multi-process worker coalescing"
+    ],
+    "thresholds_changed": false
+  }
 }

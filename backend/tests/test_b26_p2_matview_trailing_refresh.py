@@ -111,6 +111,97 @@ def test_task_inside_interval_defers_without_refreshing(monkeypatch) -> None:
     assert kwargs["countdown"] == pytest.approx(0.8)
 
 
+def test_failed_deferral_publication_refreshes_inline(monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    from app.matviews.executor import RefreshOutcome, RefreshResult
+
+    _reset()
+    tenant = uuid4()
+    assert matviews._begin_realtime_refresh(tenant, 100.0) == (True, 0.0)
+    assert matviews._pending_realtime_refresh_delay(tenant) is None
+    refresh_calls = []
+
+    def _refresh(_tenant, _correlation):
+        refresh_calls.append((_tenant, _correlation))
+        return [
+            RefreshResult(
+                view_name="mv_allocation_summary",
+                tenant_id=tenant,
+                correlation_id="corr",
+                outcome=RefreshOutcome.SUCCESS,
+                started_at=datetime.now(timezone.utc),
+                duration_ms=1,
+                error_type=None,
+                error_message=None,
+                lock_key_debug=None,
+            )
+        ]
+
+    monkeypatch.setattr(matviews, "task_tenant_id", lambda _task: tenant)
+    monkeypatch.setattr(matviews.time, "monotonic", lambda: 100.2)
+    monkeypatch.setattr(
+        matviews,
+        "enqueue_tenant_task",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("broker_down")
+        ),
+    )
+    monkeypatch.setattr(matviews, "refresh_all_for_tenant", _refresh)
+
+    result = matviews.matview_refresh_all_for_tenant.run(
+        correlation_id="corr", schedule_class="realtime"
+    )
+    assert result["status"] == "ok"
+    assert len(refresh_calls) == 1
+    assert tenant not in matviews._REALTIME_REFRESH_ACTIVE
+
+
+def test_failed_deferral_and_failed_inline_refresh_is_not_deferred(
+    monkeypatch,
+) -> None:
+    from datetime import datetime, timezone
+
+    from app.matviews.executor import RefreshOutcome, RefreshResult
+
+    _reset()
+    tenant = uuid4()
+    assert matviews._begin_realtime_refresh(tenant, 100.0) == (True, 0.0)
+    assert matviews._pending_realtime_refresh_delay(tenant) is None
+    monkeypatch.setattr(matviews, "task_tenant_id", lambda _task: tenant)
+    monkeypatch.setattr(matviews.time, "monotonic", lambda: 100.2)
+    monkeypatch.setattr(
+        matviews,
+        "enqueue_tenant_task",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("broker_down")
+        ),
+    )
+    monkeypatch.setattr(
+        matviews,
+        "refresh_all_for_tenant",
+        lambda *_args, **_kwargs: [
+            RefreshResult(
+                view_name="mv_allocation_summary",
+                tenant_id=tenant,
+                correlation_id="corr",
+                outcome=RefreshOutcome.FAILED,
+                started_at=datetime.now(timezone.utc),
+                duration_ms=1,
+                error_type="RuntimeError",
+                error_message="refresh_failed",
+                lock_key_debug=None,
+            )
+        ],
+    )
+
+    with pytest.raises(matviews.MatviewTaskFailure):
+        matviews.matview_refresh_all_for_tenant.run(
+            correlation_id="corr", schedule_class="realtime"
+        )
+    assert tenant not in matviews._REALTIME_REFRESH_ACTIVE
+
+
 def test_failed_owner_releases_claim_then_interval_governs_next_arrival() -> None:
     _reset()
     tenant = uuid4()

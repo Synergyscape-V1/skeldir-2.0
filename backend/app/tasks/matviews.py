@@ -115,7 +115,7 @@ def _mark_trailing_start(tenant_uuid: UUID) -> None:
 
 def _schedule_realtime_trailing(
     tenant_uuid: UUID, correlation_id: str, delay: float
-) -> None:
+) -> bool:
     try:
         enqueue_tenant_task(
             matview_refresh_all_for_tenant,
@@ -128,14 +128,18 @@ def _schedule_realtime_trailing(
             countdown=delay,
         )
     except Exception:
-        _abandon_realtime_refresh(tenant_uuid)
         logger.exception(
             "matview_realtime_trailing_enqueue_failed",
-            extra={"tenant_id": str(tenant_uuid), "correlation_id": correlation_id},
+            extra={
+                "tenant_id": str(tenant_uuid),
+                "correlation_id": correlation_id,
+                "handoff_status": "not_queued",
+            },
         )
-        return
+        return False
     with _REALTIME_REFRESH_LOCK:
         _REALTIME_REFRESH_PENDING.discard(tenant_uuid)
+    return True
 
 
 def _abandon_realtime_refresh(tenant_uuid: UUID) -> None:
@@ -427,78 +431,96 @@ def matview_refresh_all_for_tenant(
         )
         if not may_refresh:
             if delay > 0:
-                _schedule_realtime_trailing(
+                if _schedule_realtime_trailing(
                     tenant_uuid, correlation_id, delay
-                )
-                logger.info(
-                    "matview_refresh_realtime_deferred",
+                ):
+                    logger.info(
+                        "matview_refresh_realtime_deferred",
+                        extra={
+                            "task_id": self.request.id,
+                            "tenant_id": str(tenant_uuid),
+                            "correlation_id": correlation_id,
+                            "schedule_class": schedule_class,
+                            "delay_s": delay,
+                        },
+                    )
+                    return {
+                        "status": "deferred",
+                        "delay_s": delay,
+                        "reason": "realtime_refresh_interval",
+                    }
+                logger.error(
+                    "matview_refresh_realtime_deferral_handoff_failed",
                     extra={
                         "task_id": self.request.id,
                         "tenant_id": str(tenant_uuid),
                         "correlation_id": correlation_id,
                         "schedule_class": schedule_class,
                         "delay_s": delay,
+                        "handoff_status": "inline_refresh",
+                    },
+                )
+            else:
+                logger.info(
+                    "matview_refresh_realtime_coalesced",
+                    extra={
+                        "task_id": self.request.id,
+                        "tenant_id": str(tenant_uuid),
+                        "correlation_id": correlation_id,
+                        "schedule_class": schedule_class,
                     },
                 )
                 return {
-                    "status": "deferred",
-                    "delay_s": delay,
-                    "reason": "realtime_refresh_interval",
+                    "status": "skipped",
+                    "reason": "realtime_refresh_coalesced",
                 }
-            logger.info(
-                "matview_refresh_realtime_coalesced",
-                extra={
-                    "task_id": self.request.id,
-                    "tenant_id": str(tenant_uuid),
-                    "correlation_id": correlation_id,
-                    "schedule_class": schedule_class,
-                },
-            )
-            return {
-                "status": "skipped",
-                "reason": "realtime_refresh_coalesced",
-            }
     try:
-        results = refresh_all_for_tenant(tenant_uuid, correlation_id)
-        strategies: list[TaskOutcomeStrategy] = []
-        for result in results:
-            strategy = strategy_for_refresh_result(result)
-            strategies.append(strategy)
-            _record_metrics(result, strategy)
-            _log_view_result(
-                task_id=self.request.id,
-                result=result,
-                strategy=strategy,
-                schedule_class=schedule_class,
-            )
+        def _run_refresh() -> tuple[
+            list[RefreshResult], TaskOutcomeStrategy, RefreshResult
+        ]:
+            results = refresh_all_for_tenant(tenant_uuid, correlation_id)
+            strategies: list[TaskOutcomeStrategy] = []
+            for result in results:
+                strategy = strategy_for_refresh_result(result)
+                strategies.append(strategy)
+                _record_metrics(result, strategy)
+                _log_view_result(
+                    task_id=self.request.id,
+                    result=result,
+                    strategy=strategy,
+                    schedule_class=schedule_class,
+                )
 
-        if TaskOutcomeStrategy.DEAD_LETTER in strategies:
-            overall = TaskOutcomeStrategy.DEAD_LETTER
-        elif TaskOutcomeStrategy.RETRY in strategies:
-            overall = TaskOutcomeStrategy.RETRY
-        elif TaskOutcomeStrategy.SILENT_SKIP in strategies:
-            overall = TaskOutcomeStrategy.SILENT_SKIP
-        else:
-            overall = TaskOutcomeStrategy.SUCCESS
+            if TaskOutcomeStrategy.DEAD_LETTER in strategies:
+                overall = TaskOutcomeStrategy.DEAD_LETTER
+            elif TaskOutcomeStrategy.RETRY in strategies:
+                overall = TaskOutcomeStrategy.RETRY
+            elif TaskOutcomeStrategy.SILENT_SKIP in strategies:
+                overall = TaskOutcomeStrategy.SILENT_SKIP
+            else:
+                overall = TaskOutcomeStrategy.SUCCESS
 
-        failed = next(
-            (r for r in results if r.outcome == RefreshOutcome.FAILED),
-            next(
-                (
-                    r
-                    for r in results
-                    if r.outcome == RefreshOutcome.SKIPPED_LOCK_HELD
+            failed = next(
+                (r for r in results if r.outcome == RefreshOutcome.FAILED),
+                next(
+                    (
+                        r
+                        for r in results
+                        if r.outcome == RefreshOutcome.SKIPPED_LOCK_HELD
+                    ),
+                    results[0],
                 ),
-                results[0],
-            ),
-        )
-        _log_task_summary(
-            task_id=self.request.id,
-            result=failed,
-            strategy=overall,
-            schedule_class=schedule_class,
-            view_count=len(results),
-        )
+            )
+            _log_task_summary(
+                task_id=self.request.id,
+                result=failed,
+                strategy=overall,
+                schedule_class=schedule_class,
+                view_count=len(results),
+            )
+            return results, overall, failed
+
+        results, overall, failed = _run_refresh()
         if overall in (TaskOutcomeStrategy.DEAD_LETTER, TaskOutcomeStrategy.RETRY):
             return _apply_strategy(
                 task=self, result=failed, strategy=overall
@@ -506,15 +528,54 @@ def matview_refresh_all_for_tenant(
         if realtime:
             delay = _pending_realtime_refresh_delay(tenant_uuid)
             if delay is not None:
-                _schedule_realtime_trailing(
+                if _schedule_realtime_trailing(
                     tenant_uuid, correlation_id, delay
+                ):
+                    return {
+                        "status": "deferred",
+                        "delay_s": delay,
+                        "results": [r.to_log_dict() for r in results],
+                        "strategy": overall.value,
+                    }
+                logger.error(
+                    "matview_refresh_realtime_trailing_handoff_failed",
+                    extra={
+                        "task_id": self.request.id,
+                        "tenant_id": str(tenant_uuid),
+                        "correlation_id": correlation_id,
+                        "schedule_class": schedule_class,
+                        "delay_s": delay,
+                        "handoff_status": "inline_catchup",
+                    },
                 )
-                return {
-                    "status": "deferred",
-                    "delay_s": delay,
-                    "results": [r.to_log_dict() for r in results],
-                    "strategy": overall.value,
-                }
+                results, overall, failed = _run_refresh()
+                if overall in (
+                    TaskOutcomeStrategy.DEAD_LETTER,
+                    TaskOutcomeStrategy.RETRY,
+                ):
+                    return _apply_strategy(
+                        task=self, result=failed, strategy=overall
+                    )
+                delay = _pending_realtime_refresh_delay(tenant_uuid)
+                if delay is not None:
+                    if _schedule_realtime_trailing(
+                        tenant_uuid, correlation_id, delay
+                    ):
+                        return {
+                            "status": "deferred",
+                            "delay_s": delay,
+                            "results": [
+                                r.to_log_dict() for r in results
+                            ],
+                            "strategy": overall.value,
+                        }
+                    _abandon_realtime_refresh(tenant_uuid)
+                    return {
+                        "status": "refresh_completed_handoff_failed",
+                        "reason": "realtime_trailing_publication_failed",
+                        "results": [r.to_log_dict() for r in results],
+                        "strategy": overall.value,
+                    }
         return {
             "status": (
                 "skipped"

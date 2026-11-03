@@ -70,10 +70,22 @@ from app.revenue_verification.source_evidence_journal import (  # noqa: E402
 )
 from app.trust.audit_hash import idempotency_key_hash  # noqa: E402
 from app.trust.builder import _subject_ref_hash  # noqa: E402
+from app.trust.canonicalization import (  # noqa: E402
+    _canonicalize_arrays,
+    canonicalize_json_document,
+)
+from app.trust.hash_domains import project_domain_payload  # noqa: E402
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey  # noqa: E402
+from app.trust.provenance import (  # noqa: E402
+    REQUIRED_P7_PROVENANCE_SOURCE_CLASSES,
+)
+from app.trust.refusal import tagged_sha256, tenant_hash, utc_second  # noqa: E402
+from app.trust.source_adapters import (  # noqa: E402
+    data_completeness_for_match_status,
+    normalize_match_verdict_status,
+)
 from app.trust.verification import verify_trust_envelope  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey  # noqa: E402
-from app.trust.refusal import tenant_hash  # noqa: E402
 
 
 def _uuid_hex() -> str:
@@ -256,8 +268,16 @@ def _read_trust_attributed(tenant: dict, verdict_id: str) -> dict:
 
 _JWKS_CACHE: dict[str, object] = {}
 _CONTRACT_ENUM_CACHE: dict[str, frozenset[str]] = {}
-_AUDIT_PROVENANCE_TYPES = frozenset(
-    {"audit_access_record", "audit_issuance_record", "audit_hash"}
+_SEMANTIC_TRUTH_DOMAIN = "semantic_truth_v1"
+_OBSERVATION_TIME_PATHS = (
+    "evidence_temporal_boundary.source_read_started_at",
+    "evidence_temporal_boundary.source_read_completed_at",
+    "evidence_temporal_boundary.data_freshness_seconds",
+)
+_ISSUANCE_PROVENANCE_TYPES = frozenset(
+    row.provenance_type
+    for row in REQUIRED_P7_PROVENANCE_SOURCE_CLASSES
+    if row.availability_when_missing == "deferred"
 )
 
 
@@ -356,65 +376,590 @@ def _public_key_basis(artifact: dict) -> dict:
     return {"jwks": jwks, "matching_key": matching, "valid": valid}
 
 
-def _financial_lineage(artifact: object) -> dict | None:
+def _drop_path(document: dict, path: str) -> None:
+    parts = path.split(".")
+    cursor = document
+    for part in parts[:-1]:
+        child = cursor.get(part)
+        if not isinstance(child, dict):
+            return
+        cursor = child
+    cursor.pop(parts[-1], None)
+
+
+def _governed_semantic_meaning(artifact: object) -> dict | None:
+    """Project the contract-declared financial meaning, not a local field list."""
     if not isinstance(artifact, dict):
         return None
-    boundary = artifact.get("evidence_temporal_boundary")
-    provenance = artifact.get("provenance_chain")
-    if not isinstance(boundary, dict) or not isinstance(provenance, list):
+    try:
+        meaning = project_domain_payload(
+            _canonicalize_arrays(artifact), _SEMANTIC_TRUTH_DOMAIN
+        )
+    except Exception:  # noqa: BLE001
         return None
-    lineage = []
-    for entry in provenance:
-        if not isinstance(entry, dict):
-            return None
-        if entry.get("provenance_type") in _AUDIT_PROVENANCE_TYPES:
-            continue
-        lineage.append(entry)
-    if not lineage:
+    for path in _OBSERVATION_TIME_PATHS:
+        _drop_path(meaning, path)
+    provenance = meaning.get("provenance_chain")
+    if not isinstance(provenance, list):
         return None
-    return {
-        "subject_type": artifact.get("subject_type"),
-        "subject_ref": artifact.get("subject_ref"),
-        "subject_ref_hash": artifact.get("subject_ref_hash"),
-        "tenant_id_hash": artifact.get("tenant_id_hash"),
-        "truth_type": artifact.get("truth_type"),
-        "truth_authority": artifact.get("truth_authority"),
-        "verified_revenue_minor": artifact.get("verified_revenue_minor"),
-        "currency": artifact.get("currency"),
-        "match_verdict_status": artifact.get("match_verdict_status"),
-        "data_completeness_status": artifact.get(
-            "data_completeness_status"
-        ),
-        "subject_authority": artifact.get("subject_authority"),
-        "policy_action_authority": artifact.get("policy_action_authority"),
-        "evidence_snapshot_at": boundary.get("evidence_snapshot_at"),
-        "evidence_snapshot_hash": boundary.get("evidence_snapshot_hash"),
-        "provenance_chain": lineage,
-    }
+    meaning["provenance_chain"] = [
+        entry
+        for entry in provenance
+        if not (
+            isinstance(entry, dict)
+            and entry.get("provenance_type") in _ISSUANCE_PROVENANCE_TYPES
+        )
+    ]
+    return meaning
 
 
-def _lineage_digest(lineage: dict | None) -> str | None:
-    if lineage is None:
+def _semantic_digest(meaning: dict | None) -> str | None:
+    if meaning is None:
         return None
-    encoded = json.dumps(
-        lineage, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    try:
+        encoded = canonicalize_json_document(meaning)
+    except Exception:  # noqa: BLE001
+        return None
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
-def _restored_lineage_matches(baseline_signed: dict, restored: dict) -> bool:
-    baseline = _financial_lineage(baseline_signed.get("artifact"))
-    restored_lineage = _financial_lineage(restored.get("artifact"))
-    return baseline is not None and baseline == restored_lineage
+def _utc_time(value: object) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(
+            str(value or "").replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
 
 
-def _lineage_evidence(baseline_signed: dict, restored: dict) -> dict:
-    baseline = _financial_lineage(baseline_signed.get("artifact"))
-    restored_lineage = _financial_lineage(restored.get("artifact"))
+def _observation_time_facts(artifact: dict) -> dict | None:
+    boundary = artifact.get("evidence_temporal_boundary")
+    if not isinstance(boundary, dict):
+        return None
+    facts = {
+        "created_at": _utc_time(artifact.get("created_at")),
+        "read_started_at": _utc_time(boundary.get("source_read_started_at")),
+        "read_completed_at": _utc_time(
+            boundary.get("source_read_completed_at")
+        ),
+        "data_freshness_seconds": boundary.get("data_freshness_seconds"),
+    }
+    if not all(
+        isinstance(facts[key], datetime)
+        for key in ("created_at", "read_started_at", "read_completed_at")
+    ):
+        return None
+    freshness = facts["data_freshness_seconds"]
+    if freshness is not None and not isinstance(freshness, int):
+        return None
+    return facts
+
+
+def _observation_time_justification(
+    baseline: dict, restored: dict
+) -> tuple[bool, dict, str]:
+    baseline_facts = _observation_time_facts(baseline)
+    restored_facts = _observation_time_facts(restored)
+    if baseline_facts is None or restored_facts is None:
+        return False, {}, "observation_time_unavailable"
+    for facts in (baseline_facts, restored_facts):
+        if not (
+            facts["read_started_at"]
+            <= facts["read_completed_at"]
+            <= facts["created_at"]
+        ):
+            return False, {}, "observation_read_order_invalid"
+    if restored_facts["created_at"] < baseline_facts["created_at"]:
+        return False, {}, "observation_time_reversed"
+    if (
+        restored_facts["read_started_at"]
+        < baseline_facts["read_started_at"]
+        or restored_facts["read_completed_at"]
+        < baseline_facts["read_completed_at"]
+    ):
+        return False, {}, "observation_read_time_reversed"
+    baseline_freshness = baseline_facts["data_freshness_seconds"]
+    restored_freshness = restored_facts["data_freshness_seconds"]
+    if (
+        isinstance(baseline_freshness, int)
+        and isinstance(restored_freshness, int)
+        and restored_freshness < baseline_freshness
+    ):
+        return False, {}, "observation_freshness_reversed"
+    if (
+        baseline_freshness != restored_freshness
+        and restored_facts["created_at"] <= baseline_facts["created_at"]
+    ):
+        return False, {}, "observation_freshness_change_unjustified"
+    evidence = {
+        "baseline": {
+            "created_at": baseline_facts["created_at"].isoformat(),
+            "source_read_started_at": baseline_facts[
+                "read_started_at"
+            ].isoformat(),
+            "source_read_completed_at": baseline_facts[
+                "read_completed_at"
+            ].isoformat(),
+            "data_freshness_seconds": baseline_freshness,
+        },
+        "restored": {
+            "created_at": restored_facts["created_at"].isoformat(),
+            "source_read_started_at": restored_facts[
+                "read_started_at"
+            ].isoformat(),
+            "source_read_completed_at": restored_facts[
+                "read_completed_at"
+            ].isoformat(),
+            "data_freshness_seconds": restored_freshness,
+        },
+    }
+    return True, evidence, ""
+
+
+def _restoration_semantic_authority(
+    baseline_signed: dict, restored: dict
+) -> dict:
+    baseline = baseline_signed.get("artifact")
+    restored_artifact = restored.get("artifact")
+    if not isinstance(baseline, dict) or not isinstance(
+        restored_artifact, dict
+    ):
+        return {
+            "established": False,
+            "reason": "restoration_artifact_unavailable",
+        }
+    baseline_meaning = _governed_semantic_meaning(baseline)
+    restored_meaning = _governed_semantic_meaning(restored_artifact)
+    baseline_digest = _semantic_digest(baseline_meaning)
+    restored_digest = _semantic_digest(restored_meaning)
+    justified, observation, observation_reason = (
+        _observation_time_justification(baseline, restored_artifact)
+    )
+    established = bool(
+        baseline_digest is not None
+        and baseline_digest == restored_digest
+        and justified
+    )
+    if baseline_digest is None or restored_digest is None:
+        reason = "governed_semantic_meaning_unavailable"
+    elif baseline_digest != restored_digest:
+        reason = "governed_semantic_meaning_mismatch"
+    else:
+        reason = observation_reason
     return {
-        "baseline_digest": _lineage_digest(baseline),
-        "restored_digest": _lineage_digest(restored_lineage),
-        "matches": baseline is not None and baseline == restored_lineage,
+        "established": established,
+        "reason": None if established else reason,
+        "semantic_domain": _SEMANTIC_TRUTH_DOMAIN,
+        "baseline_meaning_digest": baseline_digest,
+        "restored_meaning_digest": restored_digest,
+        "baseline_signed_semantic_truth_hash": baseline.get(
+            "semantic_truth_hash"
+        ),
+        "restored_signed_semantic_truth_hash": restored_artifact.get(
+            "semantic_truth_hash"
+        ),
+        "observation_time_paths": list(_OBSERVATION_TIME_PATHS),
+        "issuance_provenance_types_excluded": sorted(
+            _ISSUANCE_PROVENANCE_TYPES
+        ),
+        "observation_time_justified": justified,
+        "observation_time": observation,
+        "observation_time_reason": observation_reason or None,
+    }
+
+
+def _utc_second_value(value: object) -> str:
+    if isinstance(value, datetime):
+        return utc_second(value)
+    parsed = _utc_time(value)
+    return utc_second(parsed) if parsed is not None else str(value)
+
+
+def _one_provenance(artifact: dict, provenance_type: str) -> dict | None:
+    entries = [
+        entry
+        for entry in artifact.get("provenance_chain") or []
+        if isinstance(entry, dict)
+        and entry.get("provenance_type") == provenance_type
+    ]
+    return entries[0] if len(entries) == 1 else None
+
+
+def _expected_provider_entry(
+    *, provider: str, event_reference: str, commerce_reference: str,
+    observed_at: str
+) -> dict:
+    reference_hash = tagged_sha256(
+        {
+            "provider": provider,
+            "event_reference": event_reference,
+            "commerce_reference": commerce_reference,
+        }
+    ).split(":", 1)[1]
+    source_ref = f"urn:skeldir:provider_native_reference:{reference_hash}"
+    return {
+        "authority_table": "b23_match_verdicts",
+        "provenance_type": "provider_native_reference",
+        "source_ref": source_ref,
+        "source_ref_hash": tagged_sha256({"source_ref": source_ref}),
+        "source_snapshot_hash": tagged_sha256(
+            {
+                "provider": provider,
+                "provider_native_event_reference_hash": tagged_sha256(
+                    event_reference
+                ),
+                "provider_native_commerce_reference_hash": tagged_sha256(
+                    commerce_reference
+                ),
+            }
+        ),
+        "observed_at": observed_at,
+    }
+
+
+def _expected_match_entry(verdict: dict) -> dict:
+    source_ref = f"urn:skeldir:b23_match_verdicts:{verdict['id']}"
+    return {
+        "authority_table": "b23_match_verdicts",
+        "provenance_type": "match_verdict",
+        "source_ref": source_ref,
+        "source_ref_hash": tagged_sha256({"source_ref": source_ref}),
+        "source_snapshot_hash": tagged_sha256(
+            {
+                "source": "b23_match_verdicts",
+                "id": str(verdict["id"]),
+                "status": verdict["status"],
+                "amount_minor": int(
+                    verdict["canonical_net_verified_amount_minor"]
+                ),
+                "currency": verdict["currency_code"],
+                "updated_at": _utc_second_value(verdict["updated_at"]),
+            }
+        ),
+        "observed_at": _utc_second_value(verdict["last_transition_at"]),
+    }
+
+
+def _expected_webhook_entry(verdict: dict, current: dict) -> dict:
+    source_ref = (
+        "urn:skeldir:webhook_ingress_identity:" f"{current['id']}"
+    )
+    return {
+        "authority_table": "webhook_ingress_identities",
+        "provenance_type": "webhook_signature",
+        "source_ref": source_ref,
+        "source_ref_hash": tagged_sha256({"source_ref": source_ref}),
+        "source_snapshot_hash": tagged_sha256(
+            {
+                "webhook_ingress_identity_id": str(current["id"]),
+                "provider": current["provider"],
+                "match_verdict_id": str(verdict["id"]),
+            }
+        ),
+        "observed_at": _utc_second_value(verdict["created_at"]),
+    }
+
+
+def _entry_matches(actual: dict | None, expected: dict) -> bool:
+    if not isinstance(actual, dict):
+        return False
+    return all(
+        actual.get(key) == expected[key]
+        for key in (
+            "authority_table",
+            "provenance_type",
+            "source_ref",
+            "source_ref_hash",
+            "source_snapshot_hash",
+            "observed_at",
+        )
+    )
+
+
+def _read_causal_history(
+    tenant_id: str, verdict_id: str, amendment_event_reference: str
+) -> dict:
+    verdict_rows = sql(
+        """
+        SELECT v.id::text,
+               v.webhook_ingress_identity_id::text,
+               v.provider,
+               v.provider_native_event_reference,
+               v.provider_native_commerce_reference,
+               v.canonical_commerce_reference,
+               v.status::text,
+               v.canonical_net_verified_amount_minor,
+               v.currency_code,
+               v.last_transition_at,
+               v.created_at,
+               v.updated_at
+          FROM public.b23_match_verdicts AS v
+         WHERE v.tenant_id = %s AND v.id = %s
+        """,
+        (tenant_id, verdict_id),
+    )
+    if not verdict_rows:
+        return {"complete": False, "reason": "verdict_missing"}
+    verdict_row = verdict_rows[0]
+    current_rows = sql(
+        """
+        SELECT i.id::text, i.provider,
+               i.provider_native_event_reference,
+               i.provider_native_commerce_reference,
+               i.event_timestamp, i.created_at,
+               i.verified_amount_minor, i.verified_amount_currency,
+               i.b26_p2_demotion_reason
+          FROM public.webhook_ingress_identities AS i
+         WHERE i.tenant_id = %s AND i.id = %s
+        """,
+        (tenant_id, str(verdict_row[1])),
+    )
+    if not current_rows:
+        return {"complete": False, "reason": "current_ingress_missing"}
+    prior_rows = sql(
+        """
+        SELECT i.id::text, i.provider,
+               i.provider_native_event_reference,
+               i.provider_native_commerce_reference,
+               i.event_timestamp, i.created_at,
+               i.verified_amount_minor, i.verified_amount_currency,
+               i.b26_p2_demotion_reason
+          FROM public.webhook_ingress_identities AS i
+         WHERE i.tenant_id = %s AND i.b26_p2_demotion_reason = %s
+         ORDER BY i.event_timestamp DESC, i.created_at DESC
+         LIMIT 1
+        """,
+        (
+            tenant_id,
+            f"superseded_by_provider_amendment:{amendment_event_reference}",
+        ),
+    )
+    if not prior_rows:
+        return {"complete": False, "reason": "prior_ingress_missing"}
+    ledger_rows = sql(
+        """
+        SELECT l.seq, l.provider_native_event_reference,
+               l.prior_verified_amount_minor, l.new_verified_amount_minor,
+               l.prior_source_ingress::text, l.new_source_ingress::text,
+               l.recorded_at, l.prev_entry_hash, l.entry_hash
+          FROM public.b26_p2_verdict_supersession_ledger AS l
+         WHERE l.tenant_id = %s AND l.verdict_id = %s
+         ORDER BY l.seq ASC
+        """,
+        (tenant_id, verdict_id),
+    )
+
+    def ingress(row: tuple) -> dict:
+        return {
+            "id": str(row[0]),
+            "provider": str(row[1]),
+            "provider_native_event_reference": str(row[2]),
+            "provider_native_commerce_reference": str(row[3]),
+            "event_timestamp": _utc_second_value(row[4]),
+            "created_at": _utc_second_value(row[5]),
+            "verified_amount_minor": int(row[6]),
+            "verified_amount_currency": str(row[7]).strip().upper(),
+            "demotion_reason": row[8],
+        }
+
+    return {
+        "complete": True,
+        "reason": None,
+        "verdict": {
+            "id": str(verdict_row[0]),
+            "webhook_ingress_identity_id": str(verdict_row[1]),
+            "provider": str(verdict_row[2]),
+            "provider_native_event_reference": str(verdict_row[3]),
+            "provider_native_commerce_reference": str(verdict_row[4]),
+            "canonical_commerce_reference": str(verdict_row[5]),
+            "status": str(verdict_row[6]),
+            "canonical_net_verified_amount_minor": int(verdict_row[7]),
+            "currency_code": str(verdict_row[8]).strip().upper(),
+            "last_transition_at": _utc_second_value(verdict_row[9]),
+            "created_at": _utc_second_value(verdict_row[10]),
+            "updated_at": _utc_second_value(verdict_row[11]),
+        },
+        "current_ingress": ingress(current_rows[0]),
+        "prior_ingress": ingress(prior_rows[0]),
+        "ledger": [
+            {
+                "seq": int(row[0]),
+                "provider_native_event_reference": str(row[1]),
+                "prior_verified_amount_minor": (
+                    int(row[2]) if row[2] is not None else None
+                ),
+                "new_verified_amount_minor": (
+                    int(row[3]) if row[3] is not None else None
+                ),
+                "prior_source_ingress": (
+                    str(row[4]) if row[4] is not None else None
+                ),
+                "new_source_ingress": (
+                    str(row[5]) if row[5] is not None else None
+                ),
+                "recorded_at": _utc_second_value(row[6]),
+                "prev_entry_hash": row[7],
+                "entry_hash": row[8],
+            }
+            for row in ledger_rows
+        ],
+        "amendment_event_reference": amendment_event_reference,
+    }
+
+
+def _final_causal_progression(
+    final_signed: dict,
+    history: dict,
+    *,
+    baseline_amount: int,
+    amended_amount: int,
+    currency: str,
+    verdict_id: str,
+) -> dict:
+    if not history.get("complete"):
+        return {
+            "established": False,
+            "reason": history.get("reason") or "causal_history_unavailable",
+        }
+    artifact = final_signed.get("artifact")
+    if not isinstance(artifact, dict):
+        return {"established": False, "reason": "final_artifact_unavailable"}
+    verdict = history["verdict"]
+    current = history["current_ingress"]
+    prior = history["prior_ingress"]
+    ledger = history["ledger"]
+    reason = ""
+    if history.get("amendment_event_reference") != current[
+        "provider_native_event_reference"
+    ]:
+        reason = "amendment_event_reference_mismatch"
+    elif verdict["id"] != verdict_id:
+        reason = "verdict_identity_mismatch"
+    elif verdict["webhook_ingress_identity_id"] != current["id"]:
+        reason = "current_ingress_link_mismatch"
+    elif prior["id"] == current["id"]:
+        reason = "prior_ingress_alias"
+    elif prior["provider"] != current["provider"]:
+        reason = "amendment_provider_mismatch"
+    elif (
+        prior["provider_native_commerce_reference"]
+        != current["provider_native_commerce_reference"]
+    ):
+        reason = "amendment_commerce_mismatch"
+    elif _utc_time(prior["event_timestamp"]) > _utc_time(
+        current["event_timestamp"]
+    ):
+        reason = "amendment_event_order_reversed"
+    elif _utc_time(prior["created_at"]) > _utc_time(current["created_at"]):
+        reason = "amendment_observation_order_reversed"
+    elif _utc_time(verdict["last_transition_at"]) < _utc_time(
+        current["event_timestamp"]
+    ):
+        reason = "verdict_precedes_amendment"
+    elif not ledger:
+        reason = "supersession_history_missing"
+    if reason:
+        return {"established": False, "reason": reason}
+
+    first = ledger[0]
+    last = ledger[-1]
+    if first["prior_source_ingress"] not in (None, prior["id"]):
+        reason = "ledger_prior_source_mismatch"
+    elif last["new_source_ingress"] != current["id"]:
+        reason = "ledger_final_source_mismatch"
+    elif last["provider_native_event_reference"] != history[
+        "amendment_event_reference"
+    ]:
+        reason = "ledger_final_event_mismatch"
+    elif first["prior_verified_amount_minor"] != baseline_amount:
+        reason = "ledger_baseline_amount_mismatch"
+    elif last["new_verified_amount_minor"] != amended_amount:
+        reason = "ledger_final_amount_mismatch"
+    else:
+        for previous, row in zip(ledger, ledger[1:]):
+            if (
+                int(row["seq"]) <= int(previous["seq"])
+                or row["prior_verified_amount_minor"]
+                != previous["new_verified_amount_minor"]
+                or row["prior_source_ingress"]
+                != previous["new_source_ingress"]
+                or row["prev_entry_hash"] != previous["entry_hash"]
+            ):
+                reason = "ledger_causal_chain_discontinuous"
+                break
+    if reason:
+        return {"established": False, "reason": reason}
+
+    created_at = _utc_time(artifact.get("created_at"))
+    if created_at is None:
+        reason = "final_created_at_invalid"
+    elif created_at < _utc_time(last["recorded_at"]):
+        reason = "final_precedes_accepted_transition"
+    elif created_at < _utc_time(verdict["last_transition_at"]):
+        reason = "final_precedes_verdict_transition"
+    if reason:
+        return {"established": False, "reason": reason}
+
+    expected_provider = _expected_provider_entry(
+        provider=current["provider"],
+        event_reference=current["provider_native_event_reference"],
+        commerce_reference=current[
+            "provider_native_commerce_reference"
+        ],
+        observed_at=verdict["created_at"],
+    )
+    expected_match = _expected_match_entry(verdict)
+    expected_webhook = _expected_webhook_entry(verdict, current)
+    actual_provider = _one_provenance(artifact, "provider_native_reference")
+    actual_match = _one_provenance(artifact, "match_verdict")
+    actual_webhook = _one_provenance(artifact, "webhook_signature")
+    if not _entry_matches(actual_provider, expected_provider):
+        reason = "final_provider_history_mismatch"
+    elif not _entry_matches(actual_match, expected_match):
+        reason = "final_match_history_mismatch"
+    elif not _entry_matches(actual_webhook, expected_webhook):
+        reason = "final_ingress_history_mismatch"
+    elif artifact.get("truth_authority", {}).get(
+        "source_snapshot_hash"
+    ) != expected_match["source_snapshot_hash"]:
+        reason = "final_truth_snapshot_mismatch"
+    elif (
+        artifact.get("evidence_temporal_boundary") or {}
+    ).get("evidence_snapshot_hash") != expected_match[
+        "source_snapshot_hash"
+    ]:
+        reason = "final_evidence_snapshot_mismatch"
+    elif artifact.get("match_verdict_status") != (
+        normalize_match_verdict_status(verdict["status"])
+    ):
+        reason = "final_public_qualification_mismatch"
+    elif artifact.get("data_completeness_status") != (
+        data_completeness_for_match_status(verdict["status"])
+    ):
+        reason = "final_completeness_mismatch"
+    elif artifact.get("verified_revenue_minor") != amended_amount:
+        reason = "final_amount_mismatch"
+    elif artifact.get("currency") != currency:
+        reason = "final_currency_mismatch"
+    if reason:
+        return {"established": False, "reason": reason}
+    return {
+        "established": True,
+        "reason": None,
+        "history_digest": _semantic_digest(history),
+        "ledger_sequence": [int(row["seq"]) for row in ledger],
+        "prior_ingress": prior["id"],
+        "current_ingress": current["id"],
+        "accepted_amendment_event": current[
+            "provider_native_event_reference"
+        ],
+        "accepted_transition_at": last["recorded_at"],
+        "expected_provider": expected_provider,
+        "expected_match": expected_match,
+        "expected_webhook": expected_webhook,
     }
 
 
@@ -681,7 +1226,14 @@ def _acceptance(record: dict) -> bool:
     baseline_structure_ok = False
     restored_structure_ok = False
     final_structure_ok = False
-    restored_lineage_bound = False
+    restoration_semantic_authority = {
+        "established": False,
+        "reason": "not_evaluated",
+    }
+    final_causal_progression = {
+        "established": False,
+        "reason": "not_evaluated",
+    }
     if isinstance(expected_amount, int) and isinstance(verdict_id, str) and subject:
         currency = str(baseline.get("currency") or "")
         tenant_id_hash = str(baseline.get("tenant_id_hash") or "")
@@ -694,8 +1246,16 @@ def _acceptance(record: dict) -> bool:
         final_structure_ok, _ = _signed_structure(
             final_signed, verdict_id, amended_amount, currency, tenant_id_hash
         )
-        restored_lineage_bound = _restored_lineage_matches(
+        restoration_semantic_authority = _restoration_semantic_authority(
             baseline_signed, restored_baseline
+        )
+        final_causal_progression = _final_causal_progression(
+            final_signed,
+            record.get("causal_history") or {},
+            baseline_amount=expected_amount,
+            amended_amount=amended_amount,
+            currency=currency,
+            verdict_id=verdict_id,
         )
     return all(
         (
@@ -722,7 +1282,7 @@ def _acceptance(record: dict) -> bool:
             restored_baseline.get("status") == 200,
             restored_baseline.get("established") is True,
             restored_structure_ok is True,
-            restored_lineage_bound is True,
+            restoration_semantic_authority.get("established") is True,
             (restored_baseline.get("offline_verification") or {}).get(
                 "verification_status"
             )
@@ -754,6 +1314,7 @@ def _acceptance(record: dict) -> bool:
             trust.get("currency") == baseline.get("currency"),
             final_signed.get("established") is True,
             final_structure_ok is True,
+            final_causal_progression.get("established") is True,
             (final_signed.get("offline_verification") or {}).get(
                 "verification_status"
             )
@@ -846,8 +1407,10 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             baseline["currency"],
         )
         record["restored_baseline"] = restored_baseline
-        record["lineage"] = _lineage_evidence(
-            baseline_signed, restored_baseline
+        record["restoration_semantic_authority"] = (
+            _restoration_semantic_authority(
+                baseline_signed, restored_baseline
+            )
         )
         restored_records = _records(restored_path.read_bytes(), temp)
         event_ref = f"evt_xxvrec{_uuid_hex()}"
@@ -920,6 +1483,18 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         final_observation["established"] = final_established
         final_observation["invalid_reason"] = final_reason or None
         record["final_signed"] = final_observation
+        causal_history = _read_causal_history(
+            tenant["tenant_id"], initial["verdict_id"], event_ref
+        )
+        record["causal_history"] = causal_history
+        record["causal_progression"] = _final_causal_progression(
+            final_observation,
+            causal_history,
+            baseline_amount=baseline["amount_minor"],
+            amended_amount=amended_amount,
+            currency=baseline["currency"],
+            verdict_id=initial["verdict_id"],
+        )
         prefix_records = restored_records[: staged["accepted_count"]]
         record.update(
             {
@@ -1013,7 +1588,10 @@ def _negative_decision(record: dict) -> bool:
         and record.get("original_unchanged") is True
         and restored.get("status") == 200
         and restored.get("established") is True
-        and _restored_lineage_matches(record.get("baseline_signed") or {}, restored)
+        and _restoration_semantic_authority(
+            record.get("baseline_signed") or {}, restored
+        ).get("established")
+        is True
         and (restored.get("offline_verification") or {}).get(
             "verification_status"
         )
@@ -1157,8 +1735,10 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
             baseline["amount_minor"],
             baseline["currency"],
         )
-        record["lineage"] = _lineage_evidence(
-            baseline_signed, record["restored_baseline"]
+        record["restoration_semantic_authority"] = (
+            _restoration_semantic_authority(
+                baseline_signed, record["restored_baseline"]
+            )
         )
     record["passed"] = _negative_decision(record)
     return record

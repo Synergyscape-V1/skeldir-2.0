@@ -13,11 +13,20 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
 
 from b26_p2_xxv_recovery_probe import (  # noqa: E402
     _acceptance,
+    _expected_match_entry,
+    _expected_provider_entry,
+    _expected_webhook_entry,
+    _final_causal_progression,
     _key_lifecycle_valid,
     _negative_decision,
     _offline_verification,
+    _restoration_semantic_authority,
     _signed_structure,
     _subject_ref_hash,
+)
+from app.trust.source_adapters import (  # noqa: E402
+    data_completeness_for_match_status,
+    normalize_match_verdict_status,
 )
 
 
@@ -59,12 +68,24 @@ def _artifact(amount: int) -> dict:
             "snapshot_consistency_status": "consistent",
             "evidence_age_status": "within_supported_horizon",
             "evidence_snapshot_hash": "sha256:snapshot",
+            "source_read_started_at": "2026-11-03T06:00:00Z",
+            "source_read_completed_at": "2026-11-03T06:00:00Z",
+            "data_freshness_seconds": 0,
+            "data_freshness_bound": "exact",
         },
         "provenance_chain": [
             {
                 "authority_table": "b23_match_verdicts",
                 "provenance_type": "match_verdict",
                 "source_ref": "urn:skeldir:b23_match_verdicts:v1",
+                "source_ref_hash": "sha256:match-ref",
+                "source_snapshot_hash": "sha256:snapshot",
+                "observed_at": "2026-11-03T06:00:00Z",
+                "display_metadata": {
+                    "text_trust_class": "none",
+                    "raw_text_sha256": None,
+                    "display_transform": "none",
+                },
             }
         ],
         "signing_key_id": "kid",
@@ -90,7 +111,119 @@ def _verified(amount: int = 4321) -> dict:
     }
 
 
-def _positive() -> dict:
+def _causal_history(status: str = "matched_provisional") -> dict:
+    return {
+        "complete": True,
+        "reason": None,
+        "amendment_event_reference": "evt_new",
+        "verdict": {
+            "id": "v1",
+            "webhook_ingress_identity_id": "ingress-new",
+            "provider": "stripe",
+            "provider_native_event_reference": "evt_new",
+            "provider_native_commerce_reference": "pi_same",
+            "canonical_commerce_reference": "pi_same",
+            "status": status,
+            "canonical_net_verified_amount_minor": 5100,
+            "currency_code": "USD",
+            "last_transition_at": "2026-11-03T06:00:05Z",
+            "created_at": "2026-11-03T06:00:00Z",
+            "updated_at": "2026-11-03T06:00:05Z",
+        },
+        "current_ingress": {
+            "id": "ingress-new",
+            "provider": "stripe",
+            "provider_native_event_reference": "evt_new",
+            "provider_native_commerce_reference": "pi_same",
+            "event_timestamp": "2026-11-03T06:00:04Z",
+            "created_at": "2026-11-03T06:00:04Z",
+            "verified_amount_minor": 5100,
+            "verified_amount_currency": "USD",
+            "demotion_reason": None,
+        },
+        "prior_ingress": {
+            "id": "ingress-old",
+            "provider": "stripe",
+            "provider_native_event_reference": "evt_old",
+            "provider_native_commerce_reference": "pi_same",
+            "event_timestamp": "2026-11-03T05:59:00Z",
+            "created_at": "2026-11-03T05:59:00Z",
+            "verified_amount_minor": 4321,
+            "verified_amount_currency": "USD",
+            "demotion_reason": "superseded_by_provider_amendment:evt_new",
+        },
+        "ledger": [
+            {
+                "seq": 10,
+                "provider_native_event_reference": "evt_new",
+                "prior_verified_amount_minor": 4321,
+                "new_verified_amount_minor": 5100,
+                "prior_source_ingress": "ingress-old",
+                "new_source_ingress": "ingress-new",
+                "recorded_at": "2026-11-03T06:00:05Z",
+                "prev_entry_hash": "a",
+                "entry_hash": "b",
+            }
+        ],
+    }
+
+
+def _final_verified(
+    status: str = "matched_provisional", history: dict | None = None
+) -> dict:
+    history = history or _causal_history(status)
+    artifact = _artifact(5100)
+    expected_provider = _expected_provider_entry(
+        provider=history["current_ingress"]["provider"],
+        event_reference=history["current_ingress"][
+            "provider_native_event_reference"
+        ],
+        commerce_reference=history["current_ingress"][
+            "provider_native_commerce_reference"
+        ],
+        observed_at=history["verdict"]["created_at"],
+    )
+    expected_match = _expected_match_entry(history["verdict"])
+    expected_webhook = _expected_webhook_entry(
+        history["verdict"], history["current_ingress"]
+    )
+    artifact["match_verdict_status"] = normalize_match_verdict_status(status)
+    artifact["data_completeness_status"] = data_completeness_for_match_status(
+        status
+    )
+    artifact["truth_authority"]["source_snapshot_hash"] = expected_match[
+        "source_snapshot_hash"
+    ]
+    artifact["evidence_temporal_boundary"][
+        "evidence_snapshot_hash"
+    ] = expected_match["source_snapshot_hash"]
+    artifact["provenance_chain"] = [
+        expected_webhook,
+        expected_provider,
+        expected_match,
+    ]
+    artifact["created_at"] = "2026-11-03T06:00:06Z"
+    return {
+        "status": 200,
+        "artifact": artifact,
+        "verification": [
+            200,
+            {
+                "verification_status": "verified",
+                "signature_hash": "sig",
+                "signing_key_id": "kid",
+                "temporal_scope": "truth-at-issuance",
+            },
+        ],
+        "established": True,
+        "offline_verification": {"verification_status": "verified"},
+    }
+
+
+def _positive(
+    status: str = "matched_provisional", history: dict | None = None
+) -> dict:
+    history = history or _causal_history(status)
     return {
         "baseline": _baseline(),
         "initial_subject": "pi_same",
@@ -103,7 +236,8 @@ def _positive() -> dict:
             "reason": "history_integrity_unverifiable",
         },
         "restored_baseline": _verified(),
-        "final_signed": _verified(5100),
+        "final_signed": _final_verified(status, history),
+        "causal_history": history,
         "custody": {
             "accepted_count": 3,
             "accepted_tip": "tip",
@@ -144,9 +278,7 @@ def test_valid_recovery_progression_is_accepted() -> None:
 
 
 def test_contract_confirmed_match_is_consumable() -> None:
-    record = _positive()
-    record["final_signed"]["artifact"]["match_verdict_status"] = "matched"
-    record["final_signed"]["artifact"]["data_completeness_status"] = "complete"
+    record = _positive("matched_confirmed")
     assert _acceptance(record) is True
 
 
@@ -205,6 +337,134 @@ def test_restored_artifact_with_changed_qualification_fails_acceptance() -> None
     record = _positive()
     record["restored_baseline"]["artifact"]["match_verdict_status"] = "matched"
     assert _acceptance(record) is False
+
+
+def test_genuine_restoration_may_change_observation_time() -> None:
+    record = _positive()
+    artifact = record["restored_baseline"]["artifact"]
+    artifact["created_at"] = "2026-11-03T06:00:05Z"
+    artifact["evidence_temporal_boundary"][
+        "source_read_started_at"
+    ] = "2026-11-03T06:00:05Z"
+    artifact["evidence_temporal_boundary"][
+        "source_read_completed_at"
+    ] = "2026-11-03T06:00:05Z"
+    result = _restoration_semantic_authority(
+        record["baseline_signed"], record["restored_baseline"]
+    )
+    assert result["established"] is True
+    assert result["observation_time_justified"] is True
+    assert result["baseline_meaning_digest"] == result["restored_meaning_digest"]
+    assert _acceptance(record) is True
+
+
+def test_genuine_restoration_may_reissue_audit_provenance() -> None:
+    record = _positive()
+    record["restored_baseline"]["artifact"]["provenance_chain"].append(
+        {
+            "authority_table": "trust_access_log",
+            "provenance_type": "audit_access_record",
+            "source_ref": "urn:skeldir:audit:issuance:reissued",
+            "source_ref_hash": "sha256:audit-ref",
+            "source_snapshot_hash": "sha256:audit-hash",
+            "observed_at": "2026-11-03T06:00:00Z",
+            "display_metadata": {
+                "text_trust_class": "none",
+                "raw_text_sha256": None,
+                "display_transform": "none",
+            },
+        }
+    )
+    result = _restoration_semantic_authority(
+        record["baseline_signed"], record["restored_baseline"]
+    )
+    assert result["established"] is True
+    assert _acceptance(record) is True
+
+
+def test_restored_semantic_field_outside_old_list_is_refused() -> None:
+    record = _positive()
+    record["restored_baseline"]["artifact"]["evidence_temporal_boundary"][
+        "data_freshness_bound"
+    ] = "at_least_ceiling"
+    assert _acceptance(record) is False
+
+
+def test_different_full_semantic_hashes_do_not_refuse_restoration() -> None:
+    record = _positive()
+    record["baseline_signed"]["artifact"]["semantic_truth_hash"] = (
+        "sha256:" + ("a" * 64)
+    )
+    record["restored_baseline"]["artifact"]["semantic_truth_hash"] = (
+        "sha256:" + ("b" * 64)
+    )
+    result = _restoration_semantic_authority(
+        record["baseline_signed"], record["restored_baseline"]
+    )
+    assert result["established"] is True
+    assert _acceptance(record) is True
+
+
+def test_final_provider_history_fabrication_is_refused() -> None:
+    record = _positive()
+    final = record["final_signed"]["artifact"]
+    provider = next(
+        entry
+        for entry in final["provenance_chain"]
+        if entry["provenance_type"] == "provider_native_reference"
+    )
+    provider["source_ref"] = (
+        "urn:skeldir:provider_native_reference:fabricated"
+    )
+    assert _acceptance(record) is False
+
+
+def test_final_ingress_history_fabrication_is_refused() -> None:
+    record = _positive()
+    final = record["final_signed"]["artifact"]
+    webhook = next(
+        entry
+        for entry in final["provenance_chain"]
+        if entry["provenance_type"] == "webhook_signature"
+    )
+    webhook["source_ref"] = (
+        "urn:skeldir:webhook_ingress_identity:ingress-old"
+    )
+    assert _acceptance(record) is False
+
+
+def test_final_causal_order_fabrication_is_refused() -> None:
+    record = _positive()
+    record["final_signed"]["artifact"]["created_at"] = (
+        "2026-11-03T06:00:04Z"
+    )
+    result = _final_causal_progression(
+        record["final_signed"],
+        record["causal_history"],
+        baseline_amount=4321,
+        amended_amount=5100,
+        currency="USD",
+        verdict_id="v1",
+    )
+    assert result["established"] is False
+    assert result["reason"] == "final_precedes_accepted_transition"
+
+
+def test_ledger_chain_fabrication_is_refused() -> None:
+    record = _positive()
+    record["causal_history"]["ledger"][0][
+        "prior_source_ingress"
+    ] = "ingress-fabricated"
+    result = _final_causal_progression(
+        record["final_signed"],
+        record["causal_history"],
+        baseline_amount=4321,
+        amended_amount=5100,
+        currency="USD",
+        verdict_id="v1",
+    )
+    assert result["established"] is False
+    assert result["reason"] == "ledger_prior_source_mismatch"
 
 
 def test_wrong_subject_fails_acceptance() -> None:

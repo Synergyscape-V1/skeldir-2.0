@@ -23,6 +23,14 @@ required_cells:
     producer: b26-p2-xxv-recovery
     scenario_id: signed-custody-restore-progression
     falsifier_id: omitted-restoration-tampered-signature-restore-failure
+  - gate_id: B26-P2-G13-RESTORATION-SEMANTIC-AUTHORITY
+    producer: b26-p2-xxv-recovery
+    scenario_id: signed-custody-restoration-semantic-authority
+    falsifier_id: changed-lineage-changed-completeness-changed-observation-time
+  - gate_id: B26-P2-G13-FINAL-CAUSAL-PROGRESSION
+    producer: b26-p2-xxv-recovery
+    scenario_id: signed-post-amendment-causal-progression
+    falsifier_id: fabricated-history-fabricated-order-missing-transition
 accepted_status: PASS
 accepted_events:
   - pull_request

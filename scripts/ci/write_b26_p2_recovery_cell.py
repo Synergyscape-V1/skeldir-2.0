@@ -30,6 +30,12 @@ def main() -> int:
     if len(commits) != 1 or "" in commits:
         raise SystemExit(f"recovery_artifact_identity_mismatch:{sorted(commits)}")
     positive = records["positive"]
+    restoration_authority = positive.get("restoration_semantic_authority") or {}
+    causal_progression = positive.get("causal_progression") or {}
+    if restoration_authority.get("established") is not True:
+        raise SystemExit("restoration_semantic_authority_not_established")
+    if causal_progression.get("established") is not True:
+        raise SystemExit("final_causal_progression_not_established")
     details = {
         "modes": {
             mode: {
@@ -38,7 +44,11 @@ def main() -> int:
                 "baseline_signed": record.get("baseline_signed"),
                 "fault": record.get("fault"),
                 "restored_baseline": record.get("restored_baseline"),
-                "lineage": record.get("lineage"),
+                "restoration_semantic_authority": record.get(
+                    "restoration_semantic_authority"
+                ),
+                "causal_progression": record.get("causal_progression"),
+                "causal_history": record.get("causal_history"),
                 "final_signed": record.get("final_signed"),
                 "observed": record.get("observed"),
                 "compensation": record.get("compensation"),
@@ -60,6 +70,9 @@ def main() -> int:
             (positive.get("final_signed") or {}).get("public_key_basis")
         ),
         "restored_baseline": positive.get("restored_baseline"),
+        "restoration_semantic_authority": restoration_authority,
+        "causal_progression": causal_progression,
+        "causal_history": positive.get("causal_history"),
         "signed_amount_minor": positive.get("readers", {})
         .get("trust", {})
         .get("verified_revenue_minor"),
@@ -77,6 +90,38 @@ def main() -> int:
         status="PASS",
     )
     print(f"B26_P2_RECOVERY_CELL_WRITTEN {args.out}")
+
+    authority_out = args.out.with_name("restoration-semantic-authority.json")
+    write_evidence_cell(
+        authority_out,
+        gate_id="B26-P2-G13-RESTORATION-SEMANTIC-AUTHORITY",
+        producer="b26-p2-xxv-recovery",
+        scenario_id="signed-custody-restoration-semantic-authority",
+        falsifier_id="changed-lineage-changed-completeness-changed-observation-time",
+        details={
+            "baseline_signed": positive.get("baseline_signed"),
+            "restored_baseline": positive.get("restored_baseline"),
+            "restoration_semantic_authority": restoration_authority,
+        },
+        status="PASS",
+    )
+    print(f"B26_P2_RESTORATION_SEMANTIC_CELL_WRITTEN {authority_out}")
+
+    causal_out = args.out.with_name("final-causal-progression.json")
+    write_evidence_cell(
+        causal_out,
+        gate_id="B26-P2-G13-FINAL-CAUSAL-PROGRESSION",
+        producer="b26-p2-xxv-recovery",
+        scenario_id="signed-post-amendment-causal-progression",
+        falsifier_id="fabricated-history-fabricated-order-missing-transition",
+        details={
+            "final_signed": positive.get("final_signed"),
+            "causal_history": positive.get("causal_history"),
+            "causal_progression": causal_progression,
+        },
+        status="PASS",
+    )
+    print(f"B26_P2_CAUSAL_PROGRESSION_CELL_WRITTEN {causal_out}")
     return 0
 
 
