@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import copy
+import json
 import sys
 from pathlib import Path
 
@@ -11,6 +14,8 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
 from b26_p2_xxv_recovery_probe import (  # noqa: E402
     _acceptance,
     _negative_decision,
+    _offline_verification,
+    _signed_structure,
     _subject_ref_hash,
 )
 
@@ -255,3 +260,55 @@ def test_final_4321_cannot_satisfy_5100_progression() -> None:
     record = _positive()
     record["final_signed"] = _verified(4321)
     assert _acceptance(record) is False
+
+
+def _real_baseline() -> dict:
+    path = (
+        REPO_ROOT
+        / "docs"
+        / "forensics"
+        / "evidence"
+        / "b26_p2_xxv_a8"
+        / "xxv-r0034-recovery-positive-20261102.json"
+    )
+    document = json.loads(path.read_text(encoding="utf-8"))
+    return copy.deepcopy(document["baseline_signed"])
+
+
+def test_incompatible_public_key_cannot_verify_retained_artifact() -> None:
+    observation = _real_baseline()
+    keys = observation["public_key_basis"]["jwks"]["keys"]
+    keys[0]["x"] = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode("ascii")
+    result = _offline_verification(observation)
+    assert result["verification_status"] == "rejected"
+
+
+def test_changed_tenant_cannot_satisfy_signed_structure() -> None:
+    observation = _real_baseline()
+    artifact = observation["artifact"]
+    verdict_id = artifact["subject_ref"].rsplit(":", 1)[-1]
+    ok, reason = _signed_structure(
+        observation,
+        verdict_id,
+        artifact["verified_revenue_minor"],
+        artifact["currency"],
+        "sha256:another-tenant",
+    )
+    assert ok is False
+    assert reason == "signed_tenant_mismatch"
+
+
+def test_unsupported_financial_qualification_is_refused() -> None:
+    observation = _real_baseline()
+    artifact = observation["artifact"]
+    verdict_id = artifact["subject_ref"].rsplit(":", 1)[-1]
+    artifact["match_verdict_status"] = "signed_but_not_a_contract_state"
+    ok, reason = _signed_structure(
+        observation,
+        verdict_id,
+        artifact["verified_revenue_minor"],
+        artifact["currency"],
+        artifact["tenant_id_hash"],
+    )
+    assert ok is False
+    assert reason == "signed_financial_qualification"
