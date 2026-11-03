@@ -706,11 +706,13 @@ async def db_activity_trace_sample(
         SELECT state AS state,
                COALESCE(wait_event_type, '-') AS wait_type,
                COALESCE(wait_event, '-') AS wait_event,
+               usename AS usename,
+               COALESCE(application_name, '') AS application_name,
                COUNT(*)::int AS n
         FROM pg_stat_activity
         WHERE datname = $1 AND backend_type = 'client backend'
-        GROUP BY 1, 2, 3
-        ORDER BY 4 DESC
+        GROUP BY 1, 2, 3, 4, 5
+        ORDER BY 6 DESC
         """,
         database_name,
     )
@@ -743,7 +745,8 @@ async def db_activity_trace_sample(
     return {
         "groups": [
             {"state": r["state"], "wait_type": r["wait_type"],
-             "wait_event": r["wait_event"], "n": int(r["n"])}
+             "wait_event": r["wait_event"], "usename": r["usename"],
+             "application_name": r["application_name"], "n": int(r["n"])}
             for r in rows
         ],
         "holding_queries": [
