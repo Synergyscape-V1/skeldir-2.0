@@ -2,24 +2,22 @@
   "acceptance": false,
   "artifact": {
     "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
-    "captured_at_utc": "2026-11-02T22:44:03.344338Z",
-    "commit_sha": "9d331ebb36dfe47d03057ecb45436a258e4bd9af",
-    "compiled_genesis_hash": "122096afac868b539d8936e04565bc0a2515938d61bd92c5be2b86f57c85cfe6",
-    "compiled_public_key_sha256": "8bb42434bba2dc4514a80a9350ab5fa71571d00b84f361bdc23e53e2d5ce244e",
-    "compiled_source_attestation_public_key_sha256": "28fe71bdebecf04a847c431c712842f116908f4086b25bff94942f49d6b59256",
-    "image_id": "sha256:237223a1bf60311680e1cb135f3535a34f2c137fb4994a217cac57294429ecab",
+    "captured_at_utc": "2026-11-03T00:34:34.596619Z",
+    "commit_sha": "48048eb35be148dd886fff617cf8bb2663a2d75d",
+    "compiled_genesis_hash": "e5872af6baea2a58c250540967904e9d72fdd77fd3aa12737766aedc2debf35d",
+    "compiled_public_key_sha256": "46cfa0968dc5759a4d3058aa7dad4fed3c6332c835a34e4c98358942bc9d466d",
+    "compiled_source_attestation_public_key_sha256": "42de38eea0c37ab4c638ed7ad16cf522ea59bc67577eefef29f035f71e8e0e0c",
+    "image_id": "sha256:cca2a234d53a66b5dbfb870dcd82d595f3aafc35c3f462072b5d274234162711",
     "image_tag": "b26p2xxv-final:latest",
     "migration_head": "202610280001",
-    "tree_sha": "d3d7f0328f2360f048e0040d37dc737c8bee3515",
+    "tree_sha": "467ea465670b306e62d7d8000bc413fc4698e231",
     "worktree_status_summary": {
-      "entries": 6,
+      "entries": 2,
       "image_bytes_match_committed_tree": true,
       "image_copied_path_entries": [],
       "non_image_entry_sample": [
-        " M scripts/ci/b26_p2_xxv_recovery_probe.py",
-        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-r0034-recovery-omit-restore-20261102.json",
-        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-r0034-recovery-positive-20261102.json",
-        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-r0034-recovery-tamper-signature-20261102.json"
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
       ]
     }
   },
@@ -29,7 +27,7 @@
   "initial": {
     "amount_minor": 4321,
     "http": 200,
-    "verdict_id": "6f4adaaa-497d-4aae-84ae-11d1a33a7461"
+    "verdict_id": "b9aaf0e5-1517-4457-9963-cbbd829ace09"
   },
   "manual_observer": false,
   "mode": "omit-restore",
