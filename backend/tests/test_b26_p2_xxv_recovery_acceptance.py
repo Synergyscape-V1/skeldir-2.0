@@ -26,10 +26,34 @@ def _baseline() -> dict:
     }
 
 
+def _verified() -> dict:
+    return {
+        "status": 200,
+        "artifact": {
+            "verified_revenue_minor": 4321,
+            "currency": "USD",
+        },
+        "verification": [
+            200,
+            {"verification_status": "verified", "signature_hash": "sig",
+             "signing_key_id": "kid"},
+        ],
+    }
+
+
 def _positive() -> dict:
     return {
         "baseline": _baseline(),
         "initial_subject": "pi_same",
+        "baseline_signed": _verified(),
+        "fault": {
+            "specific": True,
+            "new_row": True,
+            "money_minor": None,
+            "status": "refused",
+            "reason": "history_integrity_unverifiable",
+        },
+        "restored_baseline": _verified(),
         "custody": {
             "accepted_count": 3,
             "accepted_tip": "tip",
@@ -99,9 +123,11 @@ def test_unrestored_prefix_fails_acceptance() -> None:
 def test_money_after_history_loss_fails_omitted_control() -> None:
     record = {
         "mode": "omit-restore",
-        "observed": {"http": 200, "money_minor": 5100, "specific": False},
+        "baseline_signed": _verified(),
+        "observed": {"http": 200, "money_minor": 5100, "specific": False, "new_row": True},
         "compensation": {"restored_original": True},
         "original_unchanged": True,
+        "restored_baseline": _verified(),
     }
     assert _negative_decision(record) is False
 
@@ -109,9 +135,11 @@ def test_money_after_history_loss_fails_omitted_control() -> None:
 def test_transport_unavailability_fails_omitted_control() -> None:
     record = {
         "mode": "omit-restore",
-        "observed": {"http": 0, "specific": False},
+        "baseline_signed": _verified(),
+        "observed": {"http": 0, "specific": False, "new_row": False},
         "compensation": {"restored_original": True},
         "original_unchanged": True,
+        "restored_baseline": _verified(),
     }
     assert _negative_decision(record) is False
 
@@ -119,9 +147,11 @@ def test_transport_unavailability_fails_omitted_control() -> None:
 def test_failed_restoration_fails_omitted_control() -> None:
     record = {
         "mode": "omit-restore",
-        "observed": {"http": 404, "specific": True},
+        "baseline_signed": _verified(),
+        "observed": {"http": 404, "specific": True, "new_row": True},
         "compensation": {"restored_original": False},
         "original_unchanged": False,
+        "restored_baseline": _verified(),
     }
     assert _negative_decision(record) is False
 
@@ -129,6 +159,7 @@ def test_failed_restoration_fails_omitted_control() -> None:
 def test_tamper_that_verifies_fails_control() -> None:
     record = {
         "mode": "tamper-signature",
+        "baseline_signed": _verified(),
         "observed": {"signature_refused": False},
         "original_unchanged": True,
     }
@@ -138,7 +169,26 @@ def test_tamper_that_verifies_fails_control() -> None:
 def test_successful_restore_fails_restore_failure_control() -> None:
     record = {
         "mode": "restore-failure",
+        "baseline_signed": _verified(),
         "observed": {"restoration_refused": False},
         "original_unchanged": True,
+    }
+    assert _negative_decision(record) is False
+
+
+def test_subject_refusal_cannot_be_borrowed() -> None:
+    record = {
+        "mode": "omit-restore",
+        "baseline_signed": _verified(),
+        "observed": {
+            "http": 404,
+            "money_minor": None,
+            "specific": False,
+            "new_row": False,
+            "reason": "history_integrity_unverifiable",
+        },
+        "compensation": {"restored_original": True},
+        "original_unchanged": True,
+        "restored_baseline": _verified(),
     }
     assert _negative_decision(record) is False

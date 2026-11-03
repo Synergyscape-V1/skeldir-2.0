@@ -37,13 +37,13 @@ from b26_p2_xxv_falsify import (  # noqa: E402
     API_PORT,
     AUTH_PORT,
     docker,
-    durable_trust_refusal_reason,
     http,
     load_state,
     post_stripe,
     post_stripe_envelope,
     read_reconciliation,
     read_trust,
+    sql,
     start_api,
     start_auth,
     verify_trust,
@@ -66,6 +66,8 @@ from app.revenue_verification.source_evidence_journal import (  # noqa: E402
     journal_record_hash,
     load_source_fact_records,
 )
+from app.trust.audit_hash import idempotency_key_hash  # noqa: E402
+from app.trust.refusal import tenant_hash  # noqa: E402
 
 
 def _uuid_hex() -> str:
@@ -184,6 +186,95 @@ def _stage(state: dict, temp: Path) -> dict:
     }
 
 
+def _read_trust_attributed(tenant: dict, verdict_id: str) -> dict:
+    """Read Trust with an idempotency key we can attribute in the audit log."""
+    import uuid  # noqa: PLC0415
+
+    key = f"xxv-recovery-{uuid.uuid4().hex}"
+    urn = f"urn:skeldir:match_verdict:{verdict_id}"
+    headers = {
+        "Authorization": f"Bearer {tenant['machine_token']}",
+        "X-Tenant-ID": tenant["tenant_id"],
+        "X-Trust-Nonce": f"xxv-{uuid.uuid4().hex}",
+        "X-Correlation-ID": str(uuid.uuid4()),
+        "X-Idempotency-Key": key,
+        "Content-Type": "application/json",
+    }
+    status, text = http(
+        "GET",
+        f"http://127.0.0.1:{API_PORT}/api/trust/v1/envelopes/match_verdict/{urn}",
+        headers=headers,
+    )
+    try:
+        body = json.loads(text)
+    except Exception:  # noqa: BLE001
+        body = text
+    key_hash = idempotency_key_hash(
+        tenant_id_hash=tenant_hash(tenant["tenant_id"]),
+        idempotency_key=key,
+    )
+    rows = sql(
+        "SELECT status, reason_code, created_at FROM public.trust_access_log"
+        " WHERE tenant_id = %s AND idempotency_key_hash = %s"
+        " ORDER BY created_at DESC, id DESC LIMIT 1",
+        (tenant["tenant_id"], key_hash),
+    )
+    refusal = None
+    if rows:
+        row_status, reason, created_at = rows[0]
+        refusal = {
+            "status": row_status,
+            "reason": reason,
+            "created_at": created_at.isoformat()
+            if hasattr(created_at, "isoformat")
+            else str(created_at),
+            "request_idempotency_hash": key_hash,
+            "specific": (
+                row_status == "refused"
+                and isinstance(reason, str)
+                and reason
+                in {
+                    "history_integrity_unverifiable",
+                    "history_integrity_source_evidence_unverifiable",
+                    "history_integrity_witness_refused",
+                }
+            ),
+        }
+    return {
+        "http": status,
+        "body": body,
+        "refusal": refusal,
+        "request_idempotency_hash": key_hash,
+    }
+
+
+def _wait_signed(
+    tenant: dict, verdict_id: str, amount: int, currency: str, *, attempts: int = 60
+) -> dict:
+    last: dict = {"status": 0, "artifact": None, "verification": None}
+    for _ in range(attempts):
+        status, body = read_trust(tenant, verdict_id)
+        if status == 200 and isinstance(body, dict):
+            verification = verify_trust(tenant, body.get("envelope", body))
+            last = {
+                "status": status,
+                "artifact": body,
+                "verification": verification,
+            }
+            if (
+                verification[0] == 200
+                and isinstance(verification[1], dict)
+                and verification[1].get("verification_status") == "verified"
+                and body.get("verified_revenue_minor") == amount
+                and body.get("currency") == currency
+            ):
+                return last
+        else:
+            last = {"status": status, "artifact": None, "verification": None}
+        time.sleep(5)
+    return last
+
+
 def _baseline(state: dict, tenant: dict, amount: int = 4321) -> tuple[dict, dict]:
     intent = f"pi_xxvrec{_uuid_hex()}"
     first_status, _, _ = post_stripe(state, tenant, intent, amount)
@@ -212,39 +303,6 @@ def _baseline(state: dict, tenant: dict, amount: int = 4321) -> tuple[dict, dict
     return baseline, initial
 
 
-def _specific_trust_refusal(state: dict, tenant: dict, verdict_id: str) -> dict:
-    """Observe the broken state's refusal, not transport unavailability."""
-    try:
-        status, body = read_trust(tenant, verdict_id)
-    except Exception as exc:  # noqa: BLE001
-        return {
-            "http": 0,
-            "read_error": f"{type(exc).__name__}:{exc}",
-            "specific": False,
-        }
-    reason = durable_trust_refusal_reason(str(tenant["tenant_id"]))
-    amount = body.get("verified_revenue_minor") if isinstance(body, dict) else None
-    specific = (
-        status == 404
-        and isinstance(reason, str)
-        and any(
-            token in reason
-            for token in (
-                "history_integrity_unverifiable",
-                "history_integrity_source_evidence_unverifiable",
-                "history_integrity_witness_refused",
-            )
-        )
-    )
-    return {
-        "http": status,
-        "money_minor": amount,
-        "durable_reason": reason,
-        "body_head": str(body)[:300],
-        "specific": specific,
-    }
-
-
 def _acceptance(record: dict) -> bool:
     baseline = record.get("baseline") or {}
     custody = record.get("custody") or {}
@@ -259,6 +317,11 @@ def _acceptance(record: dict) -> bool:
     amended_amount = (
         expected_amount + 779 if isinstance(expected_amount, int) else None
     )
+    baseline_signed = record.get("baseline_signed") or {}
+    baseline_verify = baseline_signed.get("verification") or [0, {}]
+    fault = record.get("fault") or {}
+    restored_baseline = record.get("restored_baseline") or {}
+    restored_verify = restored_baseline.get("verification") or [0, {}]
     return all(
         (
             baseline.get("http") == 200,
@@ -268,6 +331,23 @@ def _acceptance(record: dict) -> bool:
             baseline.get("reconciliation_status") == 200,
             baseline.get("reconciliation_net_minor") == expected_amount,
             record.get("initial_subject") == baseline.get("subject"),
+            baseline_signed.get("status") == 200,
+            baseline_verify[0] == 200,
+            isinstance(baseline_verify[1], dict)
+            and baseline_verify[1].get("verification_status") == "verified",
+            fault.get("specific") is True,
+            fault.get("new_row") is True,
+            fault.get("money_minor") is None,
+            restored_baseline.get("status") == 200,
+            (restored_baseline.get("artifact") or {}).get(
+                "verified_revenue_minor"
+            )
+            == expected_amount,
+            (restored_baseline.get("artifact") or {}).get("currency")
+            == baseline.get("currency"),
+            restored_verify[0] == 200,
+            isinstance(restored_verify[1], dict)
+            and restored_verify[1].get("verification_status") == "verified",
             custody.get("accepted_count", -1) >= 0,
             custody.get("restored_count", -1) >= custody.get("accepted_count", 0),
             custody.get("restored_prefix_tip") == custody.get("accepted_tip"),
@@ -296,6 +376,17 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
     baseline, initial = _baseline(state, tenant, 4321)
     amended_amount = baseline["amount_minor"] + 779
     intent = baseline["subject"]
+    baseline_signed = _wait_signed(
+        tenant,
+        initial["verdict_id"],
+        baseline["amount_minor"],
+        baseline["currency"],
+    )
+    if (
+        baseline_signed.get("status") != 200
+        or (baseline_signed.get("verification") or [0])[0] != 200
+    ):
+        raise RuntimeError("baseline_signed_result_unavailable")
     staged = _stage(state, temp)
     kept = False
     mutated = False
@@ -303,9 +394,36 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         "mode": "positive",
         "baseline": baseline,
         "initial_subject": initial.get("commerce_reference"),
+        "baseline_signed": baseline_signed,
         "manual_observer": False,
     }
     try:
+        docker("stop", AUTH)
+        docker("stop", API)
+        volume_rm(SOURCE_EVIDENCE_VOL, "source_evidence.jsonl")
+        mutated = True
+        _start_services(state)
+        observed_refusal = _read_trust_attributed(
+            tenant, initial["verdict_id"]
+        )
+        trust_body = observed_refusal["body"]
+        money = (
+            trust_body.get("verified_revenue_minor")
+            if isinstance(trust_body, dict)
+            else None
+        )
+        refusal = observed_refusal.get("refusal") or {}
+        record["fault"] = {
+            **refusal,
+            "http": observed_refusal["http"],
+            "money_minor": money,
+            "new_row": bool(refusal),
+            "specific": (
+                refusal.get("specific") is True
+                and observed_refusal["http"] == 404
+                and money is None
+            ),
+        }
         restored_path = temp / "restored.jsonl"
         disposition = restore_custody_bundle(
             manifest_path=staged["manifest_path"],
@@ -314,16 +432,19 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             accepted_source_count=staged["accepted_count"],
             accepted_source_tip=staged["accepted_tip"],
         )
-        restored_records = _records(restored_path.read_bytes(), temp)
-        docker("stop", AUTH)
-        docker("stop", API)
-        volume_rm(SOURCE_EVIDENCE_VOL, "source_evidence.jsonl")
-        mutated = True
         volume_put(
             SOURCE_EVIDENCE_VOL,
             {"source_evidence.jsonl": restored_path.read_bytes()},
         )
         _start_services(state)
+        restored_baseline = _wait_signed(
+            tenant,
+            initial["verdict_id"],
+            baseline["amount_minor"],
+            baseline["currency"],
+        )
+        record["restored_baseline"] = restored_baseline
+        restored_records = _records(restored_path.read_bytes(), temp)
         event_ref = f"evt_xxvrec{_uuid_hex()}"
         second_status, _, _ = post_stripe_envelope(
             state,
@@ -417,6 +538,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
                         "currency": trust.get("currency")
                         if isinstance(trust, dict)
                         else None,
+                        "artifact": trust if isinstance(trust, dict) else None,
                     },
                     "trust_verify": verified_trust,
                 },
@@ -433,6 +555,15 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
 def _negative_decision(record: dict) -> bool:
     mode = record.get("mode")
     observed = record.get("observed") or {}
+    baseline_verify = (record.get("baseline_signed") or {}).get(
+        "verification"
+    ) or [0, {}]
+    if not (
+        baseline_verify[0] == 200
+        and isinstance(baseline_verify[1], dict)
+        and baseline_verify[1].get("verification_status") == "verified"
+    ):
+        return False
     if mode == "tamper-signature":
         return (
             observed.get("signature_refused") is True
@@ -443,21 +574,44 @@ def _negative_decision(record: dict) -> bool:
             observed.get("restoration_refused") is True
             and record.get("original_unchanged") is True
         )
+    restored = record.get("restored_baseline") or {}
+    restored_verify = restored.get("verification") or [0, {}]
     return (
         observed.get("specific") is True
+        and observed.get("new_row") is True
         and record.get("compensation", {}).get("restored_original") is True
         and record.get("original_unchanged") is True
+        and restored.get("status") == 200
+        and (restored.get("artifact") or {}).get("verified_revenue_minor")
+        == (record.get("baseline") or {}).get("amount_minor")
+        and (restored.get("artifact") or {}).get("currency")
+        == (record.get("baseline") or {}).get("currency")
+        and restored_verify[0] == 200
+        and isinstance(restored_verify[1], dict)
+        and restored_verify[1].get("verification_status") == "verified"
     )
 
 
 def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
     baseline, initial = _baseline(state, tenant, 4321)
+    baseline_signed = _wait_signed(
+        tenant,
+        initial["verdict_id"],
+        baseline["amount_minor"],
+        baseline["currency"],
+    )
+    if (
+        baseline_signed.get("status") != 200
+        or (baseline_signed.get("verification") or [0])[0] != 200
+    ):
+        raise RuntimeError("baseline_signed_result_unavailable")
     staged = _stage(state, temp)
     original_raw = staged["original_raw"]
     original_sha = hashlib.sha256(original_raw).hexdigest()
     record: dict = {
         "mode": mode,
         "baseline": baseline,
+        "baseline_signed": baseline_signed,
         "initial_subject": initial.get("commerce_reference"),
         "original_sha256": original_sha,
         "manual_observer": False,
@@ -521,9 +675,27 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
                 record["start_error"] = None
             except Exception as exc:  # noqa: BLE001
                 record["start_error"] = f"{type(exc).__name__}:{exc}"
-            record["observed"] = _specific_trust_refusal(
-                state, tenant, initial["verdict_id"]
+            observed_refusal = _read_trust_attributed(
+                tenant, initial["verdict_id"]
             )
+            trust_body = observed_refusal["body"]
+            refusal = observed_refusal.get("refusal") or {}
+            money = (
+                trust_body.get("verified_revenue_minor")
+                if isinstance(trust_body, dict)
+                else None
+            )
+            record["observed"] = {
+                **refusal,
+                "http": observed_refusal["http"],
+                "money_minor": money,
+                "new_row": bool(refusal),
+                "specific": (
+                    refusal.get("specific") is True
+                    and observed_refusal["http"] == 404
+                    and money is None
+                ),
+            }
     finally:
         if mutated:
             record["compensation"] = _restore_original(state, original_raw)
@@ -540,6 +712,15 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
                 ).hexdigest()
                 == original_sha
             )
+    if mode == "omit-restore" and record.get("compensation", {}).get(
+        "restored_original"
+    ):
+        record["restored_baseline"] = _wait_signed(
+            tenant,
+            initial["verdict_id"],
+            baseline["amount_minor"],
+            baseline["currency"],
+        )
     record["passed"] = _negative_decision(record)
     return record
 

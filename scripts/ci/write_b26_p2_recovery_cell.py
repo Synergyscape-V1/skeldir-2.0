@@ -35,6 +35,9 @@ def main() -> int:
             mode: {
                 "passed": record["passed"],
                 "baseline": record.get("baseline"),
+                "baseline_signed": record.get("baseline_signed"),
+                "fault": record.get("fault"),
+                "restored_baseline": record.get("restored_baseline"),
                 "observed": record.get("observed"),
                 "compensation": record.get("compensation"),
                 "readers": record.get("readers"),
@@ -44,7 +47,14 @@ def main() -> int:
             for mode, record in records.items()
         },
         "artifact_commit": next(iter(commits)),
-        "signed_trust": positive.get("readers", {}).get("trust_verify"),
+        "runtime_identity": positive.get("artifact"),
+        "signed_artifact": positive.get("readers", {})
+        .get("trust", {})
+        .get("artifact"),
+        "public_verification_basis": positive.get("readers", {}).get(
+            "trust_verify"
+        ),
+        "restored_baseline": positive.get("restored_baseline"),
         "signed_amount_minor": positive.get("readers", {})
         .get("trust", {})
         .get("verified_revenue_minor"),
