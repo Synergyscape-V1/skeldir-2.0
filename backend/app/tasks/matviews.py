@@ -55,22 +55,38 @@ _REALTIME_REFRESH_LOCK = threading.Lock()
 _REALTIME_REFRESH_MIN_INTERVAL_S = 1.0
 
 
-def _begin_realtime_refresh(tenant_uuid: UUID, now: float) -> bool:
-    """Claim the tenant's single refresh owner, or mark the arrival pending.
+def _begin_realtime_refresh(
+    tenant_uuid: UUID, now: float
+) -> tuple[bool, float]:
+    """Claim the tenant's refresh owner or defer to one trailing refresh.
 
-    The owner loops while pending is set, so an arrival that lands just after
-    the previous refresh finishes cannot be stranded behind a flag with no
-    running task. A new arrival after the owner releases the claim becomes the
-    next owner itself.
+    A serial worker executes queued refresh tasks after the previous owner has
+    released, so an ownership-only check refreshes once per event. The minimum
+    interval is therefore enforced at arrival: the first task inside the
+    window claims the owner, reserves the next window and returns its delay;
+    every later task marks pending and is covered by that trailing refresh.
+
+    A new arrival after the owner releases and the interval has elapsed becomes
+    the next owner itself.
     """
     with _REALTIME_REFRESH_LOCK:
         if tenant_uuid in _REALTIME_REFRESH_ACTIVE:
             _REALTIME_REFRESH_PENDING.add(tenant_uuid)
-            return False
+            return False, 0.0
+        last = _REALTIME_REFRESH_LAST.get(tenant_uuid)
+        if last is not None:
+            remaining = max(
+                0.0, _REALTIME_REFRESH_MIN_INTERVAL_S - (now - last)
+            )
+            if remaining > 0:
+                _REALTIME_REFRESH_ACTIVE.add(tenant_uuid)
+                _REALTIME_REFRESH_PENDING.discard(tenant_uuid)
+                _REALTIME_REFRESH_LAST[tenant_uuid] = now + remaining
+                return False, remaining
         _REALTIME_REFRESH_ACTIVE.add(tenant_uuid)
         _REALTIME_REFRESH_PENDING.discard(tenant_uuid)
         _REALTIME_REFRESH_LAST[tenant_uuid] = now
-        return True
+        return True, 0.0
 
 
 def _pending_realtime_refresh_delay(tenant_uuid: UUID) -> float | None:
@@ -405,22 +421,43 @@ def matview_refresh_all_for_tenant(
     realtime = schedule_class == "realtime"
     if realtime and trailing:
         _mark_trailing_start(tenant_uuid)
-    elif realtime and not _begin_realtime_refresh(
-        tenant_uuid, time.monotonic()
-    ):
-        logger.info(
-            "matview_refresh_realtime_coalesced",
-            extra={
-                "task_id": self.request.id,
-                "tenant_id": str(tenant_uuid),
-                "correlation_id": correlation_id,
-                "schedule_class": schedule_class,
-            },
+    elif realtime:
+        may_refresh, delay = _begin_realtime_refresh(
+            tenant_uuid, time.monotonic()
         )
-        return {
-            "status": "skipped",
-            "reason": "realtime_refresh_coalesced",
-        }
+        if not may_refresh:
+            if delay > 0:
+                _schedule_realtime_trailing(
+                    tenant_uuid, correlation_id, delay
+                )
+                logger.info(
+                    "matview_refresh_realtime_deferred",
+                    extra={
+                        "task_id": self.request.id,
+                        "tenant_id": str(tenant_uuid),
+                        "correlation_id": correlation_id,
+                        "schedule_class": schedule_class,
+                        "delay_s": delay,
+                    },
+                )
+                return {
+                    "status": "deferred",
+                    "delay_s": delay,
+                    "reason": "realtime_refresh_interval",
+                }
+            logger.info(
+                "matview_refresh_realtime_coalesced",
+                extra={
+                    "task_id": self.request.id,
+                    "tenant_id": str(tenant_uuid),
+                    "correlation_id": correlation_id,
+                    "schedule_class": schedule_class,
+                },
+            )
+            return {
+                "status": "skipped",
+                "reason": "realtime_refresh_coalesced",
+            }
     try:
         results = refresh_all_for_tenant(tenant_uuid, correlation_id)
         strategies: list[TaskOutcomeStrategy] = []
