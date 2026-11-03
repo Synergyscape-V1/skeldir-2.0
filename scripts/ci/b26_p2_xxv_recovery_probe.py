@@ -430,6 +430,26 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
     return record
 
 
+def _negative_decision(record: dict) -> bool:
+    mode = record.get("mode")
+    observed = record.get("observed") or {}
+    if mode == "tamper-signature":
+        return (
+            observed.get("signature_refused") is True
+            and record.get("original_unchanged") is True
+        )
+    if mode == "restore-failure":
+        return (
+            observed.get("restoration_refused") is True
+            and record.get("original_unchanged") is True
+        )
+    return (
+        observed.get("specific") is True
+        and record.get("compensation", {}).get("restored_original") is True
+        and record.get("original_unchanged") is True
+    )
+
+
 def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
     baseline, initial = _baseline(state, tenant, 4321)
     staged = _stage(state, temp)
@@ -520,22 +540,7 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
                 ).hexdigest()
                 == original_sha
             )
-    if mode == "tamper-signature":
-        record["passed"] = (
-            record["observed"].get("signature_refused") is True
-            and record["original_unchanged"] is True
-        )
-    elif mode == "restore-failure":
-        record["passed"] = (
-            record["observed"].get("restoration_refused") is True
-            and record["original_unchanged"] is True
-        )
-    else:
-        record["passed"] = (
-            record["observed"].get("specific") is True
-            and record.get("compensation", {}).get("restored_original") is True
-            and record["original_unchanged"] is True
-        )
+    record["passed"] = _negative_decision(record)
     return record
 
 
