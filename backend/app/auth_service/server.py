@@ -485,9 +485,9 @@ async def authenticate_ingress(body: AuthenticateRequest) -> AuthenticateRespons
             status_code=400, detail="event_timestamp must be ISO-8601"
         ) from exc
 
-    from app.api.webhooks import (  # noqa: PLC0415
+    from app.webhooks.verification_contract import (  # noqa: PLC0415
         WEBHOOK_VERIFIERS,
-        _provider_auth_method,
+        provider_auth_method as _provider_auth_method,
     )
     from app.core.tenant_context import (  # noqa: PLC0415
         get_tenant_with_webhook_secrets,
@@ -1182,7 +1182,9 @@ async def authenticate_adjustment(
         raw_body = base64.b64decode(body.raw_body_b64, validate=True)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="raw_body_b64 invalid") from exc
-    from app.api.webhooks import WEBHOOK_VERIFIERS  # noqa: PLC0415
+    from app.webhooks.verification_contract import (  # noqa: PLC0415
+        WEBHOOK_VERIFIERS,
+    )
     from app.core.tenant_context import (  # noqa: PLC0415
         get_tenant_with_webhook_secrets,
     )

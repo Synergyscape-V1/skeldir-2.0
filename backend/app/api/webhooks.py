@@ -14,7 +14,6 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from collections.abc import Callable
 from types import MappingProxyType
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
@@ -55,11 +54,9 @@ from app.revenue_verification.failure_boundary import (
     B23FailureBoundaryClass,
     classify_b23_failure_boundary,
 )
-from app.webhooks.signatures import (
-    verify_shopify_signature,
-    verify_stripe_signature,
-    verify_paypal_signature,
-    verify_woocommerce_signature,
+from app.webhooks.verification_contract import (
+    WEBHOOK_VERIFIERS,
+    provider_auth_method as _provider_auth_method,
 )
 
 router = APIRouter()
@@ -95,13 +92,6 @@ WEBHOOK_INVALID_PAYLOAD_DETAIL = "Invalid request payload."
 WEBHOOK_UNSUPPORTED_EVENT_FAMILY_STATUS = "unsupported_event_family_ignored"
 B23_NATURAL_DISPATCH_DISABLE_ENV = "SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH"
 
-WebhookVerifier = Callable[[bytes, Optional[str], Optional[str]], bool]
-WEBHOOK_VERIFIERS: dict[str, tuple[str, WebhookVerifier]] = {
-    "shopify": ("shopify_webhook_secret", verify_shopify_signature),
-    "stripe": ("stripe_webhook_secret", verify_stripe_signature),
-    "paypal": ("paypal_webhook_secret", verify_paypal_signature),
-    "woocommerce": ("woocommerce_webhook_secret", verify_woocommerce_signature),
-}
 _SUPPORTED_EVENT_FAMILY_HINTS = MappingProxyType(
     {
         "shopify": frozenset({"orders.create", "order_create"}),
@@ -204,20 +194,6 @@ async def _resolve_tenant_info_for_webhook_auth(
         return await get_tenant_with_webhook_secrets(api_key)
     except AuthError:
         return None
-
-
-_PROVIDER_AUTH_METHOD = MappingProxyType(
-    {
-        "shopify": "hmac-sha256-base64",
-        "stripe": "hmac-sha256-timestamped-hex",
-        "paypal": "rsa-sha256-transmission",
-        "woocommerce": "hmac-sha256-base64",
-    }
-)
-
-
-def _provider_auth_method(provider: str) -> str:
-    return _PROVIDER_AUTH_METHOD.get(provider.strip().lower(), "unknown")
 
 
 def _provider_topic_for_family(
