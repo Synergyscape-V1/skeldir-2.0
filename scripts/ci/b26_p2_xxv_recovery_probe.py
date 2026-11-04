@@ -647,6 +647,10 @@ def _issued_observation_justification(
         return False, {}, "observation_read_not_issuance_time"
     if facts["data_freshness_seconds"] != 0:
         return False, {}, "observation_freshness_not_source_exact"
+    boundary = artifact.get("evidence_temporal_boundary") or {}
+    snapshot_at = _utc_time(boundary.get("evidence_snapshot_at"))
+    if snapshot_at is not None and snapshot_at > facts["created_at"]:
+        return False, {}, "observation_snapshot_after_issuance"
     evidence = {
         "created_at": facts["created_at"].isoformat(),
         "source_read_started_at": facts["read_started_at"].isoformat(),
@@ -965,6 +969,7 @@ def _verify_signed_latest_checkpoint(
     *,
     global_ledger: list[dict],
     target_ledger: list[dict],
+    authority_universe: str | None = None,
 ) -> tuple[bool, str, dict]:
     public_key = commitment.get("public_key")
     latest = commitment.get("latest_checkpoint")
@@ -976,6 +981,11 @@ def _verify_signed_latest_checkpoint(
         return False, "signed_witness_proof_malformed", {}
     if not signature.startswith("ed25519:"):
         return False, "signed_witness_signature_algorithm", {}
+    if (
+        authority_universe is not None
+        and payload.get("authority_universe") != authority_universe
+    ):
+        return False, "signed_witness_authority_universe_mismatch", {}
     try:
         raw_key = base64.urlsafe_b64decode(
             (public_key + "=" * (-len(public_key) % 4)).encode("ascii")
@@ -1139,7 +1149,9 @@ def _read_causal_history(
                i.verified_amount_minor, i.verified_amount_currency,
                i.verified_amount_scale,
                i.b26_p2_demotion_reason, i.tenant_id::text,
-               a.statement, a.signature, a.key_sha256
+               a.statement, a.signature, a.key_sha256,
+               i.normalized_commerce_reference_kind,
+               i.normalized_commerce_reference_value
           FROM public.webhook_ingress_identities AS i
           LEFT JOIN public.b26_p2_source_money_attestation AS a
                  ON a.webhook_ingress_identity_id = i.id
@@ -1187,6 +1199,12 @@ def _read_causal_history(
                 }
                 if len(row) >= 14 and row[11] is not None
                 else None
+            ),
+            "normalized_commerce_reference_kind": (
+                row[14] if len(row) >= 16 else None
+            ),
+            "normalized_commerce_reference_value": (
+                row[15] if len(row) >= 16 else None
             ),
         }
 
@@ -1353,7 +1371,11 @@ def _verify_witness_commitment(
 
 
 def _verify_source_attestation(
-    source: dict, public_key: str | None
+    source: dict,
+    public_key: str | None,
+    *,
+    authority_universe: str | None = None,
+    expected_economic_identity: str | None = None,
 ) -> tuple[bool, str]:
     if not isinstance(public_key, str) or not public_key:
         return False, "source_attestation_public_key_missing"
@@ -1384,6 +1406,26 @@ def _verify_source_attestation(
         )
     except Exception as exc:  # noqa: BLE001
         return False, f"source_attestation_signature_invalid:{type(exc).__name__}"
+    if (
+        authority_universe is not None
+        and statement.get("authority_universe") != authority_universe
+    ):
+        return False, "source_attestation_authority_universe_mismatch"
+    normalized_value = source.get(
+        "normalized_commerce_reference_value"
+    ) or source.get("provider_native_commerce_reference")
+    if (
+        expected_economic_identity is not None
+        and normalized_value != expected_economic_identity
+    ):
+        return False, "source_attestation_economic_identity_mismatch"
+    if (
+        statement.get("normalized_commerce_reference_kind")
+        != source.get("normalized_commerce_reference_kind")
+        or statement.get("normalized_commerce_reference_value")
+        != source.get("normalized_commerce_reference_value")
+    ):
+        return False, "source_attestation_economic_identity_mismatch"
     if (
         statement.get("webhook_ingress_identity_id") != source.get("id")
         or statement.get("tenant_id") != source.get("tenant_id")
@@ -1515,7 +1557,6 @@ def _final_causal_progression(
         reason = "global_history_missing"
     else:
         previous_hash = None
-        previous_recorded = None
         for row in global_ledger:
             recorded = _utc_time(row.get("recorded_at"))
             if previous_hash is None:
@@ -1528,11 +1569,7 @@ def _final_causal_progression(
             if recorded is None:
                 reason = "global_ledger_time_missing"
                 break
-            if previous_recorded is not None and recorded < previous_recorded:
-                reason = "global_ledger_time_reversed"
-                break
             previous_hash = row.get("entry_hash")
-            previous_recorded = recorded
     if reason:
         return {"established": False, "reason": reason}
     if _global_prefix_digest(global_ledger) != history.get("prefix_digest"):
@@ -1542,6 +1579,7 @@ def _final_causal_progression(
     source_attestation_public_key = history.get(
         "source_attestation_public_key"
     )
+    authority_universe = history.get("authority_universe")
     for row in ledger:
         if row.get("verdict_id") != verdict_id:
             reason = "ledger_verdict_mismatch"
@@ -1562,6 +1600,9 @@ def _final_causal_progression(
             != row.get("prev_entry_hash")
         ):
             reason = "ledger_transition_membership_mismatch"
+            break
+        if global_row.get("recorded_at") != row.get("recorded_at"):
+            reason = "ledger_transition_time_mismatch"
             break
         if _ledger_entry_hash(row) != row.get("entry_hash"):
             reason = "ledger_transition_content_hash_mismatch"
@@ -1585,7 +1626,12 @@ def _final_causal_progression(
             reason = "ledger_new_source_content_mismatch"
             break
         attestation_ok, attestation_reason = _verify_source_attestation(
-            new_source, source_attestation_public_key
+            new_source,
+            source_attestation_public_key,
+            authority_universe=authority_universe,
+            expected_economic_identity=current[
+                "provider_native_commerce_reference"
+            ],
         )
         if not attestation_ok:
             reason = attestation_reason
@@ -1593,17 +1639,8 @@ def _final_causal_progression(
         new_created = _utc_time(new_source.get("created_at"))
         new_event = _utc_time(new_source.get("event_timestamp"))
         recorded = _utc_time(row.get("recorded_at"))
-        verdict_created = _utc_time(verdict.get("created_at"))
-        if (
-            new_created is None
-            or new_event is None
-            or recorded is None
-            or verdict_created is None
-            or new_created > recorded
-            or new_event > recorded
-            or recorded < verdict_created
-        ):
-            reason = "ledger_new_source_not_before_commit"
+        if new_created is None or new_event is None or recorded is None:
+            reason = "ledger_source_time_missing"
             break
         prior_id = row.get("prior_source_ingress")
         if prior_id is not None:
@@ -1623,7 +1660,12 @@ def _final_causal_progression(
                 reason = "ledger_prior_source_content_mismatch"
                 break
             attestation_ok, attestation_reason = _verify_source_attestation(
-                prior_source, source_attestation_public_key
+                prior_source,
+                source_attestation_public_key,
+                authority_universe=authority_universe,
+                expected_economic_identity=current[
+                    "provider_native_commerce_reference"
+                ],
             )
             if not attestation_ok:
                 reason = attestation_reason
@@ -1650,6 +1692,7 @@ def _final_causal_progression(
             commitment,
             global_ledger=global_ledger,
             target_ledger=ledger,
+            authority_universe=authority_universe,
         )
     )
     if (
@@ -1658,9 +1701,6 @@ def _final_causal_progression(
     ):
         signed_witness_ok = False
         signed_witness_reason = "signed_witness_untrusted_key"
-    last_recorded_second = (
-        last_recorded.replace(microsecond=0) if last_recorded else None
-    )
     checkpoint_observed = _utc_time(signed_witness.get("observed_at"))
     if restored_created is None:
         reason = "restored_created_at_invalid"
@@ -1692,11 +1732,13 @@ def _final_causal_progression(
         reason = "restoration_not_before_amendment_admission"
     elif admission_started > amendment_admitted:
         reason = "amendment_admission_time_reversed"
-    elif admission_started > last_recorded:
+    elif checkpoint_observed is None:
+        reason = "signed_witness_observation_missing"
+    elif admission_started > checkpoint_observed:
         reason = "amendment_commit_precedes_admission"
-    elif restored_created >= last_recorded:
+    elif restored_created >= checkpoint_observed:
         reason = "restoration_not_before_amendment_commit"
-    elif last_recorded >= final_observed:
+    elif checkpoint_observed > final_observed:
         reason = "final_not_after_amendment_commit"
     elif not witness or not continuity:
         reason = "history_witness_state_missing"
@@ -1704,8 +1746,6 @@ def _final_causal_progression(
         reason = "history_witness_commitment_unverified"
     elif not signed_witness_ok:
         reason = signed_witness_reason
-    elif checkpoint_observed is None:
-        reason = "signed_witness_observation_missing"
     elif checkpoint_observed < last_recorded:
         reason = "signed_witness_predates_transition"
     elif int(witness["count"]) != int(continuity["count"]):
@@ -1734,14 +1774,44 @@ def _final_causal_progression(
     if reason:
         return {"established": False, "reason": reason}
 
+    for row in ledger:
+        recorded = _utc_time(row.get("recorded_at"))
+        if recorded is not None and recorded > checkpoint_observed:
+            return {
+                "established": False,
+                "reason": "target_transition_after_witness",
+            }
+        for source_id in (
+            row.get("prior_source_ingress"),
+            row.get("new_source_ingress"),
+        ):
+            if source_id is None:
+                continue
+            source = source_ingresses.get(str(source_id)) or {}
+            created = _utc_time(source.get("created_at"))
+            if created is not None and created > checkpoint_observed:
+                return {
+                    "established": False,
+                    "reason": "source_after_witness",
+                }
+    for row in global_ledger[: int(signed_witness.get("ledger_count", 0))]:
+        recorded = _utc_time(row.get("recorded_at"))
+        if recorded is not None and recorded > checkpoint_observed:
+            return {
+                "established": False,
+                "reason": "global_transition_after_witness",
+            }
+
     created_at = _utc_time(artifact.get("created_at"))
     if created_at is None:
         reason = "final_created_at_invalid"
     elif (
-        last_recorded_second is not None
-        and created_at < last_recorded_second
+        last_recorded is not None
+        and created_at < last_recorded.replace(microsecond=0)
     ):
         reason = "final_precedes_accepted_transition"
+    elif created_at > final_observed:
+        reason = "final_created_after_observation"
     elif created_at < _utc_time(verdict["last_transition_at"]):
         reason = "final_precedes_verdict_transition"
     if reason:
@@ -2445,6 +2515,9 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             tenant["tenant_id"], initial["verdict_id"], event_ref
         )
         causal_history["final_observation"] = final_observation_window
+        causal_history["authority_universe"] = state.get(
+            "authority_universe"
+        )
         record["witness_public_key"] = staged["public"].read_text(
             encoding="utf-8"
         ).strip()

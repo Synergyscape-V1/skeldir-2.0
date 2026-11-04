@@ -211,7 +211,10 @@ def _verified(amount: int = 4321) -> dict:
     }
 
 
-def _signed_witness_commitment(global_ledger: list[dict]) -> dict:
+def _signed_witness_commitment(
+    global_ledger: list[dict],
+    authority_universe: str | None = "universe",
+) -> dict:
     private_key = Ed25519PrivateKey.generate()
     public_key = base64.urlsafe_b64encode(
         private_key.public_key().public_bytes_raw()
@@ -226,6 +229,7 @@ def _signed_witness_commitment(global_ledger: list[dict]) -> dict:
         "ledger_tip_hash": global_ledger[-1]["entry_hash"],
         "ledger_prefix_digest": prefix_digest,
         "previous_checkpoint_hash": None,
+        "authority_universe": authority_universe,
     }
     material = json.dumps(
         payload,
@@ -265,27 +269,7 @@ _SOURCE_ATTESTATION_PUBLIC = base64.urlsafe_b64encode(
 ).rstrip(b"=").decode("ascii")
 
 
-def _source_attestation(source: dict) -> dict:
-    statement = {
-        "version": ATTESTATION_STATEMENT_VERSION,
-        "tenant_id": source["tenant_id"],
-        "webhook_ingress_identity_id": source["id"],
-        "provider": source["provider"],
-        "provider_native_event_reference": source[
-            "provider_native_event_reference"
-        ],
-        "provider_native_commerce_reference": source[
-            "provider_native_commerce_reference"
-        ],
-        "normalized_commerce_reference_kind": None,
-        "normalized_commerce_reference_value": None,
-        "verified_amount_minor": source["verified_amount_minor"],
-        "verified_amount_currency": source["verified_amount_currency"],
-        "verified_amount_scale": source["verified_amount_scale"],
-        "event_timestamp": source["event_timestamp"],
-        "body_sha256": "0" * 64,
-        "authority_universe": None,
-    }
+def _sign_source_statement(statement: dict) -> dict:
     signature = _SOURCE_ATTESTATION_PRIVATE.sign(
         canonical_statement_bytes(statement)
     )
@@ -299,6 +283,34 @@ def _source_attestation(source: dict) -> dict:
     }
 
 
+def _source_attestation(source: dict) -> dict:
+    statement = {
+        "version": ATTESTATION_STATEMENT_VERSION,
+        "tenant_id": source["tenant_id"],
+        "webhook_ingress_identity_id": source["id"],
+        "provider": source["provider"],
+        "provider_native_event_reference": source[
+            "provider_native_event_reference"
+        ],
+        "provider_native_commerce_reference": source[
+            "provider_native_commerce_reference"
+        ],
+        "normalized_commerce_reference_kind": source.get(
+            "normalized_commerce_reference_kind"
+        ),
+        "normalized_commerce_reference_value": source.get(
+            "normalized_commerce_reference_value"
+        ),
+        "verified_amount_minor": source["verified_amount_minor"],
+        "verified_amount_currency": source["verified_amount_currency"],
+        "verified_amount_scale": source["verified_amount_scale"],
+        "event_timestamp": source["event_timestamp"],
+        "body_sha256": "0" * 64,
+        "authority_universe": "universe",
+    }
+    return _sign_source_statement(statement)
+
+
 def _causal_history(status: str = "matched_provisional") -> dict:
     current = {
         "id": "ingress-new",
@@ -306,6 +318,8 @@ def _causal_history(status: str = "matched_provisional") -> dict:
         "provider": "stripe",
         "provider_native_event_reference": "evt_new",
         "provider_native_commerce_reference": "pi_same",
+        "normalized_commerce_reference_kind": "commerce_reference",
+        "normalized_commerce_reference_value": "pi_same",
         "event_timestamp": "2026-11-03T06:00:04Z",
         "created_at": "2026-11-03T06:00:04Z",
         "verified_amount_minor": 5100,
@@ -319,6 +333,8 @@ def _causal_history(status: str = "matched_provisional") -> dict:
         "provider": "stripe",
         "provider_native_event_reference": "evt_old",
         "provider_native_commerce_reference": "pi_same",
+        "normalized_commerce_reference_kind": "commerce_reference",
+        "normalized_commerce_reference_value": "pi_same",
         "event_timestamp": "2026-11-03T05:59:00Z",
         "created_at": "2026-11-03T05:59:00Z",
         "verified_amount_minor": 4321,
@@ -431,6 +447,7 @@ def _causal_history(status: str = "matched_provisional") -> dict:
         "prefix_digest": commitment["prefix_digest"],
         "witness_commitment": commitment,
         "source_attestation_public_key": _SOURCE_ATTESTATION_PUBLIC,
+        "authority_universe": "universe",
     }
 
 
@@ -1114,7 +1131,9 @@ def test_foreign_modelled_later_witness_is_refused() -> None:
     row["new_attributed_amount_minor"] = 5200
     row["entry_hash"] = _ledger_entry_hash(row)
     history["global_ledger"][-1]["entry_hash"] = row["entry_hash"]
-    replacement = _signed_witness_commitment(history["global_ledger"])
+    replacement = _signed_witness_commitment(
+        history["global_ledger"], history["authority_universe"]
+    )
     history["witness_commitment"] = replacement
     history["prefix_digest"] = replacement["prefix_digest"]
     history["witness"] = {
@@ -1153,7 +1172,9 @@ def test_resigned_history_without_authority_restoration_is_refused() -> None:
     row["new_authority_state"] = "historically_unverifiable"
     row["entry_hash"] = _ledger_entry_hash(row)
     history["global_ledger"][-1]["entry_hash"] = row["entry_hash"]
-    replacement = _signed_witness_commitment(history["global_ledger"])
+    replacement = _signed_witness_commitment(
+        history["global_ledger"], history["authority_universe"]
+    )
     history["witness_commitment"] = replacement
     history["prefix_digest"] = replacement["prefix_digest"]
     history["witness"] = {
@@ -1231,6 +1252,85 @@ def test_tampered_source_attestation_is_refused() -> None:
     )
     assert result["established"] is False
     assert result["reason"].startswith("source_attestation_")
+
+
+def _causal(record: dict, history: dict | None = None) -> dict:
+    return _final_causal_progression(
+        record["final_signed"],
+        history or record["causal_history"],
+        restored_signed=record["restored_baseline"],
+        restoration_observed_at=record["restoration_observed_at"],
+        amendment_admission_started_at=record[
+            "amendment_admission_started_at"
+        ],
+        amendment_admitted_at=record["amendment_admitted_at"],
+        final_observed_at=record["final_observed_at"],
+        baseline_amount=4321,
+        amended_amount=5100,
+        currency="USD",
+        verdict_id="v1",
+        tenant_id_hash=tenant_hash("tenant"),
+    )
+
+
+def test_foreign_authority_universe_is_refused() -> None:
+    record = _positive()
+    source = record["causal_history"]["source_ingresses"]["ingress-new"]
+    statement = dict(source["source_attestation"]["statement"])
+    statement["authority_universe"] = "other-universe"
+    source["source_attestation"] = _sign_source_statement(statement)
+    result = _causal(record)
+    assert result["established"] is False
+    assert result["reason"] == "source_attestation_authority_universe_mismatch"
+
+
+def test_foreign_economic_identity_is_refused() -> None:
+    record = _positive()
+    source = record["causal_history"]["source_ingresses"]["ingress-new"]
+    statement = dict(source["source_attestation"]["statement"])
+    statement["normalized_commerce_reference_value"] = "pi_other"
+    source["source_attestation"] = _sign_source_statement(statement)
+    result = _causal(record)
+    assert result["established"] is False
+    assert result["reason"] == "source_attestation_economic_identity_mismatch"
+
+
+def test_future_final_evidence_snapshot_is_refused() -> None:
+    record = _positive()
+    record["final_signed"]["artifact"]["evidence_temporal_boundary"][
+        "evidence_snapshot_at"
+    ] = "2026-11-03T06:00:07Z"
+    assert _acceptance(record) is False
+
+
+def test_valid_concurrent_reversed_timestamps_are_accepted() -> None:
+    record = _positive()
+    history = record["causal_history"]
+    history["ledger"][0]["recorded_at"] = "2026-11-03T06:00:05Z"
+    history["ledger"][1]["recorded_at"] = "2026-11-03T06:00:04Z"
+    history["global_ledger"][-2]["recorded_at"] = "2026-11-03T06:00:05Z"
+    history["global_ledger"][-1]["recorded_at"] = "2026-11-03T06:00:04Z"
+    assert _acceptance(record) is True
+
+
+def test_inconsistent_target_and_global_time_is_refused() -> None:
+    record = _positive()
+    record["causal_history"]["ledger"][-1][
+        "recorded_at"
+    ] = "2026-11-03T06:00:04Z"
+    result = _causal(record)
+    assert result["established"] is False
+    assert result["reason"] == "ledger_transition_time_mismatch"
+
+
+def test_source_created_after_witness_is_refused() -> None:
+    record = _positive()
+    record["causal_history"]["source_ingresses"]["ingress-new"][
+        "created_at"
+    ] = "2026-11-03T06:00:07Z"
+    result = _causal(record)
+    assert result["established"] is False
+    assert result["reason"] == "source_after_witness"
 
 
 def test_shared_ledger_activity_is_preserved() -> None:
