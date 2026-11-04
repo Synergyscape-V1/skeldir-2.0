@@ -588,6 +588,19 @@ def test_published_mode_projection_is_replayable() -> None:
     assert _acceptance(mode_projection(record)) is True
 
 
+def test_retained_exact_head_cell_replays() -> None:
+    path = (
+        REPO_ROOT
+        / "docs"
+        / "forensics"
+        / "evidence"
+        / "b26_p2_xxv_a8"
+        / "xxv-r0038-recovery-context-20261104.json"
+    )
+    document = json.loads(path.read_text(encoding="utf-8"))
+    assert _acceptance(document["details"]["modes"]["positive"]) is True
+
+
 def test_contract_confirmed_match_is_consumable() -> None:
     record = _positive("matched_confirmed")
     assert _acceptance(record) is True
