@@ -202,6 +202,42 @@ def test_failed_deferral_and_failed_inline_refresh_is_not_deferred(
     assert tenant not in matviews._REALTIME_REFRESH_ACTIVE
 
 
+def test_controlled_serial_comparison_reduces_refresh_work(monkeypatch) -> None:
+    _reset()
+    tenant = uuid4()
+    state = {"now": 0.0}
+    monkeypatch.setattr(matviews.time, "monotonic", lambda: state["now"])
+    arrivals = 2760
+    interval_s = 1.0 / 46.0
+    legacy_refresh_calls = arrivals
+    coalesced_refresh_calls = 0
+    next_trailing = None
+    for index in range(arrivals):
+        state["now"] = index * interval_s
+        if next_trailing is not None and state["now"] >= next_trailing:
+            matviews._mark_trailing_start(tenant)
+            coalesced_refresh_calls += 1
+            matviews._pending_realtime_refresh_delay(tenant)
+            next_trailing = None
+        may_refresh, delay = matviews._begin_realtime_refresh(
+            tenant, state["now"]
+        )
+        if may_refresh:
+            coalesced_refresh_calls += 1
+            matviews._pending_realtime_refresh_delay(tenant)
+        elif delay > 0:
+            next_trailing = state["now"] + delay
+    if next_trailing is not None:
+        state["now"] = next_trailing
+        matviews._mark_trailing_start(tenant)
+        coalesced_refresh_calls += 1
+        matviews._pending_realtime_refresh_delay(tenant)
+
+    assert legacy_refresh_calls == 2760
+    assert 60 <= coalesced_refresh_calls <= 61
+    assert coalesced_refresh_calls < legacy_refresh_calls / 40
+
+
 def test_failed_owner_releases_claim_then_interval_governs_next_arrival() -> None:
     _reset()
     tenant = uuid4()

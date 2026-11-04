@@ -101,6 +101,12 @@
     "Refresh-work reduction and one passing governed run are demonstrated; elimination of the intermittent slow regime is not.",
     "B1.7 P4 failed once at the same exact head and passed on a same-head rerun; it remains independently noisy."
   ],
+  "controlled_causal_comparison": {
+    "method": "Deterministic serial scheduler model over the same 2760 arrivals at 46 rps with the same 1.0 s realtime interval: legacy ownership-only coalescing versus interval-at-arrival coalescing.",
+    "legacy_refresh_calls": 2760,
+    "coalesced_refresh_calls": 61,
+    "scope": "Scheduler policy only; no database, CPU or governed Phase8 claim follows from this comparison."
+  },
   "claim_scope": {
     "demonstrated": [
       "realtime refresh execution falls from one full refresh set per event to approximately one per tenant interval",
