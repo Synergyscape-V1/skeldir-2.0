@@ -37,19 +37,32 @@ def main() -> int:
     if causal_progression.get("established") is not True:
         raise SystemExit("final_causal_progression_not_established")
     details = {
+        "proof_kind": "retained_execution_observations",
         "modes": {
             mode: {
                 "passed": record["passed"],
                 "baseline": record.get("baseline"),
                 "baseline_signed": record.get("baseline_signed"),
+                "baseline_authority": record.get("baseline_authority"),
                 "fault": record.get("fault"),
                 "restored_baseline": record.get("restored_baseline"),
+                "restored_authority": record.get("restored_authority"),
+                "restoration_observation": record.get(
+                    "restoration_observation"
+                ),
+                "restoration_observed_at": record.get(
+                    "restoration_observed_at"
+                ),
                 "restoration_semantic_authority": record.get(
                     "restoration_semantic_authority"
                 ),
                 "causal_progression": record.get("causal_progression"),
                 "causal_history": record.get("causal_history"),
                 "final_signed": record.get("final_signed"),
+                "final_authority": record.get("final_authority"),
+                "final_observation": record.get("final_observation"),
+                "final_observed_at": record.get("final_observed_at"),
+                "witness_public_key": record.get("witness_public_key"),
                 "observed": record.get("observed"),
                 "compensation": record.get("compensation"),
                 "readers": record.get("readers"),
@@ -57,6 +70,47 @@ def main() -> int:
                 "amendment": record.get("amendment"),
             }
             for mode, record in records.items()
+        },
+        "retained_execution_observations": {
+            "baseline_signed": positive.get("baseline_signed"),
+            "restored_baseline": positive.get("restored_baseline"),
+            "final_signed": positive.get("final_signed"),
+            "baseline_authority": positive.get("baseline_authority"),
+            "restored_authority": positive.get("restored_authority"),
+            "final_authority": positive.get("final_authority"),
+            "restoration_observation": positive.get(
+                "restoration_observation"
+            ),
+            "final_observation": positive.get("final_observation"),
+            "witness_public_key": positive.get("witness_public_key"),
+        },
+        "financial_history_commitment": {
+            "causal_history": positive.get("causal_history"),
+            "signed_witness": causal_progression.get("signed_witness"),
+            "expected_provider": causal_progression.get("expected_provider"),
+            "expected_match": causal_progression.get("expected_match"),
+            "expected_webhook": causal_progression.get("expected_webhook"),
+        },
+        "causal_order": {
+            "restoration_observed_at": positive.get(
+                "restoration_observed_at"
+            ),
+            "amendment_admission_started_at": positive.get(
+                "amendment_admission_started_at"
+            ),
+            "amendment_admitted_at": positive.get(
+                "amendment_admitted_at"
+            ),
+            "accepted_transition_at": causal_progression.get(
+                "accepted_transition_at"
+            ),
+            "final_observation": positive.get("final_observation"),
+            "final_observed_at": positive.get("final_observed_at"),
+            "final_created_at": (
+                (positive.get("final_signed") or {}).get("artifact") or {}
+            ).get("created_at"),
+            "signed_precision": "second",
+            "ledger_precision": "microsecond",
         },
         "artifact_commit": next(iter(commits)),
         "runtime_identity": positive.get("artifact"),
@@ -99,9 +153,18 @@ def main() -> int:
         scenario_id="signed-custody-restoration-semantic-authority",
         falsifier_id="changed-lineage-changed-completeness-changed-observation-time",
         details={
+            "proof_kind": "restoration_and_history_authority",
             "baseline_signed": positive.get("baseline_signed"),
             "restored_baseline": positive.get("restored_baseline"),
+            "baseline_authority": positive.get("baseline_authority"),
+            "restored_authority": positive.get("restored_authority"),
+            "final_authority": positive.get("final_authority"),
+            "restored_observation": positive.get("restoration_observation"),
+            "final_observation": positive.get("final_observation"),
             "restoration_semantic_authority": restoration_authority,
+            "financial_history_commitment": details[
+                "financial_history_commitment"
+            ],
         },
         status="PASS",
     )
@@ -115,9 +178,15 @@ def main() -> int:
         scenario_id="signed-post-amendment-causal-progression",
         falsifier_id="fabricated-history-fabricated-order-missing-transition",
         details={
+            "proof_kind": "causal_order",
             "final_signed": positive.get("final_signed"),
+            "final_observation": positive.get("final_observation"),
             "causal_history": positive.get("causal_history"),
             "causal_progression": causal_progression,
+            "causal_order": details["causal_order"],
+            "financial_history_commitment": details[
+                "financial_history_commitment"
+            ],
         },
         status="PASS",
     )

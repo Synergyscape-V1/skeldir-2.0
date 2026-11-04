@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import json
 import sys
 from pathlib import Path
 
 import yaml
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
@@ -20,8 +22,10 @@ from b26_p2_xxv_recovery_probe import (  # noqa: E402
     _expected_provider_entry,
     _expected_webhook_entry,
     _final_causal_progression,
+    _global_prefix_digest,
     _is_issuance_audit_entry,
     _key_lifecycle_valid,
+    _ledger_entry_hash,
     _negative_decision,
     _offline_verification,
     _restoration_semantic_authority,
@@ -137,7 +141,119 @@ def _verified(amount: int = 4321) -> dict:
     }
 
 
+def _signed_witness_commitment(global_ledger: list[dict]) -> dict:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes_raw()
+    ).rstrip(b"=").decode("ascii")
+    prefix_digest = _global_prefix_digest(global_ledger)
+    payload = {
+        "version": 1,
+        "key_id": "kid:test-witness",
+        "observed_at": "2026-11-03T06:00:06Z",
+        "ledger_count": len(global_ledger),
+        "ledger_tip_seq": global_ledger[-1]["seq"],
+        "ledger_tip_hash": global_ledger[-1]["entry_hash"],
+        "ledger_prefix_digest": prefix_digest,
+        "previous_checkpoint_hash": None,
+    }
+    material = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    payload["checkpoint_hash"] = hashlib.sha256(material).hexdigest()
+    signed_material = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    signature = private_key.sign(signed_material)
+    return {
+        "verified": True,
+        "reason": None,
+        "count": len(global_ledger),
+        "tip_seq": global_ledger[-1]["seq"],
+        "tip_hash": global_ledger[-1]["entry_hash"],
+        "prefix_digest": prefix_digest,
+        "public_key": public_key,
+        "latest_checkpoint": {
+            "payload": payload,
+            "signature": "ed25519:"
+            + base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii"),
+        },
+    }
+
+
 def _causal_history(status: str = "matched_provisional") -> dict:
+    current = {
+        "id": "ingress-new",
+        "provider": "stripe",
+        "provider_native_event_reference": "evt_new",
+        "provider_native_commerce_reference": "pi_same",
+        "event_timestamp": "2026-11-03T06:00:04Z",
+        "created_at": "2026-11-03T06:00:04Z",
+        "verified_amount_minor": 5100,
+        "verified_amount_currency": "USD",
+        "demotion_reason": None,
+    }
+    prior = {
+        "id": "ingress-old",
+        "provider": "stripe",
+        "provider_native_event_reference": "evt_old",
+        "provider_native_commerce_reference": "pi_same",
+        "event_timestamp": "2026-11-03T05:59:00Z",
+        "created_at": "2026-11-03T05:59:00Z",
+        "verified_amount_minor": 4321,
+        "verified_amount_currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_new",
+    }
+    ledger_row = {
+        "seq": 10,
+        "verdict_id": "v1",
+        "tenant_id": "tenant",
+        "provider": "stripe",
+        "provider_native_event_reference": "evt_new",
+        "prior_attributed_amount_minor": 4321,
+        "new_attributed_amount_minor": 5100,
+        "prior_verified_amount_minor": 4321,
+        "new_verified_amount_minor": 5100,
+        "prior_authority_state": "authoritative",
+        "new_authority_state": "authoritative",
+        "prior_source_ingress": "ingress-old",
+        "new_source_ingress": "ingress-new",
+        "recorded_at": "2026-11-03T06:00:05Z",
+        "prev_entry_hash": None,
+        "entry_hash": None,
+    }
+    global_ledger = []
+    previous_hash = None
+    for seq in range(1, 10):
+        entry_hash = hashlib.sha256(f"filler-{seq}".encode()).hexdigest()
+        global_ledger.append(
+            {
+                "seq": seq,
+                "entry_hash": entry_hash,
+                "prev_entry_hash": previous_hash,
+                "recorded_at": "2026-11-03T06:00:01Z",
+            }
+        )
+        previous_hash = entry_hash
+    ledger_row["prev_entry_hash"] = previous_hash
+    ledger_row["entry_hash"] = _ledger_entry_hash(ledger_row)
+    global_ledger.append(
+        {
+            "seq": ledger_row["seq"],
+            "entry_hash": ledger_row["entry_hash"],
+            "prev_entry_hash": ledger_row["prev_entry_hash"],
+            "recorded_at": ledger_row["recorded_at"],
+        }
+    )
+    commitment = _signed_witness_commitment(global_ledger)
     return {
         "complete": True,
         "reason": None,
@@ -156,58 +272,25 @@ def _causal_history(status: str = "matched_provisional") -> dict:
             "created_at": "2026-11-03T06:00:00Z",
             "updated_at": "2026-11-03T06:00:05Z",
         },
-        "current_ingress": {
-            "id": "ingress-new",
-            "provider": "stripe",
-            "provider_native_event_reference": "evt_new",
-            "provider_native_commerce_reference": "pi_same",
-            "event_timestamp": "2026-11-03T06:00:04Z",
-            "created_at": "2026-11-03T06:00:04Z",
-            "verified_amount_minor": 5100,
-            "verified_amount_currency": "USD",
-            "demotion_reason": None,
+        "current_ingress": current,
+        "prior_ingress": prior,
+        "source_ingresses": {
+            "ingress-new": current,
+            "ingress-old": prior,
         },
-        "prior_ingress": {
-            "id": "ingress-old",
-            "provider": "stripe",
-            "provider_native_event_reference": "evt_old",
-            "provider_native_commerce_reference": "pi_same",
-            "event_timestamp": "2026-11-03T05:59:00Z",
-            "created_at": "2026-11-03T05:59:00Z",
-            "verified_amount_minor": 4321,
-            "verified_amount_currency": "USD",
-            "demotion_reason": "superseded_by_provider_amendment:evt_new",
-        },
-        "ledger": [
-            {
-                "seq": 10,
-                "provider_native_event_reference": "evt_new",
-                "prior_verified_amount_minor": 4321,
-                "new_verified_amount_minor": 5100,
-                "prior_source_ingress": "ingress-old",
-                "new_source_ingress": "ingress-new",
-                "recorded_at": "2026-11-03T06:00:05Z",
-                "prev_entry_hash": "a",
-                "entry_hash": "b",
-            }
-        ],
+        "ledger": [ledger_row],
+        "global_ledger": global_ledger,
         "witness": {
-            "count": 10,
-            "tip_seq": 10,
-            "tip_hash": "b",
+            "count": commitment["count"],
+            "tip_seq": commitment["tip_seq"],
+            "tip_hash": commitment["tip_hash"],
         },
         "continuity": {
-            "count": 10,
-            "tip_hash": "b",
+            "count": commitment["count"],
+            "tip_hash": commitment["tip_hash"],
         },
-        "prefix_digest": "digest",
-        "witness_commitment": {
-            "verified": True,
-            "count": 10,
-            "tip_seq": 10,
-            "tip_hash": "b",
-            "prefix_digest": "digest",
-        },
+        "prefix_digest": commitment["prefix_digest"],
+        "witness_commitment": commitment,
     }
 
 
@@ -246,6 +329,12 @@ def _final_verified(
         expected_match,
     ]
     artifact["created_at"] = "2026-11-03T06:00:06Z"
+    artifact["evidence_temporal_boundary"][
+        "source_read_started_at"
+    ] = "2026-11-03T06:00:06Z"
+    artifact["evidence_temporal_boundary"][
+        "source_read_completed_at"
+    ] = "2026-11-03T06:00:06Z"
     return {
         "status": 200,
         "artifact": artifact,
@@ -281,6 +370,7 @@ def _positive(
         "restored_baseline": _verified(),
         "final_signed": _final_verified(status, history),
         "causal_history": history,
+        "witness_public_key": history["witness_commitment"]["public_key"],
         "restoration_observation": {
             "started_at": "2026-11-03T06:00:00Z",
             "completed_at": "2026-11-03T06:00:01Z",
@@ -288,6 +378,10 @@ def _positive(
         "restoration_observed_at": "2026-11-03T06:00:01Z",
         "amendment_admission_started_at": "2026-11-03T06:00:02Z",
         "amendment_admitted_at": "2026-11-03T06:00:05Z",
+        "final_observation": {
+            "started_at": "2026-11-03T06:00:05Z",
+            "observed_at": "2026-11-03T06:00:07Z",
+        },
         "final_observed_at": "2026-11-03T06:00:07Z",
         "custody": {
             "accepted_count": 3,
@@ -718,6 +812,174 @@ def test_final_causal_order_fabrication_is_refused() -> None:
     )
     assert result["established"] is False
     assert result["reason"] == "final_precedes_accepted_transition"
+
+
+def test_all_results_bind_policy_audience_and_observation() -> None:
+    for name in ("baseline_signed", "restored_baseline", "final_signed"):
+        mutations = (
+            lambda artifact: artifact["policy_action_authority"][
+                "allowed_scopes"
+            ].append("trust.action.execute"),
+            lambda artifact: artifact["policy_action_authority"][
+                "forbidden_scopes"
+            ].remove("trust.action.execute"),
+            lambda artifact: artifact["audience_binding"].__setitem__(
+                "audience_id_hash", "sha256:other-audience"
+            ),
+            lambda artifact: artifact["evidence_temporal_boundary"].__setitem__(
+                "data_freshness_seconds", 1
+            ),
+            lambda artifact: artifact["evidence_temporal_boundary"].__setitem__(
+                "source_read_started_at",
+                "2026-11-03T06:00:01Z",
+            ),
+        )
+        for mutate in mutations:
+            record = _positive()
+            mutate(record[name]["artifact"])
+            assert _acceptance(record) is False, name
+
+
+def test_final_changed_freshness_without_new_read_is_refused() -> None:
+    record = _positive()
+    final = record["final_signed"]["artifact"]
+    final["evidence_temporal_boundary"]["data_freshness_seconds"] = 1
+    assert _acceptance(record) is False
+
+
+def test_final_observation_without_window_is_refused() -> None:
+    record = _positive()
+    record.pop("final_observation")
+    assert _acceptance(record) is False
+
+
+def test_final_gained_scope_is_refused() -> None:
+    record = _positive()
+    record["final_signed"]["artifact"]["policy_action_authority"][
+        "allowed_scopes"
+    ].append("trust.action.execute")
+    assert _acceptance(record) is False
+
+
+def test_final_dropped_forbidden_scope_is_refused() -> None:
+    record = _positive()
+    record["final_signed"]["artifact"]["policy_action_authority"][
+        "forbidden_scopes"
+    ].remove("trust.action.execute")
+    assert _acceptance(record) is False
+
+
+def test_final_other_audience_is_refused() -> None:
+    record = _positive()
+    record["final_signed"]["artifact"]["audience_binding"][
+        "audience_id_hash"
+    ] = "sha256:other-audience"
+    assert _acceptance(record) is False
+
+
+def test_invented_transition_content_under_unchanged_hash_is_refused() -> None:
+    record = _positive()
+    record["causal_history"]["ledger"][0][
+        "prior_attributed_amount_minor"
+    ] = 9999
+    result = _final_causal_progression(
+        record["final_signed"],
+        record["causal_history"],
+        restored_signed=record["restored_baseline"],
+        restoration_observed_at=record["restoration_observed_at"],
+        amendment_admission_started_at=record[
+            "amendment_admission_started_at"
+        ],
+        amendment_admitted_at=record["amendment_admitted_at"],
+        final_observed_at=record["final_observed_at"],
+        baseline_amount=4321,
+        amended_amount=5100,
+        currency="USD",
+        verdict_id="v1",
+    )
+    assert result["established"] is False
+    assert result["reason"] == "ledger_transition_content_hash_mismatch"
+
+
+def test_unexplained_origin_source_is_refused() -> None:
+    record = _positive()
+    record["causal_history"]["source_ingresses"].pop("ingress-old")
+    result = _final_causal_progression(
+        record["final_signed"],
+        record["causal_history"],
+        restored_signed=record["restored_baseline"],
+        restoration_observed_at=record["restoration_observed_at"],
+        amendment_admission_started_at=record[
+            "amendment_admission_started_at"
+        ],
+        amendment_admitted_at=record["amendment_admitted_at"],
+        final_observed_at=record["final_observed_at"],
+        baseline_amount=4321,
+        amended_amount=5100,
+        currency="USD",
+        verdict_id="v1",
+    )
+    assert result["established"] is False
+    assert result["reason"] == "ledger_prior_source_unexplained"
+
+
+def test_foreign_modelled_later_witness_is_refused() -> None:
+    record = _positive()
+    history = record["causal_history"]
+    row = history["ledger"][0]
+    row["new_attributed_amount_minor"] = 5200
+    row["entry_hash"] = _ledger_entry_hash(row)
+    history["global_ledger"][-1]["entry_hash"] = row["entry_hash"]
+    replacement = _signed_witness_commitment(history["global_ledger"])
+    history["witness_commitment"] = replacement
+    history["prefix_digest"] = replacement["prefix_digest"]
+    history["witness"] = {
+        "count": replacement["count"],
+        "tip_seq": replacement["tip_seq"],
+        "tip_hash": replacement["tip_hash"],
+    }
+    history["continuity"] = {
+        "count": replacement["count"],
+        "tip_hash": replacement["tip_hash"],
+    }
+    result = _final_causal_progression(
+        record["final_signed"],
+        history,
+        restored_signed=record["restored_baseline"],
+        restoration_observed_at=record["restoration_observed_at"],
+        amendment_admission_started_at=record[
+            "amendment_admission_started_at"
+        ],
+        amendment_admitted_at=record["amendment_admitted_at"],
+        final_observed_at=record["final_observed_at"],
+        baseline_amount=4321,
+        amended_amount=5100,
+        currency="USD",
+        verdict_id="v1",
+        trusted_witness_public_key=record["witness_public_key"],
+    )
+    assert result["established"] is False
+    assert result["reason"] == "signed_witness_untrusted_key"
+
+
+def test_shared_ledger_activity_is_preserved() -> None:
+    record = _positive()
+    history = record["causal_history"]
+    assert len(history["global_ledger"]) > len(history["ledger"])
+    assert _acceptance(record) is True
+
+
+def test_final_issued_in_same_second_as_commit_is_accepted() -> None:
+    record = _positive()
+    final = record["final_signed"]["artifact"]
+    final["created_at"] = "2026-11-03T06:00:05Z"
+    final["evidence_temporal_boundary"][
+        "source_read_started_at"
+    ] = "2026-11-03T06:00:05Z"
+    final["evidence_temporal_boundary"][
+        "source_read_completed_at"
+    ] = "2026-11-03T06:00:05Z"
+    assert _acceptance(record) is True
 
 
 def test_ledger_chain_fabrication_is_refused() -> None:

@@ -791,7 +791,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
-      - name: Bind every contract semantic leaf
+      - name: Prove contract-wide result authority
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
         run: |
           python -m pytest backend/tests/test_b26_p2_xxv_recovery_acceptance.py -q
 

@@ -620,6 +620,84 @@ def _restoration_semantic_authority(
     }
 
 
+def _issued_observation_justification(
+    artifact: dict,
+    window: dict | None,
+    *,
+    require_window: bool,
+) -> tuple[bool, dict, str]:
+    facts = _observation_time_facts(artifact)
+    if facts is None:
+        return False, {}, "observation_time_unavailable"
+    if (
+        facts["read_started_at"] != facts["created_at"]
+        or facts["read_completed_at"] != facts["created_at"]
+    ):
+        return False, {}, "observation_read_not_issuance_time"
+    if facts["data_freshness_seconds"] != 0:
+        return False, {}, "observation_freshness_not_source_exact"
+    evidence = {
+        "created_at": facts["created_at"].isoformat(),
+        "source_read_started_at": facts["read_started_at"].isoformat(),
+        "source_read_completed_at": facts["read_completed_at"].isoformat(),
+        "data_freshness_seconds": facts["data_freshness_seconds"],
+    }
+    if window is not None:
+        started = _utc_time(window.get("started_at"))
+        completed = _utc_time(
+            window.get("completed_at") or window.get("observed_at")
+        )
+        if started is None or completed is None:
+            return False, evidence, "observation_window_missing"
+        started = started.replace(microsecond=0)
+        completed = completed.replace(microsecond=0)
+        if not (started <= facts["created_at"] <= completed):
+            return False, evidence, "observation_time_not_observed"
+        evidence["observation_window"] = dict(window)
+    elif require_window:
+        return False, evidence, "observation_window_missing"
+    return True, evidence, ""
+
+
+def _issued_authority(
+    artifact: dict,
+    reference_artifact: dict,
+    *,
+    window: dict | None,
+    require_window: bool,
+) -> dict:
+    justified, observation, reason = _issued_observation_justification(
+        artifact, window, require_window=require_window
+    )
+    if not justified:
+        return {
+            "established": False,
+            "reason": reason,
+            "observation": observation,
+        }
+    reference_policy = reference_artifact.get("policy_action_authority")
+    reference_audience = reference_artifact.get("audience_binding")
+    if artifact.get("policy_action_authority") != reference_policy:
+        return {
+            "established": False,
+            "reason": "issued_policy_authority_changed",
+            "observation": observation,
+        }
+    if artifact.get("audience_binding") != reference_audience:
+        return {
+            "established": False,
+            "reason": "issued_audience_binding_changed",
+            "observation": observation,
+        }
+    return {
+        "established": True,
+        "reason": None,
+        "observation": observation,
+        "policy_action_authority": artifact.get("policy_action_authority"),
+        "audience_binding": artifact.get("audience_binding"),
+    }
+
+
 def _utc_second_value(value: object) -> str:
     if isinstance(value, datetime):
         return utc_second(value)
@@ -735,6 +813,117 @@ def _entry_matches(actual: dict | None, expected: dict) -> bool:
     )
 
 
+def _ledger_nullable(value: object) -> str:
+    return "NULL" if value is None else str(value)
+
+
+def _ledger_entry_hash(row: dict) -> str:
+    material = "|".join(
+        (
+            str(row.get("verdict_id") or ""),
+            _ledger_nullable(row.get("prior_attributed_amount_minor")),
+            _ledger_nullable(row.get("new_attributed_amount_minor")),
+            _ledger_nullable(row.get("prior_verified_amount_minor")),
+            _ledger_nullable(row.get("new_verified_amount_minor")),
+            str(row.get("prior_authority_state") or "NULL"),
+            str(row.get("new_authority_state") or "NULL"),
+            str(row.get("prev_entry_hash") or ""),
+        )
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _global_prefix_digest(rows: list[dict]) -> str:
+    material = "|".join(
+        f"{int(row['seq'])}:{row['entry_hash']}" for row in rows
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _verify_signed_latest_checkpoint(
+    commitment: dict,
+    *,
+    global_ledger: list[dict],
+    target_ledger: list[dict],
+) -> tuple[bool, str, dict]:
+    public_key = commitment.get("public_key")
+    latest = commitment.get("latest_checkpoint")
+    if not isinstance(public_key, str) or not isinstance(latest, dict):
+        return False, "signed_witness_proof_missing", {}
+    payload = latest.get("payload")
+    signature = latest.get("signature")
+    if not isinstance(payload, dict) or not isinstance(signature, str):
+        return False, "signed_witness_proof_malformed", {}
+    if not signature.startswith("ed25519:"):
+        return False, "signed_witness_signature_algorithm", {}
+    try:
+        raw_key = base64.urlsafe_b64decode(
+            (public_key + "=" * (-len(public_key) % 4)).encode("ascii")
+        )
+        signature_text = signature.removeprefix("ed25519:")
+        raw_signature = base64.urlsafe_b64decode(
+            (signature_text + "=" * (-len(signature_text) % 4)).encode("ascii")
+        )
+        key = Ed25519PublicKey.from_public_bytes(raw_key)
+        material = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        key.verify(raw_signature, material)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"signed_witness_signature_invalid:{type(exc).__name__}", {}
+    without_hash = {
+        key: value
+        for key, value in payload.items()
+        if key != "checkpoint_hash"
+    }
+    recomputed = hashlib.sha256(
+        json.dumps(
+            without_hash,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if payload.get("checkpoint_hash") != recomputed:
+        return False, "signed_witness_checkpoint_hash_mismatch", {}
+    count = payload.get("ledger_count")
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        return False, "signed_witness_count_invalid", {}
+    prefix = global_ledger[:count]
+    if len(prefix) != count:
+        return False, "signed_witness_covers_absent_ledger", {}
+    prefix_digest = _global_prefix_digest(prefix)
+    if payload.get("ledger_prefix_digest") != prefix_digest:
+        return False, "signed_witness_prefix_mismatch", {}
+    if prefix:
+        if payload.get("ledger_tip_seq") != prefix[-1]["seq"]:
+            return False, "signed_witness_tip_seq_mismatch", {}
+        if payload.get("ledger_tip_hash") != prefix[-1]["entry_hash"]:
+            return False, "signed_witness_tip_hash_mismatch", {}
+    for row in target_ledger:
+        if not any(
+            candidate["seq"] == row["seq"]
+            and candidate["entry_hash"] == row["entry_hash"]
+            for candidate in prefix
+        ):
+            return False, "signed_witness_target_not_member", {}
+    evidence = {
+        "checkpoint_hash": payload.get("checkpoint_hash"),
+        "observed_at": payload.get("observed_at"),
+        "ledger_count": count,
+        "ledger_tip_seq": payload.get("ledger_tip_seq"),
+        "ledger_tip_hash": payload.get("ledger_tip_hash"),
+        "ledger_prefix_digest": prefix_digest,
+        "target_member_seq": [row["seq"] for row in target_ledger],
+    }
+    return True, "", evidence
+
+
 def _read_causal_history(
     tenant_id: str, verdict_id: str, amendment_event_reference: str
 ) -> dict:
@@ -797,8 +986,12 @@ def _read_causal_history(
         return {"complete": False, "reason": "prior_ingress_missing"}
     ledger_rows = sql(
         """
-        SELECT l.seq, l.provider_native_event_reference,
+        SELECT l.seq, l.verdict_id::text, l.tenant_id::text, l.provider,
+               l.provider_native_event_reference,
+               l.prior_attributed_amount_minor,
+               l.new_attributed_amount_minor,
                l.prior_verified_amount_minor, l.new_verified_amount_minor,
+               l.prior_authority_state, l.new_authority_state,
                l.prior_source_ingress::text, l.new_source_ingress::text,
                l.recorded_at, l.prev_entry_hash, l.entry_hash
           FROM public.b26_p2_verdict_supersession_ledger AS l
@@ -806,6 +999,26 @@ def _read_causal_history(
          ORDER BY l.seq ASC
         """,
         (tenant_id, verdict_id),
+    )
+    global_ledger_rows = sql(
+        """
+        SELECT l.seq, l.entry_hash, l.prev_entry_hash, l.recorded_at
+          FROM public.b26_p2_verdict_supersession_ledger AS l
+         ORDER BY l.seq ASC
+        """
+    )
+    source_rows = sql(
+        """
+        SELECT i.id::text, i.provider,
+               i.provider_native_event_reference,
+               i.provider_native_commerce_reference,
+               i.event_timestamp, i.created_at,
+               i.verified_amount_minor, i.verified_amount_currency,
+               i.b26_p2_demotion_reason
+          FROM public.webhook_ingress_identities AS i
+         WHERE i.tenant_id = %s
+        """,
+        (tenant_id,),
     )
     witness_rows = sql(
         "SELECT n, tip_seq, tip_hash"
@@ -851,27 +1064,50 @@ def _read_causal_history(
         },
         "current_ingress": ingress(current_rows[0]),
         "prior_ingress": ingress(prior_rows[0]),
+        "source_ingresses": {
+            str(row[0]): ingress(row) for row in source_rows
+        },
         "ledger": [
             {
                 "seq": int(row[0]),
-                "provider_native_event_reference": str(row[1]),
+                "verdict_id": str(row[1]),
+                "tenant_id": str(row[2]),
+                "provider": str(row[3]),
+                "provider_native_event_reference": str(row[4]),
+                "prior_attributed_amount_minor": (
+                    int(row[5]) if row[5] is not None else None
+                ),
+                "new_attributed_amount_minor": (
+                    int(row[6]) if row[6] is not None else None
+                ),
                 "prior_verified_amount_minor": (
-                    int(row[2]) if row[2] is not None else None
+                    int(row[7]) if row[7] is not None else None
                 ),
                 "new_verified_amount_minor": (
-                    int(row[3]) if row[3] is not None else None
+                    int(row[8]) if row[8] is not None else None
                 ),
+                "prior_authority_state": row[9],
+                "new_authority_state": row[10],
                 "prior_source_ingress": (
-                    str(row[4]) if row[4] is not None else None
+                    str(row[11]) if row[11] is not None else None
                 ),
                 "new_source_ingress": (
-                    str(row[5]) if row[5] is not None else None
+                    str(row[12]) if row[12] is not None else None
                 ),
-                "recorded_at": _utc_precise_value(row[6]),
-                "prev_entry_hash": row[7],
-                "entry_hash": row[8],
+                "recorded_at": _utc_precise_value(row[13]),
+                "prev_entry_hash": row[14],
+                "entry_hash": row[15],
             }
             for row in ledger_rows
+        ],
+        "global_ledger": [
+            {
+                "seq": int(row[0]),
+                "entry_hash": row[1],
+                "prev_entry_hash": row[2],
+                "recorded_at": _utc_precise_value(row[3]),
+            }
+            for row in global_ledger_rows
         ],
         "amendment_event_reference": amendment_event_reference,
         "witness": (
@@ -935,6 +1171,23 @@ def _verify_witness_commitment(
             expected_prefix_digest=history.get("prefix_digest"),
         )
         latest = journal.latest
+        checkpoint_entries = [
+            json.loads(line)
+            for line in journal_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        latest_entry = next(
+            (
+                entry
+                for entry in reversed(checkpoint_entries)
+                if isinstance(entry, dict)
+                and isinstance(entry.get("payload"), dict)
+                and entry["payload"].get("checkpoint_hash")
+                == latest.checkpoint_hash
+            ),
+            None,
+        )
+        public_key = public_key_path.read_text(encoding="utf-8").strip()
         return {
             "verified": True,
             "reason": None,
@@ -942,6 +1195,8 @@ def _verify_witness_commitment(
             "tip_seq": latest.ledger_tip_seq,
             "tip_hash": latest.ledger_tip_hash,
             "prefix_digest": latest.ledger_prefix_digest,
+            "public_key": public_key,
+            "latest_checkpoint": latest_entry,
         }
     except Exception as exc:  # noqa: BLE001
         return {
@@ -963,6 +1218,7 @@ def _final_causal_progression(
     amended_amount: int,
     currency: str,
     verdict_id: str,
+    trusted_witness_public_key: str | None = None,
 ) -> dict:
     if not history.get("complete"):
         return {
@@ -1031,9 +1287,107 @@ def _final_causal_progression(
                 != previous["new_verified_amount_minor"]
                 or row["prior_source_ingress"]
                 != previous["new_source_ingress"]
-                or row["prev_entry_hash"] != previous["entry_hash"]
             ):
                 reason = "ledger_causal_chain_discontinuous"
+                break
+    if reason:
+        return {"established": False, "reason": reason}
+
+    source_ingresses = history.get("source_ingresses") or {}
+    global_ledger = history.get("global_ledger") or []
+    if not global_ledger:
+        reason = "global_history_missing"
+    else:
+        previous_hash = None
+        previous_recorded = None
+        for row in global_ledger:
+            recorded = _utc_time(row.get("recorded_at"))
+            if previous_hash is None:
+                if row.get("prev_entry_hash") is not None:
+                    reason = "global_ledger_origin_mismatch"
+                    break
+            elif row.get("prev_entry_hash") != previous_hash:
+                reason = "global_ledger_chain_discontinuous"
+                break
+            if recorded is None:
+                reason = "global_ledger_time_missing"
+                break
+            if previous_recorded is not None and recorded < previous_recorded:
+                reason = "global_ledger_time_reversed"
+                break
+            previous_hash = row.get("entry_hash")
+            previous_recorded = recorded
+    if reason:
+        return {"established": False, "reason": reason}
+    if _global_prefix_digest(global_ledger) != history.get("prefix_digest"):
+        return {"established": False, "reason": "global_prefix_digest_mismatch"}
+
+    global_by_seq = {int(row["seq"]): row for row in global_ledger}
+    for row in ledger:
+        if row.get("verdict_id") != verdict_id:
+            reason = "ledger_verdict_mismatch"
+            break
+        if row.get("provider") != current["provider"]:
+            reason = "ledger_provider_mismatch"
+            break
+        global_row = global_by_seq.get(int(row["seq"]))
+        if global_row is None:
+            reason = "ledger_transition_not_in_global_history"
+            break
+        if (
+            global_row.get("entry_hash") != row.get("entry_hash")
+            or global_row.get("prev_entry_hash")
+            != row.get("prev_entry_hash")
+        ):
+            reason = "ledger_transition_membership_mismatch"
+            break
+        if _ledger_entry_hash(row) != row.get("entry_hash"):
+            reason = "ledger_transition_content_hash_mismatch"
+            break
+        new_id = row.get("new_source_ingress")
+        new_source = source_ingresses.get(str(new_id)) if new_id else None
+        if not isinstance(new_source, dict):
+            reason = "ledger_new_source_unexplained"
+            break
+        if (
+            new_source.get("provider") != row.get("provider")
+            or new_source.get("provider_native_event_reference")
+            != row.get("provider_native_event_reference")
+            or new_source.get("provider_native_commerce_reference")
+            != current["provider_native_commerce_reference"]
+            or new_source.get("verified_amount_minor")
+            != row.get("new_verified_amount_minor")
+            or new_source.get("verified_amount_currency") != currency
+        ):
+            reason = "ledger_new_source_content_mismatch"
+            break
+        new_created = _utc_time(new_source.get("created_at"))
+        new_event = _utc_time(new_source.get("event_timestamp"))
+        recorded = _utc_time(row.get("recorded_at"))
+        if (
+            new_created is None
+            or new_event is None
+            or recorded is None
+            or new_created > recorded
+            or new_event > recorded
+        ):
+            reason = "ledger_new_source_not_before_commit"
+            break
+        prior_id = row.get("prior_source_ingress")
+        if prior_id is not None:
+            prior_source = source_ingresses.get(str(prior_id))
+            if not isinstance(prior_source, dict):
+                reason = "ledger_prior_source_unexplained"
+                break
+            if (
+                prior_source.get("provider") != row.get("provider")
+                or prior_source.get("provider_native_commerce_reference")
+                != current["provider_native_commerce_reference"]
+                or prior_source.get("verified_amount_minor")
+                != row.get("prior_verified_amount_minor")
+                or prior_source.get("verified_amount_currency") != currency
+            ):
+                reason = "ledger_prior_source_content_mismatch"
                 break
     if reason:
         return {"established": False, "reason": reason}
@@ -1052,6 +1406,23 @@ def _final_causal_progression(
     witness = history.get("witness")
     continuity = history.get("continuity")
     commitment = history.get("witness_commitment") or {}
+    signed_witness_ok, signed_witness_reason, signed_witness = (
+        _verify_signed_latest_checkpoint(
+            commitment,
+            global_ledger=global_ledger,
+            target_ledger=ledger,
+        )
+    )
+    if (
+        trusted_witness_public_key is not None
+        and commitment.get("public_key") != trusted_witness_public_key
+    ):
+        signed_witness_ok = False
+        signed_witness_reason = "signed_witness_untrusted_key"
+    last_recorded_second = (
+        last_recorded.replace(microsecond=0) if last_recorded else None
+    )
+    checkpoint_observed = _utc_time(signed_witness.get("observed_at"))
     if restored_created is None:
         reason = "restored_created_at_invalid"
     elif restoration_observed is None:
@@ -1092,6 +1463,12 @@ def _final_causal_progression(
         reason = "history_witness_state_missing"
     elif not commitment.get("verified"):
         reason = "history_witness_commitment_unverified"
+    elif not signed_witness_ok:
+        reason = signed_witness_reason
+    elif checkpoint_observed is None:
+        reason = "signed_witness_observation_missing"
+    elif checkpoint_observed < last_recorded:
+        reason = "signed_witness_predates_transition"
     elif int(witness["count"]) != int(continuity["count"]):
         reason = "history_witness_count_diverged"
     elif witness["tip_hash"] != continuity["tip_hash"]:
@@ -1121,7 +1498,10 @@ def _final_causal_progression(
     created_at = _utc_time(artifact.get("created_at"))
     if created_at is None:
         reason = "final_created_at_invalid"
-    elif created_at < _utc_time(last["recorded_at"]):
+    elif (
+        last_recorded_second is not None
+        and created_at < last_recorded_second
+    ):
         reason = "final_precedes_accepted_transition"
     elif created_at < _utc_time(verdict["last_transition_at"]):
         reason = "final_precedes_verdict_transition"
@@ -1182,6 +1562,18 @@ def _final_causal_progression(
             "provider_native_event_reference"
         ],
         "accepted_transition_at": last["recorded_at"],
+        "causal_order": {
+            "restoration_observed_at": restoration_observed_at,
+            "amendment_admission_started_at": amendment_admission_started_at,
+            "amendment_admitted_at": amendment_admitted_at,
+            "accepted_transition_at": last["recorded_at"],
+            "final_observation_window": history.get("final_observation"),
+            "final_observed_at": final_observed_at,
+            "final_created_at": artifact.get("created_at"),
+            "signed_precision": "second",
+            "ledger_precision": "microsecond",
+        },
+        "signed_witness": signed_witness,
         "expected_provider": expected_provider,
         "expected_match": expected_match,
         "expected_webhook": expected_webhook,
@@ -1469,6 +1861,9 @@ def _acceptance(record: dict) -> bool:
         "established": False,
         "reason": "not_evaluated",
     }
+    baseline_authority = {"established": False, "reason": "not_evaluated"}
+    restored_authority = {"established": False, "reason": "not_evaluated"}
+    final_authority = {"established": False, "reason": "not_evaluated"}
     if isinstance(expected_amount, int) and isinstance(verdict_id, str) and subject:
         currency = str(baseline.get("currency") or "")
         tenant_id_hash = str(baseline.get("tenant_id_hash") or "")
@@ -1480,6 +1875,25 @@ def _acceptance(record: dict) -> bool:
         )
         final_structure_ok, _ = _signed_structure(
             final_signed, verdict_id, amended_amount, currency, tenant_id_hash
+        )
+        reference_artifact = baseline_signed.get("artifact") or {}
+        baseline_authority = _issued_authority(
+            baseline_signed.get("artifact") or {},
+            reference_artifact,
+            window=None,
+            require_window=False,
+        )
+        restored_authority = _issued_authority(
+            restored_baseline.get("artifact") or {},
+            reference_artifact,
+            window=None,
+            require_window=False,
+        )
+        final_authority = _issued_authority(
+            final_signed.get("artifact") or {},
+            reference_artifact,
+            window=record.get("final_observation"),
+            require_window=True,
         )
         restoration_semantic_authority = _restoration_semantic_authority(
             baseline_signed,
@@ -1500,7 +1914,13 @@ def _acceptance(record: dict) -> bool:
             amended_amount=amended_amount,
             currency=currency,
             verdict_id=verdict_id,
+            trusted_witness_public_key=record.get(
+                "witness_public_key"
+            ),
         )
+        record["baseline_authority"] = baseline_authority
+        record["restored_authority"] = restored_authority
+        record["final_authority"] = final_authority
     return all(
         (
             baseline.get("http") == 200,
@@ -1513,6 +1933,7 @@ def _acceptance(record: dict) -> bool:
             baseline_signed.get("status") == 200,
             baseline_signed.get("established") is True,
             baseline_structure_ok is True,
+            baseline_authority.get("established") is True,
             (baseline_signed.get("offline_verification") or {}).get(
                 "verification_status"
             )
@@ -1526,6 +1947,7 @@ def _acceptance(record: dict) -> bool:
             restored_baseline.get("status") == 200,
             restored_baseline.get("established") is True,
             restored_structure_ok is True,
+            restored_authority.get("established") is True,
             restoration_semantic_authority.get("established") is True,
             (restored_baseline.get("offline_verification") or {}).get(
                 "verification_status"
@@ -1558,6 +1980,7 @@ def _acceptance(record: dict) -> bool:
             trust.get("currency") == baseline.get("currency"),
             final_signed.get("established") is True,
             final_structure_ok is True,
+            final_authority.get("established") is True,
             final_causal_progression.get("established") is True,
             (final_signed.get("offline_verification") or {}).get(
                 "verification_status"
@@ -1706,19 +2129,22 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         recon_status, recon = read_reconciliation(
             state, tenant, initial["verdict_id"]
         )
+        final_observation_window = {"started_at": _now_iso()}
         trust_status, trust = 404, ""
         for _ in range(60):
             trust_status, trust = read_trust(tenant, initial["verdict_id"])
             if trust_status == 200:
                 break
             time.sleep(5)
-        record["final_observed_at"] = _now_iso()
+        final_observation_window["observed_at"] = _now_iso()
+        record["final_observation"] = final_observation_window
+        record["final_observed_at"] = final_observation_window["observed_at"]
         verified_trust = (
             verify_trust(tenant, trust.get("envelope", trust))
             if trust_status == 200 and isinstance(trust, dict)
             else (0, "not_attempted")
         )
-        final_observation = {
+        final_signed_observation = {
             "status": trust_status,
             "artifact": trust if isinstance(trust, dict) else None,
             "verification": verified_trust,
@@ -1726,7 +2152,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         }
         final_established, final_reason = (
             _signed_observation(
-                final_observation,
+                final_signed_observation,
                 initial["verdict_id"],
                 amended_amount,
                 baseline["currency"],
@@ -1735,12 +2161,16 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             if isinstance(trust, dict)
             else (False, "final_signed_artifact_unavailable")
         )
-        final_observation["established"] = final_established
-        final_observation["invalid_reason"] = final_reason or None
-        record["final_signed"] = final_observation
+        final_signed_observation["established"] = final_established
+        final_signed_observation["invalid_reason"] = final_reason or None
+        record["final_signed"] = final_signed_observation
         causal_history = _read_causal_history(
             tenant["tenant_id"], initial["verdict_id"], event_ref
         )
+        causal_history["final_observation"] = final_observation_window
+        record["witness_public_key"] = staged["public"].read_text(
+            encoding="utf-8"
+        ).strip()
         causal_history["witness_commitment"] = (
             _verify_witness_commitment(
                 state=state,
@@ -1751,7 +2181,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         )
         record["causal_history"] = causal_history
         record["causal_progression"] = _final_causal_progression(
-            final_observation,
+            final_signed_observation,
             causal_history,
             restored_signed=restored_baseline,
             restoration_observed_at=record.get("restoration_observed_at"),
