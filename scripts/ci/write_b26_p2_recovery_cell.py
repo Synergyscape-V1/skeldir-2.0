@@ -12,6 +12,42 @@ from b26_p2_evidence import write_evidence_cell
 MODES = ("omit-restore", "tamper-signature", "restore-failure", "positive")
 
 
+def mode_projection(record: dict) -> dict:
+    return {
+        "passed": record["passed"],
+        "mode": record.get("mode"),
+        "baseline": record.get("baseline"),
+        "initial_subject": record.get("initial_subject"),
+        "manual_observer": record.get("manual_observer"),
+        "baseline_signed": record.get("baseline_signed"),
+        "baseline_authority": record.get("baseline_authority"),
+        "fault": record.get("fault"),
+        "restored_baseline": record.get("restored_baseline"),
+        "restored_authority": record.get("restored_authority"),
+        "restoration_observation": record.get("restoration_observation"),
+        "restoration_observed_at": record.get("restoration_observed_at"),
+        "restoration_semantic_authority": record.get(
+            "restoration_semantic_authority"
+        ),
+        "amendment_admission_started_at": record.get(
+            "amendment_admission_started_at"
+        ),
+        "amendment_admitted_at": record.get("amendment_admitted_at"),
+        "causal_progression": record.get("causal_progression"),
+        "causal_history": record.get("causal_history"),
+        "final_signed": record.get("final_signed"),
+        "final_authority": record.get("final_authority"),
+        "final_observation": record.get("final_observation"),
+        "final_observed_at": record.get("final_observed_at"),
+        "witness_public_key": record.get("witness_public_key"),
+        "observed": record.get("observed"),
+        "compensation": record.get("compensation"),
+        "readers": record.get("readers"),
+        "custody": record.get("custody"),
+        "amendment": record.get("amendment"),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-dir", type=Path, required=True)
@@ -39,36 +75,7 @@ def main() -> int:
     details = {
         "proof_kind": "retained_execution_observations",
         "modes": {
-            mode: {
-                "passed": record["passed"],
-                "baseline": record.get("baseline"),
-                "baseline_signed": record.get("baseline_signed"),
-                "baseline_authority": record.get("baseline_authority"),
-                "fault": record.get("fault"),
-                "restored_baseline": record.get("restored_baseline"),
-                "restored_authority": record.get("restored_authority"),
-                "restoration_observation": record.get(
-                    "restoration_observation"
-                ),
-                "restoration_observed_at": record.get(
-                    "restoration_observed_at"
-                ),
-                "restoration_semantic_authority": record.get(
-                    "restoration_semantic_authority"
-                ),
-                "causal_progression": record.get("causal_progression"),
-                "causal_history": record.get("causal_history"),
-                "final_signed": record.get("final_signed"),
-                "final_authority": record.get("final_authority"),
-                "final_observation": record.get("final_observation"),
-                "final_observed_at": record.get("final_observed_at"),
-                "witness_public_key": record.get("witness_public_key"),
-                "observed": record.get("observed"),
-                "compensation": record.get("compensation"),
-                "readers": record.get("readers"),
-                "custody": record.get("custody"),
-                "amendment": record.get("amendment"),
-            }
+            mode: mode_projection(record)
             for mode, record in records.items()
         },
         "retained_execution_observations": {

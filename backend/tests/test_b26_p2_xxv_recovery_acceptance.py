@@ -36,6 +36,7 @@ from app.trust.source_adapters import (  # noqa: E402
     data_completeness_for_match_status,
     normalize_match_verdict_status,
 )
+from write_b26_p2_recovery_cell import mode_projection  # noqa: E402
 
 
 def _baseline() -> dict:
@@ -420,6 +421,12 @@ def _positive(
 
 def test_valid_recovery_progression_is_accepted() -> None:
     assert _acceptance(_positive()) is True
+
+
+def test_published_mode_projection_is_replayable() -> None:
+    record = _positive()
+    record["passed"] = True
+    assert _acceptance(mode_projection(record)) is True
 
 
 def test_contract_confirmed_match_is_consumable() -> None:
