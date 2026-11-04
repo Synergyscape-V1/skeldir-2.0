@@ -24,7 +24,7 @@ import shutil
 import sys
 import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -57,7 +57,13 @@ from b26_p2_xxv_falsify import (  # noqa: E402
     wait_verdict,
     witness_files,
 )
-from b26_p2_xxv_lane import AUTH, API, LANE_ROOT, SOURCE_EVIDENCE_VOL  # noqa: E402
+from b26_p2_xxv_lane import (  # noqa: E402
+    AUTH,
+    API,
+    LANE_ROOT,
+    SOURCE_EVIDENCE_VOL,
+    WITNESS_VOL,
+)
 from app.revenue_verification.source_journal_custody import (  # noqa: E402
     SourceJournalCustodyError,
     export_custody_bundle,
@@ -399,6 +405,10 @@ def _governed_semantic_meaning(artifact: object) -> dict | None:
         return None
     for path in _OBSERVATION_TIME_PATHS:
         _drop_path(meaning, path)
+    meaning["policy_action_authority"] = artifact.get(
+        "policy_action_authority"
+    )
+    meaning["audience_binding"] = artifact.get("audience_binding")
     provenance = meaning.get("provenance_chain")
     if not isinstance(provenance, list):
         return None
@@ -406,11 +416,26 @@ def _governed_semantic_meaning(artifact: object) -> dict | None:
         entry
         for entry in provenance
         if not (
-            isinstance(entry, dict)
-            and entry.get("provenance_type") in _ISSUANCE_PROVENANCE_TYPES
+            isinstance(entry, dict) and _is_issuance_audit_entry(entry)
         )
     ]
     return meaning
+
+
+def _is_issuance_audit_entry(entry: dict) -> bool:
+    provenance_type = str(entry.get("provenance_type") or "")
+    if provenance_type not in _ISSUANCE_PROVENANCE_TYPES:
+        return False
+    if entry.get("authority_table") != "trust_access_log":
+        return False
+    prefix = {
+        "audit_access_record": "urn:skeldir:audit:issuance:",
+        "audit_hash": "urn:skeldir:audit_hash:",
+    }.get(provenance_type)
+    return bool(
+        prefix
+        and str(entry.get("source_ref") or "").startswith(prefix)
+    )
 
 
 def _semantic_digest(meaning: dict | None) -> str | None:
@@ -433,6 +458,10 @@ def _utc_time(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         return None
     return parsed
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _observation_time_facts(artifact: dict) -> dict | None:
@@ -459,41 +488,49 @@ def _observation_time_facts(artifact: dict) -> dict | None:
 
 
 def _observation_time_justification(
-    baseline: dict, restored: dict
+    baseline: dict,
+    restored: dict,
+    restored_observation: dict | None = None,
 ) -> tuple[bool, dict, str]:
     baseline_facts = _observation_time_facts(baseline)
     restored_facts = _observation_time_facts(restored)
     if baseline_facts is None or restored_facts is None:
         return False, {}, "observation_time_unavailable"
     for facts in (baseline_facts, restored_facts):
-        if not (
-            facts["read_started_at"]
-            <= facts["read_completed_at"]
-            <= facts["created_at"]
+        if (
+            facts["read_started_at"] != facts["created_at"]
+            or facts["read_completed_at"] != facts["created_at"]
         ):
-            return False, {}, "observation_read_order_invalid"
+            return False, {}, "observation_read_not_issuance_time"
+        if facts["data_freshness_seconds"] != 0:
+            return False, {}, "observation_freshness_not_source_exact"
     if restored_facts["created_at"] < baseline_facts["created_at"]:
         return False, {}, "observation_time_reversed"
-    if (
-        restored_facts["read_started_at"]
-        < baseline_facts["read_started_at"]
-        or restored_facts["read_completed_at"]
-        < baseline_facts["read_completed_at"]
-    ):
-        return False, {}, "observation_read_time_reversed"
+    observation_changed = any(
+        restored_facts[key] != baseline_facts[key]
+        for key in (
+            "created_at",
+            "read_started_at",
+            "read_completed_at",
+            "data_freshness_seconds",
+        )
+    )
+    if observation_changed:
+        window = restored_observation or {}
+        started_at = _utc_time(window.get("started_at"))
+        completed_at = _utc_time(
+            window.get("completed_at") or window.get("observed_at")
+        )
+        if started_at is None or completed_at is None:
+            return False, {}, "observation_window_missing"
+        if not (
+            started_at
+            <= restored_facts["created_at"]
+            <= completed_at
+        ):
+            return False, {}, "observation_time_not_observed"
     baseline_freshness = baseline_facts["data_freshness_seconds"]
     restored_freshness = restored_facts["data_freshness_seconds"]
-    if (
-        isinstance(baseline_freshness, int)
-        and isinstance(restored_freshness, int)
-        and restored_freshness < baseline_freshness
-    ):
-        return False, {}, "observation_freshness_reversed"
-    if (
-        baseline_freshness != restored_freshness
-        and restored_facts["created_at"] <= baseline_facts["created_at"]
-    ):
-        return False, {}, "observation_freshness_change_unjustified"
     evidence = {
         "baseline": {
             "created_at": baseline_facts["created_at"].isoformat(),
@@ -515,12 +552,20 @@ def _observation_time_justification(
             ].isoformat(),
             "data_freshness_seconds": restored_freshness,
         },
+        "restored_observation_window": (
+            dict(restored_observation or {})
+            if observation_changed
+            else None
+        ),
     }
     return True, evidence, ""
 
 
 def _restoration_semantic_authority(
-    baseline_signed: dict, restored: dict
+    baseline_signed: dict,
+    restored: dict,
+    *,
+    restored_observation: dict | None = None,
 ) -> dict:
     baseline = baseline_signed.get("artifact")
     restored_artifact = restored.get("artifact")
@@ -536,7 +581,9 @@ def _restoration_semantic_authority(
     baseline_digest = _semantic_digest(baseline_meaning)
     restored_digest = _semantic_digest(restored_meaning)
     justified, observation, observation_reason = (
-        _observation_time_justification(baseline, restored_artifact)
+        _observation_time_justification(
+            baseline, restored_artifact, restored_observation
+        )
     )
     established = bool(
         baseline_digest is not None
@@ -751,6 +798,17 @@ def _read_causal_history(
         """,
         (tenant_id, verdict_id),
     )
+    witness_rows = sql(
+        "SELECT n, tip_seq, tip_hash"
+        " FROM public.b26_p2_read_history_witness_state()"
+    )
+    continuity_rows = sql(
+        "SELECT n, tip"
+        " FROM public.b26_p2_read_history_continuity()"
+    )
+    prefix_rows = sql(
+        "SELECT public.b26_p2_read_history_prefix_digest()"
+    )
 
     def ingress(row: tuple) -> dict:
         return {
@@ -807,13 +865,91 @@ def _read_causal_history(
             for row in ledger_rows
         ],
         "amendment_event_reference": amendment_event_reference,
+        "witness": (
+            {
+                "count": int(witness_rows[0][0]),
+                "tip_seq": (
+                    int(witness_rows[0][1])
+                    if witness_rows[0][1] is not None
+                    else None
+                ),
+                "tip_hash": witness_rows[0][2],
+            }
+            if witness_rows
+            else None
+        ),
+        "continuity": (
+            {
+                "count": int(continuity_rows[0][0]),
+                "tip_hash": continuity_rows[0][1],
+            }
+            if continuity_rows
+            else None
+        ),
+        "prefix_digest": (
+            str(prefix_rows[0][0]) if prefix_rows else None
+        ),
     }
+
+
+def _verify_witness_commitment(
+    *,
+    state: dict,
+    temp: Path,
+    public_key_path: Path,
+    history: dict,
+) -> dict:
+    try:
+        from app.trust.history_witness import (  # noqa: PLC0415
+            verify_journal,
+        )
+
+        journal_path = temp / "history_witness.jsonl"
+        heartbeat_path = temp / "history_witness_heartbeat.json"
+        journal_path.write_bytes(
+            volume_get(WITNESS_VOL, "history_witness.jsonl")
+        )
+        heartbeat_path.write_bytes(
+            volume_get(WITNESS_VOL, "history_witness_heartbeat.json")
+        )
+        continuity = history.get("continuity") or {}
+        witness = history.get("witness") or {}
+        journal = verify_journal(
+            journal_path,
+            public_key_path=public_key_path,
+            genesis_hash=state.get("genesis_hash"),
+            heartbeat_path=heartbeat_path,
+            require_freshness=False,
+            expected_count=continuity.get("count"),
+            expected_tip_hash=continuity.get("tip_hash"),
+            expected_tip_seq=witness.get("tip_seq"),
+            expected_prefix_digest=history.get("prefix_digest"),
+        )
+        latest = journal.latest
+        return {
+            "verified": True,
+            "reason": None,
+            "count": int(latest.ledger_count),
+            "tip_seq": latest.ledger_tip_seq,
+            "tip_hash": latest.ledger_tip_hash,
+            "prefix_digest": latest.ledger_prefix_digest,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "verified": False,
+            "reason": f"{type(exc).__name__}:{exc}",
+        }
 
 
 def _final_causal_progression(
     final_signed: dict,
     history: dict,
     *,
+    restored_signed: dict,
+    restoration_observed_at: str | None,
+    amendment_admission_started_at: str | None,
+    amendment_admitted_at: str | None,
+    final_observed_at: str | None,
     baseline_amount: int,
     amended_amount: int,
     currency: str,
@@ -890,6 +1026,86 @@ def _final_causal_progression(
             ):
                 reason = "ledger_causal_chain_discontinuous"
                 break
+    if reason:
+        return {"established": False, "reason": reason}
+
+    restored_artifact = restored_signed.get("artifact")
+    restored_created = (
+        _utc_time(restored_artifact.get("created_at"))
+        if isinstance(restored_artifact, dict)
+        else None
+    )
+    restoration_observed = _utc_time(restoration_observed_at)
+    admission_started = _utc_time(amendment_admission_started_at)
+    amendment_admitted = _utc_time(amendment_admitted_at)
+    final_observed = _utc_time(final_observed_at)
+    last_recorded = _utc_time(last["recorded_at"])
+    witness = history.get("witness")
+    continuity = history.get("continuity")
+    commitment = history.get("witness_commitment") or {}
+    if restored_created is None:
+        reason = "restored_created_at_invalid"
+    elif restoration_observed is None:
+        reason = "restoration_observation_missing"
+    elif admission_started is None:
+        reason = "amendment_admission_start_missing"
+    elif amendment_admitted is None:
+        reason = "amendment_admission_missing"
+    elif final_observed is None:
+        reason = "final_observation_missing"
+    elif last_recorded is None:
+        reason = "accepted_transition_time_missing"
+    elif prior["verified_amount_minor"] != baseline_amount:
+        reason = "prior_source_money_mismatch"
+    elif prior["verified_amount_currency"] != currency:
+        reason = "prior_source_currency_mismatch"
+    elif current["verified_amount_minor"] != amended_amount:
+        reason = "current_source_money_mismatch"
+    elif current["verified_amount_currency"] != currency:
+        reason = "current_source_currency_mismatch"
+    elif verdict["canonical_net_verified_amount_minor"] != amended_amount:
+        reason = "verdict_money_mismatch"
+    elif verdict["currency_code"] != currency:
+        reason = "verdict_currency_mismatch"
+    elif restored_created > restoration_observed:
+        reason = "restoration_artifact_after_observation"
+    elif restoration_observed >= admission_started:
+        reason = "restoration_not_before_amendment_admission"
+    elif admission_started > amendment_admitted:
+        reason = "amendment_admission_time_reversed"
+    elif admission_started > last_recorded:
+        reason = "amendment_commit_precedes_admission"
+    elif restored_created >= last_recorded:
+        reason = "restoration_not_before_amendment_commit"
+    elif last_recorded >= final_observed:
+        reason = "final_not_after_amendment_commit"
+    elif not witness or not continuity:
+        reason = "history_witness_state_missing"
+    elif not commitment.get("verified"):
+        reason = "history_witness_commitment_unverified"
+    elif int(witness["count"]) != int(continuity["count"]):
+        reason = "history_witness_count_diverged"
+    elif witness["tip_hash"] != continuity["tip_hash"]:
+        reason = "history_witness_tip_diverged"
+    elif int(witness["count"]) < int(last["seq"]):
+        reason = "history_witness_behind_transition"
+    elif (
+        witness["tip_seq"] is not None
+        and int(witness["tip_seq"]) < int(last["seq"])
+    ):
+        reason = "history_witness_tip_seq_behind_transition"
+    elif (
+        witness["tip_seq"] is not None
+        and int(witness["tip_seq"]) == int(last["seq"])
+        and last["entry_hash"] != witness["tip_hash"]
+    ):
+        reason = "ledger_tip_commitment_mismatch"
+    elif int(commitment.get("count", -1)) != int(continuity["count"]):
+        reason = "signed_witness_count_mismatch"
+    elif commitment.get("tip_hash") != continuity["tip_hash"]:
+        reason = "signed_witness_tip_mismatch"
+    elif commitment.get("prefix_digest") != history.get("prefix_digest"):
+        reason = "signed_witness_prefix_mismatch"
     if reason:
         return {"established": False, "reason": reason}
 
@@ -1135,8 +1351,16 @@ def _signed_observation(
 
 
 def _wait_signed(
-    tenant: dict, verdict_id: str, amount: int, currency: str, *, attempts: int = 60
+    tenant: dict,
+    verdict_id: str,
+    amount: int,
+    currency: str,
+    *,
+    attempts: int = 60,
+    window: dict | None = None,
 ) -> dict:
+    if window is not None:
+        window["started_at"] = _now_iso()
     last: dict = {"status": 0, "artifact": None, "verification": None}
     for _ in range(attempts):
         status, body = read_trust(tenant, verdict_id)
@@ -1164,6 +1388,8 @@ def _wait_signed(
             observation["invalid_reason"] = reason or None
             last = observation
             if established:
+                if window is not None:
+                    window["observed_at"] = _now_iso()
                 return last
         else:
             last = {"status": status, "artifact": None, "verification": None}
@@ -1247,11 +1473,20 @@ def _acceptance(record: dict) -> bool:
             final_signed, verdict_id, amended_amount, currency, tenant_id_hash
         )
         restoration_semantic_authority = _restoration_semantic_authority(
-            baseline_signed, restored_baseline
+            baseline_signed,
+            restored_baseline,
+            restored_observation=record.get("restoration_observation"),
         )
         final_causal_progression = _final_causal_progression(
             final_signed,
             record.get("causal_history") or {},
+            restored_signed=restored_baseline,
+            restoration_observed_at=record.get("restoration_observed_at"),
+            amendment_admission_started_at=record.get(
+                "amendment_admission_started_at"
+            ),
+            amendment_admitted_at=record.get("amendment_admitted_at"),
+            final_observed_at=record.get("final_observed_at"),
             baseline_amount=expected_amount,
             amended_amount=amended_amount,
             currency=currency,
@@ -1400,20 +1635,29 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             {"source_evidence.jsonl": restored_path.read_bytes()},
         )
         _start_services(state)
+        restoration_observation: dict = {}
         restored_baseline = _wait_signed(
             tenant,
             initial["verdict_id"],
             baseline["amount_minor"],
             baseline["currency"],
+            window=restoration_observation,
+        )
+        record["restoration_observation"] = restoration_observation
+        record["restoration_observed_at"] = restoration_observation.get(
+            "observed_at"
         )
         record["restored_baseline"] = restored_baseline
         record["restoration_semantic_authority"] = (
             _restoration_semantic_authority(
-                baseline_signed, restored_baseline
+                baseline_signed,
+                restored_baseline,
+                restored_observation=restoration_observation,
             )
         )
         restored_records = _records(restored_path.read_bytes(), temp)
         event_ref = f"evt_xxvrec{_uuid_hex()}"
+        record["amendment_admission_started_at"] = _now_iso()
         second_status, _, _ = post_stripe_envelope(
             state,
             tenant,
@@ -1421,6 +1665,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             commerce_reference=intent,
             amount=amended_amount,
         )
+        record["amendment_admitted_at"] = _now_iso()
         amended = wait_verdict(tenant["tenant_id"], intent, timeout_s=180)
         correction_status, correction_body = http(
             "POST",
@@ -1458,6 +1703,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
             if trust_status == 200:
                 break
             time.sleep(5)
+        record["final_observed_at"] = _now_iso()
         verified_trust = (
             verify_trust(tenant, trust.get("envelope", trust))
             if trust_status == 200 and isinstance(trust, dict)
@@ -1486,10 +1732,25 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         causal_history = _read_causal_history(
             tenant["tenant_id"], initial["verdict_id"], event_ref
         )
+        causal_history["witness_commitment"] = (
+            _verify_witness_commitment(
+                state=state,
+                temp=temp,
+                public_key_path=staged["public"],
+                history=causal_history,
+            )
+        )
         record["causal_history"] = causal_history
         record["causal_progression"] = _final_causal_progression(
             final_observation,
             causal_history,
+            restored_signed=restored_baseline,
+            restoration_observed_at=record.get("restoration_observed_at"),
+            amendment_admission_started_at=record.get(
+                "amendment_admission_started_at"
+            ),
+            amendment_admitted_at=record.get("amendment_admitted_at"),
+            final_observed_at=record.get("final_observed_at"),
             baseline_amount=baseline["amount_minor"],
             amended_amount=amended_amount,
             currency=baseline["currency"],
@@ -1589,7 +1850,9 @@ def _negative_decision(record: dict) -> bool:
         and restored.get("status") == 200
         and restored.get("established") is True
         and _restoration_semantic_authority(
-            record.get("baseline_signed") or {}, restored
+            record.get("baseline_signed") or {},
+            restored,
+            restored_observation=record.get("restoration_observation"),
         ).get("established")
         is True
         and (restored.get("offline_verification") or {}).get(
@@ -1729,15 +1992,20 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
     if mode == "omit-restore" and record.get("compensation", {}).get(
         "restored_original"
     ):
+        restoration_observation: dict = {}
         record["restored_baseline"] = _wait_signed(
             tenant,
             initial["verdict_id"],
             baseline["amount_minor"],
             baseline["currency"],
+            window=restoration_observation,
         )
+        record["restoration_observation"] = restoration_observation
         record["restoration_semantic_authority"] = (
             _restoration_semantic_authority(
-                baseline_signed, record["restored_baseline"]
+                baseline_signed,
+                record["restored_baseline"],
+                restored_observation=restoration_observation,
             )
         )
     record["passed"] = _negative_decision(record)

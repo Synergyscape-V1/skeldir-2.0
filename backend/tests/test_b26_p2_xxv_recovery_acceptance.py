@@ -62,7 +62,29 @@ def _artifact(amount: int) -> dict:
         "currency": "USD",
         "fallback_applied": False,
         "data_completeness_status": "insufficient_evidence",
-        "policy_action_authority": {"policy_state": "read_only"},
+        "policy_action_authority": {
+            "allowed_scopes": [
+                "trust.envelope.read",
+                "trust.envelope.verify",
+            ],
+            "forbidden_scopes": [
+                "trust.action.execute",
+                "trust.policy.override",
+                "trust.envelope.mutate",
+            ],
+            "policy_state": "read_only",
+            "reason_code": "p1_contract_boundary_only",
+        },
+        "audience_binding": {
+            "audience_mode": "tenant_internal",
+            "audience_id_hash": "sha256:audience",
+            "audience_scope": [
+                "trust.envelope.read",
+                "trust.envelope.verify",
+            ],
+            "presentation_policy": "bearer_not_authority",
+            "replay_context_required": True,
+        },
         "evidence_temporal_boundary": {
             "staleness_status": "current",
             "snapshot_consistency_status": "consistent",
@@ -165,6 +187,23 @@ def _causal_history(status: str = "matched_provisional") -> dict:
                 "entry_hash": "b",
             }
         ],
+        "witness": {
+            "count": 10,
+            "tip_seq": 10,
+            "tip_hash": "b",
+        },
+        "continuity": {
+            "count": 10,
+            "tip_hash": "b",
+        },
+        "prefix_digest": "digest",
+        "witness_commitment": {
+            "verified": True,
+            "count": 10,
+            "tip_seq": 10,
+            "tip_hash": "b",
+            "prefix_digest": "digest",
+        },
     }
 
 
@@ -238,6 +277,14 @@ def _positive(
         "restored_baseline": _verified(),
         "final_signed": _final_verified(status, history),
         "causal_history": history,
+        "restoration_observation": {
+            "started_at": "2026-11-03T06:00:00Z",
+            "completed_at": "2026-11-03T06:00:01Z",
+        },
+        "restoration_observed_at": "2026-11-03T06:00:01Z",
+        "amendment_admission_started_at": "2026-11-03T06:00:02Z",
+        "amendment_admitted_at": "2026-11-03T06:00:05Z",
+        "final_observed_at": "2026-11-03T06:00:07Z",
         "custody": {
             "accepted_count": 3,
             "accepted_tip": "tip",
@@ -342,15 +389,23 @@ def test_restored_artifact_with_changed_qualification_fails_acceptance() -> None
 def test_genuine_restoration_may_change_observation_time() -> None:
     record = _positive()
     artifact = record["restored_baseline"]["artifact"]
-    artifact["created_at"] = "2026-11-03T06:00:05Z"
+    artifact["created_at"] = "2026-11-03T06:00:02Z"
     artifact["evidence_temporal_boundary"][
         "source_read_started_at"
-    ] = "2026-11-03T06:00:05Z"
+    ] = "2026-11-03T06:00:02Z"
     artifact["evidence_temporal_boundary"][
         "source_read_completed_at"
-    ] = "2026-11-03T06:00:05Z"
+    ] = "2026-11-03T06:00:02Z"
+    record["restoration_observation"] = {
+        "started_at": "2026-11-03T06:00:02Z",
+        "completed_at": "2026-11-03T06:00:02Z",
+    }
+    record["restoration_observed_at"] = "2026-11-03T06:00:02Z"
+    record["amendment_admission_started_at"] = "2026-11-03T06:00:03Z"
     result = _restoration_semantic_authority(
-        record["baseline_signed"], record["restored_baseline"]
+        record["baseline_signed"],
+        record["restored_baseline"],
+        restored_observation=record["restoration_observation"],
     )
     assert result["established"] is True
     assert result["observation_time_justified"] is True
@@ -405,6 +460,105 @@ def test_different_full_semantic_hashes_do_not_refuse_restoration() -> None:
     assert _acceptance(record) is True
 
 
+def test_unsupported_freshness_change_is_refused() -> None:
+    record = _positive()
+    record["restored_baseline"]["artifact"]["evidence_temporal_boundary"][
+        "data_freshness_seconds"
+    ] = 1
+    result = _restoration_semantic_authority(
+        record["baseline_signed"],
+        record["restored_baseline"],
+        restored_observation=record["restoration_observation"],
+    )
+    assert result["established"] is False
+    assert result["reason"] == "observation_freshness_not_source_exact"
+    assert _acceptance(record) is False
+
+
+def test_policy_authority_change_is_refused() -> None:
+    record = _positive()
+    record["restored_baseline"]["artifact"]["policy_action_authority"][
+        "reason_code"
+    ] = "unsupported_policy_change"
+    assert _acceptance(record) is False
+
+
+def test_audit_label_cannot_hide_unsupported_provenance() -> None:
+    record = _positive()
+    record["restored_baseline"]["artifact"]["provenance_chain"].append(
+        {
+            "authority_table": "b23_match_verdicts",
+            "provenance_type": "audit_hash",
+            "source_ref": "urn:skeldir:b23_match_verdicts:unsupported",
+            "source_ref_hash": "sha256:unsupported",
+            "source_snapshot_hash": "sha256:unsupported",
+            "observed_at": "2026-11-03T06:00:00Z",
+            "display_metadata": {
+                "text_trust_class": "none",
+                "raw_text_sha256": None,
+                "display_transform": "none",
+            },
+        }
+    )
+    assert _acceptance(record) is False
+
+
+def test_contradictory_source_money_is_refused() -> None:
+    record = _positive()
+    record["causal_history"]["prior_ingress"][
+        "verified_amount_minor"
+    ] = 9999
+    assert _acceptance(record) is False
+
+
+def test_signed_witness_commitment_mismatch_is_refused() -> None:
+    record = _positive()
+    record["causal_history"]["witness_commitment"]["tip_hash"] = "c"
+    result = _final_causal_progression(
+        record["final_signed"],
+        record["causal_history"],
+        restored_signed=record["restored_baseline"],
+        restoration_observed_at=record["restoration_observed_at"],
+        amendment_admission_started_at=record[
+            "amendment_admission_started_at"
+        ],
+        amendment_admitted_at=record["amendment_admitted_at"],
+        final_observed_at=record["final_observed_at"],
+        baseline_amount=4321,
+        amended_amount=5100,
+        currency="USD",
+        verdict_id="v1",
+    )
+    assert result["established"] is False
+    assert result["reason"] == "signed_witness_tip_mismatch"
+
+
+def test_restoration_observed_after_amendment_is_refused() -> None:
+    record = _positive()
+    record["restoration_observed_at"] = "2026-11-03T06:00:06Z"
+    record["restoration_observation"] = {
+        "started_at": "2026-11-03T06:00:06Z",
+        "completed_at": "2026-11-03T06:00:06Z",
+    }
+    result = _final_causal_progression(
+        record["final_signed"],
+        record["causal_history"],
+        restored_signed=record["restored_baseline"],
+        restoration_observed_at=record["restoration_observed_at"],
+        amendment_admission_started_at=record[
+            "amendment_admission_started_at"
+        ],
+        amendment_admitted_at=record["amendment_admitted_at"],
+        final_observed_at=record["final_observed_at"],
+        baseline_amount=4321,
+        amended_amount=5100,
+        currency="USD",
+        verdict_id="v1",
+    )
+    assert result["established"] is False
+    assert result["reason"] == "restoration_not_before_amendment_admission"
+
+
 def test_final_provider_history_fabrication_is_refused() -> None:
     record = _positive()
     final = record["final_signed"]["artifact"]
@@ -441,6 +595,13 @@ def test_final_causal_order_fabrication_is_refused() -> None:
     result = _final_causal_progression(
         record["final_signed"],
         record["causal_history"],
+        restored_signed=record["restored_baseline"],
+        restoration_observed_at=record["restoration_observed_at"],
+        amendment_admission_started_at=record[
+            "amendment_admission_started_at"
+        ],
+        amendment_admitted_at=record["amendment_admitted_at"],
+        final_observed_at=record["final_observed_at"],
         baseline_amount=4321,
         amended_amount=5100,
         currency="USD",
@@ -458,6 +619,13 @@ def test_ledger_chain_fabrication_is_refused() -> None:
     result = _final_causal_progression(
         record["final_signed"],
         record["causal_history"],
+        restored_signed=record["restored_baseline"],
+        restoration_observed_at=record["restoration_observed_at"],
+        amendment_admission_started_at=record[
+            "amendment_admission_started_at"
+        ],
+        amendment_admitted_at=record["amendment_admitted_at"],
+        final_observed_at=record["final_observed_at"],
         baseline_amount=4321,
         amended_amount=5100,
         currency="USD",
