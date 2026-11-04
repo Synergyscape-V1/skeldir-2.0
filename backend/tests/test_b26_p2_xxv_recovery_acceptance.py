@@ -91,6 +91,51 @@ def _source_decision_entries(amount: int, observed_at: str) -> list[dict]:
     ]
 
 
+def _aux_provenance(observed_at: str) -> list[dict]:
+    entries = []
+    for source_class in (
+        "deterministic_attribution_output_refs",
+        "b24_source_snapshot_hash",
+        "b24_fit_id",
+        "b24_diagnostic_fallback_status",
+        "b24_artifact_ref_hash",
+    ):
+        entries.append(
+            {
+                "authority_table": "trust_provenance_source_registry",
+                "provenance_type": "explicit_unavailable",
+                "source_ref": f"urn:skeldir:unavailable:{source_class}",
+                "source_ref_hash": "sha256:unavailable",
+                "source_snapshot_hash": "sha256:unavailable",
+                "observed_at": observed_at,
+                "display_metadata": {
+                    "text_trust_class": "none",
+                    "raw_text_sha256": None,
+                    "display_transform": "none",
+                },
+            }
+        )
+    entries.append(
+        {
+            "authority_table": "trust_text_disposition",
+            "provenance_type": "text_disposition",
+            "source_ref": (
+                "urn:skeldir:text_disposition_transform_version:6e8f0dae"
+                "14e57a0f06f485f0dad4b4807f7175dbe4daa8fedc382c81331aecab"
+            ),
+            "source_ref_hash": "sha256:text-disposition",
+            "source_snapshot_hash": "sha256:text-disposition",
+            "observed_at": observed_at,
+            "display_metadata": {
+                "text_trust_class": "none",
+                "raw_text_sha256": None,
+                "display_transform": "none",
+            },
+        }
+    )
+    return entries
+
+
 def _artifact(amount: int) -> dict:
     urn = "urn:skeldir:match_verdict:v1"
     digest = _subject_ref_hash(urn)
@@ -165,6 +210,7 @@ def _artifact(amount: int) -> dict:
             "staleness_status": "current",
             "snapshot_consistency_status": "consistent",
             "evidence_age_status": "within_supported_horizon",
+            "max_source_read_skew_ms": 0,
             "evidence_snapshot_at": "2026-11-03T06:00:00Z",
             "evidence_snapshot_hash": "sha256:snapshot",
             "source_read_started_at": "2026-11-03T06:00:00Z",
@@ -187,6 +233,7 @@ def _artifact(amount: int) -> dict:
                 },
             },
             *_source_decision_entries(amount, "2026-11-03T06:00:00Z"),
+            *_aux_provenance("2026-11-03T06:00:00Z"),
         ],
         "signing_key_id": "kid",
         "created_at": "2026-11-03T06:00:00Z",
@@ -480,6 +527,9 @@ def _final_verified(
     artifact["evidence_temporal_boundary"][
         "evidence_snapshot_hash"
     ] = expected_match["source_snapshot_hash"]
+    artifact["evidence_temporal_boundary"][
+        "evidence_snapshot_at"
+    ] = history["verdict"]["updated_at"]
     artifact["provenance_chain"] = [
         expected_webhook,
         expected_provider,
@@ -487,6 +537,7 @@ def _final_verified(
         *_source_decision_entries(
             5100, history["verdict"]["updated_at"]
         ),
+        *_aux_provenance(history["verdict"]["updated_at"]),
     ]
     artifact["created_at"] = "2026-11-03T06:00:06Z"
     artifact["evidence_temporal_boundary"][
@@ -1344,6 +1395,88 @@ def test_source_created_after_witness_is_refused() -> None:
     result = _causal(record)
     assert result["established"] is False
     assert result["reason"] == "source_after_witness"
+
+
+def test_removed_unavailability_provenance_is_refused() -> None:
+    record = _positive()
+    artifact = record["final_signed"]["artifact"]
+    artifact["provenance_chain"] = [
+        entry
+        for entry in artifact["provenance_chain"]
+        if not (
+            entry.get("provenance_type") == "explicit_unavailable"
+            and entry.get("source_ref")
+            == "urn:skeldir:unavailable:b24_fit_id"
+        )
+    ]
+    assert _acceptance(record) is False
+
+
+def test_changed_text_transform_evidence_is_refused() -> None:
+    record = _positive()
+    entry = next(
+        entry
+        for entry in record["final_signed"]["artifact"]["provenance_chain"]
+        if entry["provenance_type"] == "text_disposition"
+    )
+    entry["source_ref"] = "urn:skeldir:unrelated-text-transform"
+    assert _acceptance(record) is False
+
+
+def test_altered_read_skew_is_refused() -> None:
+    record = _positive()
+    record["final_signed"]["artifact"]["evidence_temporal_boundary"][
+        "max_source_read_skew_ms"
+    ] = 1
+    assert _acceptance(record) is False
+
+
+def test_missing_authority_universe_is_refused() -> None:
+    record = _positive()
+    record["causal_history"].pop("authority_universe")
+    assert _acceptance(record) is False
+
+
+def test_rollback_sequence_labels_are_accepted() -> None:
+    record = _positive()
+    history = record["causal_history"]
+    first, second = history["ledger"]
+    first["seq"] = 1
+    first["prev_entry_hash"] = None
+    first["entry_hash"] = _ledger_entry_hash(first)
+    second["seq"] = 3
+    second["prev_entry_hash"] = first["entry_hash"]
+    second["entry_hash"] = _ledger_entry_hash(second)
+    history["global_ledger"] = [
+        {
+            "seq": 1,
+            "entry_hash": first["entry_hash"],
+            "prev_entry_hash": None,
+            "recorded_at": first["recorded_at"],
+        },
+        {
+            "seq": 3,
+            "entry_hash": second["entry_hash"],
+            "prev_entry_hash": first["entry_hash"],
+            "recorded_at": second["recorded_at"],
+        },
+    ]
+    replacement = _signed_witness_commitment(
+        history["global_ledger"], history["authority_universe"]
+    )
+    history["witness_commitment"] = replacement
+    history["prefix_digest"] = replacement["prefix_digest"]
+    history["witness"] = {
+        "count": replacement["count"],
+        "tip_seq": replacement["tip_seq"],
+        "tip_hash": replacement["tip_hash"],
+    }
+    history["continuity"] = {
+        "count": replacement["count"],
+        "tip_hash": replacement["tip_hash"],
+    }
+    record["witness_public_key"] = replacement["public_key"]
+    assert _acceptance(record) is True
 
 
 def test_shared_ledger_activity_is_preserved() -> None:

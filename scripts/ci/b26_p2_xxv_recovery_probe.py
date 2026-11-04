@@ -648,8 +648,12 @@ def _issued_observation_justification(
     if facts["data_freshness_seconds"] != 0:
         return False, {}, "observation_freshness_not_source_exact"
     boundary = artifact.get("evidence_temporal_boundary") or {}
+    if boundary.get("max_source_read_skew_ms") != 0:
+        return False, {}, "observation_read_skew_not_exact"
     snapshot_at = _utc_time(boundary.get("evidence_snapshot_at"))
-    if snapshot_at is not None and snapshot_at > facts["created_at"]:
+    if snapshot_at is None:
+        return False, {}, "observation_snapshot_missing"
+    if snapshot_at > facts["created_at"]:
         return False, {}, "observation_snapshot_after_issuance"
     evidence = {
         "created_at": facts["created_at"].isoformat(),
@@ -804,6 +808,30 @@ def _result_source_authority(
                 decision_material={"reason_code": reason_code or "none"},
             ),
         }
+        provenance = artifact.get("provenance_chain") or []
+        for source_class in (
+            "deterministic_attribution_output_refs",
+            "b24_source_snapshot_hash",
+            "b24_fit_id",
+            "b24_diagnostic_fallback_status",
+            "b24_artifact_ref_hash",
+        ):
+            expected_ref = f"urn:skeldir:unavailable:{source_class}"
+            if not any(
+                isinstance(entry, dict)
+                and entry.get("provenance_type") == "explicit_unavailable"
+                and entry.get("source_ref") == expected_ref
+                for entry in provenance
+            ):
+                return {
+                    "established": False,
+                    "reason": "result_unavailability_provenance_missing",
+                }
+        if _one_provenance(artifact, "text_disposition") is None:
+            return {
+                "established": False,
+                "reason": "result_text_disposition_provenance_missing",
+            }
         for provenance_type, expected in expected_entries.items():
             actual = _one_provenance(artifact, provenance_type)
             if not _entry_matches(actual, expected):
@@ -981,10 +1009,9 @@ def _verify_signed_latest_checkpoint(
         return False, "signed_witness_proof_malformed", {}
     if not signature.startswith("ed25519:"):
         return False, "signed_witness_signature_algorithm", {}
-    if (
-        authority_universe is not None
-        and payload.get("authority_universe") != authority_universe
-    ):
+    if not authority_universe:
+        return False, "signed_witness_authority_universe_missing", {}
+    if payload.get("authority_universe") != authority_universe:
         return False, "signed_witness_authority_universe_mismatch", {}
     try:
         raw_key = base64.urlsafe_b64decode(
@@ -1379,6 +1406,8 @@ def _verify_source_attestation(
 ) -> tuple[bool, str]:
     if not isinstance(public_key, str) or not public_key:
         return False, "source_attestation_public_key_missing"
+    if not authority_universe:
+        return False, "source_attestation_authority_universe_missing"
     attestation = source.get("source_attestation")
     if not isinstance(attestation, dict):
         return False, "source_attestation_missing"
@@ -1752,8 +1781,6 @@ def _final_causal_progression(
         reason = "history_witness_count_diverged"
     elif witness["tip_hash"] != continuity["tip_hash"]:
         reason = "history_witness_tip_diverged"
-    elif int(witness["count"]) < int(last["seq"]):
-        reason = "history_witness_behind_transition"
     elif (
         witness["tip_seq"] is not None
         and int(witness["tip_seq"]) < int(last["seq"])
@@ -1830,12 +1857,29 @@ def _final_causal_progression(
     actual_provider = _one_provenance(artifact, "provider_native_reference")
     actual_match = _one_provenance(artifact, "match_verdict")
     actual_webhook = _one_provenance(artifact, "webhook_signature")
+    restored_text = _one_provenance(
+        restored_signed.get("artifact") or {}, "text_disposition"
+    )
+    final_text = _one_provenance(artifact, "text_disposition")
     if not _entry_matches(actual_provider, expected_provider):
         reason = "final_provider_history_mismatch"
     elif not _entry_matches(actual_match, expected_match):
         reason = "final_match_history_mismatch"
     elif not _entry_matches(actual_webhook, expected_webhook):
         reason = "final_ingress_history_mismatch"
+    elif (
+        not isinstance(final_text, dict)
+        or not isinstance(restored_text, dict)
+        or any(
+            final_text.get(key) != restored_text.get(key)
+            for key in (
+                "source_ref",
+                "source_ref_hash",
+                "source_snapshot_hash",
+            )
+        )
+    ):
+        reason = "final_text_transform_mismatch"
     elif artifact.get("truth_authority", {}).get(
         "source_snapshot_hash"
     ) != expected_match["source_snapshot_hash"]:
@@ -1846,6 +1890,12 @@ def _final_causal_progression(
         "source_snapshot_hash"
     ]:
         reason = "final_evidence_snapshot_mismatch"
+    elif _utc_second_value(
+        (artifact.get("evidence_temporal_boundary") or {}).get(
+            "evidence_snapshot_at"
+        )
+    ) != _utc_second_value(verdict.get("updated_at")):
+        reason = "final_evidence_snapshot_time_mismatch"
     elif artifact.get("match_verdict_status") != (
         normalize_match_verdict_status(verdict["status"])
     ):
@@ -2037,6 +2087,42 @@ def _offline_verification(observation: dict) -> dict:
         }
 
 
+def _verify_observation_with_jwks(
+    observation: dict,
+    jwks: dict,
+    verdict_id: str,
+    amount: int,
+    currency: str,
+    expected_tenant_id_hash: str,
+) -> dict:
+    ok, reason = _signed_structure(
+        observation, verdict_id, amount, currency, expected_tenant_id_hash
+    )
+    if not ok:
+        return {"verification_status": "rejected", "reason_code": reason}
+    artifact = observation.get("artifact") or {}
+    keys = jwks.get("keys") if isinstance(jwks, dict) else None
+    matching = None
+    for key in keys or []:
+        if isinstance(key, dict) and key.get("kid") == artifact.get(
+            "signing_key_id"
+        ):
+            matching = key
+            break
+    valid = bool(
+        isinstance(matching, dict)
+        and matching.get("x")
+        and _key_lifecycle_valid(artifact, matching)
+    )
+    trusted = dict(observation)
+    trusted["public_key_basis"] = {
+        "jwks": jwks,
+        "matching_key": matching,
+        "valid": valid,
+    }
+    return _offline_verification(trusted)
+
+
 def _signed_observation(
     observation: dict,
     verdict_id: str,
@@ -2162,6 +2248,10 @@ def _acceptance(record: dict) -> bool:
     baseline_structure_ok = False
     restored_structure_ok = False
     final_structure_ok = False
+    signature_requirement = record.get("require_signature_verification") is True
+    baseline_signature_ok = not signature_requirement
+    restored_signature_ok = not signature_requirement
+    final_signature_ok = not signature_requirement
     restoration_semantic_authority = {
         "established": False,
         "reason": "not_evaluated",
@@ -2188,6 +2278,42 @@ def _acceptance(record: dict) -> bool:
         final_structure_ok, _ = _signed_structure(
             final_signed, verdict_id, amended_amount, currency, tenant_id_hash
         )
+        if signature_requirement:
+            trust_jwks = record.get("trust_jwks")
+            if isinstance(trust_jwks, dict):
+                baseline_signature_ok = (
+                    _verify_observation_with_jwks(
+                        baseline_signed,
+                        trust_jwks,
+                        verdict_id,
+                        expected_amount,
+                        currency,
+                        tenant_id_hash,
+                    ).get("verification_status")
+                    == "verified"
+                )
+                restored_signature_ok = (
+                    _verify_observation_with_jwks(
+                        restored_baseline,
+                        trust_jwks,
+                        verdict_id,
+                        expected_amount,
+                        currency,
+                        tenant_id_hash,
+                    ).get("verification_status")
+                    == "verified"
+                )
+                final_signature_ok = (
+                    _verify_observation_with_jwks(
+                        final_signed,
+                        trust_jwks,
+                        verdict_id,
+                        amended_amount,
+                        currency,
+                        tenant_id_hash,
+                    ).get("verification_status")
+                    == "verified"
+                )
         reference_artifact = baseline_signed.get("artifact") or {}
         baseline_authority = _issued_authority(
             baseline_signed.get("artifact") or {},
@@ -2277,6 +2403,7 @@ def _acceptance(record: dict) -> bool:
             baseline_signed.get("status") == 200,
             baseline_signed.get("established") is True,
             baseline_structure_ok is True,
+            baseline_signature_ok is True,
             baseline_authority.get("established") is True,
             baseline_source_authority.get("established") is True,
             (baseline_signed.get("offline_verification") or {}).get(
@@ -2292,6 +2419,7 @@ def _acceptance(record: dict) -> bool:
             restored_baseline.get("status") == 200,
             restored_baseline.get("established") is True,
             restored_structure_ok is True,
+            restored_signature_ok is True,
             restored_authority.get("established") is True,
             restored_source_authority.get("established") is True,
             restoration_semantic_authority.get("established") is True,
@@ -2326,6 +2454,7 @@ def _acceptance(record: dict) -> bool:
             trust.get("currency") == baseline.get("currency"),
             final_signed.get("established") is True,
             final_structure_ok is True,
+            final_signature_ok is True,
             final_authority.get("established") is True,
             final_source_authority.get("established") is True,
             final_causal_progression.get("established") is True,
@@ -2373,6 +2502,8 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         "initial_subject": initial.get("commerce_reference"),
         "baseline_signed": baseline_signed,
         "manual_observer": False,
+        "require_signature_verification": True,
+        "trust_jwks": _trust_jwks(),
     }
     try:
         docker("stop", AUTH)

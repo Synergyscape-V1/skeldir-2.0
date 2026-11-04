@@ -43,6 +43,10 @@ def mode_projection(record: dict) -> dict:
         "final_observation": record.get("final_observation"),
         "final_observed_at": record.get("final_observed_at"),
         "witness_public_key": record.get("witness_public_key"),
+        "require_signature_verification": record.get(
+            "require_signature_verification"
+        ),
+        "trust_jwks": record.get("trust_jwks"),
         "observed": record.get("observed"),
         "compensation": record.get("compensation"),
         "readers": record.get("readers"),
@@ -102,6 +106,10 @@ def main() -> int:
             ),
             "final_observation": positive.get("final_observation"),
             "witness_public_key": positive.get("witness_public_key"),
+            "require_signature_verification": positive.get(
+                "require_signature_verification"
+            ),
+            "trust_jwks": positive.get("trust_jwks"),
         },
         "financial_history_commitment": {
             "causal_history": positive.get("causal_history"),
