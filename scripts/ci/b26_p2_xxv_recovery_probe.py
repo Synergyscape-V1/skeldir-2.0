@@ -627,6 +627,13 @@ def _utc_second_value(value: object) -> str:
     return utc_second(parsed) if parsed is not None else str(value)
 
 
+def _utc_precise_value(value: object) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat().replace("+00:00", "Z")
+    parsed = _utc_time(value)
+    return parsed.isoformat().replace("+00:00", "Z") if parsed else str(value)
+
+
 def _one_provenance(artifact: dict, provenance_type: str) -> dict | None:
     entries = [
         entry
@@ -860,7 +867,7 @@ def _read_causal_history(
                 "new_source_ingress": (
                     str(row[5]) if row[5] is not None else None
                 ),
-                "recorded_at": _utc_second_value(row[6]),
+                "recorded_at": _utc_precise_value(row[6]),
                 "prev_entry_hash": row[7],
                 "entry_hash": row[8],
             }
@@ -1042,18 +1049,6 @@ def _final_causal_progression(
     amendment_admitted = _utc_time(amendment_admitted_at)
     final_observed = _utc_time(final_observed_at)
     last_recorded = _utc_time(last["recorded_at"])
-    if isinstance(restored_created, datetime):
-        restored_created = restored_created.replace(microsecond=0)
-    if isinstance(restoration_observed, datetime):
-        restoration_observed = restoration_observed.replace(microsecond=0)
-    if isinstance(admission_started, datetime):
-        admission_started = admission_started.replace(microsecond=0)
-    if isinstance(amendment_admitted, datetime):
-        amendment_admitted = amendment_admitted.replace(microsecond=0)
-    if isinstance(final_observed, datetime):
-        final_observed = final_observed.replace(microsecond=0)
-    if isinstance(last_recorded, datetime):
-        last_recorded = last_recorded.replace(microsecond=0)
     witness = history.get("witness")
     continuity = history.get("continuity")
     commitment = history.get("witness_commitment") or {}
