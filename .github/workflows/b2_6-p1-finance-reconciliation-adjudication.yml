@@ -791,6 +791,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
+      - name: Bind every contract semantic leaf
+        run: |
+          python -m pytest backend/tests/test_b26_p2_xxv_recovery_acceptance.py -q
+
       - name: Pull lane base images
         run: |
           docker pull python:3.11-slim

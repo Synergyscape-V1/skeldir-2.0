@@ -8,16 +8,19 @@ import json
 import sys
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
 
 from b26_p2_xxv_recovery_probe import (  # noqa: E402
+    _OBSERVATION_TIME_PATHS,
     _acceptance,
     _expected_match_entry,
     _expected_provider_entry,
     _expected_webhook_entry,
     _final_causal_progression,
-    _governed_semantic_meaning,
+    _is_issuance_audit_entry,
     _key_lifecycle_valid,
     _negative_decision,
     _offline_verification,
@@ -484,20 +487,6 @@ def test_policy_authority_change_is_refused() -> None:
     assert _acceptance(record) is False
 
 
-def _semantic_leaf_paths(value: object, prefix: tuple[object, ...] = ()) -> list:
-    if isinstance(value, dict):
-        paths = []
-        for key, child in value.items():
-            paths.extend(_semantic_leaf_paths(child, prefix + (key,)))
-        return paths
-    if isinstance(value, list):
-        paths = []
-        for index, child in enumerate(value):
-            paths.extend(_semantic_leaf_paths(child, prefix + (index,)))
-        return paths
-    return [prefix]
-
-
 def _at_path(document: object, path: tuple[object, ...]) -> object:
     cursor = document
     for part in path:
@@ -512,25 +501,95 @@ def _mutated(value: object) -> object:
         return value + 1
     if isinstance(value, str):
         return value + "-mutated"
+    if isinstance(value, list):
+        return [*value, "mutated"]
     if value is None:
         return "mutated"
     raise AssertionError(f"unsupported semantic leaf type: {type(value)!r}")
 
 
-def test_every_governed_semantic_leaf_changes_authority() -> None:
-    baseline = _positive()["baseline_signed"]
-    meaning = _governed_semantic_meaning(baseline["artifact"])
-    assert meaning is not None
-    paths = _semantic_leaf_paths(meaning)
+def _manifest_semantic_leaf_paths() -> list[tuple[object, ...]]:
+    manifest = yaml.safe_load(
+        (
+            REPO_ROOT / "contracts/trust-api/hash-domain-manifest.v1.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    declared = [
+        row["field_path"]
+        for row in manifest["field_domains"]
+        if row["domain"] == "semantic_truth_v1"
+    ]
+    leaves = [
+        path
+        for path in declared
+        if not any(
+            other.startswith(path + ".")
+            or other.startswith(path + "[]")
+            for other in declared
+            if other != path
+        )
+    ]
+    paths = []
+    for path in leaves:
+        parts: list[object] = []
+        for part in path.split("."):
+            if part.endswith("[]"):
+                parts.extend((part[:-2], 0))
+            else:
+                parts.append(part)
+        paths.append(tuple(parts))
+    return paths
+
+
+def _set_path(document: object, path: tuple[object, ...], value: object) -> None:
+    cursor = document
+    for index, part in enumerate(path[:-1]):
+        if isinstance(part, int):
+            while len(cursor) <= part:
+                cursor.append({})
+            cursor = cursor[part]
+            continue
+        following = path[index + 1]
+        if not isinstance(cursor.get(part), (dict, list)):
+            cursor[part] = [] if isinstance(following, int) else {}
+        cursor = cursor[part]
+    last = path[-1]
+    if isinstance(last, int):
+        while len(cursor) <= last:
+            cursor.append({})
+        cursor[last] = value
+    else:
+        cursor[last] = value
+
+
+def test_every_contract_semantic_leaf_changes_authority() -> None:
+    baseline = _real_baseline()
+    paths = _manifest_semantic_leaf_paths()
     assert paths
     for path in paths:
-        restored = copy.deepcopy(_positive()["restored_baseline"])
+        field = ".".join(str(part) for part in path)
+        if field in _OBSERVATION_TIME_PATHS:
+            continue
+        restored = {"artifact": copy.deepcopy(baseline["artifact"])}
         artifact = restored["artifact"]
-        current = _at_path(artifact, path)
-        parent = _at_path(artifact, path[:-1]) if len(path) > 1 else artifact
-        parent[path[-1]] = _mutated(current)
+        if path[0] == "provenance_chain":
+            index = next(
+                index
+                for index, entry in enumerate(artifact["provenance_chain"])
+                if not _is_issuance_audit_entry(entry)
+            )
+            path = ("provenance_chain", index) + path[2:]
+        try:
+            current = _at_path(artifact, path)
+        except (KeyError, IndexError, TypeError):
+            current = None
+        _set_path(
+            artifact,
+            path,
+            "contract-leaf" if current is None else _mutated(current),
+        )
         result = _restoration_semantic_authority(baseline, restored)
-        assert result["established"] is False, path
+        assert result["established"] is False, field
 
 
 def test_audit_label_cannot_hide_unsupported_provenance() -> None:
