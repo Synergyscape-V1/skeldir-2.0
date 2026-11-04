@@ -17,6 +17,7 @@ from b26_p2_xxv_recovery_probe import (  # noqa: E402
     _expected_provider_entry,
     _expected_webhook_entry,
     _final_causal_progression,
+    _governed_semantic_meaning,
     _key_lifecycle_valid,
     _negative_decision,
     _offline_verification,
@@ -481,6 +482,55 @@ def test_policy_authority_change_is_refused() -> None:
         "reason_code"
     ] = "unsupported_policy_change"
     assert _acceptance(record) is False
+
+
+def _semantic_leaf_paths(value: object, prefix: tuple[object, ...] = ()) -> list:
+    if isinstance(value, dict):
+        paths = []
+        for key, child in value.items():
+            paths.extend(_semantic_leaf_paths(child, prefix + (key,)))
+        return paths
+    if isinstance(value, list):
+        paths = []
+        for index, child in enumerate(value):
+            paths.extend(_semantic_leaf_paths(child, prefix + (index,)))
+        return paths
+    return [prefix]
+
+
+def _at_path(document: object, path: tuple[object, ...]) -> object:
+    cursor = document
+    for part in path:
+        cursor = cursor[part]
+    return cursor
+
+
+def _mutated(value: object) -> object:
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, str):
+        return value + "-mutated"
+    if value is None:
+        return "mutated"
+    raise AssertionError(f"unsupported semantic leaf type: {type(value)!r}")
+
+
+def test_every_governed_semantic_leaf_changes_authority() -> None:
+    baseline = _positive()["baseline_signed"]
+    meaning = _governed_semantic_meaning(baseline["artifact"])
+    assert meaning is not None
+    paths = _semantic_leaf_paths(meaning)
+    assert paths
+    for path in paths:
+        restored = copy.deepcopy(_positive()["restored_baseline"])
+        artifact = restored["artifact"]
+        current = _at_path(artifact, path)
+        parent = _at_path(artifact, path[:-1]) if len(path) > 1 else artifact
+        parent[path[-1]] = _mutated(current)
+        result = _restoration_semantic_authority(baseline, restored)
+        assert result["established"] is False, path
 
 
 def test_audit_label_cannot_hide_unsupported_provenance() -> None:
