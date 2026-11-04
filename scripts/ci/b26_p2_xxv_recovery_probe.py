@@ -74,6 +74,10 @@ from app.revenue_verification.source_evidence_journal import (  # noqa: E402
     journal_record_hash,
     load_source_fact_records,
 )
+from app.revenue_verification.source_attestation import (  # noqa: E402
+    ATTESTATION_STATEMENT_VERSION,
+    canonical_statement_bytes,
+)
 from app.trust.audit_hash import idempotency_key_hash  # noqa: E402
 from app.trust.builder import _subject_ref_hash  # noqa: E402
 from app.trust.canonicalization import (  # noqa: E402
@@ -82,14 +86,21 @@ from app.trust.canonicalization import (  # noqa: E402
 )
 from app.trust.hash_domains import project_domain_payload  # noqa: E402
 from app.trust.key_registry import TrustKeyRegistry, TrustSigningKey  # noqa: E402
+from app.trust.money_source_adapter import (  # noqa: E402
+    AuthoritativeMoneyMinor,
+    resolve_authoritative_money,
+)
 from app.trust.provenance import (  # noqa: E402
     REQUIRED_P7_PROVENANCE_SOURCE_CLASSES,
+    _internal_decision_entry,
+    _registration,
 )
 from app.trust.refusal import tagged_sha256, tenant_hash, utc_second  # noqa: E402
 from app.trust.source_adapters import (  # noqa: E402
     data_completeness_for_match_status,
     normalize_match_verdict_status,
 )
+from app.trust.subject_authority import subject_authority_definition  # noqa: E402
 from app.trust.verification import verify_trust_envelope  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey  # noqa: E402
 
@@ -698,6 +709,115 @@ def _issued_authority(
     }
 
 
+def _result_source_authority(
+    artifact: dict,
+    *,
+    amount: int,
+    currency: str,
+    observed_at: str | None,
+    reason_code: str | None = None,
+) -> dict:
+    if observed_at is None:
+        return {
+            "established": False,
+            "reason": "result_source_observation_missing",
+        }
+    subject_type = artifact.get("subject_type")
+    try:
+        definition = subject_authority_definition(str(subject_type))
+    except ValueError:
+        return {
+            "established": False,
+            "reason": "result_subject_authority_unsupported",
+        }
+    expected_subject = {
+        "subject_type": artifact.get("subject_type"),
+        "subject_ref": artifact.get("subject_ref"),
+        "subject_ref_hash": artifact.get("subject_ref_hash"),
+        "source_authority_class": definition.source_authority_class,
+        "allowed_source_tables": list(definition.governed_source_tables),
+        "mutable_workflow_subject": False,
+    }
+    if artifact.get("subject_authority") != expected_subject:
+        return {
+            "established": False,
+            "reason": "result_subject_authority_mismatch",
+        }
+    if subject_type == "match_verdict":
+        expected_benchmark = {
+            "benchmark_authority": "explicitly_unavailable",
+            "benchmark_hash": None,
+            "benchmark_ref": None,
+            "benchmark_status": "unavailable",
+            "unavailable_reason": "benchmark_source_not_configured",
+        }
+        if artifact.get("benchmark_metadata") != expected_benchmark:
+            return {
+                "established": False,
+                "reason": "result_benchmark_authority_mismatch",
+            }
+        expected_confidence = {
+            "bayesian_model_type": "deterministic_only",
+            "bayesian_model_version": None,
+            "confidence_authority": "deterministic_only",
+            "confidence_score_basis_points": None,
+            "confidence_status": "unavailable",
+            "diagnostics_status": "not_applicable",
+            "inference_provenance": None,
+            "unavailable_reason": "not_applicable",
+        }
+        if artifact.get("confidence_metadata") != expected_confidence:
+            return {
+                "established": False,
+                "reason": "result_confidence_authority_mismatch",
+            }
+        money = resolve_authoritative_money(
+            source_domain="b23_match_verdicts",
+            source_field_path="canonical_net_verified_amount_minor",
+            raw_value=amount,
+            currency=currency,
+            intended_trust_field="verified_revenue_minor",
+        )
+        if not isinstance(money, AuthoritativeMoneyMinor):
+            return {
+                "established": False,
+                "reason": "result_money_source_not_authoritative",
+            }
+        expected_entries = {
+            "money_authority": _internal_decision_entry(
+                _registration("money_authority_source"),
+                observed_at=observed_at,
+                decision_material=money.external_projection(),
+            ),
+            "policy_decision": _internal_decision_entry(
+                _registration("policy_authority_source"),
+                observed_at=observed_at,
+                decision_material={"policy_state": "read_only"},
+            ),
+            "reason_code_decision": _internal_decision_entry(
+                _registration("reason_code_decision"),
+                observed_at=observed_at,
+                decision_material={"reason_code": reason_code or "none"},
+            ),
+        }
+        for provenance_type, expected in expected_entries.items():
+            actual = _one_provenance(artifact, provenance_type)
+            if not _entry_matches(actual, expected):
+                return {
+                    "established": False,
+                    "reason": f"result_{provenance_type}_mismatch",
+                }
+    return {
+        "established": True,
+        "reason": None,
+        "subject_authority": expected_subject,
+        "benchmark_metadata": artifact.get("benchmark_metadata"),
+        "confidence_metadata": artifact.get("confidence_metadata"),
+        "money_authority": artifact.get("money_authority"),
+        "policy_action_authority": artifact.get("policy_action_authority"),
+    }
+
+
 def _utc_second_value(value: object) -> str:
     if isinstance(value, datetime):
         return utc_second(value)
@@ -940,7 +1060,8 @@ def _read_causal_history(
                v.currency_code,
                v.last_transition_at,
                v.created_at,
-               v.updated_at
+               v.updated_at,
+               v.tenant_id::text
           FROM public.b23_match_verdicts AS v
          WHERE v.tenant_id = %s AND v.id = %s
         """,
@@ -956,7 +1077,8 @@ def _read_causal_history(
                i.provider_native_commerce_reference,
                i.event_timestamp, i.created_at,
                i.verified_amount_minor, i.verified_amount_currency,
-               i.b26_p2_demotion_reason
+               i.verified_amount_scale,
+               i.b26_p2_demotion_reason, i.tenant_id::text
           FROM public.webhook_ingress_identities AS i
          WHERE i.tenant_id = %s AND i.id = %s
         """,
@@ -971,7 +1093,8 @@ def _read_causal_history(
                i.provider_native_commerce_reference,
                i.event_timestamp, i.created_at,
                i.verified_amount_minor, i.verified_amount_currency,
-               i.b26_p2_demotion_reason
+               i.verified_amount_scale,
+               i.b26_p2_demotion_reason, i.tenant_id::text
           FROM public.webhook_ingress_identities AS i
          WHERE i.tenant_id = %s AND i.b26_p2_demotion_reason = %s
          ORDER BY i.event_timestamp DESC, i.created_at DESC
@@ -1014,8 +1137,13 @@ def _read_causal_history(
                i.provider_native_commerce_reference,
                i.event_timestamp, i.created_at,
                i.verified_amount_minor, i.verified_amount_currency,
-               i.b26_p2_demotion_reason
+               i.verified_amount_scale,
+               i.b26_p2_demotion_reason, i.tenant_id::text,
+               a.statement, a.signature, a.key_sha256
           FROM public.webhook_ingress_identities AS i
+          LEFT JOIN public.b26_p2_source_money_attestation AS a
+                 ON a.webhook_ingress_identity_id = i.id
+                AND a.tenant_id = i.tenant_id
          WHERE i.tenant_id = %s
         """,
         (tenant_id,),
@@ -1031,6 +1159,12 @@ def _read_causal_history(
     prefix_rows = sql(
         "SELECT public.b26_p2_read_history_prefix_digest()"
     )
+    try:
+        source_attestation_public_key = (
+            LANE_ROOT / "source_attestation_ed25519.pub"
+        ).read_text(encoding="utf-8").strip()
+    except OSError:
+        source_attestation_public_key = None
 
     def ingress(row: tuple) -> dict:
         return {
@@ -1042,7 +1176,18 @@ def _read_causal_history(
             "created_at": _utc_second_value(row[5]),
             "verified_amount_minor": int(row[6]),
             "verified_amount_currency": str(row[7]).strip().upper(),
-            "demotion_reason": row[8],
+            "verified_amount_scale": int(row[8]),
+            "demotion_reason": row[9],
+            "tenant_id": str(row[10]),
+            "source_attestation": (
+                {
+                    "statement": row[11],
+                    "signature": row[12],
+                    "key_sha256": row[13],
+                }
+                if len(row) >= 14 and row[11] is not None
+                else None
+            ),
         }
 
     return {
@@ -1061,6 +1206,7 @@ def _read_causal_history(
             "last_transition_at": _utc_second_value(verdict_row[9]),
             "created_at": _utc_second_value(verdict_row[10]),
             "updated_at": _utc_second_value(verdict_row[11]),
+            "tenant_id": str(verdict_row[12]),
         },
         "current_ingress": ingress(current_rows[0]),
         "prior_ingress": ingress(prior_rows[0]),
@@ -1134,6 +1280,7 @@ def _read_causal_history(
         "prefix_digest": (
             str(prefix_rows[0][0]) if prefix_rows else None
         ),
+        "source_attestation_public_key": source_attestation_public_key,
     }
 
 
@@ -1205,6 +1352,59 @@ def _verify_witness_commitment(
         }
 
 
+def _verify_source_attestation(
+    source: dict, public_key: str | None
+) -> tuple[bool, str]:
+    if not isinstance(public_key, str) or not public_key:
+        return False, "source_attestation_public_key_missing"
+    attestation = source.get("source_attestation")
+    if not isinstance(attestation, dict):
+        return False, "source_attestation_missing"
+    statement = attestation.get("statement")
+    signature = attestation.get("signature")
+    if not isinstance(statement, dict) or not isinstance(signature, str):
+        return False, "source_attestation_malformed"
+    try:
+        raw_key = base64.urlsafe_b64decode(
+            (public_key + "=" * (-len(public_key) % 4)).encode("ascii")
+        )
+        fingerprint = hashlib.sha256(raw_key).hexdigest()
+        if attestation.get("key_sha256") != fingerprint:
+            return False, "source_attestation_key_fingerprint_mismatch"
+        signature_text = signature.removeprefix("ed25519:")
+        if signature_text == signature:
+            return False, "source_attestation_signature_algorithm"
+        raw_signature = base64.urlsafe_b64decode(
+            (signature_text + "=" * (-len(signature_text) % 4)).encode("ascii")
+        )
+        if int(statement.get("version", 0)) != ATTESTATION_STATEMENT_VERSION:
+            return False, "source_attestation_version_unsupported"
+        Ed25519PublicKey.from_public_bytes(raw_key).verify(
+            raw_signature, canonical_statement_bytes(statement)
+        )
+    except Exception as exc:  # noqa: BLE001
+        return False, f"source_attestation_signature_invalid:{type(exc).__name__}"
+    if (
+        statement.get("webhook_ingress_identity_id") != source.get("id")
+        or statement.get("tenant_id") != source.get("tenant_id")
+        or statement.get("provider") != source.get("provider")
+        or statement.get("provider_native_event_reference")
+        != source.get("provider_native_event_reference")
+        or statement.get("provider_native_commerce_reference")
+        != source.get("provider_native_commerce_reference")
+        or statement.get("verified_amount_minor")
+        != source.get("verified_amount_minor")
+        or statement.get("verified_amount_currency")
+        != source.get("verified_amount_currency")
+        or statement.get("verified_amount_scale")
+        != source.get("verified_amount_scale")
+        or _utc_second_value(statement.get("event_timestamp"))
+        != _utc_second_value(source.get("event_timestamp"))
+    ):
+        return False, "source_attestation_content_mismatch"
+    return True, ""
+
+
 def _final_causal_progression(
     final_signed: dict,
     history: dict,
@@ -1219,6 +1419,7 @@ def _final_causal_progression(
     currency: str,
     verdict_id: str,
     trusted_witness_public_key: str | None = None,
+    tenant_id_hash: str | None = None,
 ) -> dict:
     if not history.get("complete"):
         return {
@@ -1239,6 +1440,11 @@ def _final_causal_progression(
         reason = "amendment_event_reference_mismatch"
     elif verdict["id"] != verdict_id:
         reason = "verdict_identity_mismatch"
+    elif tenant_id_hash is not None and (
+        not verdict.get("tenant_id")
+        or tenant_hash(verdict["tenant_id"]) != tenant_id_hash
+    ):
+        reason = "verdict_tenant_authority_mismatch"
     elif verdict["webhook_ingress_identity_id"] != current["id"]:
         reason = "current_ingress_link_mismatch"
     elif prior["id"] == current["id"]:
@@ -1279,6 +1485,14 @@ def _final_causal_progression(
         reason = "ledger_baseline_amount_mismatch"
     elif last["new_verified_amount_minor"] != amended_amount:
         reason = "ledger_final_amount_mismatch"
+    elif first["prior_authority_state"] != "current":
+        reason = "ledger_baseline_authority_mismatch"
+    elif first["new_authority_state"] != "historically_unverifiable":
+        reason = "ledger_fault_authority_mismatch"
+    elif last["prior_authority_state"] != "historically_unverifiable":
+        reason = "ledger_pre_final_authority_mismatch"
+    elif last["new_authority_state"] != "current":
+        reason = "ledger_final_authority_mismatch"
     else:
         for previous, row in zip(ledger, ledger[1:]):
             if (
@@ -1287,6 +1501,8 @@ def _final_causal_progression(
                 != previous["new_verified_amount_minor"]
                 or row["prior_source_ingress"]
                 != previous["new_source_ingress"]
+                or row["prior_authority_state"]
+                != previous["new_authority_state"]
             ):
                 reason = "ledger_causal_chain_discontinuous"
                 break
@@ -1323,9 +1539,15 @@ def _final_causal_progression(
         return {"established": False, "reason": "global_prefix_digest_mismatch"}
 
     global_by_seq = {int(row["seq"]): row for row in global_ledger}
+    source_attestation_public_key = history.get(
+        "source_attestation_public_key"
+    )
     for row in ledger:
         if row.get("verdict_id") != verdict_id:
             reason = "ledger_verdict_mismatch"
+            break
+        if row.get("tenant_id") != verdict.get("tenant_id"):
+            reason = "ledger_tenant_identity_mismatch"
             break
         if row.get("provider") != current["provider"]:
             reason = "ledger_provider_mismatch"
@@ -1351,6 +1573,7 @@ def _final_causal_progression(
             break
         if (
             new_source.get("provider") != row.get("provider")
+            or new_source.get("tenant_id") != verdict.get("tenant_id")
             or new_source.get("provider_native_event_reference")
             != row.get("provider_native_event_reference")
             or new_source.get("provider_native_commerce_reference")
@@ -1361,15 +1584,24 @@ def _final_causal_progression(
         ):
             reason = "ledger_new_source_content_mismatch"
             break
+        attestation_ok, attestation_reason = _verify_source_attestation(
+            new_source, source_attestation_public_key
+        )
+        if not attestation_ok:
+            reason = attestation_reason
+            break
         new_created = _utc_time(new_source.get("created_at"))
         new_event = _utc_time(new_source.get("event_timestamp"))
         recorded = _utc_time(row.get("recorded_at"))
+        verdict_created = _utc_time(verdict.get("created_at"))
         if (
             new_created is None
             or new_event is None
             or recorded is None
+            or verdict_created is None
             or new_created > recorded
             or new_event > recorded
+            or recorded < verdict_created
         ):
             reason = "ledger_new_source_not_before_commit"
             break
@@ -1381,6 +1613,7 @@ def _final_causal_progression(
                 break
             if (
                 prior_source.get("provider") != row.get("provider")
+                or prior_source.get("tenant_id") != verdict.get("tenant_id")
                 or prior_source.get("provider_native_commerce_reference")
                 != current["provider_native_commerce_reference"]
                 or prior_source.get("verified_amount_minor")
@@ -1388,6 +1621,12 @@ def _final_causal_progression(
                 or prior_source.get("verified_amount_currency") != currency
             ):
                 reason = "ledger_prior_source_content_mismatch"
+                break
+            attestation_ok, attestation_reason = _verify_source_attestation(
+                prior_source, source_attestation_public_key
+            )
+            if not attestation_ok:
+                reason = attestation_reason
                 break
     if reason:
         return {"established": False, "reason": reason}
@@ -1864,6 +2103,9 @@ def _acceptance(record: dict) -> bool:
     baseline_authority = {"established": False, "reason": "not_evaluated"}
     restored_authority = {"established": False, "reason": "not_evaluated"}
     final_authority = {"established": False, "reason": "not_evaluated"}
+    baseline_source_authority = {"established": False, "reason": "not_evaluated"}
+    restored_source_authority = {"established": False, "reason": "not_evaluated"}
+    final_source_authority = {"established": False, "reason": "not_evaluated"}
     if isinstance(expected_amount, int) and isinstance(verdict_id, str) and subject:
         currency = str(baseline.get("currency") or "")
         tenant_id_hash = str(baseline.get("tenant_id_hash") or "")
@@ -1895,6 +2137,34 @@ def _acceptance(record: dict) -> bool:
             window=record.get("final_observation"),
             require_window=True,
         )
+        baseline_boundary = (
+            baseline_signed.get("artifact") or {}
+        ).get("evidence_temporal_boundary") or {}
+        restored_boundary = (
+            restored_baseline.get("artifact") or {}
+        ).get("evidence_temporal_boundary") or {}
+        causal_history = record.get("causal_history") or {}
+        final_source_observed = (
+            (causal_history.get("verdict") or {}).get("updated_at")
+        )
+        baseline_source_authority = _result_source_authority(
+            baseline_signed.get("artifact") or {},
+            amount=expected_amount,
+            currency=currency,
+            observed_at=baseline_boundary.get("evidence_snapshot_at"),
+        )
+        restored_source_authority = _result_source_authority(
+            restored_baseline.get("artifact") or {},
+            amount=expected_amount,
+            currency=currency,
+            observed_at=restored_boundary.get("evidence_snapshot_at"),
+        )
+        final_source_authority = _result_source_authority(
+            final_signed.get("artifact") or {},
+            amount=amended_amount,
+            currency=currency,
+            observed_at=final_source_observed,
+        )
         restoration_semantic_authority = _restoration_semantic_authority(
             baseline_signed,
             restored_baseline,
@@ -1917,10 +2187,14 @@ def _acceptance(record: dict) -> bool:
             trusted_witness_public_key=record.get(
                 "witness_public_key"
             ),
+            tenant_id_hash=tenant_id_hash,
         )
         record["baseline_authority"] = baseline_authority
         record["restored_authority"] = restored_authority
         record["final_authority"] = final_authority
+        record["baseline_source_authority"] = baseline_source_authority
+        record["restored_source_authority"] = restored_source_authority
+        record["final_source_authority"] = final_source_authority
     return all(
         (
             baseline.get("http") == 200,
@@ -1934,6 +2208,7 @@ def _acceptance(record: dict) -> bool:
             baseline_signed.get("established") is True,
             baseline_structure_ok is True,
             baseline_authority.get("established") is True,
+            baseline_source_authority.get("established") is True,
             (baseline_signed.get("offline_verification") or {}).get(
                 "verification_status"
             )
@@ -1948,6 +2223,7 @@ def _acceptance(record: dict) -> bool:
             restored_baseline.get("established") is True,
             restored_structure_ok is True,
             restored_authority.get("established") is True,
+            restored_source_authority.get("established") is True,
             restoration_semantic_authority.get("established") is True,
             (restored_baseline.get("offline_verification") or {}).get(
                 "verification_status"
@@ -1981,6 +2257,7 @@ def _acceptance(record: dict) -> bool:
             final_signed.get("established") is True,
             final_structure_ok is True,
             final_authority.get("established") is True,
+            final_source_authority.get("established") is True,
             final_causal_progression.get("established") is True,
             (final_signed.get("offline_verification") or {}).get(
                 "verification_status"

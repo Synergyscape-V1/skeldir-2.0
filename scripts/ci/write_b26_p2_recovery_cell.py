@@ -21,9 +21,11 @@ def mode_projection(record: dict) -> dict:
         "manual_observer": record.get("manual_observer"),
         "baseline_signed": record.get("baseline_signed"),
         "baseline_authority": record.get("baseline_authority"),
+        "baseline_source_authority": record.get("baseline_source_authority"),
         "fault": record.get("fault"),
         "restored_baseline": record.get("restored_baseline"),
         "restored_authority": record.get("restored_authority"),
+        "restored_source_authority": record.get("restored_source_authority"),
         "restoration_observation": record.get("restoration_observation"),
         "restoration_observed_at": record.get("restoration_observed_at"),
         "restoration_semantic_authority": record.get(
@@ -37,6 +39,7 @@ def mode_projection(record: dict) -> dict:
         "causal_history": record.get("causal_history"),
         "final_signed": record.get("final_signed"),
         "final_authority": record.get("final_authority"),
+        "final_source_authority": record.get("final_source_authority"),
         "final_observation": record.get("final_observation"),
         "final_observed_at": record.get("final_observed_at"),
         "witness_public_key": record.get("witness_public_key"),
@@ -83,8 +86,17 @@ def main() -> int:
             "restored_baseline": positive.get("restored_baseline"),
             "final_signed": positive.get("final_signed"),
             "baseline_authority": positive.get("baseline_authority"),
+            "baseline_source_authority": positive.get(
+                "baseline_source_authority"
+            ),
             "restored_authority": positive.get("restored_authority"),
+            "restored_source_authority": positive.get(
+                "restored_source_authority"
+            ),
             "final_authority": positive.get("final_authority"),
+            "final_source_authority": positive.get(
+                "final_source_authority"
+            ),
             "restoration_observation": positive.get(
                 "restoration_observation"
             ),
@@ -93,6 +105,9 @@ def main() -> int:
         },
         "financial_history_commitment": {
             "causal_history": positive.get("causal_history"),
+            "source_attestation_public_key": (
+                positive.get("causal_history") or {}
+            ).get("source_attestation_public_key"),
             "signed_witness": causal_progression.get("signed_witness"),
             "expected_provider": causal_progression.get("expected_provider"),
             "expected_match": causal_progression.get("expected_match"),
