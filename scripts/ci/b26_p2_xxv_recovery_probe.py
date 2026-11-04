@@ -523,6 +523,8 @@ def _observation_time_justification(
         )
         if started_at is None or completed_at is None:
             return False, {}, "observation_window_missing"
+        started_at = started_at.replace(microsecond=0)
+        completed_at = completed_at.replace(microsecond=0)
         if not (
             started_at
             <= restored_facts["created_at"]

@@ -397,8 +397,8 @@ def test_genuine_restoration_may_change_observation_time() -> None:
         "source_read_completed_at"
     ] = "2026-11-03T06:00:02Z"
     record["restoration_observation"] = {
-        "started_at": "2026-11-03T06:00:02Z",
-        "completed_at": "2026-11-03T06:00:02Z",
+        "started_at": "2026-11-03T06:00:01.500Z",
+        "completed_at": "2026-11-03T06:00:02.500Z",
     }
     record["restoration_observed_at"] = "2026-11-03T06:00:02Z"
     record["amendment_admission_started_at"] = "2026-11-03T06:00:03Z"
