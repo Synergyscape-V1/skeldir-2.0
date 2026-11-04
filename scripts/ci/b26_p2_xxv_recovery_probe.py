@@ -1042,6 +1042,18 @@ def _final_causal_progression(
     amendment_admitted = _utc_time(amendment_admitted_at)
     final_observed = _utc_time(final_observed_at)
     last_recorded = _utc_time(last["recorded_at"])
+    if isinstance(restored_created, datetime):
+        restored_created = restored_created.replace(microsecond=0)
+    if isinstance(restoration_observed, datetime):
+        restoration_observed = restoration_observed.replace(microsecond=0)
+    if isinstance(admission_started, datetime):
+        admission_started = admission_started.replace(microsecond=0)
+    if isinstance(amendment_admitted, datetime):
+        amendment_admitted = amendment_admitted.replace(microsecond=0)
+    if isinstance(final_observed, datetime):
+        final_observed = final_observed.replace(microsecond=0)
+    if isinstance(last_recorded, datetime):
+        last_recorded = last_recorded.replace(microsecond=0)
     witness = history.get("witness")
     continuity = history.get("continuity")
     commitment = history.get("witness_commitment") or {}
