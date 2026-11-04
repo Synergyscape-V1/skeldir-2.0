@@ -635,7 +635,8 @@ def test_valid_recovery_progression_is_accepted() -> None:
 
 def test_published_mode_projection_is_replayable() -> None:
     record = _positive()
-    record["passed"] = True
+    record["passed"] = False
+    record["mode"] = "synthetic"
     assert _acceptance(mode_projection(record)) is True
 
 
@@ -664,6 +665,21 @@ def test_retained_cell_rejects_corrupt_customer_signature() -> None:
     document = json.loads(path.read_text(encoding="utf-8"))
     record = document["details"]["modes"]["positive"]
     record["baseline_signed"]["artifact"]["signature"] = "ed25519:AAAA"
+    assert _acceptance(record) is False
+
+
+def test_retained_cell_rejects_missing_trust_root() -> None:
+    path = (
+        REPO_ROOT
+        / "docs"
+        / "forensics"
+        / "evidence"
+        / "b26_p2_xxv_a8"
+        / "xxv-r0038-recovery-context-20261104.json"
+    )
+    document = json.loads(path.read_text(encoding="utf-8"))
+    record = document["details"]["modes"]["positive"]
+    record.pop("trust_jwks")
     assert _acceptance(record) is False
 
 

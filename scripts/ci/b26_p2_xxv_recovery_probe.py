@@ -2248,7 +2248,13 @@ def _acceptance(record: dict) -> bool:
     baseline_structure_ok = False
     restored_structure_ok = False
     final_structure_ok = False
-    signature_requirement = record.get("require_signature_verification") is True
+    signature_requirement = (
+        record.get("require_signature_verification") is True
+        or (
+            record.get("mode") == "positive"
+            and record.get("passed") is True
+        )
+    )
     baseline_signature_ok = not signature_requirement
     restored_signature_ok = not signature_requirement
     final_signature_ok = not signature_requirement
