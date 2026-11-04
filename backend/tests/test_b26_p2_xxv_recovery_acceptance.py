@@ -652,6 +652,21 @@ def test_retained_exact_head_cell_replays() -> None:
     assert _acceptance(document["details"]["modes"]["positive"]) is True
 
 
+def test_retained_cell_rejects_corrupt_customer_signature() -> None:
+    path = (
+        REPO_ROOT
+        / "docs"
+        / "forensics"
+        / "evidence"
+        / "b26_p2_xxv_a8"
+        / "xxv-r0038-recovery-context-20261104.json"
+    )
+    document = json.loads(path.read_text(encoding="utf-8"))
+    record = document["details"]["modes"]["positive"]
+    record["baseline_signed"]["artifact"]["signature"] = "ed25519:AAAA"
+    assert _acceptance(record) is False
+
+
 def test_contract_confirmed_match_is_consumable() -> None:
     record = _positive("matched_confirmed")
     assert _acceptance(record) is True
