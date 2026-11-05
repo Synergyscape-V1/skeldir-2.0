@@ -318,6 +318,16 @@ def _trust_jwks() -> dict:
     return payload
 
 
+def _artifact_trust_jwks(state: dict) -> dict:
+    material = state.get("material") or {}
+    raw = material.get("trust_jwks_json")
+    if isinstance(raw, str) and raw:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    return _trust_jwks()
+
+
 def _contract_enum(field: str) -> frozenset[str]:
     cached = _CONTRACT_ENUM_CACHE.get(field)
     if cached is not None:
@@ -2598,7 +2608,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         "baseline_signed": baseline_signed,
         "manual_observer": False,
         "require_signature_verification": True,
-        "trust_jwks": _trust_jwks(),
+        "trust_jwks": _artifact_trust_jwks(state),
     }
     try:
         docker("stop", AUTH)
@@ -2950,7 +2960,7 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
         "original_sha256": original_sha,
         "manual_observer": False,
         "require_signature_verification": True,
-        "trust_jwks": _trust_jwks(),
+        "trust_jwks": _artifact_trust_jwks(state),
         "artifact": state.get("artifact"),
     }
     mutated = False
