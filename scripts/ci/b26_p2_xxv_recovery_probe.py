@@ -94,6 +94,7 @@ from app.trust.provenance import (  # noqa: E402
     REQUIRED_P7_PROVENANCE_SOURCE_CLASSES,
     _internal_decision_entry,
     _registration,
+    _unavailable_entry,
 )
 from app.trust.refusal import tagged_sha256, tenant_hash, utc_second  # noqa: E402
 from app.trust.source_adapters import (  # noqa: E402
@@ -817,12 +818,20 @@ def _result_source_authority(
             "b24_artifact_ref_hash",
         ):
             expected_ref = f"urn:skeldir:unavailable:{source_class}"
-            if not any(
-                isinstance(entry, dict)
-                and entry.get("provenance_type") == "explicit_unavailable"
-                and entry.get("source_ref") == expected_ref
-                for entry in provenance
-            ):
+            actual = next(
+                (
+                    entry
+                    for entry in provenance
+                    if isinstance(entry, dict)
+                    and entry.get("provenance_type") == "explicit_unavailable"
+                    and entry.get("source_ref") == expected_ref
+                ),
+                None,
+            )
+            expected = _unavailable_entry(
+                _registration(source_class), observed_at=observed_at
+            )
+            if not _entry_matches(actual, expected):
                 return {
                     "established": False,
                     "reason": "result_unavailability_provenance_missing",
@@ -1618,6 +1627,14 @@ def _final_causal_progression(
     source_attestation_key_sha256 = history.get(
         "source_attestation_public_key_sha256"
     )
+    if (
+        history.get("require_signature_verification") is True
+        and not source_attestation_key_sha256
+    ):
+        return {
+            "established": False,
+            "reason": "source_attestation_key_context_missing",
+        }
     for row in ledger:
         if row.get("verdict_id") != verdict_id:
             reason = "ledger_verdict_mismatch"
@@ -1737,7 +1754,13 @@ def _final_causal_progression(
     )
     compiled_witness_key = history.get("witness_public_key_sha256")
     commitment_key = commitment.get("public_key")
-    if compiled_witness_key is not None:
+    if (
+        history.get("require_signature_verification") is True
+        and not compiled_witness_key
+    ):
+        signed_witness_ok = False
+        signed_witness_reason = "signed_witness_key_context_missing"
+    elif compiled_witness_key is not None:
         try:
             raw_commitment_key = base64.urlsafe_b64decode(
                 (str(commitment_key or "") + "===").encode("ascii")
@@ -2114,6 +2137,18 @@ def _offline_verification(observation: dict) -> dict:
         }
 
 
+def _trust_registry_digest(jwks: dict) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            jwks,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def _verify_observation_with_jwks(
     observation: dict,
     jwks: dict,
@@ -2332,10 +2367,15 @@ def _acceptance(record: dict) -> bool:
         )
         if signature_requirement:
             trust_jwks = record.get("trust_jwks")
-            compiled_trust_key = (record.get("artifact") or {}).get(
-                "compiled_trust_public_key_sha256"
+            compiled_trust_registry = (record.get("artifact") or {}).get(
+                "compiled_trust_registry_sha256"
             )
-            if isinstance(trust_jwks, dict) and compiled_trust_key:
+            if (
+                isinstance(trust_jwks, dict)
+                and compiled_trust_registry
+                and _trust_registry_digest(trust_jwks)
+                == compiled_trust_registry
+            ):
                 baseline_signature_ok = (
                     _verify_observation_with_jwks(
                         baseline_signed,
@@ -2344,7 +2384,6 @@ def _acceptance(record: dict) -> bool:
                         expected_amount,
                         currency,
                         tenant_id_hash,
-                        compiled_trust_key,
                     ).get("verification_status")
                     == "verified"
                 )
@@ -2356,7 +2395,6 @@ def _acceptance(record: dict) -> bool:
                         expected_amount,
                         currency,
                         tenant_id_hash,
-                        compiled_trust_key,
                     ).get("verification_status")
                     == "verified"
                 )
@@ -2368,7 +2406,6 @@ def _acceptance(record: dict) -> bool:
                         amended_amount,
                         currency,
                         tenant_id_hash,
-                        compiled_trust_key,
                     ).get("verification_status")
                     == "verified"
                 )
@@ -2713,6 +2750,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         causal_history["witness_public_key_sha256"] = (
             state.get("artifact") or {}
         ).get("compiled_public_key_sha256")
+        causal_history["require_signature_verification"] = True
         record["artifact"] = state.get("artifact")
         record["witness_public_key"] = staged["public"].read_text(
             encoding="utf-8"
@@ -2804,6 +2842,40 @@ def _negative_decision(record: dict) -> bool:
     baseline_verify = (record.get("baseline_signed") or {}).get(
         "verification"
     ) or [0, {}]
+    baseline = record.get("baseline") or {}
+    if record.get("require_signature_verification") is True:
+        trust_jwks = record.get("trust_jwks")
+        artifact_identity = record.get("artifact") or {}
+        registry_digest = artifact_identity.get(
+            "compiled_trust_registry_sha256"
+        )
+        if (
+            not isinstance(trust_jwks, dict)
+            or not registry_digest
+            or _trust_registry_digest(trust_jwks) != registry_digest
+        ):
+            return False
+        common = (
+            str(baseline.get("verdict_id") or ""),
+            int(baseline.get("amount_minor") or 0),
+            str(baseline.get("currency") or ""),
+            str(baseline.get("tenant_id_hash") or ""),
+        )
+        if (
+            _verify_observation_with_jwks(
+                record.get("baseline_signed") or {}, trust_jwks, *common
+            ).get("verification_status")
+            != "verified"
+        ):
+            return False
+        restored = record.get("restored_baseline") or {}
+        if restored and (
+            _verify_observation_with_jwks(
+                restored, trust_jwks, *common
+            ).get("verification_status")
+            != "verified"
+        ):
+            return False
     if not (
         (record.get("baseline_signed") or {}).get("established") is True
         and (record.get("baseline_signed") or {})
@@ -2877,6 +2949,9 @@ def _negative(state: dict, tenant: dict, temp: Path, mode: str) -> dict:
         "initial_subject": initial.get("commerce_reference"),
         "original_sha256": original_sha,
         "manual_observer": False,
+        "require_signature_verification": True,
+        "trust_jwks": _trust_jwks(),
+        "artifact": state.get("artifact"),
     }
     mutated = False
     try:

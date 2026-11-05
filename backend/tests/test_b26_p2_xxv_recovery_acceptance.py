@@ -44,6 +44,7 @@ from app.trust.money_source_adapter import (  # noqa: E402
 from app.trust.provenance import (  # noqa: E402
     _internal_decision_entry,
     _registration,
+    _unavailable_entry,
 )
 from app.trust.source_adapters import (  # noqa: E402
     data_completeness_for_match_status,
@@ -105,19 +106,9 @@ def _aux_provenance(observed_at: str) -> list[dict]:
         "b24_artifact_ref_hash",
     ):
         entries.append(
-            {
-                "authority_table": "trust_provenance_source_registry",
-                "provenance_type": "explicit_unavailable",
-                "source_ref": f"urn:skeldir:unavailable:{source_class}",
-                "source_ref_hash": "sha256:unavailable",
-                "source_snapshot_hash": "sha256:unavailable",
-                "observed_at": observed_at,
-                "display_metadata": {
-                    "text_trust_class": "none",
-                    "raw_text_sha256": None,
-                    "display_transform": "none",
-                },
-            }
+            _unavailable_entry(
+                _registration(source_class), observed_at=observed_at
+            )
         )
     entries.append(
         {
@@ -509,6 +500,7 @@ def _causal_history(status: str = "matched_provisional") -> dict:
         "witness_public_key_sha256": _public_key_sha256(
             commitment["public_key"]
         ),
+        "require_signature_verification": True,
         "authority_universe": "universe",
     }
 
@@ -1495,6 +1487,17 @@ def test_removed_unavailability_provenance_is_refused() -> None:
             == "urn:skeldir:unavailable:b24_fit_id"
         )
     ]
+    assert _acceptance(record) is False
+
+
+def test_altered_unavailability_provenance_is_refused() -> None:
+    record = _positive()
+    entry = next(
+        entry
+        for entry in record["final_signed"]["artifact"]["provenance_chain"]
+        if entry.get("source_ref") == "urn:skeldir:unavailable:b24_fit_id"
+    )
+    entry["source_snapshot_hash"] = "sha256:altered"
     assert _acceptance(record) is False
 
 

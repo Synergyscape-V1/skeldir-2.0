@@ -1685,6 +1685,7 @@
           "compiled_public_key_sha256": "292b7e2ad4af215342c2389c6c3b8d9ec460917689b1fda8161c45012fe344ce",
           "compiled_source_attestation_public_key_sha256": "57b2b21a87dfddd398887104dab297d09bb13ad5276fc491ec9dde468fe8d332",
           "compiled_trust_public_key_sha256": "5eef93d03e49a2d67b76080029a57961d1d6277e48819b01ad04587de32f29e3",
+          "compiled_trust_registry_sha256": "081cbb95df87ae3d2ccdd8ce276d3ecd26f9650c7c52df34828d1e53d861f824",
           "image_id": "sha256:72f214e5d023f3891cc5b84069cf9955585a7ee2eb10ed91a4916ab25cad9be7",
           "image_tag": "b26p2xxv-final:latest",
           "migration_head": "202610280001",
@@ -2243,6 +2244,7 @@
             "verified_amount_scale": 2
           },
           "reason": null,
+          "require_signature_verification": true,
           "source_attestation_public_key": "0ee-CQff8zG-5l3iVhbi1Vq7-Lx_NS3ijPtKBE73o_E",
           "source_attestation_public_key_sha256": "57b2b21a87dfddd398887104dab297d09bb13ad5276fc491ec9dde468fe8d332",
           "source_ingresses": {
