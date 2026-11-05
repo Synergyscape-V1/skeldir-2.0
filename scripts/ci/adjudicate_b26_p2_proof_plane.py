@@ -127,6 +127,23 @@ def adjudicate(
             raise AdjudicationError(f"proof_cell_falsifier_mismatch:{gate_id}")
         if cell["status"] != requirements["accepted_status"]:
             raise AdjudicationError(f"proof_cell_not_pass:{gate_id}:{cell['status']}")
+        if gate_id == "B26-P2-G13-RECOVERY-ACCEPTANCE":
+            from b26_p2_xxv_recovery_probe import (  # noqa: PLC0415
+                _acceptance,
+                _negative_decision,
+            )
+
+            modes = (cell.get("details") or {}).get("modes") or {}
+            for mode, record in modes.items():
+                decision = (
+                    _acceptance(record)
+                    if mode == "positive"
+                    else _negative_decision(record)
+                )
+                if decision is not True:
+                    raise AdjudicationError(
+                        f"proof_cell_decision_refused:{gate_id}:{mode}"
+                    )
         if cell["candidate_sha"] != candidate_sha:
             raise AdjudicationError(f"proof_cell_candidate_sha_mismatch:{gate_id}")
         if cell["candidate_tree"] != candidate_tree:
