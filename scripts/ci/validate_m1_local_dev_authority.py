@@ -591,6 +591,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "contracts/reconciliation/b2.6/",
     "scripts/ci/_b26_p1_controlled_defect.py",
     "scripts/ci/adjudicate_b26_p1_proof_plane.py",
+    "scripts/ci/adjudicate_b26_p2_proof_plane.py",
     "scripts/ci/assert_b26_p1_container_equivalence.py",
     "scripts/ci/attest_b26_p1_inherited_conduction.py",
     "scripts/ci/b26_p1_evidence.py",

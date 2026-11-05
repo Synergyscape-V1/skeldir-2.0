@@ -2565,6 +2565,9 @@ def _acceptance(record: dict) -> bool:
             baseline_verify[0] == 200,
             isinstance(baseline_verify[1], dict)
             and baseline_verify[1].get("verification_status") == "verified",
+            fault.get("http") == 404,
+            fault.get("status") == "refused",
+            fault.get("reason") == "history_integrity_unverifiable",
             fault.get("specific") is True,
             fault.get("new_row") is True,
             fault.get("money_minor") is None,

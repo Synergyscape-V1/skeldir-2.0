@@ -602,6 +602,7 @@ def _positive(
         "initial_subject": "pi_same",
         "baseline_signed": _verified(),
         "fault": {
+            "http": 404,
             "specific": True,
             "new_row": True,
             "money_minor": None,
@@ -1102,6 +1103,26 @@ def test_contradictory_source_money_is_refused() -> None:
     record["causal_history"]["prior_ingress"][
         "verified_amount_minor"
     ] = 9999
+    assert _acceptance(record) is False
+
+
+def test_transport_failure_is_not_a_history_refusal() -> None:
+    record = _positive()
+    record["fault"]["http"] = 503
+    assert _acceptance(record) is False
+
+
+def test_recorded_current_response_is_not_a_history_refusal() -> None:
+    record = _positive()
+    record["fault"]["http"] = 200
+    record["fault"]["money_minor"] = 5100
+    assert _acceptance(record) is False
+
+
+def test_missing_fault_disposition_is_not_a_history_refusal() -> None:
+    record = _positive()
+    for key in ("http", "status", "reason"):
+        record["fault"].pop(key)
     assert _acceptance(record) is False
 
 
