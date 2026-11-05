@@ -1503,6 +1503,20 @@ def test_missing_authority_universe_is_refused() -> None:
     assert _acceptance(record) is False
 
 
+def test_uncompiled_witness_key_is_refused() -> None:
+    record = _positive()
+    record["causal_history"]["witness_public_key_sha256"] = "0" * 64
+    assert _acceptance(record) is False
+
+
+def test_uncompiled_source_attestation_key_is_refused() -> None:
+    record = _positive()
+    record["causal_history"][
+        "source_attestation_public_key_sha256"
+    ] = "0" * 64
+    assert _acceptance(record) is False
+
+
 def test_rollback_sequence_labels_are_accepted() -> None:
     record = _positive()
     history = record["causal_history"]
