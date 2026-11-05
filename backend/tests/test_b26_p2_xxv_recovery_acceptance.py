@@ -214,6 +214,21 @@ def _artifact(amount: int) -> dict:
             "data_freshness_bound": "exact",
         },
         "provenance_chain": [
+            _expected_webhook_entry(
+                {"id": "v1", "created_at": "2026-11-03T06:00:00Z"},
+                {
+                    "id": "ingress-old",
+                    "provider": "stripe",
+                    "provider_native_event_reference": "evt_old",
+                    "provider_native_commerce_reference": "pi_same",
+                },
+            ),
+            _expected_provider_entry(
+                provider="stripe",
+                event_reference="evt_old",
+                commerce_reference="pi_same",
+                observed_at="2026-11-03T06:00:00Z",
+            ),
             {
                 "authority_table": "b23_match_verdicts",
                 "provenance_type": "match_verdict",
@@ -760,6 +775,19 @@ def test_restored_artifact_with_other_journey_lineage_fails_acceptance() -> None
             },
         }
     )
+    assert _acceptance(record) is False
+
+
+def test_baseline_with_unrelated_provider_history_is_refused() -> None:
+    record = _positive()
+    entry = next(
+        entry
+        for entry in record["baseline_signed"]["artifact"][
+            "provenance_chain"
+        ]
+        if entry["provenance_type"] == "provider_native_reference"
+    )
+    entry["source_ref"] = "urn:skeldir:provider_native_reference:other"
     assert _acceptance(record) is False
 
 

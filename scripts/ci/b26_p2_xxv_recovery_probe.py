@@ -869,6 +869,37 @@ def _result_source_authority(
     }
 
 
+def _result_history_authority(
+    artifact: dict, verdict: dict, ingress: dict
+) -> dict:
+    expected_provider = _expected_provider_entry(
+        provider=ingress["provider"],
+        event_reference=ingress["provider_native_event_reference"],
+        commerce_reference=ingress[
+            "provider_native_commerce_reference"
+        ],
+        observed_at=verdict["created_at"],
+    )
+    expected_webhook = _expected_webhook_entry(verdict, ingress)
+    if not _entry_matches(
+        _one_provenance(artifact, "provider_native_reference"),
+        expected_provider,
+    ):
+        return {
+            "established": False,
+            "reason": "result_provider_history_mismatch",
+        }
+    if not _entry_matches(
+        _one_provenance(artifact, "webhook_signature"),
+        expected_webhook,
+    ):
+        return {
+            "established": False,
+            "reason": "result_webhook_history_mismatch",
+        }
+    return {"established": True, "reason": None}
+
+
 def _utc_second_value(value: object) -> str:
     if isinstance(value, datetime):
         return utc_second(value)
@@ -2363,6 +2394,8 @@ def _acceptance(record: dict) -> bool:
     baseline_source_authority = {"established": False, "reason": "not_evaluated"}
     restored_source_authority = {"established": False, "reason": "not_evaluated"}
     final_source_authority = {"established": False, "reason": "not_evaluated"}
+    baseline_history_authority = {"established": False, "reason": "not_evaluated"}
+    restored_history_authority = {"established": False, "reason": "not_evaluated"}
     if isinstance(expected_amount, int) and isinstance(verdict_id, str) and subject:
         currency = str(baseline.get("currency") or "")
         tenant_id_hash = str(baseline.get("tenant_id_hash") or "")
@@ -2466,6 +2499,19 @@ def _acceptance(record: dict) -> bool:
             currency=currency,
             observed_at=final_source_observed,
         )
+        verdict_record = causal_history.get("verdict") or {}
+        prior_record = causal_history.get("prior_ingress") or {}
+        if verdict_record and prior_record:
+            baseline_history_authority = _result_history_authority(
+                baseline_signed.get("artifact") or {},
+                verdict_record,
+                prior_record,
+            )
+            restored_history_authority = _result_history_authority(
+                restored_baseline.get("artifact") or {},
+                verdict_record,
+                prior_record,
+            )
         restoration_semantic_authority = _restoration_semantic_authority(
             baseline_signed,
             restored_baseline,
@@ -2511,6 +2557,7 @@ def _acceptance(record: dict) -> bool:
             baseline_signature_ok is True,
             baseline_authority.get("established") is True,
             baseline_source_authority.get("established") is True,
+            baseline_history_authority.get("established") is True,
             (baseline_signed.get("offline_verification") or {}).get(
                 "verification_status"
             )
@@ -2527,6 +2574,7 @@ def _acceptance(record: dict) -> bool:
             restored_signature_ok is True,
             restored_authority.get("established") is True,
             restored_source_authority.get("established") is True,
+            restored_history_authority.get("established") is True,
             restoration_semantic_authority.get("established") is True,
             (restored_baseline.get("offline_verification") or {}).get(
                 "verification_status"

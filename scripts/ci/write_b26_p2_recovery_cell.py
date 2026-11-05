@@ -19,6 +19,7 @@ MODES = ("omit-restore", "tamper-signature", "restore-failure", "positive")
 def mode_projection(record: dict) -> dict:
     return {
         "passed": record["passed"],
+        "decision": record.get("decision"),
         "mode": record.get("mode"),
         "baseline": record.get("baseline"),
         "initial_subject": record.get("initial_subject"),
@@ -69,6 +70,8 @@ def validate_records(records: dict[str, dict]) -> None:
         )
         if decision is not True:
             raise SystemExit(f"recovery_control_not_passed:{mode}")
+        record["passed"] = decision
+        record["decision"] = decision
         if mode == "positive" and (
             record.get("require_signature_verification") is not True
             or not record.get("artifact")
