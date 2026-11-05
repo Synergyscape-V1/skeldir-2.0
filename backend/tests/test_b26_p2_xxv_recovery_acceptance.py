@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import yaml
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -48,7 +49,10 @@ from app.trust.source_adapters import (  # noqa: E402
     data_completeness_for_match_status,
     normalize_match_verdict_status,
 )
-from write_b26_p2_recovery_cell import mode_projection  # noqa: E402
+from write_b26_p2_recovery_cell import (  # noqa: E402
+    mode_projection,
+    validate_records,
+)
 
 
 def _baseline() -> dict:
@@ -677,6 +681,22 @@ def test_retained_cell_rejects_corrupt_customer_signature() -> None:
     record = document["details"]["modes"]["positive"]
     record["baseline_signed"]["artifact"]["signature"] = "ed25519:AAAA"
     assert _acceptance(record) is False
+
+
+def test_publisher_refuses_corrupt_customer_signature() -> None:
+    path = (
+        REPO_ROOT
+        / "docs"
+        / "forensics"
+        / "evidence"
+        / "b26_p2_xxv_a8"
+        / "xxv-r0038-recovery-context-20261104.json"
+    )
+    document = json.loads(path.read_text(encoding="utf-8"))
+    record = document["details"]["modes"]["positive"]
+    record["baseline_signed"]["artifact"]["signature"] = "ed25519:AAAA"
+    with pytest.raises(SystemExit):
+        validate_records({"positive": record})
 
 
 def test_retained_cell_rejects_missing_trust_root() -> None:

@@ -8,6 +8,10 @@ import json
 from pathlib import Path
 
 from b26_p2_evidence import write_evidence_cell
+from b26_p2_xxv_recovery_probe import (
+    _acceptance,
+    _negative_decision,
+)
 
 MODES = ("omit-restore", "tamper-signature", "restore-failure", "positive")
 
@@ -56,6 +60,22 @@ def mode_projection(record: dict) -> dict:
     }
 
 
+def validate_records(records: dict[str, dict]) -> None:
+    for mode, record in records.items():
+        decision = (
+            _acceptance(record)
+            if mode == "positive"
+            else _negative_decision(record)
+        )
+        if decision is not True:
+            raise SystemExit(f"recovery_control_not_passed:{mode}")
+        if mode == "positive" and (
+            record.get("require_signature_verification") is not True
+            or not record.get("artifact")
+        ):
+            raise SystemExit("recovery_trust_context_missing")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence-dir", type=Path, required=True)
@@ -65,8 +85,7 @@ def main() -> int:
     for mode in MODES:
         path = args.evidence_dir / f"xxv-r0034-recovery-{mode}-20261102.json"
         records[mode] = json.loads(path.read_text(encoding="utf-8"))
-    if not all(record.get("passed") is True for record in records.values()):
-        raise SystemExit("recovery_control_not_passed")
+    validate_records(records)
     commits = {
         str((record.get("artifact") or {}).get("commit_sha") or "")
         for record in records.values()
