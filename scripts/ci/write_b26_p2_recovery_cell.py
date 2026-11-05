@@ -47,6 +47,7 @@ def mode_projection(record: dict) -> dict:
             "require_signature_verification"
         ),
         "trust_jwks": record.get("trust_jwks"),
+        "artifact": record.get("artifact"),
         "observed": record.get("observed"),
         "compensation": record.get("compensation"),
         "readers": record.get("readers"),
@@ -110,6 +111,7 @@ def main() -> int:
                 "require_signature_verification"
             ),
             "trust_jwks": positive.get("trust_jwks"),
+            "artifact": positive.get("artifact"),
         },
         "financial_history_commitment": {
             "causal_history": positive.get("causal_history"),

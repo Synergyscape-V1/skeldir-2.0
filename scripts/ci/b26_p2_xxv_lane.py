@@ -355,6 +355,7 @@ def generate_material() -> dict:
         "jwt_ring_json": jwt_ring,
         "trust_seed_b64url": b64u(trust_seed),
         "trust_jwks_json": trust_jwks,
+        "trust_public_sha256": hashlib.sha256(trust_public_raw).hexdigest(),
         "trust_key_valid_from": valid_from,
         "trust_signer_shared_secret": b64u(os.urandom(32)),
         "witness_private_b64url": b64u(witness_private_raw),
@@ -1155,6 +1156,9 @@ def artifact_identity(state: dict) -> dict:
             "image", "inspect", "python:3.11-slim", "--format", "{{.Id}}"
         ),
         "compiled_public_key_sha256": state["material"]["witness_public_sha256"],
+        "compiled_trust_public_key_sha256": state["material"][
+            "trust_public_sha256"
+        ],
         "compiled_genesis_hash": state["genesis_hash"],
         "compiled_source_attestation_public_key_sha256": state["material"][
             "attestation_public_sha256"

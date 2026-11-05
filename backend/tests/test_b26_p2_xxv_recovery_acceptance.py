@@ -330,6 +330,11 @@ def _sign_source_statement(statement: dict) -> dict:
     }
 
 
+def _public_key_sha256(public_key: str) -> str:
+    raw = base64.urlsafe_b64decode((public_key + "===").encode("ascii"))
+    return hashlib.sha256(raw).hexdigest()
+
+
 def _source_attestation(source: dict) -> dict:
     statement = {
         "version": ATTESTATION_STATEMENT_VERSION,
@@ -494,6 +499,12 @@ def _causal_history(status: str = "matched_provisional") -> dict:
         "prefix_digest": commitment["prefix_digest"],
         "witness_commitment": commitment,
         "source_attestation_public_key": _SOURCE_ATTESTATION_PUBLIC,
+        "source_attestation_public_key_sha256": hashlib.sha256(
+            _SOURCE_ATTESTATION_PRIVATE.public_key().public_bytes_raw()
+        ).hexdigest(),
+        "witness_public_key_sha256": _public_key_sha256(
+            commitment["public_key"]
+        ),
         "authority_universe": "universe",
     }
 
@@ -680,6 +691,24 @@ def test_retained_cell_rejects_missing_trust_root() -> None:
     document = json.loads(path.read_text(encoding="utf-8"))
     record = document["details"]["modes"]["positive"]
     record.pop("trust_jwks")
+    assert _acceptance(record) is False
+
+
+def test_retained_cell_rejects_unrelated_trust_key() -> None:
+    path = (
+        REPO_ROOT
+        / "docs"
+        / "forensics"
+        / "evidence"
+        / "b26_p2_xxv_a8"
+        / "xxv-r0038-recovery-context-20261104.json"
+    )
+    document = json.loads(path.read_text(encoding="utf-8"))
+    record = document["details"]["modes"]["positive"]
+    unrelated = Ed25519PrivateKey.generate()
+    record["trust_jwks"]["keys"][0]["x"] = base64.urlsafe_b64encode(
+        unrelated.public_key().public_bytes_raw()
+    ).rstrip(b"=").decode("ascii")
     assert _acceptance(record) is False
 
 
@@ -1230,6 +1259,9 @@ def test_foreign_modelled_later_witness_is_refused() -> None:
         history["global_ledger"], history["authority_universe"]
     )
     history["witness_commitment"] = replacement
+    history["witness_public_key_sha256"] = _public_key_sha256(
+        replacement["public_key"]
+    )
     history["prefix_digest"] = replacement["prefix_digest"]
     history["witness"] = {
         "count": replacement["count"],
@@ -1271,6 +1303,9 @@ def test_resigned_history_without_authority_restoration_is_refused() -> None:
         history["global_ledger"], history["authority_universe"]
     )
     history["witness_commitment"] = replacement
+    history["witness_public_key_sha256"] = _public_key_sha256(
+        replacement["public_key"]
+    )
     history["prefix_digest"] = replacement["prefix_digest"]
     history["witness"] = {
         "count": replacement["count"],
@@ -1496,6 +1531,9 @@ def test_rollback_sequence_labels_are_accepted() -> None:
         history["global_ledger"], history["authority_universe"]
     )
     history["witness_commitment"] = replacement
+    history["witness_public_key_sha256"] = _public_key_sha256(
+        replacement["public_key"]
+    )
     history["prefix_digest"] = replacement["prefix_digest"]
     history["witness"] = {
         "count": replacement["count"],

@@ -1654,6 +1654,25 @@
         },
         "amendment_admission_started_at": "2026-11-04T22:32:02.442954Z",
         "amendment_admitted_at": "2026-11-04T22:32:03.011445Z",
+        "artifact": {
+          "base_image_id": "sha256:db20d8506e2f15b6db39b40b6015ca46bae855dec6dd326d462cfe79ae972893",
+          "captured_at_utc": "2026-11-04T22:30:49.959561Z",
+          "commit_sha": "480577464dfe6e7ef07f73441da9a46b797f49cd",
+          "compiled_genesis_hash": "dd4128e5a350e9acbf3363caa760f49d964ad142cc98c0f1b44ec4a0167a07f2",
+          "compiled_public_key_sha256": "28de59b3a9655f44ca9a8649e2e1fdc85efa358d354e25addc1e19468a1b6b4c",
+          "compiled_source_attestation_public_key_sha256": "84bab3914a735fc8805f6f9929c128aaaf4d2d4bf9b45a9bf44b431edd88bf34",
+          "compiled_trust_public_key_sha256": "15ee5c23fcae4796e7748d1dd408d4c1372ce7330eb573dbfe874de902a28625",
+          "image_id": "sha256:3afb59f7148d6c6a7661668eeb4f93ffa7bacaec8c11769a76a5da61754c5c51",
+          "image_tag": "b26p2xxv-final:latest",
+          "migration_head": "202610280001",
+          "tree_sha": "c241ecf7df624d225a805d7f889eed1c1e26d97f",
+          "worktree_status_summary": {
+            "entries": 0,
+            "image_bytes_match_committed_tree": true,
+            "image_copied_path_entries": [],
+            "non_image_entry_sample": []
+          }
+        },
         "baseline": {
           "amount_minor": 4321,
           "currency": "USD",
@@ -2202,6 +2221,7 @@
           },
           "reason": null,
           "source_attestation_public_key": "wtI7BVXfcL7HQl8dUhxyDDKZi91UKV68lBvPWvTvcb0",
+          "source_attestation_public_key_sha256": "84bab3914a735fc8805f6f9929c128aaaf4d2d4bf9b45a9bf44b431edd88bf34",
           "source_ingresses": {
             "198e865b-4104-4b60-adcb-3ef7c11e6eee": {
               "created_at": "2026-11-04T22:30:50Z",
@@ -2453,7 +2473,8 @@
             "tip_hash": "b637325e01fca5fc8b9e114515498b448cc63c0cf44bf4a8d6fee4944b3ee16c",
             "tip_seq": 2,
             "verified": true
-          }
+          },
+          "witness_public_key_sha256": "28de59b3a9655f44ca9a8649e2e1fdc85efa358d354e25addc1e19468a1b6b4c"
         },
         "causal_progression": {
           "accepted_amendment_event": "evt_xxvrecbadad6002bec4855",
@@ -6428,6 +6449,7 @@
       "compiled_genesis_hash": "dd4128e5a350e9acbf3363caa760f49d964ad142cc98c0f1b44ec4a0167a07f2",
       "compiled_public_key_sha256": "28de59b3a9655f44ca9a8649e2e1fdc85efa358d354e25addc1e19468a1b6b4c",
       "compiled_source_attestation_public_key_sha256": "84bab3914a735fc8805f6f9929c128aaaf4d2d4bf9b45a9bf44b431edd88bf34",
+      "compiled_trust_public_key_sha256": "15ee5c23fcae4796e7748d1dd408d4c1372ce7330eb573dbfe874de902a28625",
       "image_id": "sha256:3afb59f7148d6c6a7661668eeb4f93ffa7bacaec8c11769a76a5da61754c5c51",
       "image_tag": "b26p2xxv-final:latest",
       "migration_head": "202610280001",

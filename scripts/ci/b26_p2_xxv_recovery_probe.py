@@ -1403,6 +1403,7 @@ def _verify_source_attestation(
     *,
     authority_universe: str | None = None,
     expected_economic_identity: str | None = None,
+    expected_key_sha256: str | None = None,
 ) -> tuple[bool, str]:
     if not isinstance(public_key, str) or not public_key:
         return False, "source_attestation_public_key_missing"
@@ -1422,6 +1423,11 @@ def _verify_source_attestation(
         fingerprint = hashlib.sha256(raw_key).hexdigest()
         if attestation.get("key_sha256") != fingerprint:
             return False, "source_attestation_key_fingerprint_mismatch"
+        if (
+            expected_key_sha256 is not None
+            and fingerprint != expected_key_sha256
+        ):
+            return False, "source_attestation_key_not_compiled"
         signature_text = signature.removeprefix("ed25519:")
         if signature_text == signature:
             return False, "source_attestation_signature_algorithm"
@@ -1609,6 +1615,9 @@ def _final_causal_progression(
         "source_attestation_public_key"
     )
     authority_universe = history.get("authority_universe")
+    source_attestation_key_sha256 = history.get(
+        "source_attestation_public_key_sha256"
+    )
     for row in ledger:
         if row.get("verdict_id") != verdict_id:
             reason = "ledger_verdict_mismatch"
@@ -1661,6 +1670,7 @@ def _final_causal_progression(
             expected_economic_identity=current[
                 "provider_native_commerce_reference"
             ],
+            expected_key_sha256=source_attestation_key_sha256,
         )
         if not attestation_ok:
             reason = attestation_reason
@@ -1695,6 +1705,7 @@ def _final_causal_progression(
                 expected_economic_identity=current[
                     "provider_native_commerce_reference"
                 ],
+                expected_key_sha256=source_attestation_key_sha256,
             )
             if not attestation_ok:
                 reason = attestation_reason
@@ -1724,6 +1735,22 @@ def _final_causal_progression(
             authority_universe=authority_universe,
         )
     )
+    compiled_witness_key = history.get("witness_public_key_sha256")
+    commitment_key = commitment.get("public_key")
+    if compiled_witness_key is not None:
+        try:
+            raw_commitment_key = base64.urlsafe_b64decode(
+                (str(commitment_key or "") + "===").encode("ascii")
+            )
+        except Exception:  # noqa: BLE001
+            raw_commitment_key = b""
+        if (
+            not raw_commitment_key
+            or hashlib.sha256(raw_commitment_key).hexdigest()
+            != compiled_witness_key
+        ):
+            signed_witness_ok = False
+            signed_witness_reason = "signed_witness_key_not_compiled"
     if (
         trusted_witness_public_key is not None
         and commitment.get("public_key") != trusted_witness_public_key
@@ -2094,6 +2121,7 @@ def _verify_observation_with_jwks(
     amount: int,
     currency: str,
     expected_tenant_id_hash: str,
+    expected_key_sha256: str | None = None,
 ) -> dict:
     ok, reason = _signed_structure(
         observation, verdict_id, amount, currency, expected_tenant_id_hash
@@ -2114,6 +2142,24 @@ def _verify_observation_with_jwks(
         and matching.get("x")
         and _key_lifecycle_valid(artifact, matching)
     )
+    if expected_key_sha256 is not None:
+        try:
+            raw_key = base64.urlsafe_b64decode(
+                (str((matching or {}).get("x") or "") + "===").encode(
+                    "ascii"
+                )
+            )
+        except Exception:  # noqa: BLE001
+            raw_key = b""
+        if (
+            not raw_key
+            or hashlib.sha256(raw_key).hexdigest()
+            != expected_key_sha256
+        ):
+            return {
+                "verification_status": "rejected",
+                "reason_code": "trust_key_not_compiled",
+            }
     trusted = dict(observation)
     trusted["public_key_basis"] = {
         "jwks": jwks,
@@ -2286,7 +2332,10 @@ def _acceptance(record: dict) -> bool:
         )
         if signature_requirement:
             trust_jwks = record.get("trust_jwks")
-            if isinstance(trust_jwks, dict):
+            compiled_trust_key = (record.get("artifact") or {}).get(
+                "compiled_trust_public_key_sha256"
+            )
+            if isinstance(trust_jwks, dict) and compiled_trust_key:
                 baseline_signature_ok = (
                     _verify_observation_with_jwks(
                         baseline_signed,
@@ -2295,6 +2344,7 @@ def _acceptance(record: dict) -> bool:
                         expected_amount,
                         currency,
                         tenant_id_hash,
+                        compiled_trust_key,
                     ).get("verification_status")
                     == "verified"
                 )
@@ -2306,6 +2356,7 @@ def _acceptance(record: dict) -> bool:
                         expected_amount,
                         currency,
                         tenant_id_hash,
+                        compiled_trust_key,
                     ).get("verification_status")
                     == "verified"
                 )
@@ -2317,6 +2368,7 @@ def _acceptance(record: dict) -> bool:
                         amended_amount,
                         currency,
                         tenant_id_hash,
+                        compiled_trust_key,
                     ).get("verification_status")
                     == "verified"
                 )
@@ -2655,6 +2707,13 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         causal_history["authority_universe"] = state.get(
             "authority_universe"
         )
+        causal_history["source_attestation_public_key_sha256"] = (
+            state.get("artifact") or {}
+        ).get("compiled_source_attestation_public_key_sha256")
+        causal_history["witness_public_key_sha256"] = (
+            state.get("artifact") or {}
+        ).get("compiled_public_key_sha256")
+        record["artifact"] = state.get("artifact")
         record["witness_public_key"] = staged["public"].read_text(
             encoding="utf-8"
         ).strip()
