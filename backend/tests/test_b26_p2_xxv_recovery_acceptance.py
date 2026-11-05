@@ -32,6 +32,7 @@ from b26_p2_xxv_recovery_probe import (  # noqa: E402
     _restoration_semantic_authority,
     _signed_structure,
     _subject_ref_hash,
+    _verify_observation_with_jwks,
     tenant_hash,
 )
 from app.revenue_verification.source_attestation import (  # noqa: E402
@@ -40,6 +41,13 @@ from app.revenue_verification.source_attestation import (  # noqa: E402
 )
 from app.trust.money_source_adapter import (  # noqa: E402
     resolve_authoritative_money,
+)
+from app.trust.canonicalization import (  # noqa: E402
+    canonicalize_signature_material,
+)
+from app.trust.signing import (  # noqa: E402
+    encode_ed25519_signature,
+    prepare_payload_for_signing,
 )
 from app.trust.provenance import (  # noqa: E402
     _internal_decision_entry,
@@ -737,6 +745,59 @@ def test_retained_cell_rejects_unrelated_trust_key() -> None:
         unrelated.public_key().public_bytes_raw()
     ).rstrip(b"=").decode("ascii")
     assert _acceptance(record) is False
+
+
+def test_retired_history_key_verifies_under_registry() -> None:
+    observation = _real_baseline()
+    artifact = observation["artifact"]
+    old_private = Ed25519PrivateKey.generate()
+    old_public = base64.urlsafe_b64encode(
+        old_private.public_key().public_bytes_raw()
+    ).rstrip(b"=").decode("ascii")
+    old_kid = "kid:retired-history"
+    prepared = prepare_payload_for_signing(
+        artifact, signing_key_id=old_kid
+    )
+    prepared["signature"] = encode_ed25519_signature(
+        old_private.sign(canonicalize_signature_material(prepared))
+    )
+    old_key = {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "alg": "EdDSA",
+        "use": "sig",
+        "kid": old_kid,
+        "x": old_public,
+        "skeldir_key_state": "verification_only",
+        "skeldir_valid_from": "2026-01-01T00:00:00Z",
+        "skeldir_valid_until": "2027-01-01T00:00:00Z",
+    }
+    jwks = {
+        "keys": [
+            old_key,
+            *observation["public_key_basis"]["jwks"]["keys"],
+        ]
+    }
+    verdict_id = artifact["subject_ref"].split(":")[-1]
+    result = _verify_observation_with_jwks(
+        {
+            "status": 200,
+            "artifact": prepared,
+            "verification": [
+                200,
+                {
+                    "verification_status": "verified",
+                    "temporal_scope": "truth-at-issuance",
+                },
+            ],
+        },
+        jwks,
+        verdict_id,
+        artifact["verified_revenue_minor"],
+        artifact["currency"],
+        artifact["tenant_id_hash"],
+    )
+    assert result["verification_status"] == "verified"
 
 
 def test_contract_confirmed_match_is_consumable() -> None:
