@@ -63,6 +63,7 @@ from b26_p2_xxv_lane import (  # noqa: E402
     LANE_ROOT,
     SOURCE_EVIDENCE_VOL,
     WITNESS_VOL,
+    admin_dsn,
 )
 from app.revenue_verification.source_journal_custody import (  # noqa: E402
     SourceJournalCustodyError,
@@ -2634,6 +2635,190 @@ def _acceptance(record: dict) -> bool:
     )
 
 
+def _a12_established(record: dict) -> bool:
+    return (record.get("a12_contradictory_state") or {}).get(
+        "established"
+    ) is True
+
+
+def _a12_contradictory_financial_state(
+    state: dict,
+    tenant: dict,
+    verdict_id: str,
+    amount_minor: int,
+    currency: str,
+) -> dict:
+    """Commit an independent in-scope contradiction, observe refusal, restore.
+
+    The contradiction is written directly to the financial truth row by an
+    actor outside the application.  The signed Trust consumer and the
+    reconciliation consumer must not serve it, and the unchanged attestation
+    sweep must name this verdict.  The row is then restored to its exact
+    pre-experiment values and both consumers must return the baseline before
+    the legitimate amendment proceeds.
+    """
+    from b26_p2_xxv_attestation_sweep import sweep  # noqa: PLC0415
+
+    public_key = str(LANE_ROOT / "source_attestation_ed25519.pub")
+    contradictory = int(amount_minor) + 123457
+    result: dict = {
+        "original_amount_minor": int(amount_minor),
+        "contradictory_amount_minor": contradictory,
+        "currency": currency,
+        "established": False,
+    }
+    original_rows = sql(
+        "SELECT canonical_net_verified_amount_minor,"
+        " canonical_captured_gross_amount_minor, verified_amount_minor,"
+        " currency_code, updated_at"
+        " FROM public.b23_match_verdicts WHERE id = %s",
+        (verdict_id,),
+    )
+    if not original_rows:
+        result["reason"] = "verdict_missing"
+        return result
+    original = tuple(original_rows[0])
+    result["original_row"] = [str(value) for value in original]
+    try:
+        sql(
+            "UPDATE public.b23_match_verdicts"
+            " SET canonical_net_verified_amount_minor = %s,"
+            " verified_amount_minor = %s, updated_at = now()"
+            " WHERE id = %s",
+            (contradictory, contradictory, verdict_id),
+        )
+        result["committed"] = True
+        try:
+            docker("stop", API)
+            start_api(state)
+            wait_http(f"http://127.0.0.1:{API_PORT}/health/live", 240)
+            result["consumer_restart"] = "observed"
+        except Exception as exc:  # noqa: BLE001
+            result["consumer_restart"] = f"{type(exc).__name__}:{exc}"
+
+        trust_status, trust = read_trust(tenant, verdict_id)
+        trust_money = (
+            trust.get("verified_revenue_minor")
+            if isinstance(trust, dict)
+            else None
+        )
+        recon_status, recon = read_reconciliation(state, tenant, verdict_id)
+        recon_money = (
+            recon.get("canonical_net_verified_amount_minor")
+            if isinstance(recon, dict)
+            else None
+        )
+        result["contradictory_consumers"] = {
+            "trust": {
+                "status": trust_status,
+                "verified_revenue_minor": trust_money,
+                "refused": not (
+                    trust_status == 200 and trust_money == contradictory
+                ),
+            },
+            "reconciliation": {
+                "status": recon_status,
+                "net_minor": recon_money,
+                "refused": not (
+                    recon_status == 200 and recon_money == contradictory
+                ),
+            },
+        }
+        observed = sweep(
+            admin_dsn(),
+            public_key_path=public_key,
+            check_source_evidence=False,
+        )
+        detected_rows = [
+            row
+            for row in observed.get("unverifiable", [])
+            if row.get("verdict_id") == verdict_id
+        ]
+        result["mandatory_proof"] = {
+            "detected": bool(detected_rows),
+            "verdict_unverifiable": detected_rows[:3],
+            "verdicts_examined": observed.get("verdicts_examined"),
+        }
+    finally:
+        sql(
+            "UPDATE public.b23_match_verdicts"
+            " SET canonical_net_verified_amount_minor = %s,"
+            " canonical_captured_gross_amount_minor = %s,"
+            " verified_amount_minor = %s, currency_code = %s,"
+            " updated_at = %s"
+            " WHERE id = %s",
+            (*original, verdict_id),
+        )
+        restored_rows = sql(
+            "SELECT canonical_net_verified_amount_minor,"
+            " canonical_captured_gross_amount_minor, verified_amount_minor,"
+            " currency_code, updated_at"
+            " FROM public.b23_match_verdicts WHERE id = %s",
+            (verdict_id,),
+        )
+        result["restored_row"] = (
+            [str(value) for value in restored_rows[0]] if restored_rows else None
+        )
+        result["restored_exact"] = bool(
+            restored_rows and tuple(restored_rows[0]) == original
+        )
+        try:
+            docker("stop", API)
+            start_api(state)
+            wait_http(f"http://127.0.0.1:{API_PORT}/health/live", 240)
+        except Exception as exc:  # noqa: BLE001
+            result["restore_restart_error"] = f"{type(exc).__name__}:{exc}"
+
+    restored_trust = _wait_signed(
+        tenant, verdict_id, amount_minor, currency
+    )
+    restored_recon_status, restored_recon = read_reconciliation(
+        state, tenant, verdict_id
+    )
+    restored_sweep = sweep(
+        admin_dsn(),
+        public_key_path=public_key,
+        check_source_evidence=False,
+    )
+    restored_detected = [
+        row
+        for row in restored_sweep.get("unverifiable", [])
+        if row.get("verdict_id") == verdict_id
+    ]
+    result["restored_consumers"] = {
+        "trust_status": restored_trust.get("status"),
+        "trust_verified": (restored_trust.get("verification") or [0])[0]
+        == 200,
+        "reconciliation_status": restored_recon_status,
+        "reconciliation_net_minor": (
+            restored_recon.get("canonical_net_verified_amount_minor")
+            if isinstance(restored_recon, dict)
+            else None
+        ),
+    }
+    result["restored_proof_clean"] = not restored_detected
+    contradictory_consumers = result.get("contradictory_consumers") or {}
+    result["established"] = bool(
+        result.get("committed") is True
+        and result.get("restored_exact") is True
+        and (result.get("mandatory_proof") or {}).get("detected") is True
+        and (contradictory_consumers.get("trust") or {}).get("refused") is True
+        and (contradictory_consumers.get("reconciliation") or {}).get(
+            "refused"
+        )
+        is True
+        and restored_trust.get("status") == 200
+        and (restored_trust.get("verification") or [0])[0] == 200
+        and restored_recon_status == 200
+        and (restored_recon or {}).get(
+            "canonical_net_verified_amount_minor"
+        )
+        == amount_minor
+        and result.get("restored_proof_clean") is True
+    )
+    return result
+
+
 def _positive(state: dict, tenant: dict, temp: Path) -> dict:
     baseline, initial = _baseline(state, tenant, 4321)
     amended_amount = baseline["amount_minor"] + 779
@@ -2649,6 +2834,13 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         or (baseline_signed.get("verification") or [0])[0] != 200
     ):
         raise RuntimeError("baseline_signed_result_unavailable")
+    a12 = _a12_contradictory_financial_state(
+        state,
+        tenant,
+        initial["verdict_id"],
+        baseline["amount_minor"],
+        baseline["currency"],
+    )
     staged = _stage(state, temp)
     kept = False
     mutated = False
@@ -2657,6 +2849,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         "baseline": baseline,
         "initial_subject": initial.get("commerce_reference"),
         "baseline_signed": baseline_signed,
+        "a12_contradictory_state": a12,
         "manual_observer": False,
         "require_signature_verification": True,
         "trust_jwks": _artifact_trust_jwks(state),

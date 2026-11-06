@@ -9,6 +9,7 @@ from pathlib import Path
 
 from b26_p2_evidence import write_evidence_cell
 from b26_p2_xxv_recovery_probe import (
+    _a12_established,
     _acceptance,
     _negative_decision,
 )
@@ -25,6 +26,7 @@ def mode_projection(record: dict) -> dict:
         "initial_subject": record.get("initial_subject"),
         "manual_observer": record.get("manual_observer"),
         "baseline_signed": record.get("baseline_signed"),
+        "a12_contradictory_state": record.get("a12_contradictory_state"),
         "baseline_authority": record.get("baseline_authority"),
         "baseline_source_authority": record.get("baseline_source_authority"),
         "fault": record.get("fault"),
@@ -80,6 +82,8 @@ def validate_records(records: dict[str, dict]) -> None:
             or not record.get("artifact")
         ):
             raise SystemExit("recovery_trust_context_missing")
+        if mode == "positive" and not _a12_established(record):
+            raise SystemExit("a12_contradictory_state_not_established")
 
 
 def main() -> int:
@@ -148,6 +152,9 @@ def main() -> int:
             "expected_match": causal_progression.get("expected_match"),
             "expected_webhook": causal_progression.get("expected_webhook"),
         },
+        "a12_contradictory_state": positive.get(
+            "a12_contradictory_state"
+        ),
         "causal_order": {
             "restoration_observed_at": positive.get(
                 "restoration_observed_at"

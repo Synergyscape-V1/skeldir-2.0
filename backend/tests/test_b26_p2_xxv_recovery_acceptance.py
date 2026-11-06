@@ -18,6 +18,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
 
 from b26_p2_xxv_recovery_probe import (  # noqa: E402
     _OBSERVATION_TIME_PATHS,
+    _a12_established,
     _acceptance,
     _expected_match_entry,
     _expected_provider_entry,
@@ -605,6 +606,7 @@ def _positive(
         "baseline": _baseline(),
         "initial_subject": "pi_same",
         "baseline_signed": _verified(),
+        "a12_contradictory_state": {"established": True},
         "fault": {
             "http": 404,
             "specific": True,
@@ -666,6 +668,15 @@ def _positive(
 
 def test_valid_recovery_progression_is_accepted() -> None:
     assert _acceptance(_positive()) is True
+    assert _a12_established(_positive()) is True
+
+
+def test_missing_a12_state_is_not_established() -> None:
+    record = _positive()
+    record.pop("a12_contradictory_state")
+    assert _a12_established(record) is False
+    record["a12_contradictory_state"] = {"established": False}
+    assert _a12_established(record) is False
 
 
 def test_published_mode_projection_is_replayable() -> None:
@@ -710,6 +721,7 @@ def _recovery_cell() -> dict:
         "positive"
     ]
     modes = {"positive": copy.deepcopy(positive)}
+    modes["positive"]["a12_contradictory_state"] = {"established": True}
     for mode in ("omit-restore", "tamper-signature", "restore-failure"):
         record = copy.deepcopy(positive)
         record["mode"] = mode
@@ -753,6 +765,14 @@ def test_adjudicator_refuses_empty_or_corrupt_recovery_modes() -> None:
     with pytest.raises(AdjudicationError):
         _replay_recovery_modes(
             corrupt, "B26-P2-G13-RECOVERY-ACCEPTANCE"
+        )
+    missing_a12 = _recovery_cell()
+    missing_a12["details"]["modes"]["positive"].pop(
+        "a12_contradictory_state"
+    )
+    with pytest.raises(AdjudicationError):
+        _replay_recovery_modes(
+            missing_a12, "B26-P2-G13-RECOVERY-ACCEPTANCE"
         )
 
 

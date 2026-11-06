@@ -26,6 +26,7 @@ REQUIRED_RECOVERY_MODES = frozenset(
 
 def _replay_recovery_modes(cell: Mapping[str, Any], gate_id: str) -> None:
     from b26_p2_xxv_recovery_probe import (  # noqa: PLC0415
+        _a12_established,
         _acceptance,
         _negative_decision,
     )
@@ -55,6 +56,10 @@ def _replay_recovery_modes(cell: Mapping[str, Any], gate_id: str) -> None:
         )
         if decision is not True:
             raise AdjudicationError(f"proof_cell_decision_refused:{gate_id}:{mode}")
+        if mode == "positive" and not _a12_established(dict(record)):
+            raise AdjudicationError(
+                f"proof_cell_a12_state_not_established:{gate_id}"
+            )
 
 
 class AdjudicationError(RuntimeError):
