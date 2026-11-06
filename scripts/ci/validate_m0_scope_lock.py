@@ -553,7 +553,6 @@ ALLOWED_M0_PATHS = [
     "backend/tests/",
     "tests/",
     "scripts/guard_no_docker.py",
-    "graphify-out/",
     # CI throughput topology (see docs/ci/CI_TOPOLOGY_PHYSICS.md): concurrency
     # groups, merge_group triggers, and dependency caching were applied across every
     # workflow. Listed individually rather than allowing .github/workflows/ wholesale,
