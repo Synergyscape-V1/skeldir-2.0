@@ -19,6 +19,42 @@ import yaml  # type: ignore[import-untyped]
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND = REPO_ROOT / "backend"
 REQUIREMENTS = REPO_ROOT / "contracts/reconciliation/b2.6/p2-proof-requirements.v1.yaml"
+REQUIRED_RECOVERY_MODES = frozenset(
+    {"positive", "omit-restore", "tamper-signature", "restore-failure"}
+)
+
+
+def _replay_recovery_modes(cell: Mapping[str, Any], gate_id: str) -> None:
+    from b26_p2_xxv_recovery_probe import (  # noqa: PLC0415
+        _acceptance,
+        _negative_decision,
+    )
+
+    modes = (cell.get("details") or {}).get("modes")
+    if not isinstance(modes, Mapping) or set(modes) != REQUIRED_RECOVERY_MODES:
+        raise AdjudicationError(
+            f"proof_cell_recovery_modes_incomplete:{gate_id}:"
+            f"{sorted(modes) if isinstance(modes, Mapping) else modes}"
+        )
+    for mode in sorted(REQUIRED_RECOVERY_MODES):
+        record = modes[mode]
+        if not isinstance(record, Mapping):
+            raise AdjudicationError(f"proof_cell_recovery_record_missing:{gate_id}:{mode}")
+        if (
+            record.get("mode") != mode
+            or record.get("passed") is not True
+            or record.get("decision") is not True
+        ):
+            raise AdjudicationError(
+                f"proof_cell_recovery_record_not_admitted:{gate_id}:{mode}"
+            )
+        decision = (
+            _acceptance(dict(record))
+            if mode == "positive"
+            else _negative_decision(dict(record))
+        )
+        if decision is not True:
+            raise AdjudicationError(f"proof_cell_decision_refused:{gate_id}:{mode}")
 
 
 class AdjudicationError(RuntimeError):
@@ -128,22 +164,7 @@ def adjudicate(
         if cell["status"] != requirements["accepted_status"]:
             raise AdjudicationError(f"proof_cell_not_pass:{gate_id}:{cell['status']}")
         if gate_id == "B26-P2-G13-RECOVERY-ACCEPTANCE":
-            from b26_p2_xxv_recovery_probe import (  # noqa: PLC0415
-                _acceptance,
-                _negative_decision,
-            )
-
-            modes = (cell.get("details") or {}).get("modes") or {}
-            for mode, record in modes.items():
-                decision = (
-                    _acceptance(record)
-                    if mode == "positive"
-                    else _negative_decision(record)
-                )
-                if decision is not True:
-                    raise AdjudicationError(
-                        f"proof_cell_decision_refused:{gate_id}:{mode}"
-                    )
+            _replay_recovery_modes(cell, gate_id)
         if cell["candidate_sha"] != candidate_sha:
             raise AdjudicationError(f"proof_cell_candidate_sha_mismatch:{gate_id}")
         if cell["candidate_tree"] != candidate_tree:

@@ -62,6 +62,10 @@ from write_b26_p2_recovery_cell import (  # noqa: E402
     mode_projection,
     validate_records,
 )
+from adjudicate_b26_p2_proof_plane import (  # noqa: E402
+    AdjudicationError,
+    _replay_recovery_modes,
+)
 
 
 def _baseline() -> dict:
@@ -669,6 +673,87 @@ def test_published_mode_projection_is_replayable() -> None:
     record["passed"] = False
     record["mode"] = "synthetic"
     assert _acceptance(mode_projection(record)) is True
+
+
+def _negative_projection(mode: str) -> dict:
+    record = _positive()
+    record["mode"] = mode
+    record["original_unchanged"] = True
+    record["compensation"] = {"restored_original": True}
+    if mode == "tamper-signature":
+        record["observed"] = {"signature_refused": True}
+    elif mode == "restore-failure":
+        record["observed"] = {"restoration_refused": True}
+    else:
+        record["observed"] = {"specific": True, "new_row": True}
+    record["passed"] = True
+    record["decision"] = True
+    assert _negative_decision(record) is True
+    return mode_projection(record)
+
+
+def test_negative_mode_projections_are_replayable() -> None:
+    for mode in ("omit-restore", "tamper-signature", "restore-failure"):
+        assert _negative_decision(_negative_projection(mode)) is True
+
+
+def _recovery_cell() -> dict:
+    path = (
+        REPO_ROOT
+        / "docs"
+        / "forensics"
+        / "evidence"
+        / "b26_p2_xxv_a8"
+        / "xxv-r0038-recovery-context-20261104.json"
+    )
+    positive = json.loads(path.read_text(encoding="utf-8"))["details"]["modes"][
+        "positive"
+    ]
+    modes = {"positive": copy.deepcopy(positive)}
+    for mode in ("omit-restore", "tamper-signature", "restore-failure"):
+        record = copy.deepcopy(positive)
+        record["mode"] = mode
+        record["original_unchanged"] = True
+        record["compensation"] = {"restored_original": True}
+        if mode == "tamper-signature":
+            record["observed"] = {"signature_refused": True}
+        elif mode == "restore-failure":
+            record["observed"] = {"restoration_refused": True}
+        else:
+            record["observed"] = {"specific": True, "new_row": True}
+        record["passed"] = True
+        record["decision"] = True
+        modes[mode] = record
+    for record in modes.values():
+        record["passed"] = True
+        record["decision"] = True
+    modes["positive"]["mode"] = "positive"
+    return {"details": {"modes": modes}}
+
+
+def test_adjudicator_requires_every_recovery_mode() -> None:
+    cell = _recovery_cell()
+    _replay_recovery_modes(cell, "B26-P2-G13-RECOVERY-ACCEPTANCE")
+    for absent in tuple(cell["details"]["modes"]):
+        incomplete = copy.deepcopy(cell)
+        del incomplete["details"]["modes"][absent]
+        with pytest.raises(AdjudicationError):
+            _replay_recovery_modes(
+                incomplete, "B26-P2-G13-RECOVERY-ACCEPTANCE"
+            )
+
+
+def test_adjudicator_refuses_empty_or_corrupt_recovery_modes() -> None:
+    cell = _recovery_cell()
+    cell["details"]["modes"] = {}
+    with pytest.raises(AdjudicationError):
+        _replay_recovery_modes(cell, "B26-P2-G13-RECOVERY-ACCEPTANCE")
+    corrupt = _recovery_cell()
+    corrupt["details"]["modes"]["positive"]["fault"]["http"] = 503
+    with pytest.raises(AdjudicationError):
+        _replay_recovery_modes(
+            corrupt, "B26-P2-G13-RECOVERY-ACCEPTANCE"
+        )
 
 
 def test_retained_exact_head_cell_replays() -> None:
