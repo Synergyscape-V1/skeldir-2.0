@@ -184,7 +184,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     contract = (
         REPO_ROOT / "backend" / "app" / "core" / "construction_authority.py"
     ).read_text(encoding="utf-8")
-    if 'REQUIRED_SCHEMA_REVISION = "202610180003"' not in contract:
+    if 'REQUIRED_SCHEMA_REVISION = "202610280001"' not in contract:
         violations.append("xx_comp_construction_contract_not_advanced")
     else:
         checks["construction_contract_at_xx"] = True

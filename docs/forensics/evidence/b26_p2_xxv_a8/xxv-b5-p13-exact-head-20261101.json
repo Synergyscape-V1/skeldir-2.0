@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "head": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+  "workflow": "B2.5-P13 E2E Trust Closure",
+  "run_id": 41306045669,
+  "run_conclusion": "success",
+  "jobs": {
+    "B2.5-P13 C9 Positive Confidence Composition": {
+      "job_id": 124846515210,
+      "conclusion": "success"
+    },
+    "B2.5-P13 C17 Consequence Lineage": {
+      "job_id": 124846515538,
+      "conclusion": "success"
+    },
+    "B2.5-P13 C19 Context-Robust Production Closure": {
+      "job_id": 124846515096,
+      "conclusion": "success"
+    },
+    "B2.5-P13 C20 Verdict Authority Conservation": {
+      "job_id": 124846515175,
+      "conclusion": "success"
+    },
+    "B2.5-P13 C21 Freshness and Issuance Authority Conservation": {
+      "job_id": 124846515156,
+      "conclusion": "success"
+    },
+    "B2.5-P13 E2E Trust Closure": {
+      "job_id": 124851964642,
+      "conclusion": "success"
+    }
+  },
+  "meaning": "The positive confidence composition, lineage, production topology and issuance/freshness conservation gates composed successfully on the exact head containing the durable journal-tail, lock-contention and JWT stale-ring repairs."
+}

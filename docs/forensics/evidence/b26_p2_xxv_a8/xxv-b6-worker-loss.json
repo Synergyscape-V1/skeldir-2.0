@@ -1,0 +1,76 @@
+{
+  "actor": "B2.3 consumer worker removed from the production topology",
+  "adverse_proof": {
+    "conduction_missing": true,
+    "stdout_tail": "B26_P2_XXII_COMPOSITION_FAIL\nxxii_comp_conduction_missing:fa710fb9-8728-4d32-aded-89a29cad4467:stripe\n",
+    "verdict": "FAIL"
+  },
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T12:59:56.815725Z",
+    "commit_sha": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+    "compiled_genesis_hash": "085571c1a477b143ab4a98bad175c745acf072177e675f26b5d4f89d1b65971b",
+    "compiled_public_key_sha256": "456f13765b47465a955540cba96fcfe9fe68c7071c1202902ed6acd8c08af85e",
+    "compiled_source_attestation_public_key_sha256": "b208bc8d778f0e6f746397066f51d44b654b6271b0822c59624e2fafc6d50ac3",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "0aae8ce5a801e613556ab60f6900e9d63655b7f3",
+    "worktree_status_summary": {
+      "entries": 5,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M docs/forensics/B2.6-P2-XXV-Verified-Checkpoint.md",
+        " M docs/forensics/evidence/b26_p2_xxv_a8/xxv-b5-p13-exact-head-20261101.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-exact-head-ci-f0f-20261101.json",
+        "?? session-ses_ebfe.md"
+      ]
+    }
+  },
+  "authority_universe": "95bc8913-4522-4573-a9fd-0003df969bf1",
+  "baseline_proof": {
+    "stdout_tail": "e_conservation_surface\": true, \"live_creation_law\": true, \"live_external_false_world_chain_preserved\": true, \"live_external_false_world_refused\": true, \"live_external_false_world_restored\": true, \"live_future_refusals\": true, \"live_head\": true, \"live_prefix_digest\": true, \"live_reader_surface\": true, \"live_source_evidence\": \"SKIPPED:no_witness_env\", \"live_truncate_refused\": true, \"live_xxv_attestation_census\": {\"attested_but_not_claimed_current\": 0, \"source_not_root_authenticated\": 1, \"unattested_not_claimed_current\": 0, \"xxv_attested\": 5}, \"live_xxv_attestation_sweep\": true, \"live_xxv_verdicts_examined\": 6, \"static_laws\": true, \"static_xxv_2_amendment_law\": true, \"static_xxv_a3_observation_on_growth\": true, \"static_xxv_attestation_law\": true, \"static_xxv_no_owner_written_instant\": true}}\n",
+    "verdict": "PASS"
+  },
+  "event_http": {
+    "body": "{\"status\":\"success\",\"event_id\":\"27f8b574-626a-4fbc-ba60-36c815961218\",\"idempotency_key\":\"d9b24be0-8b7d-4b3b-b511-1e04e996800a\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+    "status": 200
+  },
+  "falsifier": "xxv-b6-worker-loss",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "property": "B6/HB-14: an accepted authenticated source with its required financial consumer absent must RED the governing proof",
+  "recorded_at_utc": "2026-11-01T13:32:10.248872Z",
+  "restored_proof": {
+    "stdout_tail": "e_conservation_surface\": true, \"live_creation_law\": true, \"live_external_false_world_chain_preserved\": true, \"live_external_false_world_refused\": true, \"live_external_false_world_restored\": true, \"live_future_refusals\": true, \"live_head\": true, \"live_prefix_digest\": true, \"live_reader_surface\": true, \"live_source_evidence\": \"SKIPPED:no_witness_env\", \"live_truncate_refused\": true, \"live_xxv_attestation_census\": {\"attested_but_not_claimed_current\": 0, \"source_not_root_authenticated\": 3, \"unattested_not_claimed_current\": 0, \"xxv_attested\": 6}, \"live_xxv_attestation_sweep\": true, \"live_xxv_verdicts_examined\": 9, \"static_laws\": true, \"static_xxv_2_amendment_law\": true, \"static_xxv_a3_observation_on_growth\": true, \"static_xxv_attestation_law\": true, \"static_xxv_no_owner_written_instant\": true}}\n",
+    "verdict": "PASS"
+  },
+  "verdict_after_restart": {
+    "attributed_amount_minor": 4321,
+    "attribution_event_id": "27f8b574-626a-4fbc-ba60-36c815961218",
+    "canonical_net_verified_amount_minor": 4321,
+    "commerce_reference": "pi_xxvb6447bb835241a4055",
+    "currency_code": "USD",
+    "match_status": "matched_provisional",
+    "source_authority_state": "current",
+    "verdict_id": "2a90d92b-b2e5-47c6-a2f2-816a9c6658c8",
+    "verified_amount_minor": 4321
+  },
+  "worker_start": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-worker-b23"
+  },
+  "worker_stop": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-worker-b23"
+  }
+}

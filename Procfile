@@ -39,7 +39,14 @@ auth_ingress: cd backend && SKELDIR_PROCESS_ROLE=auth_ingress B26_P2_INGRESS_DAT
 # it at the B2.3 worker DSN would grant verdict authority. A dedicated
 # housekeeping credential remains future hygiene debt (no authority
 # effect: the DB denies ingress authorship regardless of credential).
-worker: cd backend && SKELDIR_PROCESS_ROLE=worker B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution
+# Maintenance has one supported consumer per deployment: the matview
+# advisory lock plus the task's lock-held retry make a final-event refresh
+# survive contention without depending on another tenant arrival. The generic
+# worker therefore does not consume the maintenance queue; its prefork pool
+# would otherwise create competing consumers with independent in-process
+# coalescing state.
+worker: cd backend && SKELDIR_PROCESS_ROLE=worker B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,llm,attribution
+worker_maintenance: cd backend && SKELDIR_PROCESS_ROLE=worker B26_P2_INGRESS_DATABASE_URL= B26_P2_INGRESS_DATABASE_URL_FILE= celery -A app.celery_app.celery_app worker --loglevel=info --queues=maintenance --pool=solo --concurrency=1 --prefetch-multiplier=1
 # The Bayesian worker is the only process that plans fits and writes Bayesian
 # truth, so it is the only one that runs on the dedicated app_worker login.
 # Foreman-style managers share one environment, so this line must override

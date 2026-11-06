@@ -327,6 +327,18 @@ TRUST_ENVELOPE_FIELD_SOURCE_REGISTRY: dict[str, FieldSourceDecision] = {
         "backend/app/trust/money_source_adapter.py",
         required=False,
     ),
+    # XXV (B6/B9/B12): the certified amount's currency is a declared,
+    # authority-bearing envelope field, from the same money-authority
+    # decision as the amount. Without a declared source the semantic
+    # authority layer refuses the field, which is why a signed match_verdict
+    # envelope carried neither.
+    "currency": FieldSourceDecision(
+        "currency",
+        "derived_from_prior_phase_adapter",
+        "p4_money_authority",
+        "backend/app/trust/money_source_adapter.py",
+        required=False,
+    ),
 }
 
 _CONFIDENCE_FIELD_SOURCE_OVERRIDES: dict[str, FieldSourceDecision] = {
@@ -428,6 +440,12 @@ _CONFIDENCE_FIELD_SOURCE_OVERRIDES: dict[str, FieldSourceDecision] = {
     ),
     "verified_revenue_minor": FieldSourceDecision(
         "verified_revenue_minor",
+        "explicit_unavailable",
+        "explicitly_unavailable",
+        "confidence_projection_does_not_publish_financial_truth",
+    ),
+    "currency": FieldSourceDecision(
+        "currency",
         "explicit_unavailable",
         "explicitly_unavailable",
         "confidence_projection_does_not_publish_financial_truth",

@@ -1,0 +1,52 @@
+{
+  "check": "R-0031/R-0032: observer read-only capture, archive identity, and substitution rejection",
+  "run_at": "2026-11-02",
+  "source_hashes": {
+    "source_evidence_journal.py": "66AB33EA1F67003D8FFD02E0170796DE5566C8BF9B08628986E6DD0C9BDF43E9",
+    "source_journal_custody.py": "56AA00EF8CFA2C40941D9882CE59800FBA72314DF74803C25ECD553CEF00C327",
+    "test_b26_p2_source_journal_custody.py": "14A6ED5FBBE79A9637B55FC73754DC0DEA3100B49DDDE6C11360FCBCEA46117D"
+  },
+  "read_only_mount_physical": {
+    "command": "docker run --rm -v <repo>/backend/app/revenue_verification:/source/backend/app/revenue_verification:ro -v <input>:/input:ro -v <probe>:/probe.py:ro b26p2xxv-final:latest python /probe.py ro",
+    "observed": {
+      "mount_mode": "ro",
+      "existing_lock_file": true,
+      "reader_count": 2,
+      "export_succeeded": true,
+      "count": 2,
+      "verified": 2,
+      "uid": 0
+    },
+    "claim": "The exact candidate custody module exported and verified under a read-only source mount without creating or writing the live lock."
+  },
+  "component_tests": {
+    "test_readonly_capture_never_opens_lock_for_write": "PASS",
+    "test_export_refuses_missing_writer_lock_without_creating_one": "PASS",
+    "test_export_refuses_planted_orphan_bundle": "PASS",
+    "test_restored_source_journal_satisfies_actual_builder_witness": "PASS",
+    "custody_suite": "15 passed",
+    "test_export_refuses_complete_older_bundle_under_current_name": "PASS",
+    "test_verify_refuses_relocated_complete_bundle": "PASS",
+    "test_object_store_uri_is_not_treated_as_a_local_directory": "PASS (7 sibling URI forms)"
+  },
+  "actual_reader": {
+    "path": "app.trust.builder._verify_signed_history_witness",
+    "test": "backend/tests/trust/test_b26_p2_history_witness.py::test_restored_source_journal_satisfies_actual_builder_witness",
+    "observation": "After deleting the live source journal and restoring from the signed bundle at the accepted witness count/tip, the actual builder witness verifier returns (True, ''); a later lawful append also verifies without resetting the accepted commitment."
+  },
+  "substitution_law": {
+    "rule": "An existing tip-named bundle without a manifest is completed only when its bytes equal the exact live prefix captured under the read-only lock.",
+    "false_behavior": "A planted 2-record prefix of a 3-record live journal previously received a signed manifest.",
+    "new_behavior": "The same attempt refuses with custody_bundle_substitution and does not publish a manifest."
+  },
+  "limits": [
+    "The container probe is component-level, not a shipped observer task or S3/EFS deployment.",
+    "The read-only probe uses the existing writer-created sidecar; production must retain that sidecar on the observer's read-only mount.",
+    "A missing sidecar on a non-empty read-only journal refuses rather than creating one."
+  ],
+  "archive_identity": {
+    "rule": "A reused manifest must be named for its own journal_tip and its bytes must equal the captured live prefix.",
+    "relocated_valid_bundle": "refused with custody_bundle_identity_mismatch",
+    "s3_uri": "case-insensitive schemes and s3:/ forms are refused with custody_object_store_adapter_unavailable; no local s3: directory"
+  }
+}

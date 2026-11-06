@@ -1,0 +1,122 @@
+{
+  "check": "R-0036 Phase8 Test2 causal repair: serial realtime matview refresh coalescing",
+  "run_at": "2026-11-03",
+  "candidate_sha": "4065e0e6934f4fbd630b37d960d947b88f320877",
+  "workload": {
+    "profile": "EG3_4_Test2_Month18",
+    "target_rps": 46.0,
+    "duration_s": 60,
+    "target_request_count": 2760,
+    "api_workers": 2,
+    "maintenance_worker": {
+      "pool": "solo",
+      "concurrency": 1
+    },
+    "ingestion_followup_tasks_enabled": true
+  },
+  "before": {
+    "run_id": "41405182924",
+    "artifact_id": "13127291922",
+    "head_sha": "6c48edae33b78d3652d20067708ef4b58c5c120c",
+    "test2": {
+      "passed": false,
+      "achieved_rps": 41.373,
+      "latency_p50_ms": 2090.88,
+      "latency_p95_ms": 2809.489,
+      "semaphore_wait_p95_ms": 5373.196,
+      "send_lag_p95_ms": 5374.73,
+      "host_busy_percent_in_window": 96.73,
+      "psi_cpu_some_avg10_max_in_window": 68.39
+    },
+    "pg_stat_statements": {
+      "mv_allocation_summary_calls": 1693,
+      "other_realtime_view_calls": 1692,
+      "realtime_refresh_total_exec_ms": 213981,
+      "atomic_ingress_calls": 4018,
+      "atomic_ingress_total_exec_ms": 75460.183
+    },
+    "dedicated_r3_without_followups": {
+      "head_sha": "cf769ce6fa4fde8cdcbe35596c417be779fdfd59",
+      "passed": true,
+      "achieved_rps": 45.971,
+      "latency_p95_ms": 74.718,
+      "host_busy_percent": 41.315,
+      "psi_cpu_some_avg10_max": 2.72
+    }
+  },
+  "defect": {
+    "path": "backend/app/tasks/matviews.py",
+    "mechanism": "The serial maintenance worker executes every queued per-event refresh task after the previous owner has released. The ownership check did not consult the minimum interval, so each queued task performed a full refresh; the interval was applied only to a trailing task after a refresh. Coalescing therefore suppressed concurrent tasks, not serial queued tasks.",
+    "evidence": "The failing Phase8 window recorded approximately one full five-view refresh set per event, 1692-1693 executions per view, and about 214 seconds of DB execution in those refresh statements."
+  },
+  "repair": {
+    "mechanism": "The minimum interval is enforced at arrival. The first task inside the window claims the owner, reserves the next window and schedules exactly one trailing refresh; later arrivals coalesce without refreshing.",
+    "min_interval_s": 1.0,
+    "realtime_max_staleness_s": 60,
+    "thresholds_changed": false,
+    "tests": {
+      "matview_related_passed": 18,
+      "coalescing_tests_passed": 6,
+      "command": "python -m pytest backend/tests/test_b0543_matview_task_layer.py backend/tests/test_b055_matview_boundary.py backend/tests/test_matview_refresh_validation.py backend/tests/test_b26_p2_matview_trailing_refresh.py -q"
+    }
+  },
+  "after": {
+    "run_id": "41720789950",
+    "head_sha": "4065e0e6934f4fbd630b37d960d947b88f320877",
+    "exact_head_checks": {
+      "pass": 191,
+      "skip": 9,
+      "fail": 0,
+      "merge_state": "CLEAN"
+    },
+    "phase8_full_physics": "passed",
+    "eg8_5_composed_ingestion_perf_authority": "pass",
+    "test2": {
+      "passed": true,
+      "achieved_rps": 45.923,
+      "latency_p50_ms": 116.843,
+      "latency_p95_ms": 294.01,
+      "host_busy_percent": 84.124,
+      "psi_cpu_some_avg10_max": 43.4
+    },
+    "pg_stat_statements": {
+      "mv_allocation_summary_calls": 102,
+      "mv_allocation_summary_total_exec_ms": 3000.431,
+      "mv_channel_performance_calls": 102,
+      "mv_channel_performance_total_exec_ms": 2077.975,
+      "all_statement_exec_ms": 235920.792
+    },
+    "reduction": {
+      "mv_allocation_summary_calls": "1693 -> 102",
+      "realtime_refresh_total_exec_ms": "213981 -> at most 5078.406 for the two reported views; the other three refresh statements were not in the top-25 delta",
+      "test2_p95_ms": "2809.489 -> 294.01",
+      "test2_rps": "41.373 -> 45.923"
+    }
+  },
+  "limits": [
+    "The before window is from an older full-physics run; after is the exact-head corrected Phase8 run.",
+    "The coalescing store is process-local and the E2E maintenance worker is solo; multi-process worker coalescing is not claimed.",
+    "The dedicated R3 comparison has follow-up tasks disabled and is a boundary control, not a substitute for the composed Phase8 gate.",
+    "No performance threshold was weakened or changed.",
+    "Refresh-work reduction and one passing governed run are demonstrated; elimination of the intermittent slow regime is not.",
+    "B1.7 P4 failed once at the same exact head and passed on a same-head rerun; it remains independently noisy."
+  ],
+  "controlled_causal_comparison": {
+    "method": "Deterministic serial scheduler model over the same 2760 arrivals at 46 rps with the same 1.0 s realtime interval: legacy ownership-only coalescing versus interval-at-arrival coalescing.",
+    "legacy_refresh_calls": 2760,
+    "coalesced_refresh_calls": 61,
+    "scope": "Scheduler policy only; no database, CPU or governed Phase8 claim follows from this comparison."
+  },
+  "claim_scope": {
+    "demonstrated": [
+      "realtime refresh execution falls from one full refresh set per event to approximately one per tenant interval",
+      "one exact-head Phase8 Test2 pass after the repair"
+    ],
+    "not_demonstrated": [
+      "elimination of the intermittent Phase8 slow regime",
+      "repeatable governed performance across repeated exact-head runs",
+      "multi-process worker coalescing"
+    ],
+    "thresholds_changed": false
+  }
+}

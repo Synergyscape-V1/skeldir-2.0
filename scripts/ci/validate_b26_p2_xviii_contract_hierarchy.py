@@ -53,6 +53,12 @@ FAMILY_LAW_PATH = (
     / "event-family-law.v1.json"
 )
 RELAY_PATH = REPO_ROOT / "backend" / "app" / "api" / "webhooks.py"
+B22_SURFACE_PATH = (
+    REPO_ROOT
+    / "contracts-internal"
+    / "governance"
+    / "b22_p0_declared_webhook_surface.main.json"
+)
 DERIVATION_PATH = (
     REPO_ROOT / "backend" / "app" / "webhooks" / "commerce_derivation.py"
 )
@@ -105,10 +111,28 @@ def main() -> int:
         }
 
     relay_text = RELAY_PATH.read_text(encoding="utf-8")
-    implemented = sorted(
+    implemented_all = sorted(
         {match.group(1) for match in re.finditer(r'@router\.post\(\s*"([^"]+)"', relay_text)
          if match.group(1).startswith("/webhooks/")}
     )
+    try:
+        surface = json.loads(B22_SURFACE_PATH.read_text(encoding="utf-8"))
+    except OSError as exc:
+        violations.append(f"b22_surface_unreadable:{exc}")
+        surface = {}
+    internal_paths = {
+        str(item.get("path", "")).removeprefix("/api")
+        for item in surface.get("runtime_internal_operations", [])
+        if str(item.get("path", "")).startswith("/api/")
+    }
+    if internal_paths <= set(implemented_all):
+        checks["internal_operations_declared_and_served"] = True
+    else:
+        violations.append(
+            "internal_operation_not_served:"
+            f"{sorted(internal_paths - set(implemented_all))}"
+        )
+    implemented = [route for route in implemented_all if route not in internal_paths]
     declared = {
         item["route"]: item
         for item in hierarchy.get("p2_supported_routes", [])

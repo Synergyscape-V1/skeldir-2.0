@@ -163,6 +163,13 @@ class CanonicalVerificationCoverage:
     producer: str
     supported_platforms: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        # Authority is not established by construction, but an inconsistent
+        # carrier must not exist at all. This rejects alternate arithmetic
+        # (quoted SQL, Python aggregation, stored expressions) at the type
+        # boundary, independently of how the alternative was spelled.
+        _verify_math_against_legs(self)
+
 
 @dataclass(frozen=True)
 class CanonicalCoverageScope:

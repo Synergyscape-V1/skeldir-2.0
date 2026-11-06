@@ -1090,6 +1090,15 @@ jobs:
           psql "${DATABASE_URL}" -c "SELECT version_num FROM alembic_version;" >> audit_logs/deployment.log 2>&1 || echo "No alembic_version table yet" >> audit_logs/deployment.log
           echo "Current Alembic head: $(alembic current 2>&1)" >> audit_logs/deployment.log
       
+      - name: Verify B2.6 migration role prerequisites
+        env:
+          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.MIGRATION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          python scripts/database/verify_b26_migration_roles.py \
+            --dsn "${MIGRATION_DATABASE_URL}" \
+            --require-login-runtime-roles 2>&1 | tee -a audit_logs/deployment.log
+
       - name: Apply migrations with DDL logging
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
@@ -1103,6 +1112,23 @@ jobs:
           
           echo "\nMigrations completed" | tee -a audit_logs/deployment.log
       
+      - name: Verify B2.6 post-migration ownership and runtime login
+        env:
+          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.MIGRATION_DATABASE_URL }}
+          RUNTIME_DATABASE_URL: ${{ env.NEON_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RUNTIME_DATABASE_URL:-}" ]; then
+            echo "Missing runtime database URL; production runtime login proof is required."
+            exit 1
+          fi
+          python scripts/database/verify_b26_migration_roles.py \
+            --dsn "${MIGRATION_DATABASE_URL}" \
+            --require-login-runtime-roles \
+            --post-migration \
+            --runtime-dsn "${RUNTIME_DATABASE_URL}" \
+            --expected-runtime-role app_user 2>&1 | tee -a audit_logs/deployment.log
+
       - name: Capture post-deployment state
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}

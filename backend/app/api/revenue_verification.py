@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -13,6 +16,9 @@ from app.finance_reconciliation.scope_authority import (
     DISPOSITION_INVALID_OR_REFUSED,
     ScopeAuthorityError,
     classify_candidate,
+)
+from app.revenue_verification.source_attestation import (
+    read_verdict_source_attestation_status,
 )
 from app.revenue_verification.corrections import (
     CorrectionEvidenceError,
@@ -38,12 +44,42 @@ from app.trust.source_adapters import (
 router = APIRouter()
 
 
+#: XXV (A6/HB-04): the authority token an unsigned reader must publish when
+#: the money it holds is not justified by a sovereign source attestation. An
+#: existing consumer that treats anything other than "current" as
+#: non-authoritative history fails closed on it without any change.
+SOURCE_ATTESTATION_UNVERIFIABLE_STATE = "source_attestation_unverifiable"
+
+
 def _match_detail_from_row(
     row,
     *,
     event_family_law_version: str | None,
     event_family_law_current: bool | None,
+    attestation=None,
+    history_integrity_ok: bool = True,
+    history_integrity_reason: str | None = None,
 ) -> B23MatchVerdictDetailResponse:
+    recorded_authority_state = str(
+        row["b26_p2_source_authority_state"]
+        if "b26_p2_source_authority_state" in row.keys()
+        else "unknown"
+    )
+    attestation_status: str | None = None
+    attestation_reason: str | None = None
+    if attestation is not None:
+        attestation_status = attestation.status
+        attestation_reason = attestation.reason
+        if attestation.unverifiable:
+            # The recorded state says "current" because the rows agree. They
+            # agree because one principal rewrote all of them. The published
+            # authority state must not inherit that agreement.
+            recorded_authority_state = SOURCE_ATTESTATION_UNVERIFIABLE_STATE
+    if not history_integrity_ok:
+        # XXV reader-boundary unity: the signed Trust path refuses this row
+        # as history_integrity_unverifiable. The unsigned authoritative
+        # reader must not present the same money as current authority.
+        recorded_authority_state = "historically_unverifiable"
     return B23MatchVerdictDetailResponse(
         id=row["id"],
         tenant_id=row["tenant_id"],
@@ -71,11 +107,13 @@ def _match_detail_from_row(
             discrepancy_basis="gross_expected_vs_gross_captured",
         ),
         adjustments_applied=bool(row["adjustments_applied"]),
-        source_authority_state=str(
-            row["b26_p2_source_authority_state"]
-            if "b26_p2_source_authority_state" in row.keys()
-            else "unknown"
+        source_authority_state=recorded_authority_state,
+        source_money_attestation_status=attestation_status,
+        source_money_attestation_reason=attestation_reason,
+        history_integrity_status=(
+            "verified" if history_integrity_ok else "unverifiable"
         ),
+        history_integrity_reason=history_integrity_reason,
         pending_since=row["pending_since"],
         provisional_expires_at=row["provisional_expires_at"],
         confirmed_at=row["confirmed_at"],
@@ -173,10 +211,26 @@ async def get_b23_match_verdict(
             db_session, mint_moment=row["ingress_verified_at"]
         )
         law_version = resolved_version or "unknown"
+    # XXV (A6/A10/A12): verify the sovereign source attestation on the read
+    # path, not only in the signed Trust path. Both XXIV audits served a
+    # coherently forged amount as current money from exactly this endpoint
+    # while the signed path was the only one applying a conservation
+    # predicate. One predicate, both readers.
+    attestation = await read_verdict_source_attestation_status(
+        db_session,
+        tenant_id=auth_context.tenant_id,
+        verdict_id=verdict_id,
+    )
+    from app.trust.builder import read_history_integrity_status  # noqa: PLC0415
+
+    history_ok, history_reason = await read_history_integrity_status(db_session)
     return _match_detail_from_row(
         row,
         event_family_law_version=law_version,
         event_family_law_current=law_current,
+        attestation=attestation,
+        history_integrity_ok=history_ok,
+        history_integrity_reason=history_reason,
     )
 
 
@@ -345,6 +399,76 @@ async def classify_b23_p2_candidate(
             payload.source_verified_gross_amount_minor
         ),
     )
+
+
+@router.get("/coverage", operation_id="getVerificationCoverage")
+async def get_verification_coverage(
+    response: Response,
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    auth_context: Annotated[
+        AuthContext, Security(get_auth_context, scopes=["viewer"])
+    ],
+    db_session: Annotated[AsyncSession, Depends(get_db_session)],
+    window_start: datetime,
+    window_end: datetime,
+    currency_code: str = "USD",
+) -> dict[str, object]:
+    """Machine-readable canonical verification coverage.
+
+    B4/B5: coverage previously existed only as an in-process Python
+    aggregate, so no downstream reader could consume the canonical
+    76,000 / 80,000 = 95.00 cohort. This endpoint resolves the same
+    sovereign scope-only authority under tenant authentication, returns
+    the integer legs and the independently re-derived percentage, and
+    binds the response to an ETag over the exact body.
+    """
+    from app.finance_reconciliation.coverage_authority import (  # noqa: PLC0415
+        resolve_canonical_coverage,
+    )
+
+    response.headers["X-Correlation-ID"] = str(x_correlation_id)
+    try:
+        canonical = await resolve_canonical_coverage(
+            db_session,
+            tenant_id=auth_context.tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            supported_platforms=None,
+            currency_code=currency_code,
+        )
+    except (ScopeAuthorityError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    aggregate = canonical.aggregate
+    result = canonical.result
+    payload: dict[str, object] = {
+        "tenant_id": str(result.tenant_id),
+        "currency_code": result.currency_code,
+        "window_start": result.window_start.isoformat(),
+        "window_end": result.window_end.isoformat(),
+        "numerator_matched_webhook_revenue_minor": (
+            result.numerator_matched_webhook_revenue_minor
+        ),
+        "denominator_connected_platform_revenue_minor": (
+            result.denominator_connected_platform_revenue_minor
+        ),
+        "coverage_percent": str(result.coverage_percent),
+        "zero_denominator": result.zero_denominator,
+        "unverifiable_historical_revenue_minor": (
+            aggregate.unverifiable_historical_revenue_minor
+        ),
+        "unverifiable_attestation_revenue_minor": (
+            aggregate.unverifiable_attestation_revenue_minor
+        ),
+        "supported_platforms": list(canonical.supported_platforms),
+        "producer": canonical.producer,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    response.headers["ETag"] = f'"{digest}"'
+    response.headers["Cache-Control"] = "private, max-age=30"
+    return payload
 
 
 @router.post(

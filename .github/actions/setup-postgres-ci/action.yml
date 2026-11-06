@@ -1,6 +1,5 @@
 name: Setup Postgres CI Database
 description: Prepare the least-privilege CI database boundary and run Alembic migrations.
-
 inputs:
   admin-dsn:
     description: Superuser/admin PostgreSQL DSN.
@@ -65,7 +64,6 @@ inputs:
     description: Revoke runtime access to alembic_version after migration.
     required: false
     default: "false"
-
 runs:
   using: composite
   steps:
@@ -88,9 +86,12 @@ runs:
           --publisher-password "${{ inputs.publisher-password }}" \
           --trust-issuer-user "${{ inputs.trust-issuer-user }}" \
           --trust-issuer-password "${{ inputs.trust-issuer-password }}"
-
-    # XVI-B + XIII: issuance/signer/B2.8 DSNs export automatically; ingress
-    # credential written to a FILE (path exported); only auth_ingress role uses it.
+    - name: Provision auth-lookup owner role
+      shell: bash
+      run: |
+        psql "${{ inputs.admin-dsn }}" -v ON_ERROR_STOP=1 \
+          -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_auth_lookup') THEN CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS; END IF; END \$\$;" \
+          -c "GRANT app_auth_lookup TO ${{ inputs.migration-user }} WITH ADMIN OPTION;"
     - name: Export Trust issuance custody DSN
       shell: bash
       run: |
@@ -108,7 +109,6 @@ runs:
         MIGRATION_DATABASE_URL: postgresql://${{ inputs.migration-user }}:${{ inputs.migration-password }}@127.0.0.1:5432/${{ inputs.database-name }}
       run: |
         ${{ inputs.migration-command }}
-
     - name: Enforce migration metadata least privilege
       if: ${{ inputs.revoke-alembic-version == 'true' }}
       shell: bash

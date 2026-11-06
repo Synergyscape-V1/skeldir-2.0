@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "scope": "isolated source-evidence journal tail recovery; not a demonstrated signed-customer failure",
+  "date_utc": "2026-11-01T12:15:00Z",
+  "repo_head_at_build": "667d615a3ef32fe1e4ab16c66e5bf97c9e8fc46a",
+  "source_state": "working tree at repo_head plus the durable tail repair; committed after probe",
+  "base_image": "b26p2xxv-final@sha256:bf51f3bb2b843b29d9404a5bddb332f8a11feb46335cb7e1f39a7f89384937fd",
+  "probe_image": "b26p2xxv-tailprobe@sha256:a6c6258debd8954e112d22c089a12d97532794d61e74ba136794550ea77d3e6d",
+  "source_sha256": "e3fd42fdfaf7c1e4c8049aba2ad2b84d5b2a301e5e88d1f4bed5a50eb3c3cc5f",
+  "test_sha256": "f2e844598fbb705f80d3a8003f7adfb2528798727b4f0e384048f605d61d4581",
+  "negative_control": {
+    "image": "b26p2xxv-final@sha256:bf51f3bb...",
+    "result": "FAIL",
+    "error": "json.decoder.JSONDecodeError: Unterminated string",
+    "path": "app.revenue_verification.source_evidence_journal._last_record_hash_unlocked",
+    "meaning": "the unpatched append path parses the torn final line as the previous record and refuses all later appends"
+  },
+  "repair": {
+    "location": "app.revenue_verification.source_evidence_journal._repair_incomplete_tail_unlocked",
+    "mechanism": "under the cross-process journal lock, truncate only the uncommitted final fragment to the last complete newline; preserve a complete JSON record that merely lacks a newline; fsync before appending",
+    "committed_history_preserved": true,
+    "valid_no_newline_record_preserved": true,
+    "readers_ignore_incomplete_tail_until_repair": true
+  },
+  "probe_output": {
+    "status": "PASS",
+    "torn_tail_truncated_to_last_commit": true,
+    "committed_prefix_preserved": true,
+    "later_append_recovered": true,
+    "valid_no_newline_record_preserved": true,
+    "record_count": 2,
+    "tip": "0a5e13ff77b3a85452990c34502dbe4ef0512c218fcbe0a873eca35bf6506205"
+  },
+  "deployment_consequence": "Before the repair, one crash/torn append would block every subsequent authenticated source-fact append on that journal and could concatenate a new record onto the fragment. The repaired path restores the journal automatically at the next append, preserving the committed prefix and its hash chain.",
+  "limits": [
+    "This proves the journal append boundary in the shipping image, not a live customer transaction.",
+    "It does not prove arbitrary multi-writer crash interleavings beyond the cross-process lock and complete-line protocol.",
+    "The failed base-image run is retained as the non-vacuity control; it is not a customer failure."
+  ]
+}

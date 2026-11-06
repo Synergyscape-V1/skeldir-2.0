@@ -1,0 +1,72 @@
+{
+  "check": "R-0037 exact-head Phase8 Test2 repeatability after realtime coalescing",
+  "run_at": "2026-11-04",
+  "candidate_sha": "590b5e200d555a54a9726734971eab87d509fb7d",
+  "workflow_run": "41749248700",
+  "workflow": "b07-phase8-full-physics-staging",
+  "workload": {
+    "profile": "EG3_4_Test2_Month18",
+    "target_rps": 46.0,
+    "duration_s": 60,
+    "target_request_count": 2760,
+    "api_workers": 2,
+    "maintenance_worker": {
+      "pool": "solo",
+      "concurrency": 1
+    },
+    "ingestion_followup_tasks_enabled": true
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "result": "pass",
+      "achieved_rps": 45.96,
+      "latency_p50_ms": 86.346,
+      "latency_p95_ms": 178.895,
+      "host_busy_percent": 77.75,
+      "psi_cpu_some_avg10_max": 30.93,
+      "refresh_calls_per_reported_view": 154,
+      "refresh_total_exec_ms_reported_views": 12136.2
+    },
+    {
+      "attempt": 2,
+      "result": "pass",
+      "achieved_rps": 45.92,
+      "latency_p50_ms": 117.293,
+      "latency_p95_ms": 245.549,
+      "host_busy_percent": 86.484,
+      "psi_cpu_some_avg10_max": 36.9,
+      "refresh_calls_per_reported_view": 106,
+      "refresh_total_exec_ms_reported_views": 13274.6
+    },
+    {
+      "attempt": 3,
+      "result": "pass",
+      "achieved_rps": 45.937,
+      "latency_p50_ms": 82.534,
+      "latency_p95_ms": 157.06,
+      "host_busy_percent": 76.025,
+      "psi_cpu_some_avg10_max": 29.37,
+      "refresh_calls_per_reported_view": 144,
+      "refresh_total_exec_ms_reported_views": 12956.7
+    }
+  ],
+  "same_head_phase8_passes": 3,
+  "b1_7_same_head": {
+    "run_id": "41749248406",
+    "result": "pass_on_rerun",
+    "note": "B1.7 P4 remains independently noisy; one earlier exact-head attempt failed its prewarm p95 efficacy comparison and a same-head rerun passed."
+  },
+  "claim_scope": {
+    "demonstrated": [
+      "three consecutive passing Phase8 Test2 attempts at one exact head after the coalescing repair",
+      "Test2 throughput/p95 remained within the unchanged governed workload and thresholds"
+    ],
+    "not_demonstrated": [
+      "elimination of the intermittent slow regime",
+      "repeatability across other runners or production environments",
+      "B1.7 prewarm-efficacy stability"
+    ],
+    "thresholds_changed": false
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "actor": "legitimate end user through the shipping login interface",
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
+    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
+    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
+    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
+    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "definer_rows_as_app_user": 1,
+  "definer_rows_called_as_superuser": 1,
+  "expected_independently": "HTTP 200 with an access token for a valid credential",
+  "falsifier": "xxv-hb13-login",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "login_http": {
+    "body": "{\"access_token\":\"eyJhbGciOiJSUzI1NiIsImtpZCI6Inh4di1qd3QtMTE2NjRmNDI4NDlmIiwidHlwIjoiSldUIn0.eyJ0ZW5hbnRfaWQiOiIxZTg1NGM0MC0zZTZlLTQwYjYtYjAzMS1jOTY0YTM3NGFmODEiLCJzdWIiOiI3NzNmY2NiMC1lYjI4LTQwZGYtYmU2YS02ZmM2ZDBkMmNlMmUiLCJ1c2VyX2lkIjoiNzczZmNjYjAtZWIyOC00MGRmLWJlNmEtNmZjNmQwZDJjZTJlIiwianRpIjoiMGRjZjUwOTUtOTFiMi01N2FhLTkwYzMtOGQ3OWRiNGJjOWEyIiwiaWF0IjoxNzkzNTI2NzEyLCJleHAiOjE3OTM1Mjc2MTIsImlzcyI",
+    "status": 200
+  },
+  "lookup_function": {
+    "owner": "app_auth_lookup",
+    "security_definer": true
+  },
+  "membership_id": "749108b3-f1d0-4e82-b281-ef2063b228fc",
+  "membership_insert_error": null,
+  "membership_table_columns": [
+    "id",
+    "tenant_id",
+    "user_id",
+    "membership_status",
+    "created_at",
+    "updated_at"
+  ],
+  "observed_result": "RED if the login returns 401 while the row exists, because the SECURITY DEFINER lookup is owned by a non-BYPASSRLS role and public.users forces RLS on a GUC that cannot be set before login",
+  "property": "P-XXV 1(c)(iv): the supported client authentication step must work",
+  "recorded_at_utc": "2026-11-01T09:51:52.540707Z",
+  "role_insert_error": null,
+  "row_exists_direct_select_as_superuser": 1,
+  "users_table": {
+    "owner": "migration_owner",
+    "rls_enabled": true,
+    "rls_forced": true
+  }
+}

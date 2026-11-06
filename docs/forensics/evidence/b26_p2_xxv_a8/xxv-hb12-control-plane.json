@@ -1,0 +1,57 @@
+{
+  "actor": "secrets-manager/IAM principal and the deployment control plane",
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T12:59:56.815725Z",
+    "commit_sha": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+    "compiled_genesis_hash": "085571c1a477b143ab4a98bad175c745acf072177e675f26b5d4f89d1b65971b",
+    "compiled_public_key_sha256": "456f13765b47465a955540cba96fcfe9fe68c7071c1202902ed6acd8c08af85e",
+    "compiled_source_attestation_public_key_sha256": "b208bc8d778f0e6f746397066f51d44b654b6271b0822c59624e2fafc6d50ac3",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "0aae8ce5a801e613556ab60f6900e9d63655b7f3",
+    "worktree_status_summary": {
+      "entries": 5,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M docs/forensics/B2.6-P2-XXV-Verified-Checkpoint.md",
+        " M docs/forensics/evidence/b26_p2_xxv_a8/xxv-b5-p13-exact-head-20261101.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-exact-head-ci-f0f-20261101.json",
+        "?? session-ses_ebfe.md"
+      ]
+    }
+  },
+  "authority_universe": "95bc8913-4522-4573-a9fd-0003df969bf1",
+  "aws_client_in_production_image": "boto3:1.43.119",
+  "control_plane_process_scope_present": "backend/app/core/control_plane.py:15:    process_role_allows,\nbackend/app/core/control_plane.py:182:        if not process_role_allows(process_role, key):\nbackend/app/core/control_plane.py:202:        if not process_role_allows(process_role, key):",
+  "expected_independently": "every shipping process boots under the shipped production control plane with only the credentials its role declares",
+  "falsifier": "xxv-hb12-control-plane",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "observed_result": "PASS when the image carries a supported AWS client, the control plane resolves only the role's declared keys, and the running signer has no MIGRATION_DATABASE_URL; the explicit migration-DSN signer remains a negative control. Real-AWS equivalence is external.",
+  "prod_boot_with_control_plane_enabled": {
+    "returncode": 1,
+    "stderr_tail": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/app/backend/app/core/config.py\", line 26, in <module>\n    preload_environment_from_control_plane()\n  File \"/app/backend/app/core/control_plane.py\", line 186, in preload_environment_from_control_plane\n    path = _path_for_key(\n           ^^^^^^^^^^^^^^\n  File \"/app/backend/app/core/control_plane.py\", line 169, in _path_for_key\n    raise RuntimeError(\nRuntimeError: process_role_required_for_database_url\n",
+    "stdout_tail": ""
+  },
+  "property": "P-XXV 1(b)(iii): production process authority must be process-scoped and resolvable from the shipped artifact",
+  "recorded_at_utc": "2026-11-01T13:35:21.824913Z",
+  "running_signer_process_scope": {
+    "returncode": 0,
+    "stderr_tail": "",
+    "stdout_tail": "control=1\nmigration=\n"
+  },
+  "signer_custody_with_migration_dsn_present": {
+    "returncode": 1,
+    "stderr_tail": "3.11/site-packages/pydantic_settings/main.py\", line 194, in __init__\n    super().__init__(\n  File \"/usr/local/lib/python3.11/site-packages/pydantic/main.py\", line 250, in __init__\n    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\npydantic_core._pydantic_core.ValidationError: 1 validation error for Settings\n  Value error, B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH must be set in production [type=value_error, input_value={'DATABASE_URL': 'postgre...675f26b5d4f89d1b65971b'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/value_error\n",
+    "stdout_tail": ""
+  }
+}

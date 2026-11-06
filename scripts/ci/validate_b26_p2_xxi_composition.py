@@ -36,6 +36,7 @@ import argparse
 import asyncio
 import json
 import sys
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -260,7 +261,7 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     # the current head; F5 advances it to 300008; P1 to 300009; the
     # C19 result-telemetry transport admission to 202610180001; XXIII
     # to 202610180003. A stale contract fails closed here.
-    if 'REQUIRED_SCHEMA_REVISION = "202610180003"' not in contract:
+    if 'REQUIRED_SCHEMA_REVISION = "202610280001"' not in contract:
         violations.append("xxi_comp_construction_contract_not_advanced")
     else:
         checks["construction_contract_at_xxi"] = True
@@ -650,6 +651,89 @@ def _live_checks(
 
         _settings.B26_P2_HISTORY_WITNESS_REQUIRED = False
 
+        from app.revenue_verification.source_attestation import (  # noqa: PLC0415
+            DEFAULT_ATTESTATION_KEY_ID,
+            build_statement,
+            generate_keypair,
+            sign_statement,
+        )
+
+        key_dir = Path(tempfile.mkdtemp(prefix="xxi-comp-attest-"))
+        private_seed, public_b64 = generate_keypair()
+        private_path = key_dir / "source.key"
+        public_path = key_dir / "source.pub"
+        private_path.write_text(private_seed, encoding="utf-8")
+        public_path.write_text(public_b64, encoding="utf-8")
+        _settings.B26_P2_SOURCE_ATTESTATION_REQUIRED = True
+        _settings.B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH = str(public_path)
+
+        def _attest_source(
+            ing: str,
+            eref: str,
+            sha: str,
+            amount: int,
+            *,
+            provider: str = "stripe",
+            cref: str = "xxi-c1",
+            kind: str = "stripe_payment_intent_id",
+            ts: str = "2026-09-01T12:00:00+00:00",
+        ) -> None:
+            igr = psycopg2.connect(ingress_dsn)
+            igr.autocommit = False
+            try:
+                with igr.cursor() as icur:
+                    icur.execute(
+                        "SELECT set_config('app.current_tenant_id', %s, false)",
+                        (tenant,),
+                    )
+                    icur.execute(
+                        "SELECT public.b26_p2_authority_universe()::text"
+                    )
+                    universe = icur.fetchone()[0]
+                    statement = build_statement(
+                        tenant_id=tenant,
+                        webhook_ingress_identity_id=ing,
+                        provider=provider,
+                        provider_native_event_reference=eref,
+                        provider_native_commerce_reference=cref,
+                        normalized_commerce_reference_kind=kind,
+                        normalized_commerce_reference_value=cref,
+                        verified_amount_minor=amount,
+                        verified_amount_currency="USD",
+                        verified_amount_scale=2,
+                        event_timestamp=datetime.fromisoformat(ts),
+                        body_sha256=sha,
+                        authority_universe=universe,
+                    )
+                    signature, key_sha256 = sign_statement(
+                        statement, private_key_path=private_path
+                    )
+                    icur.execute(
+                        "INSERT INTO public.b26_p2_source_money_attestation ("
+                        " webhook_ingress_identity_id, tenant_id, statement_version,"
+                        " attested_amount_minor, attested_amount_currency,"
+                        " attested_amount_scale, statement, signature, key_id, key_sha256"
+                        ") VALUES (%s,%s,%s,%s,%s,%s,CAST(%s AS jsonb),%s,%s,%s)"
+                        " ON CONFLICT (webhook_ingress_identity_id) DO NOTHING",
+                        (
+                            ing,
+                            tenant,
+                            int(statement["version"]),
+                            amount,
+                            "USD",
+                            2,
+                            json.dumps(statement, sort_keys=True),
+                            signature,
+                            DEFAULT_ATTESTATION_KEY_ID,
+                            key_sha256,
+                        ),
+                    )
+                igr.commit()
+            finally:
+                igr.close()
+
+        _attest_source(row, "xxi-v1", "a" * 64, 100000)
+
         async def _real_reads():
             engine = create_async_engine(
                 admin_dsn.replace("postgresql://",
@@ -1035,7 +1119,7 @@ def _live_checks(
                     f"xxi_comp_reupgrade_failed:{up.stderr[-200:]}")
             else:
                 cur.execute("SELECT version_num FROM alembic_version")
-                if cur.fetchone()[0] != "202610180003":
+                if cur.fetchone()[0] != "202610280001":
                     violations.append("xxi_comp_reupgrade_wrong_revision")
                 else:
                     checks["downgrade_reupgrade_converges"] = True
@@ -1053,9 +1137,14 @@ def _live_checks(
                         " public.b26_p2_verdict_supersession_ledger"
                         " ORDER BY seq ASC")
                     _ledger_after = cur.fetchall()
-                    if _ledger_after != _ledger_before:
-                        _b_ids = {r[0] for r in _ledger_before}
-                        _a_ids = {r[0] for r in _ledger_after}
+                    _b_ids = {r[0] for r in _ledger_before}
+                    _a_ids = {r[0] for r in _ledger_after}
+                    # XXV attestations are intentionally dropped by the
+                    # supported downgrade to a pre-XXV revision. Re-upgrade
+                    # must truthfully append the resulting authority
+                    # transitions; it must never lose or rewrite a committed
+                    # row. Append-only prefix preservation is the law here.
+                    if _ledger_after[: len(_ledger_before)] != _ledger_before:
                         violations.append(
                             "xxi_comp_downgrade_altered_history:"
                             f"before={len(_ledger_before)}"
@@ -1064,6 +1153,8 @@ def _live_checks(
                             f" gained={sorted(_a_ids - _b_ids)[:2]}")
                     else:
                         checks["downgrade_preserves_history"] = True
+                        if len(_ledger_after) > len(_ledger_before):
+                            checks["downgrade_appends_xxv_truth"] = True
         cur.execute("SELECT floor_revision FROM public.b26_p2_operational_floor"
                     " WHERE id=1")
         if cur.fetchone()[0] != "202609300004":

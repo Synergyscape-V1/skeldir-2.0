@@ -35,6 +35,14 @@ contract_only_allowlist: []
 # Format: "METHOD /path/to/endpoint"
 runtime_transport_only_allowlist:
   - POST /api/webhooks/stripe/payment_intent_succeeded
+  # XXV post-capture adjustment ingress: mounted provider-signed refund
+  # routes intentionally outside the one-capture-per-provider public
+  # OpenAPI/typegen contract; enumerated here so route fidelity remains a
+  # closed census rather than a bypass.
+  - POST /api/webhooks/stripe/charge_refunded
+  - POST /api/webhooks/shopify/refunds_create
+  - POST /api/webhooks/woocommerce/order_refunded
+  - POST /api/webhooks/paypal/payment_capture_refunded
 
 # Explicit operation binding for the P11 machine export surface. The route is
 # governed by the /api/trust specification mapping below.

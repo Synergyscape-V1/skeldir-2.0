@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from uuid import uuid4
 
@@ -157,6 +156,48 @@ def test_unknown_kid_forces_debounced_refresh_and_recovers(monkeypatch):
         return getattr(settings, key, None)
 
     monkeypatch.setattr(secrets_module, "_read_secret_source_of_truth_value", _refreshing_fetch)
+    payload = {
+        "tenant_id": str(uuid4()),
+        "sub": str(uuid4()),
+        "exp": int(time.time()) + 120,
+        "iss": settings.AUTH_JWT_ISSUER,
+        "aud": settings.AUTH_JWT_AUDIENCE,
+    }
+    token = jwt.encode(payload, TEST_PRIVATE_KEY_PEM, algorithm=settings.AUTH_JWT_ALGORITHM, headers={"kid": "kid-new"})
+    decoded = _decode_token(token)
+    assert decoded["tenant_id"] == payload["tenant_id"]
+    assert calls["count"] == 1
+
+
+def test_unknown_kid_lock_contention_reads_source_instead_of_stale_ring(monkeypatch):
+    from app.core import secrets as secrets_module
+
+    old_public_ring = _jwt_ring_payload(current_kid="kid-old", key_material=TEST_PUBLIC_KEY_PEM)
+    rotated_public_ring = _jwt_ring_payload(
+        current_kid="kid-new",
+        key_material=TEST_PUBLIC_KEY_PEM,
+        previous_kids=["kid-old"],
+        all_kids=["kid-old", "kid-new"],
+    )
+    monkeypatch.setattr(settings, "AUTH_JWT_PUBLIC_KEY_RING", old_public_ring)
+    reset_crypto_secret_caches_for_testing()
+    _ = mint_internal_jwt(tenant_id=uuid4(), user_id=uuid4(), expires_in_seconds=180)
+
+    calls = {"count": 0}
+
+    def _refreshing_fetch(key: str) -> str | None:
+        if key == "AUTH_JWT_PUBLIC_KEY_RING":
+            calls["count"] += 1
+            return rotated_public_ring
+        return getattr(settings, key, None)
+
+    monkeypatch.setattr(secrets_module, "_read_secret_source_of_truth_value", _refreshing_fetch)
+    stale_ring = secrets_module._parse_jwt_key_ring_payload(old_public_ring, "settings")
+    monkeypatch.setattr(
+        secrets_module,
+        "_resolve_verification_ring_via_postgres",
+        lambda **_: stale_ring,
+    )
     payload = {
         "tenant_id": str(uuid4()),
         "sub": str(uuid4()),

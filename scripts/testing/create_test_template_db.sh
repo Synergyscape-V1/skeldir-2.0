@@ -30,6 +30,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
     CREATE ROLE app_ingress LOGIN PASSWORD 'app_ingress';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_auth_lookup') THEN
+    CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;
+  END IF;
 END
 \$\$;
 SQL

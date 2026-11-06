@@ -1,0 +1,116 @@
+{
+  "actor": "provider refund + authentication root + B2.3 worker + readers",
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T14:23:09.933070Z",
+    "commit_sha": "4d3e7c4354b2a6dafe03aa08524c87b47e8598de",
+    "compiled_genesis_hash": "e019bab976b77e9240172011140773cd310189152275eb9af827dae079339710",
+    "compiled_public_key_sha256": "8fa538607875a3b23ec4ddabf339be76286dc47140c2345c3bfe582ea27ebf25",
+    "compiled_source_attestation_public_key_sha256": "cb7c6b993072b4a18dd20be7ccacebc3aa4db93e6630b9d3dc3bc9074534ceb9",
+    "image_id": "sha256:960ab36f82a8aaf7653030228085914fb77d981145cb32dbe3cfe49d97ab8f5d",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "4a53dc788743d6a0f8995190b30ec383d5ee8bb4",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "ae804afd-e865-4945-aeed-cd3113e85768",
+  "capture": {
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"dc0801f3-39b2-41a1-9ae1-45c7b213c7e0\",\"idempotency_key\":\"213e7d95-4b51-461a-a975-ceb1ae686970\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    },
+    "verdict": {
+      "attributed_amount_minor": 4321,
+      "attribution_event_id": "dc0801f3-39b2-41a1-9ae1-45c7b213c7e0",
+      "canonical_net_verified_amount_minor": 4321,
+      "commerce_reference": "pi_xxvadj5102363001cd42",
+      "currency_code": "USD",
+      "match_status": "matched_provisional",
+      "source_authority_state": "current",
+      "verdict_id": "82e433ce-2a43-4f62-8c92-d679519232a4",
+      "verified_amount_minor": 4321
+    }
+  },
+  "exact_restoration": {
+    "attestation_status": "xxv_attested",
+    "net_minor": 3321,
+    "reconciliation_status": "current",
+    "signed_trust_status": 200
+  },
+  "falsifier": "xxv-b1b2-refund-adjustment",
+  "full_refund": {
+    "net_minor": 0,
+    "reconciliation_status": 200,
+    "refund_http_status": 200,
+    "signed_trust_status": 200,
+    "verified_revenue_minor": 0
+  },
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:960ab36f82a8aaf7653030228085914fb77d981145cb32dbe3cfe49d97ab8f5d",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "over_refund": {
+    "adjustment_evidence_count": 1,
+    "net_minor": 3321,
+    "refund_body": "{\"detail\":\"b26_p2_ingress_relay_refused: status=400\"}",
+    "refund_http_status": 409
+  },
+  "partial_refund": {
+    "adjustment_attestation_count": 1,
+    "adjustment_evidence_id": "4309391b-10cc-47e1-91fa-9e6eb4abc5b9",
+    "applied": {
+      "authority_state": "current",
+      "captured_minor": 4321,
+      "net_minor": 3321,
+      "status": "adjusted"
+    },
+    "current_capture_source_count": 1,
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"4309391b-10cc-47e1-91fa-9e6eb4abc5b9\",\"idempotency_key\":\"re_xxvadja65b709ea645\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+      "status": 200
+    },
+    "reconciliation": {
+      "net_minor": 3321,
+      "source_authority_state": "current",
+      "source_money_attestation_status": "xxv_attested",
+      "status": 200,
+      "status_value": "adjusted"
+    },
+    "signed_trust": {
+      "status": 200,
+      "verified_revenue_minor": 3321
+    }
+  },
+  "property": "B1/B2: a provider refund adjusts net money without creating or replacing a creation source; tampering with the adjustment evidence is refused by both readers and exact restoration restores the legitimate result",
+  "recorded_at_utc": "2026-11-02T14:32:38.802620Z",
+  "tampered_adjustment": {
+    "attestation_status": "unverifiable:source_fact_currentness_source_fact_journal_adjustment_unverified:4309391b-10cc-47e1-91fa-9e6eb4abc5b9",
+    "reconciliation_status": "historically_unverifiable",
+    "signed_trust_status": 404
+  },
+  "tenant_id": "e06ae6da-d7be-4de8-a888-5b33d7c11780",
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "e06ae6da-d7be-4de8-a888-5b33d7c11780"
+    }
+  ]
+}

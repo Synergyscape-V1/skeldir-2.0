@@ -1,0 +1,134 @@
+{
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T12:59:56.815725Z",
+    "commit_sha": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+    "compiled_genesis_hash": "085571c1a477b143ab4a98bad175c745acf072177e675f26b5d4f89d1b65971b",
+    "compiled_public_key_sha256": "456f13765b47465a955540cba96fcfe9fe68c7071c1202902ed6acd8c08af85e",
+    "compiled_source_attestation_public_key_sha256": "b208bc8d778f0e6f746397066f51d44b654b6271b0822c59624e2fafc6d50ac3",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "0aae8ce5a801e613556ab60f6900e9d63655b7f3",
+    "worktree_status_summary": {
+      "entries": 5,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M docs/forensics/B2.6-P2-XXV-Verified-Checkpoint.md",
+        " M docs/forensics/evidence/b26_p2_xxv_a8/xxv-b5-p13-exact-head-20261101.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-exact-head-ci-f0f-20261101.json",
+        "?? session-ses_ebfe.md"
+      ]
+    }
+  },
+  "authority_universe": "95bc8913-4522-4573-a9fd-0003df969bf1",
+  "confirmed_event": {
+    "amount_minor": 76000,
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"6a42b3f9-d36f-4932-8353-60df38eb0ece\",\"idempotency_key\":\"6960f5c5-55c8-4cc5-9bb2-467e6b3262a4\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    },
+    "intent": "pi_xxvb4adb0c789ece144c",
+    "verdict": {
+      "attributed_amount_minor": 76000,
+      "attribution_event_id": "6a42b3f9-d36f-4932-8353-60df38eb0ece",
+      "canonical_net_verified_amount_minor": 76000,
+      "commerce_reference": "pi_xxvb4adb0c789ece144c",
+      "currency_code": "USD",
+      "match_status": "matched_confirmed",
+      "source_authority_state": "current",
+      "verdict_id": "90d0155c-edfa-4023-90be-a972fd2f2c27",
+      "verified_amount_minor": 76000
+    }
+  },
+  "coverage_provisional": {
+    "coverage_percent": "100.00",
+    "denominator_minor": 80000,
+    "http_status": 200,
+    "numerator_minor": 80000
+  },
+  "coverage_unresolved": {
+    "coverage_percent": "95.00",
+    "denominator_minor": 80000,
+    "http_status": 200,
+    "numerator_minor": 76000
+  },
+  "expected": {
+    "provisional_coverage_percent": "100.00",
+    "unresolved_coverage_percent": "95.00"
+  },
+  "falsifier": "xxv-b4-coverage",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "property": "B4: canonical coverage counts provisional matches; the 95.00% witness requires a genuine unresolved leg and becomes 100.00% when that leg gains a provisional match",
+  "provisional_event": {
+    "intent": "pi_xxvb4b51e3e5c77c2e48",
+    "verdict": {
+      "attributed_amount_minor": 4000,
+      "attribution_event_id": "58625b78-3651-4000-aed5-ddbe58788cb9",
+      "canonical_net_verified_amount_minor": 4000,
+      "commerce_reference": "pi_xxvb4b51e3e5c77c2e48",
+      "currency_code": "USD",
+      "match_status": "matched_provisional",
+      "source_authority_state": "current",
+      "verdict_id": "fa9027bf-dc28-484a-b2e9-c9ced1d0318b",
+      "verified_amount_minor": 4000
+    }
+  },
+  "recorded_at_utc": "2026-11-01T13:30:15.409690Z",
+  "tenant_id": "fa66b913-668c-4a1b-beb2-12c7a82f6bcd",
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "fa66b913-668c-4a1b-beb2-12c7a82f6bcd"
+    }
+  ],
+  "unresolved_event": {
+    "amount_minor": 4000,
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"58625b78-3651-4000-aed5-ddbe58788cb9\",\"idempotency_key\":\"09bd24f7-bc30-449e-98a1-a438e5c70e82\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    },
+    "ingress": {
+      "amount_minor": 4000,
+      "commerce_reference": "pi_xxvb4b51e3e5c77c2e48",
+      "created_at": "2026-11-01 13:30:09.011886+00:00",
+      "currency": "USD",
+      "demotion_reason": null,
+      "event_reference": "pi_xxvb4b51e3e5c77c2e48",
+      "event_timestamp": "2026-11-01 13:30:08+00:00",
+      "has_attestation": true,
+      "has_root_evidence": true,
+      "has_witness": true,
+      "ingress_id": "680864d2-af83-4c39-a8fc-bb50e7cfa940",
+      "is_current": true,
+      "provenance": "authenticated_known"
+    },
+    "intent": "pi_xxvb4b51e3e5c77c2e48"
+  },
+  "window_end": "2026-11-01T13:30:13+00:00",
+  "window_start": "2026-10-30T12:26:13+00:00",
+  "worker_start": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-worker-b23"
+  },
+  "worker_stop": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "b26p2xxv-worker-b23"
+  }
+}

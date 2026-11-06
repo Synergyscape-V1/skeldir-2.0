@@ -1,5 +1,5 @@
 {
-  "revision": "202609250001",
+  "revision": "202610280001",
   "objects": [
     [
       "column",
@@ -3740,6 +3740,18 @@
         "force": true,
         "owner": "migration_owner",
         "options": null
+      }
+    ],
+    [
+      "role",
+      "app_auth_lookup",
+      {
+        "super": false,
+        "inherit": true,
+        "createdb": false,
+        "bypassrls": true,
+        "createrole": false,
+        "memberships": null
       }
     ],
     [

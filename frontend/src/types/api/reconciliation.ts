@@ -165,6 +165,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reconciliation/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get canonical verification coverage for a window
+         * @description Resolves the canonical 95.00% verification-coverage authority through
+         *     the sovereign scope-only resolver and returns the integer legs, the
+         *     independently re-derived percentage, and the non-authoritative
+         *     historical leg. The response is tenant-scoped and carries an ETag
+         *     over the exact body.
+         */
+        get: operations["getVerificationCoverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -312,6 +336,14 @@ export interface components {
             event_family_law_version?: string | null;
             /** @description XXI P1: false when a later event-family law publication supersedes the establishing law (the verdict must not read as current-law verified meaning); null when the law does not govern the provider. */
             event_family_law_current?: boolean | null;
+            /** @description XXV: whether this verdict money is justified by a sovereign source attestation signed by the authentication root and verified against the fingerprint compiled into the running image. xxv_attested means the provider amount is independently justified; unverifiable:<reason> means an attestation was expected and does not justify the money being reported, in which case source_authority_state is source_attestation_unverifiable and the figure must not be consumed as current money. The absence of an attestation is never a grant: a source authenticated before XXV enforcement cannot be retro-attested and is reported as unverifiable, not as current money. */
+            source_money_attestation_status?: string | null;
+            /** @description XXV: the governed reason token behind source_money_attestation_status. */
+            source_money_attestation_reason?: string | null;
+            /** @description XXV reader-boundary unity: verified when the live ledger and signed witness agree; unverifiable when the signed Trust path would refuse the same money for missing, stale, violated, or divergent history. */
+            history_integrity_status?: string | null;
+            /** @description The governed history-integrity refusal reason, if unverifiable. */
+            history_integrity_reason?: string | null;
         };
         B23ExceptionRecordResponse: {
             /** Format: uuid */
@@ -409,6 +441,10 @@ export interface components {
             window_end: string;
             scope_policy_version: string;
             source_verified_gross_amount_minor: number | null;
+            /** @enum {string} */
+            authority_scope: "structural_candidate_only";
+            live_financial_authority: boolean;
+            live_authority_checked: boolean;
         };
         B23PostCaptureCorrectionRequest: {
             /** @enum {string} */
@@ -1657,6 +1693,14 @@ export interface operations {
                         event_family_law_version?: string | null;
                         /** @description XXI P1: false when a later event-family law publication supersedes the establishing law (the verdict must not read as current-law verified meaning); null when the law does not govern the provider. */
                         event_family_law_current?: boolean | null;
+                        /** @description XXV: whether this verdict money is justified by a sovereign source attestation signed by the authentication root and verified against the fingerprint compiled into the running image. xxv_attested means the provider amount is independently justified; unverifiable:<reason> means an attestation was expected and does not justify the money being reported, in which case source_authority_state is source_attestation_unverifiable and the figure must not be consumed as current money. The absence of an attestation is never a grant: a source authenticated before XXV enforcement cannot be retro-attested and is reported as unverifiable, not as current money. */
+                        source_money_attestation_status?: string | null;
+                        /** @description XXV: the governed reason token behind source_money_attestation_status. */
+                        source_money_attestation_reason?: string | null;
+                        /** @description XXV reader-boundary unity: verified when the live ledger and signed witness agree; unverifiable when the signed Trust path would refuse the same money for missing, stale, violated, or divergent history. */
+                        history_integrity_status?: string | null;
+                        /** @description The governed history-integrity refusal reason, if unverifiable. */
+                        history_integrity_reason?: string | null;
                     };
                 };
             };
@@ -2277,7 +2321,10 @@ export interface operations {
                      *       "window_start": "2026-05-01T00:00:00Z",
                      *       "window_end": "2026-05-02T00:00:00Z",
                      *       "scope_policy_version": "b2.6-p2-scope-policy-v2",
-                     *       "source_verified_gross_amount_minor": 1200
+                     *       "source_verified_gross_amount_minor": 1200,
+                     *       "authority_scope": "structural_candidate_only",
+                     *       "live_financial_authority": false,
+                     *       "live_authority_checked": false
                      *     }
                      */
                     "application/json": {
@@ -2293,6 +2340,10 @@ export interface operations {
                         window_end: string;
                         scope_policy_version: string;
                         source_verified_gross_amount_minor: number | null;
+                        /** @enum {string} */
+                        authority_scope: "structural_candidate_only";
+                        live_financial_authority: boolean;
+                        live_authority_checked: boolean;
                     };
                 };
             };
@@ -2859,6 +2910,332 @@ export interface operations {
             };
             /** @description Resource not found */
             404: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    getVerificationCoverage: {
+        parameters: {
+            query: {
+                window_start: string;
+                window_end: string;
+                currency_code?: string;
+            };
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Canonical verification coverage */
+            200: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "tenant_id": "00000000-0000-0000-0000-000000000000",
+                     *       "currency_code": "USD",
+                     *       "window_start": "2026-10-01T00:00:00Z",
+                     *       "window_end": "2026-11-01T00:00:00Z",
+                     *       "numerator_matched_webhook_revenue_minor": 76000,
+                     *       "denominator_connected_platform_revenue_minor": 80000,
+                     *       "coverage_percent": "95.00",
+                     *       "zero_denominator": false,
+                     *       "unverifiable_historical_revenue_minor": 0,
+                     *       "supported_platforms": [
+                     *         "paypal",
+                     *         "shopify",
+                     *         "stripe",
+                     *         "woocommerce"
+                     *       ],
+                     *       "producer": "app.revenue_verification.verification_coverage.fetch_verification_coverage_aggregate+app.revenue_verification.verification_coverage.VERIFICATION_COVERAGE.compute",
+                     *       "generated_at": "2026-10-27T22:00:00Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        tenant_id: string;
+                        currency_code: string;
+                        /** Format: date-time */
+                        window_start: string;
+                        /** Format: date-time */
+                        window_end: string;
+                        numerator_matched_webhook_revenue_minor: number;
+                        denominator_connected_platform_revenue_minor: number;
+                        coverage_percent: string;
+                        zero_denominator: boolean;
+                        unverifiable_historical_revenue_minor: number;
+                        supported_platforms: string[];
+                        producer: string;
+                        /** Format: date-time */
+                        generated_at?: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Forbidden - authenticated but insufficient permissions */
+            403: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Bad Request - validation failed */
+            422: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Internal server error */
+            500: {
                 headers: {
                     "X-Correlation-ID"?: string;
                     [name: string]: unknown;

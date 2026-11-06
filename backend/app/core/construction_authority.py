@@ -250,8 +250,8 @@ def _migration_modules(migrations_root: Path | None = None):
 #: to the sovereign-release-continuity head (release-bound minting ABI,
 #: positive event meaning, monotonic disqualification, observable
 #: history): this build requires XXI physics and must refuse earlier
-#: schema.
-REQUIRED_SCHEMA_REVISION = "202610180003"
+#: schema. Corrective XXV-2 advances it to the provider-amendment head.
+REQUIRED_SCHEMA_REVISION = "202610280001"
 
 #: Every revision a process running this build may serve traffic against.
 #: Exactly one today. Widening this set is a deliberate, reviewable act that

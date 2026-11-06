@@ -1,0 +1,102 @@
+{
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-03T00:34:34.596619Z",
+    "commit_sha": "48048eb35be148dd886fff617cf8bb2663a2d75d",
+    "compiled_genesis_hash": "e5872af6baea2a58c250540967904e9d72fdd77fd3aa12737766aedc2debf35d",
+    "compiled_public_key_sha256": "46cfa0968dc5759a4d3058aa7dad4fed3c6332c835a34e4c98358942bc9d466d",
+    "compiled_source_attestation_public_key_sha256": "42de38eea0c37ab4c638ed7ad16cf522ea59bc67577eefef29f035f71e8e0e0c",
+    "image_id": "sha256:cca2a234d53a66b5dbfb870dcd82d595f3aafc35c3f462072b5d274234162711",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "467ea465670b306e62d7d8000bc413fc4698e231",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "checks": {
+    "api_database": true,
+    "api_jwt": true,
+    "api_migration": true,
+    "auth_ingress_database": true,
+    "auth_ingress_jwt": true,
+    "auth_ingress_platform": true,
+    "observer_celery": true,
+    "observer_jwt": true,
+    "signer_celery": true,
+    "signer_database": true
+  },
+  "direct": {
+    "api_database": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    },
+    "api_jwt": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    },
+    "api_migration": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "RuntimeError:process_role_forbidden_setting:MIGRATION_DATABASE_URL"
+    },
+    "auth_ingress_database": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    },
+    "auth_ingress_jwt": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "RuntimeError:process_role_forbidden_setting:AUTH_JWT_SECRET"
+    },
+    "auth_ingress_platform": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    },
+    "observer_celery": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    },
+    "observer_jwt": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "RuntimeError:process_role_forbidden_setting:AUTH_JWT_SECRET"
+    },
+    "signer_celery": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "RuntimeError:process_role_forbidden_setting:CELERY_BROKER_URL"
+    },
+    "signer_database": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "PRESENT"
+    }
+  },
+  "passed": true,
+  "preload": {
+    "api_celery_env": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "ABSENT"
+    },
+    "observer_jwt_env": {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "ABSENT"
+    }
+  },
+  "property": "process role binds direct secret reads; allowed credentials remain usable",
+  "scope": "direct process-scoped secret reads on the exact compiled image; preload filtering is covered by the B11 contract test and the boot of every lane process; auth ingress positive platform read is required to decrypt tenant webhook secrets"
+}

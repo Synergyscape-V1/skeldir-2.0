@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -10,11 +12,14 @@ import subprocess
 import sys
 import time
 import traceback
+import urllib.error
+import urllib.request
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
+from uuid import uuid4
 from urllib.parse import urlparse
 
 import psycopg2
@@ -786,7 +791,25 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
                 "E2E_WORKER_DATABASE_MAX_OVERFLOW": os.getenv(
                     "E2E_WORKER_DATABASE_MAX_OVERFLOW", "0"
                 ),
-                "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", str(api_workers)),
+                "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", "2"),
+                "E2E_AUTH_WORKERS": os.getenv("E2E_AUTH_WORKERS", "1"),
+                # R3 fires at concurrency 80. Each API request can hold
+                # its relay session across the auth-root round trip, and
+                # the root holds an ingress session for the same call;
+                # size both pools so the load profile measures server
+                # work rather than pool checkout waits.
+                "E2E_API_DATABASE_POOL_SIZE": os.getenv(
+                    "E2E_API_DATABASE_POOL_SIZE", "40"
+                ),
+                "E2E_API_DATABASE_MAX_OVERFLOW": os.getenv(
+                    "E2E_API_DATABASE_MAX_OVERFLOW", "0"
+                ),
+                "E2E_AUTH_DATABASE_POOL_SIZE": os.getenv(
+                    "E2E_AUTH_DATABASE_POOL_SIZE", "30"
+                ),
+                "E2E_AUTH_DATABASE_MAX_OVERFLOW": os.getenv(
+                    "E2E_AUTH_DATABASE_MAX_OVERFLOW", "0"
+                ),
             }
         )
     return env
@@ -1005,6 +1028,267 @@ def _provision_ingress_dsn_file(cfg: _Phase8Config, env: dict[str, str]) -> None
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(ingress_dsn)
     env["E2E_INGRESS_DSN_FILE"] = dsn_path
+
+
+def _provision_source_attestation_key(env: dict[str, str]) -> None:
+    """Mount an ephemeral XXV source-attestation seed into the auth root.
+
+    Full-physics e2e exercises the same required-attestation law as a
+    deployment: the authentication root signs the provider-verified amount
+    inside the ingress transaction. The seed is generated per run and never
+    written to the repository or database.
+    """
+    import base64
+    import tempfile
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+    )
+
+    private_key = Ed25519PrivateKey.generate()
+    private_raw = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    private_seed = base64.urlsafe_b64encode(private_raw).rstrip(b"=").decode("ascii")
+    fd, key_path = tempfile.mkstemp(prefix="b26_p2_source_attestation_key_p8_")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(private_seed)
+    public_b64 = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+    ).rstrip(b"=").decode("ascii")
+    fd_pub, public_path = tempfile.mkstemp(prefix="b26_p2_source_attestation_pub_p8_")
+    with os.fdopen(fd_pub, "w", encoding="utf-8") as handle:
+        handle.write(public_b64)
+    env["E2E_SOURCE_ATTESTATION_KEY_FILE"] = key_path
+    env["E2E_SOURCE_ATTESTATION_PUBLIC_KEY_FILE"] = public_path
+    env["E2E_SOURCE_ATTESTATION_REQUIRED"] = "true"
+    env["E2E_SOURCE_EVIDENCE_JOURNAL_PATH"] = "/var/lib/b26_p2/source_evidence.jsonl"
+
+
+def _seed_replay_tenant(cfg: _Phase8Config) -> dict[str, Any]:
+    """Bind a known key/secret to an existing R3 tenant for the replay leg."""
+    api_key = f"phase8_restart_replay_{uuid4().hex[:12]}"
+    secret = f"phase8-restart-stripe-{uuid4().hex[:12]}"
+    api_key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    with psycopg2.connect(cfg.migration_dsn) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT id FROM public.tenants"
+                " WHERE name LIKE %s ORDER BY created_at LIMIT 1",
+                ("R3 Tenant%",),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise RuntimeError("no R3 tenant available for restart replay proof")
+            tenant_id = row[0]
+            cursor.execute(
+                """
+                UPDATE public.tenants
+                SET api_key_hash = %s,
+                    stripe_webhook_secret_ciphertext =
+                      pgp_sym_encrypt(%s, %s),
+                    stripe_webhook_secret_key_id = %s
+                WHERE id = %s
+                """,
+                (
+                    api_key_hash,
+                    secret,
+                    "e2e-platform-key",
+                    "e2e-key",
+                    tenant_id,
+                ),
+            )
+    return {"tenant_id": str(tenant_id), "api_key": api_key, "secret": secret}
+
+
+def _auth_replay_request(
+    tenant: dict[str, Any], *, event_id: str | None = None
+) -> dict[str, Any]:
+    event_ref = event_id or f"evt_phase8_restart_{uuid4().hex[:12]}"
+    payment_intent = f"pi_phase8_restart_{uuid4().hex[:12]}"
+    created = int(time.time())
+    body = {
+        "id": event_ref,
+        "type": "payment_intent.succeeded",
+        "created": created,
+        "data": {
+            "object": {
+                "id": payment_intent,
+                "amount": 1000,
+                "currency": "usd",
+                "status": "succeeded",
+            }
+        },
+    }
+    raw = json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    signature = hmac.new(
+        str(tenant["secret"]).encode("utf-8"),
+        f"{created}.{raw.decode('utf-8')}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    event_ts = datetime.fromtimestamp(created, timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
+    import base64
+
+    return {
+        "api_key": tenant["api_key"],
+        "provider": "stripe",
+        "provider_event_reference": event_ref,
+        "raw_body_b64": base64.b64encode(raw).decode("ascii"),
+        "signature_header": f"t={created},v1={signature}",
+        "event_id": str(uuid4()),
+        "idempotency_key": f"phase8-restart-{uuid4()}",
+        "provider_native_commerce_reference": payment_intent,
+        "normalized_commerce_reference_kind": "stripe_payment_intent_id",
+        "normalized_commerce_reference_value": payment_intent,
+        "verified_amount_minor": 1000,
+        "verified_amount_currency": "USD",
+        "verified_amount_scale": 2,
+        "event_timestamp": event_ts,
+    }
+
+
+def _auth_logs_tail(cfg: _Phase8Config, env: dict[str, str], lines: int = 80) -> str:
+    proc = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.e2e.yml",
+            "logs",
+            "auth_ingress",
+            "--no-color",
+        ],
+        cwd=str(cfg.repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    text = (proc.stdout or "") + (proc.stderr or "")
+    return "\n".join(text.splitlines()[-lines:])
+
+
+def _post_auth_request(payload: dict[str, Any], timeout_s: float = 30.0) -> dict[str, Any]:
+    started = time.monotonic()
+    request = urllib.request.Request(
+        "http://127.0.0.1:8001/v1/authenticate-ingress",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            return {
+                "status_code": int(response.status),
+                "elapsed_ms": (time.monotonic() - started) * 1000.0,
+                "body": body,
+            }
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"auth-root HTTP {exc.code}: {detail}"
+        ) from exc
+
+
+def _post_api_webhook(cfg: _Phase8Config, payload: dict[str, Any]) -> dict[str, Any]:
+    import base64
+
+    raw = base64.b64decode(payload["raw_body_b64"])
+    started = time.monotonic()
+    request = urllib.request.Request(
+        f"{cfg.api_base_url}/api/webhooks/stripe/payment_intent/succeeded",
+        data=raw,
+        headers={
+            "Content-Type": "application/json",
+            "X-Skeldir-Tenant-Key": str(payload["api_key"]),
+            "Stripe-Signature": str(payload["signature_header"]),
+            "X-Idempotency-Key": str(payload["idempotency_key"]),
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30.0) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            return {
+                "status_code": int(response.status),
+                "elapsed_ms": (time.monotonic() - started) * 1000.0,
+                "body": body,
+            }
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"api webhook HTTP {exc.code}: {detail}") from exc
+
+
+def _probe_source_evidence_journal(
+    cfg: _Phase8Config, env: dict[str, str], *, artifact_name: str = "source_evidence_journal_probe.json"
+) -> dict[str, Any]:
+    """Read and chain-validate the auth root's journal after the load leg."""
+    journal_path = env.get(
+        "E2E_SOURCE_EVIDENCE_JOURNAL_PATH",
+        "/var/lib/b26_p2/source_evidence.jsonl",
+    )
+    code = (
+        "import json;"
+        "from app.revenue_verification.source_evidence_journal import "
+        "load_source_fact_records;"
+        f"p={journal_path!r};"
+        "r=load_source_fact_records(p) or [];"
+        "print(json.dumps({"
+        "'path':p,'record_count':len(r),"
+        "'prepared_count':sum(1 for x in r if x.get('version')!='b26-p2-source-fact-outcome-v1'),"
+        "'outcome_count':sum(1 for x in r if x.get('version')=='b26-p2-source-fact-outcome-v1'),"
+        "'tip':r[-1].get('record_hash') if r else None}))"
+    )
+    proc = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.e2e.yml",
+            "exec",
+            "-T",
+            "auth_ingress",
+            "python",
+            "-c",
+            code,
+        ],
+        cwd=str(cfg.repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "source evidence journal probe failed: "
+            f"{proc.stdout}{proc.stderr}"
+        )
+    payload = None
+    for line in reversed(proc.stdout.splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            payload = json.loads(line)
+            break
+    if payload is None:
+        raise RuntimeError("source evidence journal probe returned no JSON")
+    if int(payload.get("record_count", 0)) <= 0:
+        raise RuntimeError("source evidence journal is empty after the load leg")
+    if int(payload.get("outcome_count", 0)) <= 0:
+        raise RuntimeError("source evidence journal has no signed outcomes")
+    artifact = cfg.artifact_dir / artifact_name
+    artifact.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return payload
 
 
 def _wait_for_auth_root(
@@ -1312,6 +1596,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         # dedicated auth root (single secret-delivery law; the API
         # never receives it) and boot the root alongside the relay.
         _provision_ingress_dsn_file(cfg, env)
+        _provision_source_attestation_key(env)
         run_step(
             "compose_up_runtime",
             [
@@ -1603,6 +1888,100 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             raise r3_step_error
         if collect_error is not None:
             raise collect_error
+        journal_probe = _probe_source_evidence_journal(cfg, env)
+        replay_tenant = _seed_replay_tenant(cfg)
+        replay_request = _auth_replay_request(replay_tenant)
+        try:
+            api_seed = _post_api_webhook(cfg, replay_request)
+        except Exception as exc:
+            raise RuntimeError(
+                f"{exc}\nAUTH_ROOT_LOGS_TAIL:\n{_auth_logs_tail(cfg, env)}"
+            ) from exc
+        if int(api_seed.get("status_code", 0)) != 200:
+            raise RuntimeError(
+                "api replay seed request failed: "
+                f"{api_seed.get('status_code')} {api_seed.get('body')}"
+            )
+        api_event_id = (api_seed.get("body") or {}).get("event_id")
+        if not api_event_id:
+            raise RuntimeError(
+                f"api replay seed returned no event_id: {api_seed.get('body')}"
+            )
+        replay_request["event_id"] = str(api_event_id)
+        try:
+            first_replay = _post_auth_request(replay_request)
+        except Exception as exc:
+            raise RuntimeError(
+                f"{exc}\nAUTH_ROOT_LOGS_TAIL:\n{_auth_logs_tail(cfg, env)}"
+            ) from exc
+        if int(first_replay.get("status_code", 0)) != 200:
+            raise RuntimeError(
+                "auth-root replay seed request failed: "
+                f"{first_replay.get('status_code')} {first_replay.get('body')}"
+            )
+        pre_restart_probe = _probe_source_evidence_journal(
+            cfg, env, artifact_name="source_evidence_journal_pre_restart_probe.json"
+        )
+        # The journal is mounted on a durable volume in the e2e topology.
+        # Restart the sole writer and re-read the chain; a restart must not
+        # erase the retained source history used by cold redelivery.
+        run_step(
+            "restart_auth_ingress_for_journal",
+            [
+                "docker",
+                "compose",
+                "-f",
+                "docker-compose.e2e.yml",
+                "restart",
+                "auth_ingress",
+            ],
+        )
+        _wait_for_auth_root(env)
+        journal_restart_probe = _probe_source_evidence_journal(
+            cfg, env, artifact_name="source_evidence_journal_restart_probe.json"
+        )
+        if (
+            int(journal_restart_probe.get("record_count", 0))
+            != int(pre_restart_probe.get("record_count", 0))
+            or str(journal_restart_probe.get("tip", ""))
+            != str(pre_restart_probe.get("tip", ""))
+        ):
+            raise RuntimeError(
+                "source evidence journal was not preserved across auth-root restart"
+            )
+        burst_size = 20
+
+        def _replay_call(_index: int) -> dict[str, Any]:
+            payload = dict(replay_request)
+            payload["event_id"] = str(uuid4())
+            payload["idempotency_key"] = f"phase8-restart-burst-{uuid4()}"
+            return _post_auth_request(payload)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=burst_size
+        ) as executor:
+            burst = list(executor.map(_replay_call, range(burst_size)))
+        status_codes = [int(item.get("status_code", 0)) for item in burst]
+        if status_codes != [200] * burst_size:
+            raise RuntimeError(
+                f"post-restart cold replay burst failed: {status_codes}"
+            )
+        latencies = sorted(float(item["elapsed_ms"]) for item in burst)
+        p95_index = min(len(latencies) - 1, int(round(0.95 * (len(latencies) - 1))))
+        replay_evidence = {
+            "tenant_id": replay_tenant["tenant_id"],
+            "first_status": first_replay.get("status_code"),
+            "pre_restart_record_count": pre_restart_probe.get("record_count"),
+            "post_restart_record_count": journal_restart_probe.get("record_count"),
+            "burst_size": burst_size,
+            "burst_status_codes": status_codes,
+            "burst_p95_ms": latencies[p95_index],
+            "burst_max_ms": max(latencies),
+        }
+        (cfg.artifact_dir / "auth_root_post_restart_replay.json").write_text(
+            json.dumps(replay_evidence, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
         r3_profile = _extract_profile_metrics_from_r3_log(
             cfg.logs_dir / "r3_ingestion_under_fire.log",
             "EG3_4_Test2_Month18",
@@ -1783,6 +2162,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         )
         _assert_secret_hygiene(cfg.logs_dir / "compose_logs.log")
         gates["eg8_7_operational_readiness_pack"] = "pass"
+        gates["eg8_8_source_evidence_journal"] = "pass"
         return {
             "run_authority": run_authority,
             "openapi_spec_sha256": openapi_spec_sha256,
@@ -1790,6 +2170,9 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "eg8_5": eg85_evidence,
             "negative_controls": negative_controls,
             "container_identity": container_identity_evidence,
+            "source_evidence_journal": journal_probe,
+            "source_evidence_journal_restart": journal_restart_probe,
+            "auth_root_post_restart_replay": replay_evidence,
         }
     finally:
         if llm_load_proc is not None and llm_load_proc.poll() is None:

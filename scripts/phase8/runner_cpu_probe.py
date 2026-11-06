@@ -78,6 +78,28 @@ def _read_psi_cpu() -> dict[str, dict[str, float]] | None:
     return out
 
 
+def _read_psi_io() -> dict[str, dict[str, float]] | None:
+    text = _read_text("/proc/pressure/io")
+    if not text:
+        return None
+    out: dict[str, dict[str, float]] = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        values: dict[str, float] = {}
+        for part in parts[1:]:
+            if "=" not in part:
+                continue
+            key, _, raw = part.partition("=")
+            try:
+                values[key] = float(raw)
+            except ValueError:
+                continue
+        out[parts[0]] = values
+    return out
+
+
 def _read_cgroup_throttle() -> dict[str, int] | None:
     for path in ("/sys/fs/cgroup/cpu.stat", "/sys/fs/cgroup/cpu/cpu.stat"):
         text = _read_text(path)
@@ -140,8 +162,29 @@ def _classify(cmdline: str, comm: str) -> str:
     return "other"
 
 
-def _snapshot_processes() -> dict[int, tuple[str, str, int]]:
-    snapshot: dict[int, tuple[str, str, int]] = {}
+def _read_cmdline(pid: int) -> str | None:
+    text = _read_text(f"/proc/{pid}/cmdline")
+    if not text:
+        return None
+    return text.replace("\x00", " ").strip()[:240] or None
+
+
+def _read_ppid(pid: int) -> int | None:
+    text = _read_text(f"/proc/{pid}/stat")
+    if not text:
+        return None
+    close_idx = text.rfind(")")
+    if close_idx < 0:
+        return None
+    fields = text[close_idx + 2 :].split()
+    try:
+        return int(fields[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def _snapshot_processes() -> dict[int, tuple[str, str, int, str]]:
+    snapshot: dict[int, tuple[str, str, int, str]] = {}
     for entry in os.scandir("/proc"):
         if not entry.name.isdigit():
             continue
@@ -168,7 +211,12 @@ def _snapshot_processes() -> dict[int, tuple[str, str, int]]:
         cmdline = cmdline_text.replace("\x00", " ").strip()
         if not cmdline:
             continue
-        snapshot[pid] = (_classify(cmdline, comm), comm[:40], utime + stime)
+        snapshot[pid] = (
+            _classify(cmdline, comm),
+            comm[:40],
+            utime + stime,
+            cmdline[:240],
+        )
     return snapshot
 
 
@@ -193,9 +241,10 @@ def main() -> int:
     class_cpu_ticks: dict[str, int] = {}
     class_cpu_max_pct: dict[str, float] = {}
     pid_cpu_ticks: dict[int, int] = {}
-    pid_meta: dict[int, tuple[str, str]] = {}
+    pid_meta: dict[int, tuple[str, str, str]] = {}
     busy_pct_samples: list[float] = []
     psi_some_avg10_samples: list[float] = []
+    psi_io_some_avg10_samples: list[float] = []
     psi_first: dict[str, float] = {}
     psi_last: dict[str, float] = {}
     throttle_first: dict[str, int] | None = None
@@ -218,6 +267,7 @@ def main() -> int:
             cur_stat = _read_proc_stat_busy()
             cur_procs = _snapshot_processes()
             cur_psi = _read_psi_cpu()
+            cur_psi_io = _read_psi_io()
             cur_throttle = _read_cgroup_throttle()
             if throttle_first is None and cur_throttle is not None:
                 throttle_first = dict(cur_throttle)
@@ -226,13 +276,13 @@ def main() -> int:
 
             pid_delta_ticks: dict[int, int] = {}
             class_delta_ticks: dict[str, int] = {}
-            for pid, (cls, comm, ticks) in cur_procs.items():
+            for pid, (cls, comm, ticks, cmdline) in cur_procs.items():
                 prev_entry = prev_procs.get(pid)
                 delta = max(0, ticks - prev_entry[2]) if prev_entry else 0
                 if delta <= 0:
                     continue
                 pid_delta_ticks[pid] = delta
-                pid_meta[pid] = (cls, comm)
+                pid_meta[pid] = (cls, comm, cmdline)
                 pid_cpu_ticks[pid] = pid_cpu_ticks.get(pid, 0) + delta
                 class_delta_ticks[cls] = class_delta_ticks.get(cls, 0) + delta
 
@@ -270,6 +320,10 @@ def main() -> int:
                     if kind == "some" and "avg10" in values:
                         psi_some_avg10_samples.append(values["avg10"])
                     psi_entry[kind] = entry
+            if cur_psi_io:
+                io_some = cur_psi_io.get("some") or {}
+                if "avg10" in io_some:
+                    psi_io_some_avg10_samples.append(io_some["avg10"])
 
             top_interval = sorted(
                 (
@@ -277,6 +331,9 @@ def main() -> int:
                         "pid": pid,
                         "class": pid_meta[pid][0],
                         "comm": pid_meta[pid][1],
+                        "cmdline": pid_meta[pid][2],
+                        "ppid": _read_ppid(pid),
+                        "parent_cmdline": _read_cmdline(_read_ppid(pid) or 0),
                         "cpu_pct": round(100.0 * (delta / _CLK_TCK) / interval_s, 3),
                     }
                     for pid, delta in pid_delta_ticks.items()
@@ -291,6 +348,7 @@ def main() -> int:
                 "total_busy_pct": round(total_busy_pct, 3),
                 "classes_cpu_pct": classes_pct,
                 "psi": psi_entry,
+                "psi_io": cur_psi_io,
                 "loadavg": _read_loadavg(),
                 "top": top_interval,
             }
@@ -321,6 +379,9 @@ def main() -> int:
                 "pid": pid,
                 "class": pid_meta[pid][0],
                 "comm": pid_meta[pid][1],
+                "cmdline": pid_meta[pid][2],
+                "ppid": _read_ppid(pid),
+                "parent_cmdline": _read_cmdline(_read_ppid(pid) or 0),
                 "cpu_s_total": round(ticks / _CLK_TCK, 3),
             }
             for pid, ticks in pid_cpu_ticks.items()
@@ -365,6 +426,9 @@ def main() -> int:
         ),
         "psi_cpu_some_avg10_max": max(psi_some_avg10_samples)
         if psi_some_avg10_samples
+        else None,
+        "psi_io_some_avg10_max": max(psi_io_some_avg10_samples)
+        if psi_io_some_avg10_samples
         else None,
         "throttle_delta": throttle_delta,
         "loadavg_end": _read_loadavg(),

@@ -58,7 +58,27 @@ _CANDIDATE_SCOPE_SQL = """
           WHERE existing.tenant_id = wi.tenant_id
             AND existing.provider = wi.provider
             AND existing.provider_native_event_reference = wi.provider_native_event_reference
-            AND existing.b26_p2_source_authority_state = 'current'
+            AND public.b26_p2_verdict_has_current_authority(existing.id)
+      )
+      -- XXV-2 (A2/B10): a second authenticated event over one commerce
+      -- identity is a provider amendment, not a fresh capture. It becomes
+      -- money only through the authorised correction surface, which relinks
+      -- the existing verdict to this row. Treating it as an independent
+      -- match would create a second verdict for the same commerce identity
+      -- and collide with the relink's event-reference uniqueness. The first
+      -- authenticated row (no earlier authenticated sibling) stays eligible.
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.webhook_ingress_identities prior
+          WHERE prior.tenant_id = wi.tenant_id
+            AND prior.provider = wi.provider
+            AND prior.normalized_commerce_reference_kind
+                IS NOT DISTINCT FROM wi.normalized_commerce_reference_kind
+            AND prior.normalized_commerce_reference_value
+                IS NOT DISTINCT FROM wi.normalized_commerce_reference_value
+            AND prior.b26_p2_provenance_status = 'authenticated_known'
+            AND prior.id <> wi.id
+            AND (prior.created_at, prior.id) < (wi.created_at, wi.id)
       )
 """
 

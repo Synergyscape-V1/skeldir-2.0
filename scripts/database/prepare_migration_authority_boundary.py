@@ -211,6 +211,29 @@ def _create_nologin_role_if_missing(cursor, role_name: str) -> None:
     cursor.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role_name)))
 
 
+def _create_bypass_rls_nologin_role(cursor, role_name: str) -> None:
+    """Create the dedicated cross-tenant login lookup role.
+
+    The login lookup must find a user by an identifier hash before any user
+    identity exists, while public.users is FORCE RLS with a self-select
+    policy. A NOLOGIN role with BYPASSRLS and only the SELECT privilege the
+    function needs is the physical boundary; it is not a runtime login and is
+    not a member of any generic runtime role.
+    """
+    if _role_exists(cursor, role_name):
+        cursor.execute(
+            sql.SQL("ALTER ROLE {} NOLOGIN BYPASSRLS").format(
+                sql.Identifier(role_name)
+            )
+        )
+        return
+    cursor.execute(
+        sql.SQL("CREATE ROLE {} NOLOGIN BYPASSRLS").format(
+            sql.Identifier(role_name)
+        )
+    )
+
+
 def _ensure_role_membership(cursor, *, role_name: str, member_name: str) -> None:
     cursor.execute(
         """
@@ -253,6 +276,13 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
             )
             _create_nologin_role_if_missing(cursor, config.app_rw_role)
             _create_nologin_role_if_missing(cursor, config.app_ro_role)
+            _create_bypass_rls_nologin_role(cursor, "app_auth_lookup")
+            cursor.execute(
+                sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                    sql.Identifier("app_auth_lookup"),
+                    sql.Identifier(config.migration_user),
+                )
+            )
             _create_or_alter_login_role(
                 cursor,
                 config.worker_user,

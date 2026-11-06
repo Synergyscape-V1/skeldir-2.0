@@ -1,0 +1,426 @@
+{
+  "actor": "provider (three signed amendment events over one payment intent) + shipping correction caller + real B2.3 worker + live beat schedule + Trust builder/signer + independent verification",
+  "all_three_established": true,
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T12:59:56.815725Z",
+    "commit_sha": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+    "compiled_genesis_hash": "085571c1a477b143ab4a98bad175c745acf072177e675f26b5d4f89d1b65971b",
+    "compiled_public_key_sha256": "456f13765b47465a955540cba96fcfe9fe68c7071c1202902ed6acd8c08af85e",
+    "compiled_source_attestation_public_key_sha256": "b208bc8d778f0e6f746397066f51d44b654b6271b0822c59624e2fafc6d50ac3",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "0aae8ce5a801e613556ab60f6900e9d63655b7f3",
+    "worktree_status_summary": {
+      "entries": 5,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M docs/forensics/B2.6-P2-XXV-Verified-Checkpoint.md",
+        " M docs/forensics/evidence/b26_p2_xxv_a8/xxv-b5-p13-exact-head-20261101.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-exact-head-ci-f0f-20261101.json",
+        "?? session-ses_ebfe.md"
+      ]
+    }
+  },
+  "authority_universe": "95bc8913-4522-4573-a9fd-0003df969bf1",
+  "baseline": {
+    "authority_state": "current",
+    "captured_minor": 4321,
+    "correction_events": 0,
+    "expected_minor": 4321,
+    "linked_event_reference": "evt_xxv3A8c89f427df7f",
+    "linked_ingress_id": "1b621236-c5cb-4d5e-93cb-ec540ef4b3f9",
+    "net_minor": 4321,
+    "supersession_rows": 0,
+    "verdicts_for_identity": 1
+  },
+  "commerce_reference": "pi_xxv3corrc4d08e999a4345",
+  "cycles": [
+    {
+      "after_worker": {
+        "authority_state": "current",
+        "captured_minor": 5100,
+        "correction_events": 1,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B188716893f1",
+        "linked_ingress_id": "5000f03a-ec95-48e7-a46c-239599d831d1",
+        "net_minor": 5100,
+        "supersession_rows": 2,
+        "verdicts_for_identity": 1
+      },
+      "amending_event": {
+        "amount_minor": 5100,
+        "body_sha256": "fc203c99da9ce7dc2831b17be0029c90d970a66c8ebbf9da12fe65e2cbb783c8",
+        "event_reference": "evt_xxv3B188716893f1",
+        "http": {
+          "body": "{\"status\":\"success\",\"event_id\":\"3f590475-6a2d-4c4e-b4b0-43faf4ec66be\",\"idempotency_key\":\"fce381e2-7eed-44e5-bf83-4660195aa2ba\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+          "status": 200
+        }
+      },
+      "amending_event_created_its_own_verdict": 0,
+      "before": {
+        "authority_state": "current",
+        "captured_minor": 4321,
+        "correction_events": 0,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3A8c89f427df7f",
+        "linked_ingress_id": "1b621236-c5cb-4d5e-93cb-ec540ef4b3f9",
+        "net_minor": 4321,
+        "supersession_rows": 0,
+        "verdicts_for_identity": 1
+      },
+      "correction_http": {
+        "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"d8aef7d3-5028-4122-a9c5-243cd7c2087f\",\"revenue_event_written\":false,\"net_verified_amount_minor\":4321}",
+        "status": 200
+      },
+      "cycle": 1,
+      "history_after_worker": {
+        "ledger_prefix_digest": "0658663005f56e5fa7027033369d76efe70f188584d9134341b5eb73dcb66f64",
+        "ledger_rows": 8,
+        "ledger_tip_hash": "534993d5bbb0764ea6e9f7c2e7f2fcae644f671aad1d51ced1e5ba04829f73a7",
+        "ledger_tip_seq": 8
+      },
+      "history_before": {
+        "ledger_prefix_digest": "df81d273515e1368d31f7f65fe9b96e6f2d8852aab96aa51acb0f8c4e8ab612e",
+        "ledger_rows": 6,
+        "ledger_tip_hash": "16761c915d57d9a5ba897322f1e23351d81c75ceca300452d067a1d31318e656",
+        "ledger_tip_seq": 6
+      },
+      "ingress": {
+        "amount_minor": 5100,
+        "commerce_reference": "pi_xxv3corrc4d08e999a4345",
+        "created_at": "2026-11-01 13:11:52.232139+00:00",
+        "currency": "USD",
+        "demotion_reason": null,
+        "event_reference": "evt_xxv3B188716893f1",
+        "event_timestamp": "2026-11-01 13:11:50+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "5000f03a-ec95-48e7-a46c-239599d831d1",
+        "is_current": true,
+        "provenance": "authenticated_known"
+      },
+      "last_observation_before": {
+        "author": "app_worker",
+        "ledger_count": 6,
+        "observation_id": 11,
+        "observed_at": "2026-11-01T13:11:50.172019+00:00",
+        "observed_at_epoch": 1793538710.172019,
+        "violations": ""
+      },
+      "old_source": {
+        "amount_minor": 4321,
+        "commerce_reference": "pi_xxv3corrc4d08e999a4345",
+        "created_at": "2026-11-01 13:11:49.096823+00:00",
+        "currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_xxv3B188716893f1",
+        "event_reference": "evt_xxv3A8c89f427df7f",
+        "event_timestamp": "2026-11-01 13:11:49+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "1b621236-c5cb-4d5e-93cb-ec540ef4b3f9",
+        "is_current": false,
+        "provenance": "authenticated_known"
+      },
+      "reconciliation": {
+        "attestation_status": "xxv_attested",
+        "net": 5100,
+        "source_authority_state": "current",
+        "status": 200
+      },
+      "scheduled_observation": {
+        "author": "app_worker",
+        "ledger_count": 8,
+        "observation_id": 13,
+        "observed_at": "2026-11-01T13:14:59.820233+00:00",
+        "violations": ""
+      },
+      "signed_financial_result": {
+        "currency": "USD",
+        "established": true,
+        "trust_status": 200,
+        "verification_status": "verified",
+        "verified_revenue_minor": 5100
+      }
+    },
+    {
+      "after_worker": {
+        "authority_state": "current",
+        "captured_minor": 6200,
+        "correction_events": 2,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B2d7be8f63ba",
+        "linked_ingress_id": "1c23a8f6-300f-4f1a-a2d5-37792332ff4a",
+        "net_minor": 6200,
+        "supersession_rows": 4,
+        "verdicts_for_identity": 1
+      },
+      "amending_event": {
+        "amount_minor": 6200,
+        "body_sha256": "e20045b795be710fa612ef9f41c560704aa3f8ed4d43f4db9566f7a329c25f37",
+        "event_reference": "evt_xxv3B2d7be8f63ba",
+        "http": {
+          "body": "{\"status\":\"success\",\"event_id\":\"9552b606-776f-4cec-8d65-ce8636c18bc5\",\"idempotency_key\":\"945d5fbb-3785-467d-8d59-5d65df1ed52b\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+          "status": 200
+        }
+      },
+      "amending_event_created_its_own_verdict": 0,
+      "before": {
+        "authority_state": "current",
+        "captured_minor": 5100,
+        "correction_events": 1,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B188716893f1",
+        "linked_ingress_id": "5000f03a-ec95-48e7-a46c-239599d831d1",
+        "net_minor": 5100,
+        "supersession_rows": 2,
+        "verdicts_for_identity": 1
+      },
+      "correction_http": {
+        "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"d8aef7d3-5028-4122-a9c5-243cd7c2087f\",\"revenue_event_written\":false,\"net_verified_amount_minor\":5100}",
+        "status": 200
+      },
+      "cycle": 2,
+      "history_after_worker": {
+        "ledger_prefix_digest": "8910011f3d499ee23483526c7f61059f4a1eff9e3b51a95edc091ecfb23e47c1",
+        "ledger_rows": 10,
+        "ledger_tip_hash": "bf1b6fba218e5686deae978f6401105591f866a8197a57c2cfb2f9e75a0e5a93",
+        "ledger_tip_seq": 10
+      },
+      "history_before": {
+        "ledger_prefix_digest": "0658663005f56e5fa7027033369d76efe70f188584d9134341b5eb73dcb66f64",
+        "ledger_rows": 8,
+        "ledger_tip_hash": "534993d5bbb0764ea6e9f7c2e7f2fcae644f671aad1d51ced1e5ba04829f73a7",
+        "ledger_tip_seq": 8
+      },
+      "ingress": {
+        "amount_minor": 6200,
+        "commerce_reference": "pi_xxv3corrc4d08e999a4345",
+        "created_at": "2026-11-01 13:18:58.368063+00:00",
+        "currency": "USD",
+        "demotion_reason": null,
+        "event_reference": "evt_xxv3B2d7be8f63ba",
+        "event_timestamp": "2026-11-01 13:11:51+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "1c23a8f6-300f-4f1a-a2d5-37792332ff4a",
+        "is_current": true,
+        "provenance": "authenticated_known"
+      },
+      "last_observation_before": {
+        "author": "app_worker",
+        "ledger_count": 8,
+        "observation_id": 13,
+        "observed_at": "2026-11-01T13:14:59.820233+00:00",
+        "observed_at_epoch": 1793538899.820233,
+        "violations": ""
+      },
+      "old_source": {
+        "amount_minor": 5100,
+        "commerce_reference": "pi_xxv3corrc4d08e999a4345",
+        "created_at": "2026-11-01 13:11:52.232139+00:00",
+        "currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_xxv3B2d7be8f63ba",
+        "event_reference": "evt_xxv3B188716893f1",
+        "event_timestamp": "2026-11-01 13:11:50+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "5000f03a-ec95-48e7-a46c-239599d831d1",
+        "is_current": false,
+        "provenance": "authenticated_known"
+      },
+      "reconciliation": {
+        "attestation_status": "xxv_attested",
+        "net": 6200,
+        "source_authority_state": "current",
+        "status": 200
+      },
+      "scheduled_observation": {
+        "author": "app_worker",
+        "ledger_count": 10,
+        "observation_id": 15,
+        "observed_at": "2026-11-01T13:19:59.638607+00:00",
+        "violations": ""
+      },
+      "signed_financial_result": {
+        "currency": "USD",
+        "established": true,
+        "trust_status": 200,
+        "verification_status": "verified",
+        "verified_revenue_minor": 6200
+      }
+    },
+    {
+      "after_worker": {
+        "authority_state": "current",
+        "captured_minor": 7300,
+        "correction_events": 3,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B32e1e0e3507",
+        "linked_ingress_id": "a5cc1fda-7668-4fb5-8504-be9f5dcb3339",
+        "net_minor": 7300,
+        "supersession_rows": 6,
+        "verdicts_for_identity": 1
+      },
+      "amending_event": {
+        "amount_minor": 7300,
+        "body_sha256": "295bfb5fd29bfd57d526be1d9820df2d9496d68a9e58f198970fe126a4687e72",
+        "event_reference": "evt_xxv3B32e1e0e3507",
+        "http": {
+          "body": "{\"status\":\"success\",\"event_id\":\"40a23984-e7e4-42af-9e52-6e70978c3301\",\"idempotency_key\":\"fccf9da3-601f-4f3c-aae4-4fe396bf4dbb\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+          "status": 200
+        }
+      },
+      "amending_event_created_its_own_verdict": 0,
+      "before": {
+        "authority_state": "current",
+        "captured_minor": 6200,
+        "correction_events": 2,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B2d7be8f63ba",
+        "linked_ingress_id": "1c23a8f6-300f-4f1a-a2d5-37792332ff4a",
+        "net_minor": 6200,
+        "supersession_rows": 4,
+        "verdicts_for_identity": 1
+      },
+      "correction_http": {
+        "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"d8aef7d3-5028-4122-a9c5-243cd7c2087f\",\"revenue_event_written\":false,\"net_verified_amount_minor\":6200}",
+        "status": 200
+      },
+      "cycle": 3,
+      "history_after_worker": {
+        "ledger_prefix_digest": "da7b335038ce0543489ac6f79c7e4762f18b4ca3c0335c9edbbd28b32ae1682d",
+        "ledger_rows": 12,
+        "ledger_tip_hash": "85bcb7a5d32cf3e8e1c1328a2d0d82adb96351103daa09fc9f6f00e12faebd2e",
+        "ledger_tip_seq": 12
+      },
+      "history_before": {
+        "ledger_prefix_digest": "8910011f3d499ee23483526c7f61059f4a1eff9e3b51a95edc091ecfb23e47c1",
+        "ledger_rows": 10,
+        "ledger_tip_hash": "bf1b6fba218e5686deae978f6401105591f866a8197a57c2cfb2f9e75a0e5a93",
+        "ledger_tip_seq": 10
+      },
+      "ingress": {
+        "amount_minor": 7300,
+        "commerce_reference": "pi_xxv3corrc4d08e999a4345",
+        "created_at": "2026-11-01 13:20:02.287847+00:00",
+        "currency": "USD",
+        "demotion_reason": null,
+        "event_reference": "evt_xxv3B32e1e0e3507",
+        "event_timestamp": "2026-11-01 13:11:52+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "a5cc1fda-7668-4fb5-8504-be9f5dcb3339",
+        "is_current": true,
+        "provenance": "authenticated_known"
+      },
+      "last_observation_before": {
+        "author": "app_worker",
+        "ledger_count": 10,
+        "observation_id": 15,
+        "observed_at": "2026-11-01T13:19:59.638607+00:00",
+        "observed_at_epoch": 1793539199.638607,
+        "violations": ""
+      },
+      "old_source": {
+        "amount_minor": 6200,
+        "commerce_reference": "pi_xxv3corrc4d08e999a4345",
+        "created_at": "2026-11-01 13:18:58.368063+00:00",
+        "currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_xxv3B32e1e0e3507",
+        "event_reference": "evt_xxv3B2d7be8f63ba",
+        "event_timestamp": "2026-11-01 13:11:51+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "1c23a8f6-300f-4f1a-a2d5-37792332ff4a",
+        "is_current": false,
+        "provenance": "authenticated_known"
+      },
+      "reconciliation": {
+        "attestation_status": "xxv_attested",
+        "net": 7300,
+        "source_authority_state": "current",
+        "status": 200
+      },
+      "scheduled_observation": {
+        "author": "app_worker",
+        "ledger_count": 12,
+        "observation_id": 17,
+        "observed_at": "2026-11-01T13:25:00.100404+00:00",
+        "violations": ""
+      },
+      "signed_financial_result": {
+        "currency": "USD",
+        "established": true,
+        "trust_status": 200,
+        "verification_status": "verified",
+        "verified_revenue_minor": 7300
+      }
+    }
+  ],
+  "event_references": [
+    "evt_xxv3A8c89f427df7f",
+    "evt_xxv3B188716893f1",
+    "evt_xxv3B2d7be8f63ba",
+    "evt_xxv3B32e1e0e3507"
+  ],
+  "expected_amounts_minor": [
+    4321,
+    5100,
+    6200,
+    7300
+  ],
+  "falsifier": "xxv-a2b10-natural-corrections",
+  "initial_event": {
+    "amount_minor": 4321,
+    "body_sha256": "7a63b697ed1f1cab96037bd4bbd9748c5e98a633be9be8b7c30b9cb5a45670c1",
+    "event_reference": "evt_xxv3A8c89f427df7f",
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"c85b8590-e1cc-43fa-b588-0d767a289e15\",\"idempotency_key\":\"b344c63e-ad0a-4606-9961-519e5b18a639\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    }
+  },
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "limit_of_inference": "three corrections establish the A2/B10 positive path on this artifact. They do not establish READY-FOR-AUDIT, exact historical restoration, or any other XXV gate.",
+  "observation_control": "the beat schedule was never paused and the observer was never invoked by this run; observations are the live scheduled rows and their ids/timestamps are recorded per cycle",
+  "property": "P-XXV A2/B10: three lawful amount-changing corrections conduct through the shipping correction surface and the real B2.3 worker, are witnessed by the live scheduled observer, and are served by the signed Trust consumer",
+  "recorded_at_utc": "2026-11-01T13:25:03.230275Z",
+  "scheduler_after": {
+    "beat_instance_id": "3478a9ca-381d-421b-bd1e-8e0639e9ca12",
+    "last_tick": "2026-11-01T13:24:06.247423+00:00",
+    "tenant_rows": 2
+  },
+  "scheduler_before": {
+    "beat_instance_id": "3478a9ca-381d-421b-bd1e-8e0639e9ca12",
+    "last_tick": "2026-11-01T13:11:05.859395+00:00",
+    "tenant_rows": 2
+  },
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "d99ea4d5-963d-448f-92c5-fa609b914325"
+    }
+  ],
+  "verdict_id": "d8aef7d3-5028-4122-a9c5-243cd7c2087f"
+}

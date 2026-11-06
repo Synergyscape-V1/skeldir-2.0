@@ -250,8 +250,8 @@ jobs:
           grep -E "^p13_missing_cases=0$" /tmp/b25_p13_e2e.out
           grep -E "^p13_expected_cases=21$" /tmp/b25_p13_e2e.out
           grep -E "^p13_executed_cases=21$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_expected=158$" /tmp/b25_p13_e2e.out
-          grep -E "^p13_tamper_fields_failed=158$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_expected=160$" /tmp/b25_p13_e2e.out
+          grep -E "^p13_tamper_fields_failed=160$" /tmp/b25_p13_e2e.out
           grep -E "^p13_load_bearing_paths=97$" /tmp/b25_p13_e2e.out
 
           # C10: the signature commits to the producing inference regime.
@@ -2605,7 +2605,7 @@ jobs:
           # contract under the corrected authority.
           granted=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT string_agg(table_name || ':' || privilege_type, ',' ORDER BY table_name, privilege_type) FROM information_schema.table_privileges WHERE grantee = 'app_trust_issuer'")
-          test "$granted" = "trust_access_log:SELECT,trust_access_log:UPDATE,trust_envelope_issuance_log:INSERT,trust_envelope_issuance_log:SELECT,trust_export_artifact_attempts:INSERT,trust_export_artifact_attempts:SELECT,trust_export_artifact_attempts:UPDATE,trust_final_issuance_identity:SELECT,trust_issuance_attempts:INSERT,trust_issuance_attempts:SELECT,trust_issuance_attempts:UPDATE"
+          test "$granted" = "b26_p2_adjustment_attestation:SELECT,b26_p2_adjustment_evidence:SELECT,b26_p2_source_money_attestation:SELECT,trust_access_log:SELECT,trust_access_log:UPDATE,trust_envelope_issuance_log:INSERT,trust_envelope_issuance_log:SELECT,trust_export_artifact_attempts:INSERT,trust_export_artifact_attempts:SELECT,trust_export_artifact_attempts:UPDATE,trust_final_issuance_identity:SELECT,trust_issuance_attempts:INSERT,trust_issuance_attempts:SELECT,trust_issuance_attempts:UPDATE"
           guard=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.trust_access_log'::regclass AND tgname = 'trg_trust_access_log_issuance_authority_guard'")
           test "$guard" = "1"
@@ -3116,14 +3116,20 @@ jobs:
           # failing after a passing proof, and the B0.5.3.3 Gate C guard refuses
           # to run without an explicit runtime DSN rather than let conftest fall
           # back to stale credentials.
-          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:55462/skeldir_c19
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:55462/skeldir_c19
-          B23_DATABASE_URL: postgresql+asyncpg://app_worker:app_worker@127.0.0.1:55462/skeldir_c19
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
+          # The C19 runner selects free loopback ports because a shared host
+          # may already own the historical defaults. Consume the exact
+          # topology capsule instead of re-introducing a fixed port.
+          set -a
+          . "$RUNNER_TEMP/c19-teardown.env"
+          set +a
+          export DATABASE_URL="postgresql+asyncpg://app_user:app_user@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
+          export MIGRATION_DATABASE_URL="postgresql://migration_owner:migration_owner@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
+          export B23_DATABASE_URL="postgresql+asyncpg://app_worker:app_worker@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
           physics="backend/tests/trust/test_b25_p13_c19_legitimate_source_physics.py"
-          admin="postgresql://postgres:postgres@127.0.0.1:55462/skeldir_c19"
+          admin="postgresql://postgres:postgres@127.0.0.1:${C19_POSTGRES_PORT}/skeldir_c19"
           python -m pytest "$physics" -q --no-header -p no:randomly
 
           # Severance 1: allocation verification is no longer stripped of

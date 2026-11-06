@@ -18,6 +18,9 @@ CANONICAL_SINK_MODULE = ROOT / "backend/app/finance_reconciliation/canonical_sin
 EXTERNAL_SEMANTICS_MODULE = (
     ROOT / "backend/app/finance_reconciliation/external_semantics.py"
 )
+SOURCE_ATTESTATION_MODULE = (
+    ROOT / "backend/app/revenue_verification/source_attestation.py"
+)
 TRUST_REFUSAL_MODULE = ROOT / "backend/app/trust/refusal.py"
 AUTHORITATIVE_FIELDS_MODULE = (
     ROOT / "backend/app/finance_reconciliation/authoritative_fields.py"
@@ -1018,6 +1021,145 @@ def xi_nc19_capability_seal_removed() -> None:
     )
 
 
+def coverage_oracle_rounding_equiv() -> None:
+    """Independently equivalent wrong rounding in the independent oracle."""
+    _replace_once(
+        COVERAGE_AUTHORITY_MODULE,
+        "from decimal import Decimal, ROUND_HALF_UP, localcontext",
+        "from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP, localcontext",
+        defect="coverage_oracle_rounding_equiv",
+    )
+    _replace_once(
+        COVERAGE_AUTHORITY_MODULE,
+        "rounding=ROUND_HALF_UP",
+        "rounding=ROUND_DOWN",
+        defect="coverage_oracle_rounding_equiv",
+    )
+
+
+def coverage_carrier_math_unchecked() -> None:
+    """Remove the type-boundary leg validation; alternate arithmetic passes."""
+    _replace_once(
+        COVERAGE_AUTHORITY_MODULE,
+        "        _verify_math_against_legs(self)",
+        "        pass  # NC-R0031-CARRIER",
+        defect="coverage_carrier_math_unchecked",
+    )
+
+
+def source_attestation_coverage_aggregation() -> None:
+    """XXV: the legitimate read allowance must not admit aggregation."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "SELECT SUM(v.canonical_net_verified_amount_minor) AS verdict_net,",
+        defect="source_attestation_coverage_aggregation",
+    )
+
+
+def source_attestation_coverage_count() -> None:
+    """Equivalent aggregate: COUNT over the same money column."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "SELECT COUNT(v.canonical_net_verified_amount_minor) AS verdict_net,",
+        defect="source_attestation_coverage_count",
+    )
+
+
+def source_attestation_coverage_avg() -> None:
+    """Equivalent aggregate: AVG over the same money column."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "SELECT AVG(v.canonical_net_verified_amount_minor) AS verdict_net,",
+        defect="source_attestation_coverage_avg",
+    )
+
+
+def source_attestation_coverage_group_by() -> None:
+    """Equivalent aggregation surface: GROUP BY over the same read."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        " WHERE v.tenant_id = :tenant_id AND v.id = :verdict_id\n",
+        " WHERE v.tenant_id = :tenant_id AND v.id = :verdict_id\n GROUP BY v.tenant_id\n",
+        defect="source_attestation_coverage_group_by",
+    )
+
+
+def source_attestation_coverage_window() -> None:
+    """Equivalent aggregation surface: window SUM over the same money."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "SELECT SUM(v.canonical_net_verified_amount_minor) OVER (PARTITION BY v.tenant_id) AS verdict_net,",
+        defect="source_attestation_coverage_window",
+    )
+
+
+def source_attestation_coverage_newline_count() -> None:
+    """Equivalent COUNT aggregation with a newline-formatted SELECT."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "select\n    count(v.canonical_net_verified_amount_minor)\n        as verdict_net,",
+        defect="source_attestation_coverage_newline_count",
+    )
+
+
+def source_attestation_coverage_tab_avg() -> None:
+    """Equivalent AVG aggregation with a tab-formatted SELECT."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "SELECT v.canonical_net_verified_amount_minor AS verdict_net,",
+        "select\tavg(v.canonical_net_verified_amount_minor)\t as verdict_net,",
+        defect="source_attestation_coverage_tab_avg",
+    )
+
+
+def source_attestation_coverage_concatenation() -> None:
+    """Aggregate SQL split across literal concatenation."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "DEFAULT_ATTESTATION_KEY_ID =",
+        "_NC_CONCAT = (\n"
+        "    \"SELECT \"\n"
+        "    + \"COUNT(v.canonical_net_verified_amount_minor) AS verdict_net\"\n"
+        ")\n\nDEFAULT_ATTESTATION_KEY_ID =",
+        defect="source_attestation_coverage_concatenation",
+    )
+
+
+def source_attestation_coverage_python_sum() -> None:
+    """Python summation over a string-named coverage column."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "DEFAULT_ATTESTATION_KEY_ID =",
+        "_NC_PY_SUM = sum(row[\"verified_amount_minor\"] for row in [])\n\nDEFAULT_ATTESTATION_KEY_ID =",
+        defect="source_attestation_coverage_python_sum",
+    )
+
+
+def source_attestation_coverage_func_sum() -> None:
+    """SQLAlchemy func.sum over a coverage column."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "DEFAULT_ATTESTATION_KEY_ID =",
+        "_NC_FUNC_SUM = func.sum(v.verified_amount_minor)\n\nDEFAULT_ATTESTATION_KEY_ID =",
+        defect="source_attestation_coverage_func_sum",
+    )
+
+
+def source_attestation_coverage_appended() -> None:
+    """A second aggregate read appended after the pinned legitimate read."""
+    _replace_once(
+        SOURCE_ATTESTATION_MODULE,
+        "DEFAULT_ATTESTATION_KEY_ID =",
+        "_NC_APPENDED_READ = \"SELECT SUM(v.verified_amount_minor) FROM public.b23_match_verdicts\"\n\nDEFAULT_ATTESTATION_KEY_ID =",
+        defect="source_attestation_coverage_appended",
+    )
+
+
 def xi_nc20_denominator_regression() -> None:
     """XI-NC-20: B2.3 coverage implementation semantic drift (AST pin)."""
     _replace_once(
@@ -1405,6 +1547,27 @@ DEFECTS: dict[str, Callable[[], None]] = {
     ),
     "xi_nc19_capability_seal_removed": xi_nc19_capability_seal_removed,
     "xi_nc20_denominator_regression": xi_nc20_denominator_regression,
+    "coverage_oracle_rounding_equiv": coverage_oracle_rounding_equiv,
+    "coverage_carrier_math_unchecked": coverage_carrier_math_unchecked,
+    "source_attestation_coverage_aggregation": (
+        source_attestation_coverage_aggregation
+    ),
+    "source_attestation_coverage_count": source_attestation_coverage_count,
+    "source_attestation_coverage_avg": source_attestation_coverage_avg,
+    "source_attestation_coverage_group_by": source_attestation_coverage_group_by,
+    "source_attestation_coverage_window": source_attestation_coverage_window,
+    "source_attestation_coverage_newline_count": (
+        source_attestation_coverage_newline_count
+    ),
+    "source_attestation_coverage_tab_avg": source_attestation_coverage_tab_avg,
+    "source_attestation_coverage_concatenation": (
+        source_attestation_coverage_concatenation
+    ),
+    "source_attestation_coverage_python_sum": (
+        source_attestation_coverage_python_sum
+    ),
+    "source_attestation_coverage_func_sum": source_attestation_coverage_func_sum,
+    "source_attestation_coverage_appended": source_attestation_coverage_appended,
     "xi_immutable_fields_removed": xi_immutable_fields_removed,
     "xii_nc01_platform_storage_mutable_list": xii_nc01_platform_storage_mutable_list,
     "xii_nc02_shallow_freeze_mapping_child": xii_nc02_shallow_freeze_mapping_child,

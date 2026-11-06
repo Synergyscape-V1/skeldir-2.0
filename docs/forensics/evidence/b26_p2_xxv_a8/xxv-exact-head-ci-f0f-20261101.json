@@ -1,0 +1,70 @@
+{
+  "status": "PASS_WITH_PRESERVED_CAPACITY_FAILURE",
+  "head": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+  "base_main": "0d11ab07e0a2cf2bc5f66f6d7e0fd4f424ef0ac0",
+  "checks": {
+    "success": 189,
+    "skipped": 6,
+    "neutral": 3,
+    "in_progress_at_capture": ["r5-remediation"]
+  },
+  "phase8": {
+    "workflow": "b07-phase8-full-physics-staging",
+    "run_id": 41306045556,
+    "job_id": 124851641586,
+    "attempt_1": {
+      "result": "FAILURE",
+      "artifact_id": 13083667090,
+      "r3_test2_achieved_rps": 42.671,
+      "r3_test2_latency_p50_ms": 881.984,
+      "r3_test2_latency_p95_ms": 2792.0,
+      "r3_test2_latency_p99_ms": 3419.721,
+      "client_semaphore_wait_p95_ms": 3399.862,
+      "send_lag_over_1000ms_count": 1239,
+      "failure": "r3_ingestion_under_fire: EG3_4_Test2_Month18 passed=false"
+    },
+    "attempt_2": {
+      "result": "SUCCESS",
+      "artifact_id": 13084118674,
+      "r3_test2_achieved_rps": 45.895,
+      "r3_test2_latency_p95_ms": 814.897,
+      "r3_test2_latency_p99_ms": 1321.18,
+      "all_scenarios_passed": true
+    },
+    "hypothesis": "The first attempt's client-side semaphore wait and send lag show generator starvation on a busy 4-core runner, not a changed server-side assertion: the same unchanged gate passed on the second attempt with all thresholds intact.",
+    "disposition": "The failed artifact is preserved. The unchanged rerun is the recorded green attempt; no threshold was lowered."
+  },
+  "b0_4": {
+    "run_id": 41306045664,
+    "job_id": 124850107821,
+    "conclusion": "success",
+    "prior_failure_preserved": {
+      "head": "fa72fa825d5851814b925dd55d241231ede91e0a",
+      "run_id": 41300482598,
+      "cause": "one 5-second QueuePool checkout timeout in the 1000-request S4 PII storm",
+      "unchanged_rerun": "passed on 667d615a3 and f0f582b27"
+    }
+  },
+  "b11_p3": {
+    "run_id": 41306045497,
+    "job_id": 124846511570,
+    "conclusion": "success"
+  },
+  "m1": {
+    "run_id": 41306045376,
+    "job_id": 124846511202,
+    "conclusion": "success"
+  },
+  "b2_5_p13": {
+    "run_id": 41306045669,
+    "conclusion": "success",
+    "c9_positive_job_id": 124846515210,
+    "c17_lineage_job_id": 124846515538,
+    "e2e_core_job_id": 124846515306
+  },
+  "limits": [
+    "The Phase 8 first-attempt failure is a real observed capacity/generator result; the green attempt does not erase it.",
+    "The B0.4 failure was a one-request timeout under a 1000-request storm; the assertion was not weakened.",
+    "This is exact-head CI evidence, not protected-main exact-main proof."
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "actor": "least-privilege runtime readers plus the signed Trust reader",
+  "all_readers_equal": true,
+  "amount_minor": 4321,
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T12:59:56.815725Z",
+    "commit_sha": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+    "compiled_genesis_hash": "085571c1a477b143ab4a98bad175c745acf072177e675f26b5d4f89d1b65971b",
+    "compiled_public_key_sha256": "456f13765b47465a955540cba96fcfe9fe68c7071c1202902ed6acd8c08af85e",
+    "compiled_source_attestation_public_key_sha256": "b208bc8d778f0e6f746397066f51d44b654b6271b0822c59624e2fafc6d50ac3",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "0aae8ce5a801e613556ab60f6900e9d63655b7f3",
+    "worktree_status_summary": {
+      "entries": 5,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M docs/forensics/B2.6-P2-XXV-Verified-Checkpoint.md",
+        " M docs/forensics/evidence/b26_p2_xxv_a8/xxv-b5-p13-exact-head-20261101.json",
+        "?? docs/forensics/evidence/b26_p2_xxv_a8/xxv-exact-head-ci-f0f-20261101.json",
+        "?? session-ses_ebfe.md"
+      ]
+    }
+  },
+  "authority_universe": "95bc8913-4522-4573-a9fd-0003df969bf1",
+  "checks": {
+    "conservation_empty": true,
+    "history_verified_after_catchup": true,
+    "ledger_count_equal": true,
+    "pre_reader_boundary_consistent": true,
+    "prefix_digest_equal": true,
+    "scope_identity_stable": true,
+    "signed_trust_money_equal": true,
+    "snapshot_violations_empty": true,
+    "tip_hash_equal": true,
+    "tip_seq_equal": true,
+    "universe_equal": true,
+    "unsigned_reconciliation_money_equal": true
+  },
+  "conservation_violations": [],
+  "continuity": {
+    "n": 18,
+    "tip": "e71a2f209b44b9d172604e740112117282f72f28ce733758d308c840e1c68210"
+  },
+  "falsifier": "xxv-b9-same-cohort",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "post_history_integrity_status": "verified",
+  "pre_reader_boundary": {
+    "history_integrity_status": "unverifiable",
+    "reconciliation_status": 200,
+    "signed_trust_status": 404,
+    "source_authority_state": "historically_unverifiable"
+  },
+  "prefix_digest": "394a8ca6132550f217f37d42c8836c4c5728e9210708224fbb90e2932a652dad",
+  "property": "B9: the independent canonical readers agree about one persisted cohort's ledger tip, universe, scope, conservation, and money",
+  "provider": "stripe",
+  "recorded_at_utc": "2026-11-01T13:35:03.712005Z",
+  "scope_identity": {
+    "first": "462054cf8a5d4ce09006a90b7850d1e7ed3d1736d2cbb5413641dc9afdcaa236",
+    "second": "462054cf8a5d4ce09006a90b7850d1e7ed3d1736d2cbb5413641dc9afdcaa236"
+  },
+  "signed_trust": {
+    "status": 200,
+    "verified_revenue_minor": 4321
+  },
+  "snapshot": {
+    "authority_universe": "95bc8913-4522-4573-a9fd-0003df969bf1",
+    "n": 18,
+    "prefix_digest": "394a8ca6132550f217f37d42c8836c4c5728e9210708224fbb90e2932a652dad",
+    "tip_hash": "e71a2f209b44b9d172604e740112117282f72f28ce733758d308c840e1c68210",
+    "tip_seq": 27,
+    "violations": ""
+  },
+  "tenant_id": "d99ea4d5-963d-448f-92c5-fa609b914325",
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "d99ea4d5-963d-448f-92c5-fa609b914325"
+    }
+  ],
+  "unsigned_reconciliation": {
+    "canonical_net_verified_amount_minor": 4321,
+    "status": 200
+  },
+  "verdict_id": "2a90d92b-b2e5-47c6-a2f2-816a9c6658c8",
+  "verdict_status": "matched_provisional",
+  "witness_state": {
+    "n": 18,
+    "tip_hash": "e71a2f209b44b9d172604e740112117282f72f28ce733758d308c840e1c68210",
+    "tip_seq": 27
+  }
+}

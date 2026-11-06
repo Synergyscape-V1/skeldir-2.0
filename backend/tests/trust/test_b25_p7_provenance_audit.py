@@ -64,6 +64,11 @@ class _FakeResult:
     def mappings(self) -> _FakeMappings:
         return _FakeMappings(self._row)
 
+    def scalar(self) -> object:
+        if self._row is not None and "tenant_id" in self._row:
+            return str(self._row["tenant_id"])
+        return "00000000-0000-0000-0000-000000000001"
+
 
 class FakeTrustSession:
     def __init__(

@@ -2,6 +2,7 @@
 from enum import Enum
 from uuid import UUID, uuid4
 
+import asyncio
 import os
 
 import pytest
@@ -122,18 +123,27 @@ async def test_matview_failure_persists_correlation_id(monkeypatch):
             ).get(propagate=True)
 
         async with engine.begin() as conn:
-            row = await conn.execute(
-                text(
-                    """
-                    SELECT correlation_id, task_kwargs
-                    FROM worker_failed_jobs
-                    WHERE task_name = 'app.tasks.matviews.refresh_single'
-                    ORDER BY failed_at DESC
-                    LIMIT 1
-                    """
-                )
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+                {"tenant_id": str(tenant_id)},
             )
-            row = row.fetchone()
+            row = None
+            for _ in range(50):
+                result = await conn.execute(
+                    text(
+                        """
+                        SELECT correlation_id, task_kwargs
+                        FROM worker_failed_jobs
+                        WHERE task_name = 'app.tasks.matviews.refresh_single'
+                        ORDER BY failed_at DESC
+                        LIMIT 1
+                        """
+                    )
+                )
+                row = result.fetchone()
+                if row is not None:
+                    break
+                await asyncio.sleep(0.1)
 
         assert row is not None, "Failed matview task should be captured in worker_failed_jobs"
         assert str(row[0]) == correlation_id
@@ -194,18 +204,27 @@ async def test_worker_survives_matview_failure(monkeypatch):
         assert failures_after == failures_before + 1
 
         async with engine.begin() as conn:
-            row = await conn.execute(
-                text(
-                    """
-                    SELECT correlation_id
-                    FROM worker_failed_jobs
-                    WHERE task_name = 'app.tasks.matviews.refresh_single'
-                    AND correlation_id = :correlation_id
-                    """
-                ),
-                {"correlation_id": UUID(fail_correlation_id)},
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+                {"tenant_id": str(tenant_id)},
             )
-            row = row.fetchone()
+            row = None
+            for _ in range(50):
+                result = await conn.execute(
+                    text(
+                        """
+                        SELECT correlation_id
+                        FROM worker_failed_jobs
+                        WHERE task_name = 'app.tasks.matviews.refresh_single'
+                        AND correlation_id = :correlation_id
+                        """
+                    ),
+                    {"correlation_id": UUID(fail_correlation_id)},
+                )
+                row = result.fetchone()
+                if row is not None:
+                    break
+                await asyncio.sleep(0.1)
 
         assert row is not None
 

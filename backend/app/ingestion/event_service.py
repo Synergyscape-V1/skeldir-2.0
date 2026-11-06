@@ -1015,7 +1015,8 @@ async def _relay_verified_ingress_to_auth_root(
         ),
         "raw_body_b64": str(envelope.get("raw_body_b64") or ""),
         "signature_header": str(envelope.get("signature_header") or ""),
-        "event_id": str(finalization.get("idempotency_key") or ""),
+        "event_id": str(finalization.get("event_id") or ""),
+        "idempotency_key": str(finalization.get("idempotency_key") or ""),
         "auth_version": str(consequence.get("auth_version") or "v1"),
         "provider_native_commerce_reference": str(
             finalization.get("provider_native_commerce_reference") or ""

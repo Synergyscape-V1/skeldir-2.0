@@ -148,6 +148,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/validation/evidence/contracts/",
     "docs/environment/",
     "docs/forensics/evidence/b14_p0/",
+    "docs/forensics/evidence/b26_p2_xxv_a8/",
     "docs/forensics/validation/runtime/R6_context_gathering/",
     "tmp/",
     "tmp_asyncpg_check.py",
@@ -203,6 +204,11 @@ ALLOWED_M1_PATH_PREFIXES = [
     "Makefile",
     "pytest.ini",
     "scripts/guard_no_docker.py",
+    # B2.2-P0 webhook-surface declaration and its enforcer: the declared
+    # runtime-internal adjustment routes are contract governance, not M1
+    # local-development authority.
+    "contracts-internal/governance/b22_p0_declared_webhook_surface.main.json",
+    "scripts/ci/enforce_b22_p0_webhook_surface_lock.py",
     "scripts/smoke/",
     "scripts/ci/run_m1_onboarding_bootstrap.sh",
     "scripts/ci/validate_m1_local_dev_authority.py",
@@ -566,6 +572,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/enforce_b21_p4_benchmark_adjudication.py",
     "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py",
     "scripts/phase8/run_phase8_closure_pack.py",
+    "scripts/phase8/runner_cpu_probe.py",
     # Relocated to scripts/migrations/ci_topology/; the deletions still appear in the
     # diff against the baseline, so the former paths stay listed.
     "scripts/ci/apply_throughput_topology.py",
@@ -584,6 +591,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "contracts/reconciliation/b2.6/",
     "scripts/ci/_b26_p1_controlled_defect.py",
     "scripts/ci/adjudicate_b26_p1_proof_plane.py",
+    "scripts/ci/adjudicate_b26_p2_proof_plane.py",
     "scripts/ci/assert_b26_p1_container_equivalence.py",
     "scripts/ci/attest_b26_p1_inherited_conduction.py",
     "scripts/ci/b26_p1_evidence.py",
@@ -754,6 +762,10 @@ ALLOWED_M1_PATH_PREFIXES = [
     # manufacturing-law content scan still applies beneath it.
     "alembic/versions/007_skeldir_foundation/202609280001_b26_p2_corrective_xv_binding_closure.py",
     "backend/app/webhooks/commerce_derivation.py",
+    "backend/app/webhooks/verification_contract.py",
+    "scripts/ci/enforce_b13_p0_scope_truth.py",
+    "scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py",
+    "scripts/ci/write_b26_p2_recovery_cell.py",
     "scripts/ci/validate_b26_p2_xv_binding.py",
     "scripts/ci/validate_b26_p2_xv_physics.py",
     # --- B2.6-P2 Corrective XVI sovereign closure surface ---
@@ -784,11 +796,30 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xvii_physics.py",
     "scripts/ci/test_b26_p2_xvii_negative_controls.py",
     "backend/tests/finance_reconciliation/test_b26_p2_xvii_semantic_closure.py",
+    # XXV realtime refresh coalescing: the webhook chain's per-event
+    # matview refresh is bounded to one per tenant per second; explicit
+    # refreshes remain immediate. Same exemption shape; prohibitions intact.
+    "backend/app/tasks/matviews.py",
+    "backend/tests/test_b26_p2_matview_trailing_refresh.py",
+    "backend/tests/test_b11_p3_jwt_rotation_semantics.py",
+    "backend/tests/trust/test_b26_p2_source_evidence_journal.py",
     "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py",
     # B2.6-P2 Corrective XIII fixture convergence (terminal law): proof
     # and equivalence corpora authenticate lawful fixtures via the atomic
     # transition (admin allowed); negative fixtures stay pending/unknown.
     # Same exemption shape; every prohibition retained unchanged.
+    # --- B2.6-P2 Corrective XXV auth downgrade compatibility ---
+    # The runtime lookup stays owned by the dedicated BYPASSRLS role while
+    # the legacy lookup remains migration-owned, so the predecessor B1.2
+    # downgrade can recreate/drop it during the supported B0.3 closure
+    # walk. The proof-plane validators below track the same XXV amendment
+    # and coverage-surface changes. Same exemption shape; every prohibited
+    # path/content pattern is retained unchanged.
+    "alembic/versions/007_skeldir_foundation/202603021130_b12_p4_token_refresh_lifecycle.py",
+    "scripts/ci/enforce_b23_p6_end_to_end_closure.py",
+    "scripts/ci/validate_b26_p2_xix_physics.py",
+    "scripts/ci/validate_b26_p2_xviii_contract_hierarchy.py",
+    "scripts/ci/validate_b26_p2_xviii_physics.py",
     "scripts/ci/b26_p2_viii_equivalence.py",
     # B2.6-P2 Corrective XIII lane convergence (B2.5-P14 custody): the
     # trust-root auth_ingress service carries no B28 DSNs (untrusted).
@@ -821,6 +852,59 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docs/forensics/evidence/b11_p1/ssot_contract_snapshot.json",
     "contracts-internal/governance/b26_p2_authority_universe.pin.json",
     "contracts-internal/governance/b26_p2_x_semantic_universe.pin.json",
+    # --- B2.6-P2 Corrective XXV sovereign source attestation ---
+    # The authority over "the provider sent this amount" moves out of the
+    # database: the authentication root signs it, every reader verifies it
+    # against a fingerprint compiled into the image, and the mandatory proof
+    # sweeps the live financial state instead of judging its own fixture.
+    "alembic/versions/007_skeldir_foundation/202610270001_b26_p2_corrective_xxv_source_attestation.py",
+    "alembic/env.py",
+    "alembic/versions/007_skeldir_foundation/202610270002_b26_p2_corrective_xxv_provider_amendment.py",
+    "alembic/versions/007_skeldir_foundation/202610280001_b26_p2_xxv_post_capture_adjustment.py",
+    "backend/app/auth_service/server.py",
+    "backend/app/core/construction_authority.py",
+    "backend/app/core/control_plane.py",
+    "backend/app/core/secrets.py",
+    "backend/app/db/session.py",
+    "backend/app/revenue_verification/source_attestation.py",
+    "backend/app/revenue_verification/source_evidence.py",
+    "backend/app/revenue_verification/source_evidence_journal.py",
+    "backend/app/revenue_verification/source_journal_custody.py",
+    "backend/tests/trust/test_b26_p2_source_journal_custody.py",
+    "scripts/ops/source_journal_custody.py",
+    "backend/app/revenue_verification/verification_coverage.py",
+    "backend/app/trust/builder.py",
+    "backend/app/trust/issuance_session.py",
+    "backend/app/trust/witness_anchor.py",
+    "backend/Dockerfile",
+    "contracts-internal/governance/b11_process_authority.v1.json",
+    "docs/forensics/B2.5-P14-",
+    "docs/forensics/B2.6-P1-",
+    "docs/forensics/B2.6-P2-",
+    "scripts/ci/b26_p2_xxv_a1a5_custody.py",
+    "scripts/ci/b26_p2_xxv_attestation_sweep.py",
+    "scripts/ci/b26_p2_xxv_coverage.py",
+    "scripts/ci/b26_p2_xxv_falsify.py",
+    "scripts/ci/b26_p2_xxv_falsify_lineage.py",
+    "scripts/ci/b26_p2_xxv_lane.py",
+    "scripts/ci/b26_p2_xxv_recovery_probe.py",
+    "scripts/ci/b26_p2_xxv_r21_aging.py",
+    "scripts/ci/b26_p2_xxv_r21_cluster.py",
+    "scripts/ci/b26_p2_xxv_r21_currentness.py",
+    "scripts/ci/b26_p2_xxv_r21_equivalent_effects.py",
+    "scripts/ci/test_b26_p2_xix_negative_controls.py",
+    "scripts/ci/validate_b26_p2_xx_composition.py",
+    "scripts/ci/generate_b11_process_authority.py",
+    "scripts/ci/prove_b26_p2_xxv_b8_downstream.py",
+    "scripts/ci/prove_b26_p2_xxv_legacy_generations.py",
+    "scripts/ci/prove_b26_p2_xxv_predecessor_cohort.py",
+    "scripts/ci/validate_b26_p2_xxv_environment_predicates.py",
+    "scripts/database/verify_b26_migration_roles.py",
+    "scripts/database/provision_local_runtime_roles.py",
+    "frontend/src/types/api/index.ts",
+    "scripts/r5/r5_verification.py",
+    "infra/b11_p1/terraform/process_authority.tf",
+    "infra/b11_p1/terraform/outputs.tf",
 ]
 
 PROHIBITED_PATH_PATTERNS = [

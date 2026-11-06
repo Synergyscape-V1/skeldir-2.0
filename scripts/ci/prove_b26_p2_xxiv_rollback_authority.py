@@ -3,7 +3,8 @@
 
 The probe provisions a CI-faithful database, mints one signed witness
 checkpoint bound to the database authority universe, applies the supported
-003 -> 002 downgrade, and re-applies 002 -> 003. It then verifies that:
+data-carrying downgrade from the current head to 202610180002, and re-applies
+the chain to head. It then verifies that:
 
 * the same authority-universe row and DEFINER reader survive both directions;
 * the signed checkpoint still verifies against that universe while the
@@ -32,7 +33,7 @@ import psycopg2
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
-HEAD_REVISION = "202610180003"
+HEAD_REVISION = "202610280001"
 DOWN_REVISION = "202610180002"
 EMPTY_DIGEST = hashlib.sha256(b"").hexdigest()
 
@@ -229,7 +230,10 @@ def main() -> int:
         universe=universe_before,
     )
 
-    _run([sys.executable, "-m", "alembic", "downgrade", "-1"], env=env)
+    _run(
+        [sys.executable, "-m", "alembic", "downgrade", DOWN_REVISION],
+        env=env,
+    )
     down_revision = _revision(migration_dsn)
     if down_revision != DOWN_REVISION:
         raise RuntimeError(

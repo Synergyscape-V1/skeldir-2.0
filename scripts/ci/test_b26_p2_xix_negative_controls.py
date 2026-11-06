@@ -557,8 +557,13 @@ def main() -> int:
                 violations.append("xix_nc10_old_revision_served")
             except ConstructionAuthorityError:
                 checks["nc10_old_revision_red"] = True
-            assert_production_construction_authority(["202610180003"])
-            if migration_graph_head() != "202610180003":
+            try:
+                assert_production_construction_authority(["202610270001"])
+                violations.append("xix_nc10_old_revision_served")
+            except ConstructionAuthorityError:
+                checks["nc10_old_revision_red"] = True
+            assert_production_construction_authority(["202610280001"])
+            if migration_graph_head() != "202610280001":
                 violations.append("xix_nc10_head_mismatch")
             else:
                 checks["nc10_head_current"] = True

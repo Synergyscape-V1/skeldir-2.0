@@ -256,7 +256,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--webhooks-file",
-        default="backend/app/api/webhooks.py",
+        default="backend/app/webhooks/verification_contract.py",
     )
     parser.add_argument(
         "--webhook-contract-dir",
