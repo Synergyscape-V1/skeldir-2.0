@@ -87,6 +87,9 @@ jobs:
           # are provisioned by the test lane itself.
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_auth_lookup TO migration_owner WITH ADMIN OPTION;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_account_provisioner NOLOGIN BYPASSRLS;" || true
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_auth_lookup TO app_account_provisioner;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_account_provisioner TO migration_owner;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_ingress NOLOGIN;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE ROLE app_worker NOLOGIN;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT app_worker TO migration_owner;"

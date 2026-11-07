@@ -38,6 +38,23 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
 
 
+CREATE FUNCTION auth.lookup_single_active_tenant(p_user_id uuid) RETURNS uuid
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+    SELECT membership.tenant_id
+      FROM public.tenant_memberships AS membership
+     WHERE membership.user_id = p_user_id
+       AND membership.membership_status = 'active'
+       AND (
+           SELECT count(*)
+             FROM public.tenant_memberships AS active_membership
+            WHERE active_membership.user_id = p_user_id
+              AND active_membership.membership_status = 'active'
+       ) = 1
+     LIMIT 1
+$$;
+
 CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -68,6 +85,86 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
         $$;
 
 
+
+CREATE FUNCTION auth.register_business_account(p_login_identifier_hash text, p_password_hash text, p_workspace_name text) RETURNS TABLE(user_id uuid, tenant_id uuid)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    _tenant_id uuid := gen_random_uuid();
+    _user_id uuid := gen_random_uuid();
+    _membership_id uuid := gen_random_uuid();
+    _workspace_name text := btrim(p_workspace_name);
+BEGIN
+    IF p_login_identifier_hash IS NULL
+       OR btrim(p_login_identifier_hash) = '' THEN
+        RAISE EXCEPTION 'register_login_identifier_required'
+            USING ERRCODE = '22023';
+    END IF;
+    IF p_password_hash IS NULL OR btrim(p_password_hash) = '' THEN
+        RAISE EXCEPTION 'register_password_hash_required'
+            USING ERRCODE = '22023';
+    END IF;
+    IF _workspace_name IS NULL OR _workspace_name = '' THEN
+        RAISE EXCEPTION 'register_workspace_name_required'
+            USING ERRCODE = '22023';
+    END IF;
+    PERFORM 1 FROM public.roles WHERE code = 'admin';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'register_admin_role_missing'
+            USING ERRCODE = '23503';
+    END IF;
+
+    INSERT INTO public.tenants (
+        id,
+        name,
+        notification_email,
+        api_key_hash
+    ) VALUES (
+        _tenant_id,
+        _workspace_name,
+        'unavailable@skeldir.invalid',
+        encode(digest(gen_random_bytes(32), 'sha256'), 'hex')
+    );
+    INSERT INTO public.users (
+        id,
+        login_identifier_hash,
+        password_hash,
+        auth_provider,
+        is_active
+    ) VALUES (
+        _user_id,
+        p_login_identifier_hash,
+        p_password_hash,
+        'password',
+        true
+    );
+    INSERT INTO public.tenant_memberships (
+        id,
+        tenant_id,
+        user_id,
+        membership_status
+    ) VALUES (
+        _membership_id,
+        _tenant_id,
+        _user_id,
+        'active'
+    );
+    INSERT INTO public.tenant_membership_roles (
+        id,
+        tenant_id,
+        membership_id,
+        role_code
+    ) VALUES (
+        gen_random_uuid(),
+        _tenant_id,
+        _membership_id,
+        'admin'
+    );
+
+    RETURN QUERY SELECT _user_id, _tenant_id;
+END
+$$;
 
 CREATE FUNCTION public.b23_enforce_verdict_authorship() RETURNS trigger
     LANGUAGE plpgsql

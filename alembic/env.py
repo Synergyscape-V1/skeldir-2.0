@@ -172,17 +172,31 @@ def _provision_ci_migration_roles(connection) -> None:
                 # precise error if neither holds.
                 pass
     if current_role and current_role != "app_account_provisioner":
-        connection.execute(
+        lookup_to_provisioner = connection.execute(
             text(
-                'GRANT "app_auth_lookup" TO "app_account_provisioner"'
+                "SELECT pg_has_role('app_account_provisioner',"
+                " 'app_auth_lookup', 'member')"
             )
-        )
-        connection.execute(
+        ).scalar()
+        if not lookup_to_provisioner:
+            connection.execute(
+                text(
+                    'GRANT "app_auth_lookup" TO "app_account_provisioner"'
+                )
+            )
+        provisioner_to_migration = connection.execute(
             text(
-                'GRANT "app_account_provisioner" TO '
-                f'"{current_role}"'
+                "SELECT pg_has_role(current_user,"
+                " 'app_account_provisioner', 'member')"
             )
-        )
+        ).scalar()
+        if not provisioner_to_migration:
+            connection.execute(
+                text(
+                    'GRANT "app_account_provisioner" TO '
+                    f'"{current_role}"'
+                )
+            )
 
 
 def run_migrations_online() -> None:
