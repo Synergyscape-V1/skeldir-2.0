@@ -277,11 +277,27 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
             _create_nologin_role_if_missing(cursor, config.app_rw_role)
             _create_nologin_role_if_missing(cursor, config.app_ro_role)
             _create_bypass_rls_nologin_role(cursor, "app_auth_lookup")
+            _create_bypass_rls_nologin_role(cursor, "app_account_provisioner")
             cursor.execute(
                 sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
                     sql.Identifier("app_auth_lookup"),
                     sql.Identifier(config.migration_user),
                 )
+            )
+            # Account provisioning owns its account-only DEFINER function. The
+            # auth lookup owner is reached through this migration helper so a
+            # later revision can transfer the lookup function without a direct
+            # runtime membership. The helper is never granted to a runtime
+            # principal.
+            _ensure_role_membership(
+                cursor,
+                role_name="app_auth_lookup",
+                member_name="app_account_provisioner",
+            )
+            _ensure_role_membership(
+                cursor,
+                role_name="app_account_provisioner",
+                member_name=config.migration_user,
             )
             _create_or_alter_login_role(
                 cursor,

@@ -187,7 +187,10 @@ def _assert_users_grants_locked(grants_rows) -> None:
     assert ("app_ro", "SELECT") not in grants, "app_ro must not have SELECT on users"
     assert ("app_ro", "INSERT") not in grants, "app_ro must not have INSERT on users"
     assert ("app_user", "SELECT") in grants, "app_user must retain SELECT on users"
-    assert ("app_user", "INSERT") in grants, "app_user must retain INSERT on users"
+    assert ("app_user", "INSERT") not in grants, (
+        "app_user must not retain direct users INSERT; account creation is the"
+        " audited signup operation"
+    )
 
 
 def _activate_rls_probe_role(conn) -> tuple[str | None, bool]:
@@ -950,8 +953,8 @@ def test_09_users_schema_invariant_no_tenant_id_column():
 
 def test_10_users_preauth_insert_viability_under_force_rls():
     """
-    Enforce B1.2-P2 corrective v3 boundaries:
-    - runtime writer role (app_user) can INSERT users pre-auth (no app.current_user_id)
+    Enforce the supported-signup boundary:
+    - app_user cannot INSERT users directly, even with the historical policy
     - read-only runtime roles remain blocked from INSERT
 
     Negative control toggle (used by CI harness):
@@ -992,28 +995,30 @@ def test_10_users_preauth_insert_viability_under_force_rls():
         probe_user_id = uuid4()
         conn.execute(text("SET ROLE app_user"))
         conn.execute(text("RESET app.current_user_id"))
-        conn.execute(
-            text(
-                """
-                INSERT INTO users (id, login_identifier_hash, external_subject_hash, auth_provider)
-                VALUES (:user_id, :login_hash, :subject_hash, 'password')
-                """
-            ),
-            {
-                "user_id": str(probe_user_id),
-                "login_hash": f"preauth-insert-hash-{probe_user_id}",
-                "subject_hash": f"preauth-insert-subject-{probe_user_id}",
-            },
-        )
-        conn.execute(text("RESET ROLE"))
+        savepoint = conn.begin_nested()
+        try:
+            with pytest.raises(Exception):
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO users (id, login_identifier_hash, external_subject_hash, auth_provider)
+                        VALUES (:user_id, :login_hash, :subject_hash, 'password')
+                        """
+                    ),
+                    {
+                        "user_id": str(probe_user_id),
+                        "login_hash": f"preauth-insert-hash-{probe_user_id}",
+                        "subject_hash": f"preauth-insert-subject-{probe_user_id}",
+                    },
+                )
+        finally:
+            savepoint.rollback()
+            conn.execute(text("RESET ROLE"))
         inserted_row = conn.execute(
             text("SELECT id FROM users WHERE id = :user_id"),
             {"user_id": str(probe_user_id)},
         ).scalar_one_or_none()
-        assert str(inserted_row) == str(probe_user_id)
-        conn.execute(
-            text("DELETE FROM users WHERE id = :user_id"), {"user_id": str(probe_user_id)}
-        )
+        assert inserted_row is None
 
         conn.execute(text("SET ROLE app_ro"))
         savepoint = conn.begin_nested()

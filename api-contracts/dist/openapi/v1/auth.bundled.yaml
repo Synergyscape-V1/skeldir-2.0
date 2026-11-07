@@ -44,7 +44,6 @@ paths:
               required:
                 - email
                 - password
-                - tenant_id
               properties:
                 email:
                   type: string
@@ -55,9 +54,12 @@ paths:
                   format: password
                   minLength: 8
                 tenant_id:
-                  type: string
+                  type:
+                    - string
+                    - 'null'
                   format: uuid
-                  description: Required tenant selector for deterministic tenant-scoped token issuance
+                  default: null
+                  description: Optional tenant selector; omitted means the user's unique active membership
             example:
               email: user@example.com
               password: securepassword123
@@ -78,6 +80,7 @@ paths:
                   - access_token
                   - refresh_token
                   - expires_in
+                  - tenant_id
                   - user
                 properties:
                   access_token:
@@ -90,6 +93,10 @@ paths:
                     type: integer
                     description: Token expiration time in seconds
                     example: 3600
+                  tenant_id:
+                    type: string
+                    format: uuid
+                    description: Tenant selected for this token pair
                   user:
                     type: object
                     properties:
@@ -111,13 +118,13 @@ paths:
                   username: testuser
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: &ref_3
+          headers: &ref_7
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
               description: Request correlation ID for distributed tracing
-          content: &ref_4
+          content: &ref_8
             application/problem+json:
               schema:
                 type: object
@@ -185,12 +192,12 @@ paths:
                           example: INVALID_FORMAT
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: &ref_5
+          headers: &ref_9
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_6
+          content: &ref_10
             application/problem+json:
               schema:
                 type: object
@@ -199,7 +206,7 @@ paths:
                 properties: *ref_1
         '429':
           description: Too Many Requests - rate limit exceeded
-          headers: &ref_10
+          headers: &ref_5
             X-Correlation-ID:
               schema:
                 type: string
@@ -208,13 +215,103 @@ paths:
               schema:
                 type: integer
               description: Seconds to wait before retrying
-          content: &ref_11
+          content: &ref_6
             application/problem+json:
               schema:
                 type: object
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_0
                 properties: *ref_1
+  /api/auth/signup:
+    post:
+      summary: Create a supported business account
+      description: Create a new tenant, password identity, active membership and admin role atomically. The caller supplies only email, password and workspace_name; tenant, user, membership and role identifiers are server-generated.
+      operationId: signup
+      tags:
+        - Authentication
+      security: []
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - email
+                - password
+                - workspace_name
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                  minLength: 12
+                  maxLength: 72
+                workspace_name:
+                  type: string
+                  minLength: 1
+                  description: Nonempty after trimming
+            example:
+              email: owner@example.com
+              password: a-long-supported-password
+              workspace_name: Example Workspace
+      responses:
+        '201':
+          description: Account created
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - user_id
+                  - tenant_id
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+              example:
+                user_id: 550e8400-e29b-41d4-a716-446655440001
+                tenant_id: 550e8400-e29b-41d4-a716-446655440000
+        '409':
+          description: Bad Request - validation failed
+          headers: &ref_3
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_4
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+        '422':
+          description: Bad Request - validation failed
+          headers: *ref_3
+          content: *ref_4
+        '429':
+          description: Too Many Requests - rate limit exceeded
+          headers: *ref_5
+          content: *ref_6
   /api/auth/refresh:
     post:
       summary: Refresh access token
@@ -277,12 +374,12 @@ paths:
                 expires_in: 900
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: *ref_3
-          content: *ref_4
+          headers: *ref_7
+          content: *ref_8
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: *ref_5
-          content: *ref_6
+          headers: *ref_9
+          content: *ref_10
   /api/auth/logout:
     post:
       summary: User logout
@@ -302,7 +399,7 @@ paths:
         - name: Authorization
           in: header
           required: true
-          schema: &ref_7
+          schema: &ref_11
             type: string
           description: Bearer token for authentication (format - Bearer <token>)
       responses:
@@ -317,10 +414,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_8
+                required: &ref_12
                   - success
                   - correlation_id
-                properties: &ref_9
+                properties: &ref_13
                   success:
                     type: boolean
                   correlation_id:
@@ -334,12 +431,12 @@ paths:
                 message: Session terminated
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: *ref_3
-          content: *ref_4
+          headers: *ref_7
+          content: *ref_8
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: *ref_5
-          content: *ref_6
+          headers: *ref_9
+          content: *ref_10
   /api/auth/verify:
     get:
       summary: Verify token validity
@@ -359,7 +456,7 @@ paths:
         - name: Authorization
           in: header
           required: true
-          schema: *ref_7
+          schema: *ref_11
           description: Bearer token for authentication (format - Bearer <token>)
       responses:
         '200':
@@ -392,12 +489,12 @@ paths:
                 expires_at: '2025-11-26T15:30:00Z'
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: *ref_3
-          content: *ref_4
+          headers: *ref_7
+          content: *ref_8
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: *ref_5
-          content: *ref_6
+          headers: *ref_9
+          content: *ref_10
   /api/auth/admin/token-cutoff:
     post:
       summary: Admin token kill-switch
@@ -417,7 +514,7 @@ paths:
         - name: Authorization
           in: header
           required: true
-          schema: *ref_7
+          schema: *ref_11
           description: Bearer token for authentication (format - Bearer <token>)
       requestBody:
         required: true
@@ -483,12 +580,12 @@ paths:
                 message: Token cutoff updated
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: *ref_3
-          content: *ref_4
+          headers: *ref_7
+          content: *ref_8
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: *ref_5
-          content: *ref_6
+          headers: *ref_9
+          content: *ref_10
   /api/auth/admin/rbac-check:
     get:
       summary: Admin-only RBAC proof endpoint
@@ -508,7 +605,7 @@ paths:
         - name: Authorization
           in: header
           required: true
-          schema: *ref_7
+          schema: *ref_11
           description: Bearer token for authentication (format - Bearer <token>)
       responses:
         '200':
@@ -554,12 +651,12 @@ paths:
                 role: admin
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: *ref_3
-          content: *ref_4
+          headers: *ref_7
+          content: *ref_8
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: *ref_5
-          content: *ref_6
+          headers: *ref_9
+          content: *ref_10
   /api/auth/admin/membership-role:
     post:
       summary: Admin membership role update
@@ -579,7 +676,7 @@ paths:
         - name: Authorization
           in: header
           required: true
-          schema: *ref_7
+          schema: *ref_11
           description: Bearer token for authentication (format - Bearer <token>)
       requestBody:
         required: true
@@ -660,26 +757,16 @@ paths:
                 message: Membership role set to viewer.
         '400':
           description: Bad Request - validation failed
-          headers: &ref_12
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content: &ref_13
-            application/problem+json:
-              schema:
-                type: object
-                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: *ref_0
-                properties: *ref_1
-        '401':
-          description: Unauthorized - invalid or missing authentication
           headers: *ref_3
           content: *ref_4
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_7
+          content: *ref_8
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: *ref_5
-          content: *ref_6
+          headers: *ref_9
+          content: *ref_10
         '404':
           description: Resource not found
           headers: &ref_14
@@ -722,7 +809,7 @@ components:
       name: Authorization
       in: header
       required: true
-      schema: *ref_7
+      schema: *ref_11
       description: Bearer token for authentication (format - Bearer <token>)
   schemas:
     ProblemDetails:
@@ -732,25 +819,25 @@ components:
       properties: *ref_1
     SuccessResponse:
       type: object
-      required: *ref_8
-      properties: *ref_9
+      required: *ref_12
+      properties: *ref_13
   responses:
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers: *ref_3
-      content: *ref_4
+      headers: *ref_7
+      content: *ref_8
     ForbiddenError:
       description: Forbidden - authenticated but insufficient permissions
-      headers: *ref_5
-      content: *ref_6
+      headers: *ref_9
+      content: *ref_10
     RateLimitError:
       description: Too Many Requests - rate limit exceeded
-      headers: *ref_10
-      content: *ref_11
+      headers: *ref_5
+      content: *ref_6
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_12
-      content: *ref_13
+      headers: *ref_3
+      content: *ref_4
     NotFoundError:
       description: Resource not found
       headers: *ref_14

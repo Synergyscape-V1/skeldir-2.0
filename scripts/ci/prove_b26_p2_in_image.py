@@ -74,6 +74,7 @@ IDENTITY_FILES = [
     "backend/app/revenue_verification/corrections.py",
     "alembic/versions/007_skeldir_foundation/202610270002_b26_p2_corrective_xxv_provider_amendment.py",
     "alembic/versions/007_skeldir_foundation/202610280001_b26_p2_xxv_post_capture_adjustment.py",
+    "alembic/versions/007_skeldir_foundation/202611070001_supported_signup.py",
 ]
 
 # Corrective XIV stale falsifier probe (single-authority delta): the base
@@ -349,7 +350,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 image, "python", "/proof/assert_b26_p2_authority_universe.py",
                 "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202610280001",
+                "--migration-head", "202611070001",
                 "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
@@ -671,7 +672,7 @@ def main() -> int:
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
               f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                   "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                   "--migration-head", "202610280001",
+                   "--migration-head", "202611070001",
                 "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

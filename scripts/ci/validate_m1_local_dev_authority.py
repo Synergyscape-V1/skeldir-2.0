@@ -861,6 +861,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "alembic/env.py",
     "alembic/versions/007_skeldir_foundation/202610270002_b26_p2_corrective_xxv_provider_amendment.py",
     "alembic/versions/007_skeldir_foundation/202610280001_b26_p2_xxv_post_capture_adjustment.py",
+    "alembic/versions/007_skeldir_foundation/202611070001_supported_signup.py",
     "backend/app/auth_service/server.py",
     "backend/app/core/construction_authority.py",
     "backend/app/core/control_plane.py",

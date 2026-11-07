@@ -17,6 +17,8 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, Security
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 # Import generated Pydantic models
 from app.schemas.auth import (
@@ -29,6 +31,8 @@ from app.schemas.auth import (
     LoginResponse,
     RefreshRequest,
     RefreshResponse,
+    SignupRequest,
+    SignupResponse,
     User,
 )
 from app.core.secrets import get_secret
@@ -45,6 +49,8 @@ from app.services.auth_revocation import denylist_access_token, upsert_tokens_in
 from app.services.auth_tokens import (
     TokenPair,
     assign_membership_primary_role,
+    hash_login_identifier,
+    hash_password_for_storage,
     issue_login_token_pair,
     lookup_identity_by_login,
     resolve_tenant_membership,
@@ -58,6 +64,35 @@ admin_router = APIRouter(
     dependencies=[Security(get_auth_context, scopes=["admin"])],
 )
 _LOGIN_IDENTIFIER_PEPPER_CACHE: str | None = None
+_VALIDATION_TYPE_URL = "https://api.skeldir.com/problems/validation-error"
+
+
+def _validation_error(detail: str) -> AuthError:
+    return AuthError(
+        status_code=422,
+        title="Validation Failed",
+        detail=detail,
+        type_url=_VALIDATION_TYPE_URL,
+    )
+
+
+def _tenant_required_error() -> AuthError:
+    return AuthError(
+        status_code=400,
+        title="Validation Failed",
+        detail="tenant_required",
+        type_url=_VALIDATION_TYPE_URL,
+    )
+
+
+async def _lookup_single_active_tenant(session, user_id: UUID) -> UUID | None:
+    value = (
+        await session.execute(
+            text("SELECT auth.lookup_single_active_tenant(:user_id)"),
+            {"user_id": str(user_id)},
+        )
+    ).scalar_one_or_none()
+    return UUID(str(value)) if value is not None else None
 
 
 def _login_identifier_pepper() -> str | None:
@@ -85,18 +120,12 @@ async def login(
     Contract: POST /api/auth/login
     Spec: api-contracts/dist/openapi/v1/auth.bundled.yaml
     """
-    if request.tenant_id is None:
-        raise AuthError(
-            status_code=400,
-            title="Validation Failed",
-            detail="tenant_required",
-            type_url="https://api.skeldir.com/problems/validation-error",
-        )
-
     contract_testing = os.getenv("CONTRACT_TESTING") == "1"
 
     # Contract-conformance mode intentionally bypasses DB dependencies.
     if contract_testing:
+        if request.tenant_id is None:
+            raise _tenant_required_error()
         selected_tenant = request.tenant_id
         synthetic_user = uuid4()
         synthetic_email = "contract.user@example.com"
@@ -124,10 +153,20 @@ async def login(
                     raise unauthorized_auth_error()
                 if not verify_password(password, identity.password_hash):
                     raise unauthorized_auth_error()
+                selected_tenant = request.tenant_id
+                if selected_tenant is None:
+                    # Only a verified, active password identity reaches this
+                    # lookup. A non-unique active membership is not a tenant
+                    # choice this operation is allowed to make.
+                    selected_tenant = await _lookup_single_active_tenant(
+                        session, identity.user_id
+                    )
+                    if selected_tenant is None:
+                        raise _tenant_required_error()
                 resolved_tenant = await resolve_tenant_membership(
                     session,
                     user_id=identity.user_id,
-                    requested_tenant_id=request.tenant_id,
+                    requested_tenant_id=selected_tenant,
                 )
                 if resolved_tenant is None:
                     raise unauthorized_auth_error()
@@ -153,8 +192,72 @@ async def login(
         access_token=token_pair.access_token,
         refresh_token=token_pair.refresh_token,
         expires_in=token_pair.expires_in_seconds,
+        tenant_id=token_pair.tenant_id,
         user=user,
         token_type="Bearer",
+    )
+
+
+@router.post(
+    "/signup",
+    response_model=SignupResponse,
+    status_code=201,
+    operation_id="signup",
+    summary="Create a supported business account",
+    description=(
+        "Create a tenant, password identity, active membership and admin role "
+        "atomically from email, password and workspace_name."
+    ),
+)
+async def signup(
+    request: SignupRequest,
+    _x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+):
+    workspace_name = request.workspace_name.strip()
+    if not workspace_name:
+        raise _validation_error("workspace_name_required")
+    password = request.password.get_secret_value()
+    if len(password) < 12 or len(password.encode("utf-8")) > 72:
+        raise _validation_error("password_length_invalid")
+
+    login_hash = hash_login_identifier(
+        str(request.email), _login_identifier_pepper()
+    )
+    password_hash = hash_password_for_storage(password)
+    try:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                row = (
+                    await session.execute(
+                        text(
+                            "SELECT user_id, tenant_id FROM"
+                            " auth.register_business_account("
+                            ":login_identifier_hash, :password_hash,"
+                            " :workspace_name)"
+                        ),
+                        {
+                            "login_identifier_hash": login_hash,
+                            "password_hash": password_hash,
+                            "workspace_name": workspace_name,
+                        },
+                    )
+                ).mappings().one()
+    except IntegrityError as exc:
+        sqlstate = getattr(exc.orig, "sqlstate", None) or getattr(
+            exc.orig, "pgcode", None
+        )
+        if sqlstate == "23505":
+            raise AuthError(
+                status_code=409,
+                title="Conflict",
+                detail="email_already_registered",
+                type_url=_VALIDATION_TYPE_URL,
+            ) from exc
+        raise
+
+    return SignupResponse(
+        user_id=row["user_id"],
+        tenant_id=row["tenant_id"],
     )
 
 

@@ -33,7 +33,7 @@ import psycopg2
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
-HEAD_REVISION = "202610280001"
+HEAD_REVISION = "202611070001"
 DOWN_REVISION = "202610180002"
 EMPTY_DIGEST = hashlib.sha256(b"").hexdigest()
 

@@ -128,6 +128,7 @@ def _provision_ci_migration_roles(connection) -> None:
         return
     roles = (
         ("app_auth_lookup", "NOLOGIN BYPASSRLS"),
+        ("app_account_provisioner", "NOLOGIN BYPASSRLS"),
         ("app_user", "NOLOGIN"),
         ("app_ingress", "NOLOGIN"),
         ("app_worker", "NOLOGIN"),
@@ -170,6 +171,18 @@ def _provision_ci_migration_roles(connection) -> None:
                 # membership or already-transferred ownership and raises a
                 # precise error if neither holds.
                 pass
+    if current_role and current_role != "app_account_provisioner":
+        connection.execute(
+            text(
+                'GRANT "app_auth_lookup" TO "app_account_provisioner"'
+            )
+        )
+        connection.execute(
+            text(
+                'GRANT "app_account_provisioner" TO '
+                f'"{current_role}"'
+            )
+        )
 
 
 def run_migrations_online() -> None:

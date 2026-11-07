@@ -1462,9 +1462,9 @@ def main() -> int:
         # result-telemetry transport admission, then Corrective XXII;
         # the 300009..300006 (XXI) and XX heads must remain ancestors
         # (linear ancestry, no forks).
-        if "202610280001" not in heads.stdout:
+        if "202611070001" not in heads.stdout:
             return _fail("migration_head_missing_corrective_xxiii")
-        details["migration_head"] = "202610280001"
+        details["migration_head"] = "202611070001"
         relay_line = next(
             (ln for ln in procfile.splitlines() if ln.startswith("relay_b26_p2:")),
             "",

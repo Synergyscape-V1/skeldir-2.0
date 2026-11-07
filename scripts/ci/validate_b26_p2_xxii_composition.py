@@ -94,7 +94,7 @@ WORKFLOW = (
     / "b2_6-p1-finance-reconciliation-adjudication.yml"
 )
 
-HEAD = "202610280001"
+HEAD = "202611070001"
 
 
 def _read(path: Path, violations: list[str], tag: str) -> str:

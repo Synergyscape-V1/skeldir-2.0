@@ -4,7 +4,7 @@ reported as unqualified rather than served as current money.
 
 The probe provisions a CI-faithful database at the immediate predecessor
 generation 202610180003, seeds a real tenant/ingress/verdict cohort through
-the predecessor atomic transition, upgrades to 202610280001, and verifies:
+the predecessor atomic transition, upgrades to 202611070001, and verifies:
 
 * the tenant, ingress, and verdict rows still exist;
 * the XXV-only attestation relation exists and contains no attestation for
@@ -38,7 +38,7 @@ from app.core.secrets import get_database_url  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
 PREDECESSOR = "202610180003"
-HEAD = "202610280001"
+HEAD = "202611070001"
 NATURAL_PROOF = REPO_ROOT / "scripts" / "ci" / "prove_b26_p2_xxiv_natural_correction.py"
 SWEEP = REPO_ROOT / "scripts" / "ci" / "b26_p2_xxv_attestation_sweep.py"
 

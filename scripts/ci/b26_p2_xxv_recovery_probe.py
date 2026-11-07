@@ -2790,12 +2790,14 @@ def _a12_role_identity(dsn: str) -> dict:
             )
             row = cur.fetchone()
             cur.execute(
-                "SELECT has_table_privilege(current_user,"
-                " 'public.b23_match_verdicts', 'UPDATE'),"
-                " has_table_privilege(current_user,"
-                " 'public.webhook_ingress_identities', 'UPDATE'),"
-                " has_table_privilege(current_user,"
-                " 'public.attribution_events', 'UPDATE')"
+                "SELECT has_table_privilege(current_user, %s, 'UPDATE'),"
+                " has_table_privilege(current_user, %s, 'UPDATE'),"
+                " has_table_privilege(current_user, %s, 'UPDATE')",
+                (
+                    "public.b23_match_verdicts",
+                    "public.webhook_ingress_identities",
+                    "public.attribution_events",
+                ),
             )
             privileges = cur.fetchone()
     finally:
@@ -3112,9 +3114,10 @@ def _a12_mutate(
                 (contradictory, tenant_id, ingress["id"]),
             )
             cur.execute(
-                "UPDATE public.attribution_events"
-                " SET revenue_cents = %s, updated_at = now()"
-                " WHERE tenant_id = %s AND id = %s",
+                psql.SQL(
+                    "UPDATE {} SET revenue_cents = %s, updated_at = now()"
+                    " WHERE tenant_id = %s AND id = %s"
+                ).format(psql.Identifier("public", "attribution_events")),
                 (contradictory, tenant_id, attribution["id"]),
             )
             for table, state in states.items():
@@ -3283,9 +3286,10 @@ def _a12_restore(tenant_id: str, verdict_id: str, snapshot: dict) -> dict:
                 ),
             )
             cur.execute(
-                "UPDATE public.attribution_events"
-                " SET revenue_cents = %s, updated_at = %s"
-                " WHERE tenant_id = %s AND id = %s",
+                psql.SQL(
+                    "UPDATE {} SET revenue_cents = %s, updated_at = %s"
+                    " WHERE tenant_id = %s AND id = %s"
+                ).format(psql.Identifier("public", "attribution_events")),
                 (
                     attribution["revenue_cents"],
                     attribution["updated_at"],
