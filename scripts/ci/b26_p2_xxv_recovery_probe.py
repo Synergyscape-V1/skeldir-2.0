@@ -2734,18 +2734,44 @@ def _a12_proof_source_hashes() -> dict[str, str | None]:
 
 
 def _a12_proof_dsn(tenant_id: str) -> str:
-    """The required proof principal, scoped to the subject's RLS cohort.
+    """The exact required proof principal DSN for this lane."""
+    del tenant_id
+    return role_dsn("migration_owner")
 
-    The mandatory CI proof runs as ``migration_owner``.  ``public`` financial
-    tables are FORCE RLS, so that principal's census is empty unless the
-    governing tenant setting is present.  The setting is the real tenant under
-    test, not a substitute principal or a different database.
+
+def _a12_apply_proof_scope(tenant_id: str) -> str | None:
+    """Give the required proof principal the real subject's RLS cohort.
+
+    ``public`` financial tables are FORCE RLS.  The mandatory proof runs as
+    ``migration_owner``, which has no BYPASSRLS attribute, so its census is
+    empty unless the tenant setting is present.  This is the actual tenant
+    under test, not a substitute principal or a different database.
     """
-    from urllib.parse import quote  # noqa: PLC0415
-
-    return role_dsn("migration_owner") + "?options=" + quote(
-        f"-c app.current_tenant_id={tenant_id}", safe=""
+    rows = sql(
+        "SELECT setconfig FROM pg_roles r CROSS JOIN LATERAL"
+        " unnest(COALESCE(r.rolconfig, ARRAY[]::text[])) AS setconfig"
+        " WHERE r.rolname = 'migration_owner'"
+        " AND left(setconfig, length('app.current_tenant_id=')) ="
+        " 'app.current_tenant_id=' LIMIT 1"
     )
+    previous = None
+    if rows:
+        previous = str(rows[0][0]).split("=", 1)[1]
+    sql(
+        "ALTER ROLE migration_owner SET app.current_tenant_id = %s",
+        (tenant_id,),
+    )
+    return previous
+
+
+def _a12_restore_proof_scope(previous: str | None) -> None:
+    if previous is None:
+        sql("ALTER ROLE migration_owner RESET app.current_tenant_id")
+    else:
+        sql(
+            "ALTER ROLE migration_owner SET app.current_tenant_id = %s",
+            (previous,),
+        )
 
 
 def _a12_role_identity(dsn: str) -> dict:
@@ -3017,7 +3043,7 @@ def _a12_mutate(
                 raise RuntimeError(f"a12_snapshot_refused:{snapshot['reason']}")
             states = _a12_table_states(cur)
             snapshot["__guard_states__"] = states
-            result["original"] = snapshot
+            result["original"] = _a12_serialise_snapshot(snapshot)
             result["guard_configuration_original"] = states
             governed_reason = _a12_assert_governed_states(states)
             if governed_reason:
@@ -3118,32 +3144,41 @@ def _a12_mutate(
         verdict = observed.get("verdict") or {}
         ingress = observed.get("ingress") or {}
         attribution = observed.get("attribution") or {}
+        def _observed_int(value) -> int:
+            return -1 if value is None else int(value)
+
         operands = {
-            "verdict_verified": int(verdict.get("verified_amount_minor") or -1),
-            "verdict_attributed": int(
-                verdict.get("attributed_amount_minor") or -1
+            "verdict_verified": _observed_int(
+                verdict.get("verified_amount_minor")
             ),
-            "verdict_net": int(
-                verdict.get("canonical_net_verified_amount_minor") or -1
+            "verdict_attributed": _observed_int(
+                verdict.get("attributed_amount_minor")
             ),
-            "verdict_captured": int(
-                verdict.get("canonical_captured_gross_amount_minor") or -1
+            "verdict_net": _observed_int(
+                verdict.get("canonical_net_verified_amount_minor")
             ),
-            "verdict_expected": int(
-                verdict.get("canonical_expected_gross_amount_minor") or -1
+            "verdict_captured": _observed_int(
+                verdict.get("canonical_captured_gross_amount_minor")
             ),
-            "verdict_discrepancy_amount": int(
-                verdict.get("discrepancy_amount_minor") or -1
+            "verdict_expected": _observed_int(
+                verdict.get("canonical_expected_gross_amount_minor")
             ),
-            "verdict_discrepancy_ratio": int(
-                verdict.get("discrepancy_ratio_bps") or -1
+            "verdict_discrepancy_amount": _observed_int(
+                verdict.get("discrepancy_amount_minor")
+            ),
+            "verdict_discrepancy_ratio": _observed_int(
+                verdict.get("discrepancy_ratio_bps")
             ),
             "verdict_band": verdict.get("discrepancy_band"),
             "verdict_authority": verdict.get("b26_p2_source_authority_state"),
             "verdict_currency": verdict.get("currency_code"),
-            "ingress_amount": int(ingress.get("verified_amount_minor") or -1),
+            "ingress_amount": _observed_int(
+                ingress.get("verified_amount_minor")
+            ),
             "ingress_currency": ingress.get("verified_amount_currency"),
-            "attribution_revenue": int(attribution.get("revenue_cents") or -1),
+            "attribution_revenue": _observed_int(
+                attribution.get("revenue_cents")
+            ),
         }
         coherent = (
             operands["verdict_verified"] == contradictory
@@ -3353,7 +3388,7 @@ def _a12_evidence_snapshot(tenant_id: str, verdict_id: str) -> dict:
     return payload
 
 
-def _a12_proof_observation(
+def _a12_proof_observation_inner(
     stage: str,
     *,
     tenant: dict,
@@ -3488,6 +3523,36 @@ def _a12_proof_observation(
     }
 
 
+def _a12_proof_observation(
+    stage: str,
+    *,
+    tenant: dict,
+    verdict_id: str,
+    amount_minor: int,
+    currency: str,
+    temp: Path,
+) -> dict:
+    previous_scope = _a12_apply_proof_scope(str(tenant["tenant_id"]))
+    try:
+        result = _a12_proof_observation_inner(
+            stage,
+            tenant=tenant,
+            verdict_id=verdict_id,
+            amount_minor=amount_minor,
+            currency=currency,
+            temp=temp,
+        )
+    finally:
+        _a12_restore_proof_scope(previous_scope)
+    result["proof_scope"] = {
+        "principal": "migration_owner",
+        "app_current_tenant_id": str(tenant["tenant_id"]),
+        "previous_role_setting": previous_scope,
+        "restored": True,
+    }
+    return result
+
+
 def _a12_reconciliation_disposition(
     status: int,
     body: object,
@@ -3526,7 +3591,11 @@ def _a12_reconciliation_disposition(
         and history == "unverifiable"
         and bool(history_reason)
     )
-    asserts_false_current = bool(status == 200 and amount == contradictory_amount)
+    asserts_false_current = bool(
+        status == 200
+        and amount == contradictory_amount
+        and not governed_non_authoritative
+    )
     return {
         "status": status,
         "body": body,
