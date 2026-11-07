@@ -5366,3 +5366,19 @@
   local_reproduction_command: python scripts/ci/validate_b26_p2_xxv_environment_predicates.py --help
   risk_if_removed: The XXV invariant could regress while every broader gate remains green.
   decision: keep_required
+
+- gate_id: b26-p2-xxv-signup-walk
+  workflow: ''
+  job: ''
+  script: scripts/ci/b26_p2_xxv_signup_walk.py
+  owning_phase: B2.6-P2
+  protected_invariant: Supported account signup and login execute through the shipped HTTP operation on a disposable production-equivalent lane.
+  current_status: utility
+  default_execution: false
+  candidate_action: keep_utility
+  subsuming_gate: ''
+  subsumption_evidence: This is a local disposable-lane account proof, not a required hosted context.
+  negative_control_preserved_by: python scripts/ci/b26_p2_xxv_signup_walk.py
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_signup_walk.py
+  risk_if_removed: The supported account prerequisite could regress without an executed end-to-end check.
+  decision: keep_utility
