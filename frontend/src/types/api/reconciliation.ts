@@ -305,6 +305,8 @@ export interface components {
             canonical_gross_expected_amount_minor: number;
             canonical_gross_captured_amount_minor: number;
             canonical_net_verified_amount_minor: number;
+            /** @description Canonical row currency copied without conversion or default. */
+            currency_code: string;
             discrepancy: {
                 discrepancy_amount_minor: number;
                 discrepancy_ratio_bps: number;
@@ -1625,6 +1627,7 @@ export interface operations {
                      *       "canonical_gross_expected_amount_minor": 12500,
                      *       "canonical_gross_captured_amount_minor": 12500,
                      *       "canonical_net_verified_amount_minor": 7500,
+                     *       "currency_code": "USD",
                      *       "discrepancy": {
                      *         "discrepancy_amount_minor": 0,
                      *         "discrepancy_ratio_bps": 0,
@@ -1662,6 +1665,8 @@ export interface operations {
                         canonical_gross_expected_amount_minor: number;
                         canonical_gross_captured_amount_minor: number;
                         canonical_net_verified_amount_minor: number;
+                        /** @description Canonical row currency copied without conversion or default. */
+                        currency_code: string;
                         discrepancy: {
                             discrepancy_amount_minor: number;
                             discrepancy_ratio_bps: number;

@@ -224,6 +224,7 @@ paths:
                 canonical_gross_expected_amount_minor: 12500
                 canonical_gross_captured_amount_minor: 12500
                 canonical_net_verified_amount_minor: 7500
+                currency_code: USD
                 discrepancy:
                   discrepancy_amount_minor: 0
                   discrepancy_ratio_bps: 0
@@ -714,6 +715,7 @@ components:
         - canonical_gross_expected_amount_minor
         - canonical_gross_captured_amount_minor
         - canonical_net_verified_amount_minor
+        - currency_code
         - discrepancy
         - adjustments_applied
         - pending_since
@@ -762,6 +764,11 @@ components:
         canonical_net_verified_amount_minor:
           type: integer
           minimum: 0
+        currency_code:
+          type: string
+          description: Canonical row currency copied without conversion or default.
+          minLength: 3
+          maxLength: 3
         discrepancy:
           $ref: '#/components/schemas/B23DiscrepancyContext'
         adjustments_applied:

@@ -100,6 +100,7 @@ def _match_detail_from_row(
         canonical_net_verified_amount_minor=row[
             "canonical_net_verified_amount_minor"
         ],
+        currency_code=row["currency_code"],
         discrepancy=B23DiscrepancyContext(
             discrepancy_amount_minor=row["discrepancy_amount_minor"],
             discrepancy_ratio_bps=row["discrepancy_ratio_bps"],

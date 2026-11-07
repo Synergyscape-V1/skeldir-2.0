@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -54,6 +55,7 @@ from b26_p2_xxv_falsify import (  # noqa: E402
     volume_put,
     volume_rm,
     wait_http,
+    await_witness_catchup,
     wait_verdict,
     witness_files,
 )
@@ -64,6 +66,7 @@ from b26_p2_xxv_lane import (  # noqa: E402
     SOURCE_EVIDENCE_VOL,
     WITNESS_VOL,
     admin_dsn,
+    role_dsn,
 )
 from app.revenue_verification.source_journal_custody import (  # noqa: E402
     SourceJournalCustodyError,
@@ -78,6 +81,7 @@ from app.revenue_verification.source_evidence_journal import (  # noqa: E402
 from app.revenue_verification.source_attestation import (  # noqa: E402
     ATTESTATION_STATEMENT_VERSION,
     canonical_statement_bytes,
+    verify_signature,
 )
 from app.trust.audit_hash import idempotency_key_hash  # noqa: E402
 from app.trust.builder import _subject_ref_hash  # noqa: E402
@@ -275,6 +279,26 @@ def _read_trust_attributed(tenant: dict, verdict_id: str) -> dict:
                     "history_integrity_source_evidence_unverifiable",
                     "history_integrity_witness_refused",
                 }
+            ),
+            "financial": (
+                row_status == "refused"
+                and isinstance(reason, str)
+                and bool(reason)
+                and (
+                    reason in {
+                        "money_source_not_authoritative",
+                        "source_money_conservation_unverifiable",
+                        "source_changed_during_issuance",
+                    }
+                    or reason.startswith(
+                        (
+                            "money_",
+                            "source_",
+                            "attestation_",
+                            "history_integrity_",
+                        )
+                    )
+                )
             ),
         }
     return {
@@ -2641,181 +2665,1148 @@ def _a12_established(record: dict) -> bool:
     ) is True
 
 
+_A12_RESULT_DIR = REPO / "docs/forensics/evidence/b26_p2_xxv_a8"
+_A12_PROOF_SOURCE_PATHS = (
+    "scripts/ci/validate_b26_p2_xxii_composition.py",
+    "scripts/ci/b26_p2_xxv_attestation_sweep.py",
+    "backend/app/revenue_verification/source_attestation.py",
+    "backend/app/revenue_verification/source_evidence.py",
+    "backend/app/trust/builder.py",
+    "backend/app/trust/money_source_adapter.py",
+    "backend/app/revenue_verification/corrections.py",
+    "backend/app/revenue_verification/batch_engine.py",
+    "alembic/versions/007_skeldir_foundation/202610270001_b26_p2_corrective_xxv_source_attestation.py",
+    "alembic/versions/007_skeldir_foundation/202610270002_b26_p2_corrective_xxv_provider_amendment.py",
+    "alembic/versions/007_skeldir_foundation/202610280001_b26_p2_xxv_post_capture_adjustment.py",
+)
+_A12_VERDICT_COLUMNS = (
+    "id",
+    "tenant_id",
+    "attribution_event_id",
+    "webhook_ingress_identity_id",
+    "status",
+    "match_quality",
+    "verified_amount_minor",
+    "attributed_amount_minor",
+    "canonical_expected_gross_amount_minor",
+    "canonical_captured_gross_amount_minor",
+    "canonical_net_verified_amount_minor",
+    "discrepancy_amount_minor",
+    "discrepancy_ratio_bps",
+    "discrepancy_band",
+    "b26_p2_source_authority_state",
+    "currency_code",
+    "updated_at",
+    "last_transition_at",
+)
+_A12_INGRESS_COLUMNS = (
+    "id",
+    "tenant_id",
+    "event_id",
+    "verified_amount_minor",
+    "verified_amount_currency",
+    "verified_amount_scale",
+    "updated_at",
+    "created_at",
+)
+_A12_ATTRIBUTION_COLUMNS = (
+    "id",
+    "tenant_id",
+    "revenue_cents",
+    "conversion_value_cents",
+    "currency",
+    "updated_at",
+)
+
+
+def _a12_file_hash(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _a12_proof_source_hashes() -> dict[str, str | None]:
+    return {
+        relative: _a12_file_hash(REPO / relative)
+        for relative in _A12_PROOF_SOURCE_PATHS
+    }
+
+
+def _a12_proof_dsn(tenant_id: str) -> str:
+    """The required proof principal, scoped to the subject's RLS cohort.
+
+    The mandatory CI proof runs as ``migration_owner``.  ``public`` financial
+    tables are FORCE RLS, so that principal's census is empty unless the
+    governing tenant setting is present.  The setting is the real tenant under
+    test, not a substitute principal or a different database.
+    """
+    from urllib.parse import quote  # noqa: PLC0415
+
+    return role_dsn("migration_owner") + "?options=" + quote(
+        f"-c app.current_tenant_id={tenant_id}", safe=""
+    )
+
+
+def _a12_role_identity(dsn: str) -> dict:
+    import psycopg2  # noqa: PLC0415
+
+    conn = psycopg2.connect(dsn)
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT current_user, session_user, r.rolsuper,"
+                " r.rolbypassrls, r.rolcreatedb, r.rolcreaterole,"
+                " r.rolreplication, r.rolinherit,"
+                " current_setting('transaction_isolation')"
+                " FROM pg_roles AS r WHERE r.rolname = current_user"
+            )
+            row = cur.fetchone()
+            cur.execute(
+                "SELECT has_table_privilege(current_user,"
+                " 'public.b23_match_verdicts', 'UPDATE'),"
+                " has_table_privilege(current_user,"
+                " 'public.webhook_ingress_identities', 'UPDATE'),"
+                " has_table_privilege(current_user,"
+                " 'public.attribution_events', 'UPDATE')"
+            )
+            privileges = cur.fetchone()
+    finally:
+        conn.close()
+    return {
+        "current_user": row[0],
+        "session_user": row[1],
+        "rolsuper": bool(row[2]),
+        "rolbypassrls": bool(row[3]),
+        "rolcreatedb": bool(row[4]),
+        "rolcreaterole": bool(row[5]),
+        "rolreplication": bool(row[6]),
+        "rolinherit": bool(row[7]),
+        "transaction_isolation": row[8],
+        "update_privileges": {
+            "b23_match_verdicts": bool(privileges[0]),
+            "webhook_ingress_identities": bool(privileges[1]),
+            "attribution_events": bool(privileges[2]),
+        },
+    }
+
+
+def _a12_row(cur, table: str, columns: tuple[str, ...], tenant_id: str, row_id):
+    from psycopg2 import sql as psql  # noqa: PLC0415
+
+    cur.execute(
+        psql.SQL("SELECT {} FROM public.{} WHERE tenant_id = %s AND id = %s").format(
+            psql.SQL(", ").join(psql.Identifier(name) for name in columns),
+            psql.Identifier(table),
+        ),
+        (tenant_id, row_id),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    return dict(zip(columns, row))
+
+
+def _a12_table_states(cur) -> dict[str, dict]:
+    states: dict[str, dict] = {}
+    for table in (
+        "b23_match_verdicts",
+        "webhook_ingress_identities",
+        "attribution_events",
+    ):
+        cur.execute(
+            "SELECT c.relrowsecurity, c.relforcerowsecurity"
+            " FROM pg_class AS c JOIN pg_namespace AS n"
+            " ON n.oid = c.relnamespace"
+            " WHERE n.nspname = 'public' AND c.relname = %s",
+            (table,),
+        )
+        flags = cur.fetchone()
+        if flags is None:
+            raise RuntimeError(f"a12_table_missing:{table}")
+        cur.execute(
+            "SELECT t.tgname, t.tgenabled FROM pg_trigger AS t"
+            " JOIN pg_class AS c ON c.oid = t.tgrelid"
+            " JOIN pg_namespace AS n ON n.oid = c.relnamespace"
+            " WHERE n.nspname = 'public' AND c.relname = %s"
+            " AND NOT t.tgisinternal ORDER BY t.tgname",
+            (table,),
+        )
+        states[table] = {
+            "relrowsecurity": bool(flags[0]),
+            "relforcerowsecurity": bool(flags[1]),
+            "triggers": [
+                {"name": str(name), "tgenabled": str(mode)}
+                for name, mode in cur.fetchall()
+            ],
+        }
+    return states
+
+
+def _a12_assert_governed_states(states: dict[str, dict]) -> str | None:
+    for table, state in states.items():
+        if not state["relrowsecurity"] or not state["relforcerowsecurity"]:
+            return f"a12_rls_not_governed:{table}"
+        for trigger in state["triggers"]:
+            if trigger["tgenabled"] != "O":
+                return (
+                    "a12_trigger_not_governed:"
+                    f"{table}:{trigger['name']}:{trigger['tgenabled']}"
+                )
+    return None
+
+
+def _a12_set_table_state(cur, table: str, state: dict) -> None:
+    from psycopg2 import sql as psql  # noqa: PLC0415
+
+    relation = psql.SQL("public.{}").format(psql.Identifier(table))
+    cur.execute(
+        psql.SQL("ALTER TABLE {} {} ROW LEVEL SECURITY").format(
+            relation,
+            psql.SQL("ENABLE" if state["relrowsecurity"] else "DISABLE"),
+        )
+    )
+    cur.execute(
+        psql.SQL("ALTER TABLE {} {} ROW LEVEL SECURITY").format(
+            relation,
+            psql.SQL("FORCE" if state["relforcerowsecurity"] else "NO FORCE"),
+        )
+    )
+    for trigger in state["triggers"]:
+        action = {
+            "O": "ENABLE",
+            "D": "DISABLE",
+            "A": "ENABLE ALWAYS",
+            "R": "ENABLE REPLICA",
+        }.get(trigger["tgenabled"])
+        if action is None:
+            raise RuntimeError(
+                f"a12_trigger_mode_unknown:{table}:{trigger['name']}:"
+                f"{trigger['tgenabled']}"
+            )
+        cur.execute(
+            psql.SQL("ALTER TABLE {} {} TRIGGER {}").format(
+                relation,
+                psql.SQL(action),
+                psql.Identifier(trigger["name"]),
+            )
+        )
+
+
+def _a12_snapshot_rows(cur, tenant_id: str, verdict_id: str) -> dict:
+    verdict = _a12_row(
+        cur, "b23_match_verdicts", _A12_VERDICT_COLUMNS, tenant_id, verdict_id
+    )
+    if verdict is None:
+        return {"reason": "verdict_missing"}
+    ingress_id = verdict["webhook_ingress_identity_id"]
+    attribution_id = verdict["attribution_event_id"]
+    if ingress_id is None:
+        return {"reason": "ingress_link_missing", "verdict": verdict}
+    if attribution_id is None:
+        return {"reason": "attribution_link_missing", "verdict": verdict}
+    ingress = _a12_row(
+        cur,
+        "webhook_ingress_identities",
+        _A12_INGRESS_COLUMNS,
+        tenant_id,
+        ingress_id,
+    )
+    if ingress is None:
+        return {"reason": "ingress_missing", "verdict": verdict}
+    attribution = _a12_row(
+        cur,
+        "attribution_events",
+        _A12_ATTRIBUTION_COLUMNS,
+        tenant_id,
+        attribution_id,
+    )
+    if attribution is None:
+        return {"reason": "attribution_missing", "verdict": verdict}
+    return {
+        "verdict": verdict,
+        "ingress": ingress,
+        "attribution": attribution,
+        "attribution_matches_ingress_event": (
+            str(ingress["event_id"]) == str(attribution_id)
+        ),
+    }
+
+
+def _a12_serialise_row(row: dict | None) -> dict | None:
+    if row is None:
+        return None
+    return {
+        key: (
+            value.isoformat()
+            if hasattr(value, "isoformat")
+            else str(value)
+            if not isinstance(value, (str, int, float, bool, type(None)))
+            else value
+        )
+        for key, value in row.items()
+    }
+
+
+def _a12_serialise_snapshot(snapshot: dict) -> dict:
+    out: dict = {}
+    for key, value in snapshot.items():
+        if key in {"verdict", "ingress", "attribution"} and isinstance(value, dict):
+            out[key] = _a12_serialise_row(value)
+        else:
+            out[key] = value
+    return out
+
+
+def _a12_rows_json(snapshot: dict) -> str:
+    return json.dumps(
+        {
+            key: _a12_serialise_row(snapshot[key])
+            for key in ("verdict", "ingress", "attribution")
+            if key in snapshot
+        },
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _a12_attestation_verifies(evidence: dict) -> bool:
+    attestation = evidence.get("attestation")
+    if not isinstance(attestation, dict):
+        return False
+    try:
+        statement = json.loads(str(attestation["statement"]))
+        verify_signature(
+            statement,
+            str(attestation["signature"] or ""),
+            public_key_path=str(LANE_ROOT / "source_attestation_ed25519.pub"),
+        )
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
+def _a12_mutate(
+    tenant_id: str,
+    verdict_id: str,
+    *,
+    baseline_amount: int,
+    currency: str,
+) -> dict:
+    import psycopg2  # noqa: PLC0415
+    from psycopg2 import sql as psql  # noqa: PLC0415
+
+    contradictory = int(baseline_amount) + 123457
+    result: dict = {
+        "contradictory_amount_minor": contradictory,
+        "currency": currency,
+        "committed": False,
+    }
+    conn = psycopg2.connect(role_dsn("migration_owner"))
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            result["actor"] = _a12_role_identity(role_dsn("migration_owner"))
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, true)",
+                (tenant_id,),
+            )
+            snapshot = _a12_snapshot_rows(cur, tenant_id, verdict_id)
+            if snapshot.get("reason"):
+                raise RuntimeError(f"a12_snapshot_refused:{snapshot['reason']}")
+            states = _a12_table_states(cur)
+            snapshot["__guard_states__"] = states
+            result["original"] = snapshot
+            result["guard_configuration_original"] = states
+            governed_reason = _a12_assert_governed_states(states)
+            if governed_reason:
+                raise RuntimeError(governed_reason)
+            verdict = snapshot["verdict"]
+            ingress = snapshot["ingress"]
+            attribution = snapshot["attribution"]
+            if int(verdict["verified_amount_minor"]) != baseline_amount:
+                raise RuntimeError("a12_baseline_verdict_verified_mismatch")
+            if int(verdict["attributed_amount_minor"]) != baseline_amount:
+                raise RuntimeError("a12_baseline_verdict_attributed_mismatch")
+            if int(verdict["canonical_captured_gross_amount_minor"]) != baseline_amount:
+                raise RuntimeError("a12_baseline_verdict_captured_mismatch")
+            if int(verdict["canonical_net_verified_amount_minor"]) != baseline_amount:
+                raise RuntimeError("a12_baseline_verdict_net_mismatch")
+            if int(verdict["canonical_expected_gross_amount_minor"]) != baseline_amount:
+                raise RuntimeError("a12_baseline_verdict_expected_mismatch")
+            if str(verdict["currency_code"]).upper() != currency.upper():
+                raise RuntimeError("a12_baseline_verdict_currency_mismatch")
+            if int(ingress["verified_amount_minor"]) != baseline_amount:
+                raise RuntimeError("a12_baseline_ingress_amount_mismatch")
+            if str(ingress["verified_amount_currency"]).upper() != currency.upper():
+                raise RuntimeError("a12_baseline_ingress_currency_mismatch")
+            if int(attribution["revenue_cents"]) != baseline_amount:
+                raise RuntimeError("a12_baseline_attribution_amount_mismatch")
+
+            # The actor is the relation owner.  Its write uses the exact
+            # trigger modes currently installed; this experiment suppresses
+            # those triggers only for the duration of the write and restores
+            # each saved mode before commit.  No consumer observes the
+            # disabled state.
+            for table, state in states.items():
+                for trigger in state["triggers"]:
+                    cur.execute(
+                        psql.SQL("ALTER TABLE public.{} DISABLE TRIGGER {}").format(
+                            psql.Identifier(table),
+                            psql.Identifier(trigger["name"]),
+                        )
+                    )
+            cur.execute(
+                "UPDATE public.b23_match_verdicts"
+                " SET verified_amount_minor = %s,"
+                " attributed_amount_minor = %s,"
+                " canonical_net_verified_amount_minor = %s,"
+                " canonical_captured_gross_amount_minor = %s,"
+                " canonical_expected_gross_amount_minor = %s,"
+                " discrepancy_amount_minor = 0,"
+                " discrepancy_ratio_bps = 0,"
+                " discrepancy_band = 'exact',"
+                " updated_at = now()"
+                " WHERE tenant_id = %s AND id = %s",
+                (
+                    contradictory,
+                    contradictory,
+                    contradictory,
+                    contradictory,
+                    contradictory,
+                    tenant_id,
+                    verdict_id,
+                ),
+            )
+            cur.execute(
+                "UPDATE public.webhook_ingress_identities"
+                " SET verified_amount_minor = %s, updated_at = now()"
+                " WHERE tenant_id = %s AND id = %s",
+                (contradictory, tenant_id, ingress["id"]),
+            )
+            cur.execute(
+                "UPDATE public.attribution_events"
+                " SET revenue_cents = %s, updated_at = now()"
+                " WHERE tenant_id = %s AND id = %s",
+                (contradictory, tenant_id, attribution["id"]),
+            )
+            for table, state in states.items():
+                _a12_set_table_state(cur, table, state)
+        conn.commit()
+        result["mutation_committed"] = True
+    except Exception as exc:  # noqa: BLE001 - preserve the first attributable error
+        conn.rollback()
+        result["mutation_error"] = f"{type(exc).__name__}:{exc}"
+        result["mutation_committed"] = False
+    finally:
+        conn.close()
+
+    if not result.get("mutation_committed"):
+        return result
+
+    verify = psycopg2.connect(role_dsn("migration_owner"))
+    try:
+        verify.autocommit = True
+        with verify.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant_id,),
+            )
+            observed = _a12_snapshot_rows(cur, tenant_id, verdict_id)
+            observed_states = _a12_table_states(cur)
+        verdict = observed.get("verdict") or {}
+        ingress = observed.get("ingress") or {}
+        attribution = observed.get("attribution") or {}
+        operands = {
+            "verdict_verified": int(verdict.get("verified_amount_minor") or -1),
+            "verdict_attributed": int(
+                verdict.get("attributed_amount_minor") or -1
+            ),
+            "verdict_net": int(
+                verdict.get("canonical_net_verified_amount_minor") or -1
+            ),
+            "verdict_captured": int(
+                verdict.get("canonical_captured_gross_amount_minor") or -1
+            ),
+            "verdict_expected": int(
+                verdict.get("canonical_expected_gross_amount_minor") or -1
+            ),
+            "verdict_discrepancy_amount": int(
+                verdict.get("discrepancy_amount_minor") or -1
+            ),
+            "verdict_discrepancy_ratio": int(
+                verdict.get("discrepancy_ratio_bps") or -1
+            ),
+            "verdict_band": verdict.get("discrepancy_band"),
+            "verdict_authority": verdict.get("b26_p2_source_authority_state"),
+            "verdict_currency": verdict.get("currency_code"),
+            "ingress_amount": int(ingress.get("verified_amount_minor") or -1),
+            "ingress_currency": ingress.get("verified_amount_currency"),
+            "attribution_revenue": int(attribution.get("revenue_cents") or -1),
+        }
+        coherent = (
+            operands["verdict_verified"] == contradictory
+            and operands["verdict_attributed"] == contradictory
+            and operands["verdict_net"] == contradictory
+            and operands["verdict_captured"] == contradictory
+            and operands["verdict_expected"] == contradictory
+            and operands["verdict_discrepancy_amount"] == 0
+            and operands["verdict_discrepancy_ratio"] == 0
+            and operands["verdict_band"] == "exact"
+            and operands["verdict_authority"] == "current"
+            and str(operands["verdict_currency"]).upper() == currency.upper()
+            and operands["ingress_amount"] == contradictory
+            and str(operands["ingress_currency"]).upper() == currency.upper()
+            and operands["attribution_revenue"] == contradictory
+        )
+        result["post_commit_read"] = {
+            "rows": _a12_serialise_snapshot(observed),
+            "guard_configuration": observed_states,
+            "operands": operands,
+            "coherent": coherent,
+            "guard_configuration_restored": (
+                observed_states == result.get("guard_configuration_original")
+            ),
+        }
+        result["committed"] = bool(
+            coherent
+            and result["post_commit_read"]["guard_configuration_restored"]
+        )
+        if not result["committed"]:
+            result["reason"] = "post_commit_read_failed"
+    except Exception as exc:  # noqa: BLE001
+        result["post_commit_error"] = f"{type(exc).__name__}:{exc}"
+    finally:
+        verify.close()
+    return result
+
+
+def _a12_restore(tenant_id: str, verdict_id: str, snapshot: dict) -> dict:
+    import psycopg2  # noqa: PLC0415
+    from psycopg2 import sql as psql  # noqa: PLC0415
+
+    result: dict = {"restored_exact": False}
+    conn = psycopg2.connect(role_dsn("migration_owner"))
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, true)",
+                (tenant_id,),
+            )
+            current = _a12_snapshot_rows(cur, tenant_id, verdict_id)
+            if current.get("reason"):
+                raise RuntimeError(f"a12_restore_snapshot_refused:{current['reason']}")
+            states = _a12_table_states(cur)
+            verdict = snapshot["verdict"]
+            ingress = snapshot["ingress"]
+            attribution = snapshot["attribution"]
+            for table, state in states.items():
+                for trigger in state["triggers"]:
+                    cur.execute(
+                        psql.SQL("ALTER TABLE public.{} DISABLE TRIGGER {}").format(
+                            psql.Identifier(table),
+                            psql.Identifier(trigger["name"]),
+                        )
+                    )
+            cur.execute(
+                "UPDATE public.b23_match_verdicts"
+                " SET verified_amount_minor = %s,"
+                " attributed_amount_minor = %s,"
+                " canonical_net_verified_amount_minor = %s,"
+                " canonical_captured_gross_amount_minor = %s,"
+                " canonical_expected_gross_amount_minor = %s,"
+                " discrepancy_amount_minor = %s,"
+                " discrepancy_ratio_bps = %s,"
+                " discrepancy_band = %s,"
+                " updated_at = %s"
+                " WHERE tenant_id = %s AND id = %s",
+                (
+                    verdict["verified_amount_minor"],
+                    verdict["attributed_amount_minor"],
+                    verdict["canonical_net_verified_amount_minor"],
+                    verdict["canonical_captured_gross_amount_minor"],
+                    verdict["canonical_expected_gross_amount_minor"],
+                    verdict["discrepancy_amount_minor"],
+                    verdict["discrepancy_ratio_bps"],
+                    verdict["discrepancy_band"],
+                    verdict["updated_at"],
+                    tenant_id,
+                    verdict_id,
+                ),
+            )
+            cur.execute(
+                "UPDATE public.webhook_ingress_identities"
+                " SET verified_amount_minor = %s, updated_at = %s"
+                " WHERE tenant_id = %s AND id = %s",
+                (
+                    ingress["verified_amount_minor"],
+                    ingress["updated_at"],
+                    tenant_id,
+                    ingress["id"],
+                ),
+            )
+            cur.execute(
+                "UPDATE public.attribution_events"
+                " SET revenue_cents = %s, updated_at = %s"
+                " WHERE tenant_id = %s AND id = %s",
+                (
+                    attribution["revenue_cents"],
+                    attribution["updated_at"],
+                    tenant_id,
+                    attribution["id"],
+                ),
+            )
+            for table, state in states.items():
+                _a12_set_table_state(cur, table, state)
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        result["restore_error"] = f"{type(exc).__name__}:{exc}"
+        return result
+    finally:
+        conn.close()
+
+    verify = psycopg2.connect(role_dsn("migration_owner"))
+    try:
+        verify.autocommit = True
+        with verify.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant_id,),
+            )
+            restored = _a12_snapshot_rows(cur, tenant_id, verdict_id)
+            restored_states = _a12_table_states(cur)
+        result["restored"] = _a12_serialise_snapshot(restored)
+        result["restored_guard_configuration"] = restored_states
+        result["restored_exact"] = bool(
+            not restored.get("reason")
+            and _a12_rows_json(restored) == _a12_rows_json(snapshot)
+            and restored_states == snapshot.get("__guard_states__")
+        )
+    except Exception as exc:  # noqa: BLE001
+        result["restore_verification_error"] = f"{type(exc).__name__}:{exc}"
+    finally:
+        verify.close()
+    return result
+
+
+def _a12_evidence_snapshot(tenant_id: str, verdict_id: str) -> dict:
+    import psycopg2  # noqa: PLC0415
+
+    conn = psycopg2.connect(role_dsn("migration_owner"))
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('app.current_tenant_id', %s, false)",
+                (tenant_id,),
+            )
+            cur.execute(
+                "SELECT v.webhook_ingress_identity_id::text"
+                " FROM public.b23_match_verdicts AS v"
+                " WHERE v.tenant_id = %s AND v.id = %s",
+                (tenant_id, verdict_id),
+            )
+            row = cur.fetchone()
+            if row is None or row[0] is None:
+                return {"reason": "verdict_or_ingress_missing"}
+            ingress_id = row[0]
+            cur.execute(
+                "SELECT a.statement::text, a.signature,"
+                " a.attested_amount_minor, a.attested_amount_currency"
+                " FROM public.b26_p2_source_money_attestation AS a"
+                " WHERE a.tenant_id = %s"
+                " AND a.webhook_ingress_identity_id = %s"
+                " ORDER BY a.attested_at DESC LIMIT 1",
+                (tenant_id, ingress_id),
+            )
+            attestation = cur.fetchone()
+            cur.execute(
+                "SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY x.id),"
+                " '[]'::jsonb)::text FROM public.b26_p2_auth_root_evidence AS x"
+                " WHERE x.tenant_id = %s"
+                " AND x.webhook_ingress_identity_id = %s",
+                (tenant_id, ingress_id),
+            )
+            root = cur.fetchone()
+    finally:
+        conn.close()
+    payload = {
+        "ingress_id": ingress_id,
+        "attestation": (
+            {
+                "statement": attestation[0],
+                "signature": attestation[1],
+                "attested_amount_minor": attestation[2],
+                "attested_amount_currency": attestation[3],
+            }
+            if attestation
+            else None
+        ),
+        "auth_root_evidence": root[0] if root else None,
+    }
+    payload["sha256"] = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+    return payload
+
+
+def _a12_proof_observation(
+    stage: str,
+    *,
+    tenant: dict,
+    verdict_id: str,
+    amount_minor: int,
+    currency: str,
+    temp: Path,
+) -> dict:
+    """Run the unchanged mandatory proof against this lane and exact subject."""
+    from b26_p2_xxv_attestation_sweep import sweep  # noqa: PLC0415
+
+    proof_dir = temp / f"a12-proof-{stage}"
+    proof_dir.mkdir(parents=True, exist_ok=True)
+    (proof_dir / "history_witness.jsonl").write_bytes(
+        volume_get(WITNESS_VOL, "history_witness.jsonl")
+    )
+    (proof_dir / "history_witness_ed25519.pub").write_bytes(
+        volume_get(WITNESS_VOL, "history_witness_ed25519.pub")
+    )
+    (proof_dir / "source_evidence.jsonl").write_bytes(
+        volume_get(SOURCE_EVIDENCE_VOL, "source_evidence.jsonl")
+    )
+    public_key = str(LANE_ROOT / "source_attestation_ed25519.pub")
+    dsn = _a12_proof_dsn(str(tenant["tenant_id"]))
+    evidence_out = (
+        _A12_RESULT_DIR
+        / f"xxv-r0034-a12-required-proof-{stage}-20261102.json"
+    )
+    env = dict(os.environ)
+    env["ENVIRONMENT"] = "ci"
+    env["DATABASE_URL"] = role_dsn("app_user").replace(
+        "postgresql://", "postgresql+asyncpg://", 1
+    )
+    env["MIGRATION_DATABASE_URL"] = role_dsn("migration_owner")
+    env["B26_P2_HISTORY_WITNESS_JOURNAL_PATH"] = str(
+        proof_dir / "history_witness.jsonl"
+    )
+    env["B26_P2_HISTORY_WITNESS_PUBLIC_KEY_PATH"] = str(
+        proof_dir / "history_witness_ed25519.pub"
+    )
+    env["B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH"] = str(
+        proof_dir / "source_evidence.jsonl"
+    )
+    env["B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH"] = public_key
+    command = [
+        sys.executable,
+        str(REPO / "scripts/ci/validate_b26_p2_xxii_composition.py"),
+        "--dsn",
+        dsn,
+        "--evidence-out",
+        str(evidence_out),
+    ]
+    proc = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        cwd=str(REPO),
+        env=env,
+    )
+    try:
+        evidence = json.loads(evidence_out.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        evidence = None
+    checks = (evidence or {}).get("checks") or {}
+    violations = list((evidence or {}).get("violations") or [])
+    support = sweep(dsn, public_key_path=public_key, check_source_evidence=False)
+    try:
+        import psycopg2  # noqa: PLC0415
+
+        conn = psycopg2.connect(dsn)
+        try:
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT count(*) FROM public.b23_match_verdicts"
+                    " WHERE tenant_id = %s AND id = %s",
+                    (str(tenant["tenant_id"]), verdict_id),
+                )
+                target_rows = int(cur.fetchone()[0] or 0)
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        target_rows = f"error:{type(exc).__name__}:{exc}"
+    verdicts_examined = checks.get("live_xxv_verdicts_examined")
+    target_visible = bool(
+        isinstance(verdicts_examined, int)
+        and verdicts_examined > 0
+        and target_rows == 1
+        and support.get("verdicts_examined") == verdicts_examined
+    )
+    attributable = [
+        violation
+        for violation in violations
+        if verdict_id in violation
+        and violation.startswith("xxv_source_money_unattested:")
+    ]
+    return {
+        "stage": stage,
+        "command": (
+            "scripts/ci/validate_b26_p2_xxii_composition.py --dsn "
+            "<migration_owner same lane, tenant RLS scope> --evidence-out "
+            f"{evidence_out}"
+        ),
+        "dsn": dsn,
+        "evidence_out": str(evidence_out),
+        "returncode": proc.returncode,
+        "printed_verdict": (
+            "PASS" if "B26_P2_XXII_COMPOSITION_PASS" in proc.stdout else "FAIL"
+        ),
+        "evidence_status": (evidence or {}).get("status"),
+        "violations": violations,
+        "attributable_subject_violations": attributable,
+        "checks": checks,
+        "census": checks.get("live_xxv_attestation_census"),
+        "verdicts_examined": verdicts_examined,
+        "target_visible": target_visible,
+        "target_rows": target_rows,
+        "supporting_sweep": {
+            "verdicts_examined": support.get("verdicts_examined"),
+            "census": support.get("census"),
+            "unverifiable_subject": [
+                row
+                for row in support.get("unverifiable", [])
+                if row.get("verdict_id") == verdict_id
+            ],
+        },
+        "source_hashes": _a12_proof_source_hashes(),
+        "stdout_tail": proc.stdout[-5000:],
+        "stderr_tail": proc.stderr[-2500:],
+        "expected_amount_minor": amount_minor,
+        "expected_currency": currency,
+    }
+
+
+def _a12_reconciliation_disposition(
+    status: int,
+    body: object,
+    *,
+    original_amount: int,
+    contradictory_amount: int,
+    currency: str,
+) -> dict:
+    body = body if isinstance(body, dict) else {}
+    amount = body.get("canonical_net_verified_amount_minor")
+    response_currency = body.get("currency_code")
+    authority = body.get("source_authority_state")
+    attestation = body.get("source_money_attestation_status")
+    attestation_reason = body.get("source_money_attestation_reason")
+    history = body.get("history_integrity_status")
+    history_reason = body.get("history_integrity_reason")
+    original_authoritative = bool(
+        status == 200
+        and amount == original_amount
+        and str(response_currency or "").upper() == currency.upper()
+        and authority == "current"
+        and isinstance(attestation, str)
+        and attestation
+        and isinstance(history, str)
+        and history == "verified"
+    )
+    governed_non_authoritative = bool(
+        status == 200
+        and authority == "source_attestation_unverifiable"
+        and isinstance(attestation, str)
+        and attestation.startswith("unverifiable:")
+        and bool(attestation_reason)
+    ) or bool(
+        status == 200
+        and authority == "historically_unverifiable"
+        and history == "unverifiable"
+        and bool(history_reason)
+    )
+    asserts_false_current = bool(status == 200 and amount == contradictory_amount)
+    return {
+        "status": status,
+        "body": body,
+        "amount_minor": amount,
+        "currency": response_currency,
+        "source_authority_state": authority,
+        "source_money_attestation_status": attestation,
+        "source_money_attestation_reason": attestation_reason,
+        "history_integrity_status": history,
+        "history_integrity_reason": history_reason,
+        "original_authentic_current": original_authoritative,
+        "governed_non_authoritative": governed_non_authoritative,
+        "asserts_unsupported_amount_as_current": asserts_false_current,
+        "definite_disposition": original_authoritative or governed_non_authoritative,
+    }
+
+
+def _a12_trust_disposition(
+    observation: dict,
+    *,
+    tenant: dict,
+    original_amount: int,
+    contradictory_amount: int,
+    currency: str,
+) -> dict:
+    status = int(observation.get("http") or 0)
+    body = observation.get("body")
+    body = body if isinstance(body, dict) else {}
+    refusal = observation.get("refusal") or {}
+    money = body.get("verified_revenue_minor")
+    response_currency = body.get("currency")
+    verification = [0, {}]
+    if status == 200 and isinstance(body, dict):
+        verification = verify_trust(tenant, body.get("envelope", body))
+    verified = (
+        isinstance(verification[1], dict)
+        and verification[1].get("verification_status") == "verified"
+    )
+    financial_refusal = bool(
+        400 <= status < 500
+        and refusal.get("status") == "refused"
+        and isinstance(refusal.get("reason"), str)
+        and refusal.get("reason")
+        and (
+            refusal.get("financial") is True
+            or str(refusal.get("reason", "")).startswith(
+                ("money_", "source_", "attestation_", "history_integrity_")
+            )
+        )
+    )
+    original_authoritative = bool(
+        status == 200
+        and money == original_amount
+        and str(response_currency or "").upper() == currency.upper()
+        and verified
+    )
+    asserts_false_current = bool(
+        status == 200 and money == contradictory_amount
+    )
+    return {
+        "status": status,
+        "body": body,
+        "refusal": refusal,
+        "verified_revenue_minor": money,
+        "currency": response_currency,
+        "verification": verification,
+        "original_authentic_current": original_authoritative,
+        "financial_refusal": financial_refusal,
+        "asserts_unsupported_amount_as_current": asserts_false_current,
+        "definite_disposition": original_authoritative or financial_refusal,
+    }
+
+
 def _a12_contradictory_financial_state(
     state: dict,
     tenant: dict,
     verdict_id: str,
     amount_minor: int,
     currency: str,
+    temp: Path,
 ) -> dict:
-    """Commit an independent in-scope contradiction, observe refusal, restore.
+    """Commit an independent in-scope contradiction, observe authority, restore.
 
-    The contradiction is written directly to the financial truth row by an
-    actor outside the application.  The signed Trust consumer and the
-    reconciliation consumer must not serve it, and the unchanged attestation
-    sweep must name this verdict.  The row is then restored to its exact
-    pre-experiment values and both consumers must return the baseline before
-    the legitimate amendment proceeds.
+    The contradiction is written directly to the three financial truth rows by
+    their owner.  The signed Trust consumer and the reconciliation consumer must
+    not serve it as current, and the unchanged mandatory proof must name this
+    verdict.  The exact rows and guard modes are then restored, and the same
+    consumers plus the unchanged proof must return the lawful baseline.
     """
-    from b26_p2_xxv_attestation_sweep import sweep  # noqa: PLC0415
-
-    public_key = str(LANE_ROOT / "source_attestation_ed25519.pub")
-    contradictory = int(amount_minor) + 123457
     result: dict = {
         "original_amount_minor": int(amount_minor),
-        "contradictory_amount_minor": contradictory,
         "currency": currency,
         "established": False,
     }
-    original_rows = sql(
-        "SELECT canonical_net_verified_amount_minor,"
-        " canonical_captured_gross_amount_minor, verified_amount_minor,"
-        " currency_code, updated_at"
-        " FROM public.b23_match_verdicts WHERE id = %s",
-        (verdict_id,),
+    original_evidence = _a12_evidence_snapshot(
+        str(tenant["tenant_id"]), verdict_id
     )
-    if not original_rows:
-        result["reason"] = "verdict_missing"
-        return result
-    original = tuple(original_rows[0])
-    result["original_row"] = [str(value) for value in original]
-    try:
-        sql(
-            "UPDATE public.b23_match_verdicts"
-            " SET canonical_net_verified_amount_minor = %s,"
-            " verified_amount_minor = %s, updated_at = now()"
-            " WHERE id = %s",
-            (contradictory, contradictory, verdict_id),
-        )
-        result["committed"] = True
-        try:
-            docker("stop", API)
-            start_api(state)
-            wait_http(f"http://127.0.0.1:{API_PORT}/health/live", 240)
-            result["consumer_restart"] = "observed"
-        except Exception as exc:  # noqa: BLE001
-            result["consumer_restart"] = f"{type(exc).__name__}:{exc}"
+    result["original_evidence"] = original_evidence
+    result["source_hashes_before"] = _a12_proof_source_hashes()
 
-        trust_status, trust = read_trust(tenant, verdict_id)
-        trust_money = (
-            trust.get("verified_revenue_minor")
-            if isinstance(trust, dict)
-            else None
+    baseline_window: dict = {}
+    baseline_signed = _wait_signed(
+        tenant, verdict_id, amount_minor, currency, window=baseline_window
+    )
+    baseline_recon_status, baseline_recon = read_reconciliation(
+        state, tenant, verdict_id
+    )
+    result["baseline_signed"] = baseline_signed
+    result["baseline_reconciliation"] = _a12_reconciliation_disposition(
+        baseline_recon_status,
+        baseline_recon,
+        original_amount=amount_minor,
+        contradictory_amount=amount_minor,
+        currency=currency,
+    )
+    if (
+        baseline_signed.get("status") != 200
+        or (baseline_signed.get("verification") or [0])[0] != 200
+        or not result["baseline_reconciliation"]["original_authentic_current"]
+    ):
+        result["reason"] = "baseline_not_lawful"
+        return result
+
+    baseline_proof = _a12_proof_observation(
+        "baseline",
+        tenant=tenant,
+        verdict_id=verdict_id,
+        amount_minor=amount_minor,
+        currency=currency,
+        temp=temp,
+    )
+    result["baseline_proof"] = baseline_proof
+    if (
+        baseline_proof["printed_verdict"] != "PASS"
+        or not baseline_proof["target_visible"]
+    ):
+        result["reason"] = (
+            "baseline_proof_not_green"
+            if baseline_proof["printed_verdict"] != "PASS"
+            else "baseline_proof_census_blind"
         )
-        recon_status, recon = read_reconciliation(state, tenant, verdict_id)
-        recon_money = (
-            recon.get("canonical_net_verified_amount_minor")
-            if isinstance(recon, dict)
-            else None
+        return result
+
+    await_witness_catchup(state)
+    mutation = _a12_mutate(
+        str(tenant["tenant_id"]),
+        verdict_id,
+        baseline_amount=int(amount_minor),
+        currency=currency,
+    )
+    result["mutation"] = mutation
+    if mutation.get("committed") is not True:
+        result["reason"] = mutation.get("mutation_error") or mutation.get(
+            "reason", "mutation_not_committed"
+        )
+        original = mutation.get("original") or {}
+        if original.get("verdict"):
+            mutation["compensation"] = _a12_restore(
+                str(tenant["tenant_id"]), verdict_id, original
+            )
+        return result
+
+    original = mutation["original"]
+    contradictory = int(mutation["contradictory_amount_minor"])
+    try:
+        false_trust_read = _read_trust_attributed(tenant, verdict_id)
+        false_recon_status, false_recon = read_reconciliation(
+            state, tenant, verdict_id
         )
         result["contradictory_consumers"] = {
-            "trust": {
-                "status": trust_status,
-                "verified_revenue_minor": trust_money,
-                "refused": not (
-                    trust_status == 200 and trust_money == contradictory
-                ),
-            },
-            "reconciliation": {
-                "status": recon_status,
-                "net_minor": recon_money,
-                "refused": not (
-                    recon_status == 200 and recon_money == contradictory
-                ),
-            },
+            "trust": _a12_trust_disposition(
+                false_trust_read,
+                tenant=tenant,
+                original_amount=amount_minor,
+                contradictory_amount=contradictory,
+                currency=currency,
+            ),
+            "reconciliation": _a12_reconciliation_disposition(
+                false_recon_status,
+                false_recon,
+                original_amount=amount_minor,
+                contradictory_amount=contradictory,
+                currency=currency,
+            ),
         }
-        observed = sweep(
-            admin_dsn(),
-            public_key_path=public_key,
-            check_source_evidence=False,
+        false_proof = _a12_proof_observation(
+            "false-world",
+            tenant=tenant,
+            verdict_id=verdict_id,
+            amount_minor=contradictory,
+            currency=currency,
+            temp=temp,
         )
-        detected_rows = [
-            row
-            for row in observed.get("unverifiable", [])
-            if row.get("verdict_id") == verdict_id
-        ]
-        result["mandatory_proof"] = {
-            "detected": bool(detected_rows),
-            "verdict_unverifiable": detected_rows[:3],
-            "verdicts_examined": observed.get("verdicts_examined"),
-        }
+        result["false_world_proof"] = false_proof
+    except Exception as exc:  # noqa: BLE001 - restore before reporting the error
+        result["false_world_error"] = f"{type(exc).__name__}:{exc}"
     finally:
-        sql(
-            "UPDATE public.b23_match_verdicts"
-            " SET canonical_net_verified_amount_minor = %s,"
-            " canonical_captured_gross_amount_minor = %s,"
-            " verified_amount_minor = %s, currency_code = %s,"
-            " updated_at = %s"
-            " WHERE id = %s",
-            (*original, verdict_id),
+        result["restoration"] = _a12_restore(
+            str(tenant["tenant_id"]), verdict_id, original
         )
-        restored_rows = sql(
-            "SELECT canonical_net_verified_amount_minor,"
-            " canonical_captured_gross_amount_minor, verified_amount_minor,"
-            " currency_code, updated_at"
-            " FROM public.b23_match_verdicts WHERE id = %s",
-            (verdict_id,),
-        )
-        result["restored_row"] = (
-            [str(value) for value in restored_rows[0]] if restored_rows else None
-        )
-        result["restored_exact"] = bool(
-            restored_rows and tuple(restored_rows[0]) == original
-        )
-        try:
-            docker("stop", API)
-            start_api(state)
-            wait_http(f"http://127.0.0.1:{API_PORT}/health/live", 240)
-        except Exception as exc:  # noqa: BLE001
-            result["restore_restart_error"] = f"{type(exc).__name__}:{exc}"
 
-    restored_trust = _wait_signed(
-        tenant, verdict_id, amount_minor, currency
+    restoration = result.get("restoration") or {}
+    if restoration.get("restored_exact") is not True:
+        result["reason"] = (
+            restoration.get("restore_error")
+            or restoration.get("restore_verification_error")
+            or "restoration_not_exact"
+        )
+        return result
+
+    try:
+        await_witness_catchup(state)
+    except Exception as exc:  # noqa: BLE001
+        result["witness_catchup_error"] = f"{type(exc).__name__}:{exc}"
+    restored_window: dict = {}
+    restored_signed = _wait_signed(
+        tenant, verdict_id, amount_minor, currency, window=restored_window
     )
     restored_recon_status, restored_recon = read_reconciliation(
         state, tenant, verdict_id
     )
-    restored_sweep = sweep(
-        admin_dsn(),
-        public_key_path=public_key,
-        check_source_evidence=False,
+    result["restored_reconciliation"] = _a12_reconciliation_disposition(
+        restored_recon_status,
+        restored_recon,
+        original_amount=amount_minor,
+        contradictory_amount=contradictory,
+        currency=currency,
     )
-    restored_detected = [
-        row
-        for row in restored_sweep.get("unverifiable", [])
-        if row.get("verdict_id") == verdict_id
-    ]
-    result["restored_consumers"] = {
-        "trust_status": restored_trust.get("status"),
-        "trust_verified": (restored_trust.get("verification") or [0])[0]
-        == 200,
-        "reconciliation_status": restored_recon_status,
-        "reconciliation_net_minor": (
-            restored_recon.get("canonical_net_verified_amount_minor")
-            if isinstance(restored_recon, dict)
-            else None
+    result["restored_signed"] = restored_signed
+    restored_proof = _a12_proof_observation(
+        "restored",
+        tenant=tenant,
+        verdict_id=verdict_id,
+        amount_minor=amount_minor,
+        currency=currency,
+        temp=temp,
+    )
+    result["restored_proof"] = restored_proof
+    restored_evidence = _a12_evidence_snapshot(
+        str(tenant["tenant_id"]), verdict_id
+    )
+    result["restored_evidence"] = restored_evidence
+    result["source_hashes_after"] = _a12_proof_source_hashes()
+
+    trust = (result.get("contradictory_consumers") or {}).get("trust") or {}
+    recon = (result.get("contradictory_consumers") or {}).get("reconciliation") or {}
+    false_proof = result.get("false_world_proof") or {}
+    result["detection"] = {
+        "trust_definite_disposition": trust.get("definite_disposition") is True,
+        "trust_did_not_assert_false_current": (
+            trust.get("asserts_unsupported_amount_as_current") is not True
         ),
+        "reconciliation_definite_disposition": (
+            recon.get("definite_disposition") is True
+        ),
+        "reconciliation_did_not_assert_false_current": (
+            recon.get("asserts_unsupported_amount_as_current") is not True
+        ),
+        "proof_red": false_proof.get("printed_verdict") == "FAIL",
+        "proof_red_attributable_to_subject": bool(
+            false_proof.get("attributable_subject_violations")
+        ),
+        "proof_census_visible": false_proof.get("target_visible") is True,
     }
-    result["restored_proof_clean"] = not restored_detected
-    contradictory_consumers = result.get("contradictory_consumers") or {}
     result["established"] = bool(
-        result.get("committed") is True
-        and result.get("restored_exact") is True
-        and (result.get("mandatory_proof") or {}).get("detected") is True
-        and (contradictory_consumers.get("trust") or {}).get("refused") is True
-        and (contradictory_consumers.get("reconciliation") or {}).get(
-            "refused"
-        )
-        is True
-        and restored_trust.get("status") == 200
-        and (restored_trust.get("verification") or [0])[0] == 200
-        and restored_recon_status == 200
-        and (restored_recon or {}).get(
-            "canonical_net_verified_amount_minor"
-        )
-        == amount_minor
-        and result.get("restored_proof_clean") is True
+        mutation.get("committed") is True
+        and all(result["detection"].values())
+        and restoration.get("restored_exact") is True
+        and restored_signed.get("status") == 200
+        and (restored_signed.get("verification") or [0])[0] == 200
+        and result["restored_reconciliation"]["original_authentic_current"]
+        and restored_proof.get("printed_verdict") == "PASS"
+        and restored_proof.get("target_visible") is True
+        and restored_evidence.get("sha256") == original_evidence.get("sha256")
+        and _a12_attestation_verifies(original_evidence)
+        and _a12_attestation_verifies(restored_evidence)
+        and result["source_hashes_after"] == result["source_hashes_before"]
     )
+    if not result["established"]:
+        result["reason"] = "a12_required_conditions_not_met"
     return result
 
 
@@ -2840,6 +3831,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         initial["verdict_id"],
         baseline["amount_minor"],
         baseline["currency"],
+        temp,
     )
     staged = _stage(state, temp)
     kept = False

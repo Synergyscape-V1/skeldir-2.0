@@ -68,6 +68,9 @@ class B23MatchVerdictDetailResponse(BaseModel):
     canonical_gross_expected_amount_minor: int = Field(ge=0)
     canonical_gross_captured_amount_minor: int = Field(ge=0)
     canonical_net_verified_amount_minor: int = Field(ge=0)
+    # The row's canonical currency, copied verbatim. It is never converted,
+    # guessed, or defaulted; an invalid legacy currency is reported instead.
+    currency_code: str = Field(min_length=3, max_length=3)
     discrepancy: B23DiscrepancyContext
     adjustments_applied: bool
     pending_since: datetime
