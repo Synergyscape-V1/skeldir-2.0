@@ -267,6 +267,14 @@ def test_contract_semantic_conformance(spec_path: Path):
             if operation.security._parameters:
                 case._has_explicit_auth = True
             body_payload = None if case.body.__class__.__name__ == "NotSet" else case.body
+            if operation.path == "/api/auth/login" and isinstance(
+                body_payload, dict
+            ):
+                # tenant_id is optional for real single-membership login. The
+                # semantic conformance case supplies an explicit selector so
+                # it exercises the documented success/refusal surface rather
+                # than the intentional tenant_required branch.
+                body_payload.setdefault("tenant_id", str(uuid.uuid4()))
             response = client.request(
                 case.method.upper(),
                 case.path,

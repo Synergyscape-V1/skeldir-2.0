@@ -113,6 +113,8 @@ paths:
                   id: 550e8400-e29b-41d4-a716-446655440000
                   email: user@example.com
                   username: testuser
+        '400':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':

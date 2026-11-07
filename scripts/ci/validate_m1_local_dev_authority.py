@@ -818,6 +818,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/app/schemas/auth.py",
     "frontend/src/types/api/auth.ts",
     "scripts/ci/b26_p2_xxv_signup_walk.py",
+    "tests/contract/test_contract_semantics.py",
     "alembic/versions/007_skeldir_foundation/202611070001_supported_signup.py",
     # --- B2.6-P2 Corrective XXV auth downgrade compatibility ---
     # The runtime lookup stays owned by the dedicated BYPASSRLS role while
