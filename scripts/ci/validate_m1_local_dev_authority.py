@@ -808,6 +808,17 @@ ALLOWED_M1_PATH_PREFIXES = [
     # and equivalence corpora authenticate lawful fixtures via the atomic
     # transition (admin allowed); negative fixtures stay pending/unknown.
     # Same exemption shape; every prohibition retained unchanged.
+    # --- Parallel account prerequisite (supported signup/login) ---
+    # The operator-authorized account slice adds the signup contract and
+    # runtime, its forward migration, and the account-only owner provisioning.
+    # These are account surfaces, not financial/Trust authority changes.
+    "api-contracts/openapi/v1/auth.yaml",
+    "api-contracts/dist/openapi/v1/auth.bundled.yaml",
+    "backend/app/api/auth.py",
+    "backend/app/schemas/auth.py",
+    "frontend/src/types/api/auth.ts",
+    "scripts/ci/b26_p2_xxv_signup_walk.py",
+    "alembic/versions/007_skeldir_foundation/202611070001_supported_signup.py",
     # --- B2.6-P2 Corrective XXV auth downgrade compatibility ---
     # The runtime lookup stays owned by the dedicated BYPASSRLS role while
     # the legacy lookup remains migration-owned, so the predecessor B1.2
