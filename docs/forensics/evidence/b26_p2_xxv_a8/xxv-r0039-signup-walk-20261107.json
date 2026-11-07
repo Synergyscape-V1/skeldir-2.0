@@ -8,21 +8,21 @@
         "login_hash_matches": true,
         "memberships": [
           {
-            "id": "2748c471-677b-49df-8ce6-4d766e7f4c0e",
+            "id": "026142a4-48b2-4acf-a035-7aa1236a231a",
             "membership_status": "active",
-            "tenant_id": "5b227388-ba98-4760-9ebc-510960ee04fd"
+            "tenant_id": "b3db2e56-7bb8-482b-b68c-309ddde2e520"
           }
         ],
         "password_hash_bcrypt": true,
         "password_hash_differs_from_clear": true,
         "roles": [
           {
-            "membership_id": "2748c471-677b-49df-8ce6-4d766e7f4c0e",
+            "membership_id": "026142a4-48b2-4acf-a035-7aa1236a231a",
             "role_code": "admin",
-            "tenant_id": "5b227388-ba98-4760-9ebc-510960ee04fd"
+            "tenant_id": "b3db2e56-7bb8-482b-b68c-309ddde2e520"
           }
         ],
-        "user_id": "cfa8c02d-7b89-4f69-a9f3-522f9f53530a"
+        "user_id": "b7406bb0-5fd0-4cc1-8623-1eae6394801c"
       },
       "tenant": {
         "api_key_hash_sha256_hex": true,
@@ -38,7 +38,7 @@
           "webhook_ingress_identities": 0
         },
         "found": true,
-        "name": "Walk Business A ad180ed3",
+        "name": "Walk Business A 813072fd",
         "notification_email": "unavailable@skeldir.invalid",
         "notification_email_is_unavailable_sentinel": true,
         "provider_connections": 0,
@@ -54,21 +54,21 @@
         "login_hash_matches": true,
         "memberships": [
           {
-            "id": "bc38131b-e34e-4e7a-b3bb-abd4f0225375",
+            "id": "2aa040f2-b84f-4666-9903-08eda643f502",
             "membership_status": "active",
-            "tenant_id": "97e7ed9b-aa2c-4aad-b19e-17a5f7b82684"
+            "tenant_id": "9156eedf-4766-49f2-a3f2-367418b992c6"
           }
         ],
         "password_hash_bcrypt": true,
         "password_hash_differs_from_clear": true,
         "roles": [
           {
-            "membership_id": "bc38131b-e34e-4e7a-b3bb-abd4f0225375",
+            "membership_id": "2aa040f2-b84f-4666-9903-08eda643f502",
             "role_code": "admin",
-            "tenant_id": "97e7ed9b-aa2c-4aad-b19e-17a5f7b82684"
+            "tenant_id": "9156eedf-4766-49f2-a3f2-367418b992c6"
           }
         ],
-        "user_id": "ff8f4d85-484e-456c-9e40-37d8ac9f6016"
+        "user_id": "76095f88-003b-4208-978a-5de9335e537f"
       },
       "tenant": {
         "api_key_hash_sha256_hex": true,
@@ -84,7 +84,7 @@
           "webhook_ingress_identities": 0
         },
         "found": true,
-        "name": "Walk Business B e7b851d8",
+        "name": "Walk Business B 742117ce",
         "notification_email": "unavailable@skeldir.invalid",
         "notification_email_is_unavailable_sentinel": true,
         "provider_connections": 0,
@@ -95,23 +95,22 @@
   },
   "artifact": {
     "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
-    "captured_at_utc": "2026-11-07T23:28:17.099233Z",
-    "commit_sha": "66c732071f7913cdcb217e9675c7404f0bdfe9f8",
-    "compiled_genesis_hash": "dcdae967bcc593d8d69cbcc151715f603d68dc3aad6ad83f27b8491cc17f4c97",
-    "compiled_public_key_sha256": "3a2fdf46a8b75632771b3787c9312774373a02c0f122aa85e03eaa7a2cd5fe41",
-    "compiled_source_attestation_public_key_sha256": "a997d128fe8c3afa02088af32db4b3f17e55d8f493bd725b4deb50f4c37d62e0",
-    "compiled_trust_public_key_sha256": "94fd7e9aee2c15edd1d12b332466cc33f5a500a8feb67c3c7ef1c84e90f23011",
-    "compiled_trust_registry_sha256": "0c62b681493d0393d80ff4f6ece97a1e2a4a951c4d7e42d27fc17ac751380708",
-    "image_id": "sha256:48068d2377096f74f3750dd698da23f4211609a11c62838eca054c1c5017de9f",
-    "image_tag": "b26p2xxvsignupa5503f5c-final:latest",
+    "captured_at_utc": "2026-11-07T23:35:44.926305Z",
+    "commit_sha": "469b95235519e509fc71b354c443040f0ac5940f",
+    "compiled_genesis_hash": "0f4554388db039c2908d2c46aa01ce511e18fd290dfd89c61963d37747664de6",
+    "compiled_public_key_sha256": "a40d9c2a44c2f29ef3060e498fbc63316ab8ee44684d36474e79b1c0d48a4b17",
+    "compiled_source_attestation_public_key_sha256": "76e7dd4b79c44e380659fd163133a7f8ba7422fdd116a021c9ec635fc8de8536",
+    "compiled_trust_public_key_sha256": "3e4fee1e2721a259bc0388859c22bff7a01124b98e52131fd05e7f8e16ebeb0e",
+    "compiled_trust_registry_sha256": "99cd8cccc3c15c09e06eb7986283da5e46c421bb2f5ba750df3e051697c5aff5",
+    "image_id": "sha256:a5102240b37c9262af0fb964cf92174765cc2f1242dfc423f34b26dddb7aa57a",
+    "image_tag": "b26p2xxvsignup7db78d7c-final:latest",
     "migration_head": "202611070001",
-    "tree_sha": "764d0977faab8f997a85725a724eb1213e0d5e9b",
+    "tree_sha": "e732f16c0356267f09091122f9b7fb865646b4c9",
     "worktree_status_summary": {
-      "entries": 3,
+      "entries": 2,
       "image_bytes_match_committed_tree": true,
       "image_copied_path_entries": [],
       "non_image_entry_sample": [
-        " M frontend/src/types/api/index.ts",
         "?? session-ses_ebfe.md",
         "?? session-ses_efc3.md"
       ]
@@ -146,8 +145,8 @@
     ],
     "concurrent_duplicate_one_identity": 1,
     "concurrent_duplicate_one_workspace": [
-      0,
-      1
+      1,
+      0
     ],
     "cross_account_tenant_refused": 401,
     "duplicate_created_no_partial_tenant": 0,
@@ -157,11 +156,10 @@
     "execute_grant_was_present": true,
     "explicit_own_tenant_succeeds": 200,
     "image_matches_committed_tree": {
-      "entries": 3,
+      "entries": 2,
       "image_bytes_match_committed_tree": true,
       "image_copied_path_entries": [],
       "non_image_entry_sample": [
-        " M frontend/src/types/api/index.ts",
         "?? session-ses_ebfe.md",
         "?? session-ses_efc3.md"
       ]
@@ -346,47 +344,47 @@
   },
   "created": {
     "a": {
-      "tenant_id": "5b227388-ba98-4760-9ebc-510960ee04fd",
-      "user_id": "cfa8c02d-7b89-4f69-a9f3-522f9f53530a"
+      "tenant_id": "b3db2e56-7bb8-482b-b68c-309ddde2e520",
+      "user_id": "b7406bb0-5fd0-4cc1-8623-1eae6394801c"
     },
     "b": {
-      "tenant_id": "97e7ed9b-aa2c-4aad-b19e-17a5f7b82684",
-      "user_id": "ff8f4d85-484e-456c-9e40-37d8ac9f6016"
+      "tenant_id": "9156eedf-4766-49f2-a3f2-367418b992c6",
+      "user_id": "76095f88-003b-4208-978a-5de9335e537f"
     }
   },
   "failures": [],
-  "finished_at_utc": "2026-11-07T23:28:36.423930Z",
+  "finished_at_utc": "2026-11-07T23:36:02.926175Z",
   "fixture_disclosure": {
     "control_tenant_ids": [
-      "df75dd3a-3b96-4b32-961e-3d4d5135a47c",
-      "0d83f5b2-7e61-4200-a53d-e80ee1f19ab7"
+      "8bc2b44d-f117-4da0-bf38-2577122f31d3",
+      "867c424c-685e-4420-9fa4-fdf854f8c18a"
     ],
     "note": "The lane seeds unrelated control tenants and machine credentials. No fixture identity, password, key or minted token is used by this walk.",
     "source": "existing XXV lane up command",
     "used_for_walk": false
   },
   "lane": {
-    "database": "skeldir_signup_a5503f5c",
-    "lane_root": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b26p2xxvsignupa5503f5c-lane",
+    "database": "skeldir_signup_7db78d7c",
+    "lane_root": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b26p2xxvsignup7db78d7c-lane",
     "ports": {
-      "api": 52047,
-      "auth": 52048,
-      "pg": 52046
+      "api": 65428,
+      "auth": 65429,
+      "pg": 65427
     },
-    "prefix": "b26p2xxvsignupa5503f5c"
+    "prefix": "b26p2xxvsignup7db78d7c"
   },
   "login": {
     "a": {
       "access_token_present": true,
       "refresh_token_present": true,
-      "selected_tenant_id": "5b227388-ba98-4760-9ebc-510960ee04fd",
+      "selected_tenant_id": "b3db2e56-7bb8-482b-b68c-309ddde2e520",
       "status": 200,
       "verify_status": 200
     },
     "b": {
       "access_token_present": true,
       "refresh_token_present": true,
-      "selected_tenant_id": "97e7ed9b-aa2c-4aad-b19e-17a5f7b82684",
+      "selected_tenant_id": "9156eedf-4766-49f2-a3f2-367418b992c6",
       "status": 200,
       "verify_status": 200
     }
@@ -536,7 +534,7 @@
     "wrong_password_status": 401,
     "wrong_password_token_present": false
   },
-  "started_at_utc": "2026-11-07T23:26:36.523746Z",
+  "started_at_utc": "2026-11-07T23:34:07.673598Z",
   "teardown": {
     "command": "b26_p2_xxv_lane.py down + prefix image removal",
     "resources_absent": true,
