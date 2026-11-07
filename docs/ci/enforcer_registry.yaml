@@ -7397,3 +7397,24 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: enforce
+
+- id: b26-p2-xxv-signup-walk
+  path: scripts/ci/b26_p2_xxv_signup_walk.py
+  status: utility
+  owning_phase: B2.6-P2
+  protected_invariant: Supported account signup and login are executed through the shipped HTTP operation and a disposable production-equivalent lane.
+  command: python scripts/ci/b26_p2_xxv_signup_walk.py
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/b26_p2_xxv_signup_walk.py
+  expected_failure_meaning: The supported account prerequisite no longer behaves as declared.
+  first_diagnostic_command: python scripts/ci/b26_p2_xxv_signup_walk.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: imported_utility
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: utility

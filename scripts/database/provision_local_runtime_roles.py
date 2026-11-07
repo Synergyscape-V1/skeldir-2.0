@@ -16,6 +16,7 @@ from psycopg2 import sql
 
 _ROLES: tuple[tuple[str, str], ...] = (
     ("app_auth_lookup", "NOLOGIN BYPASSRLS"),
+    ("app_account_provisioner", "NOLOGIN BYPASSRLS"),
     ("app_ingress", "LOGIN PASSWORD 'app_ingress'"),
     ("app_worker", "LOGIN PASSWORD 'app_worker'"),
     ("app_relay", "LOGIN PASSWORD 'app_relay'"),
@@ -41,6 +42,23 @@ def main() -> None:
                 cursor.execute(
                     sql.SQL("CREATE ROLE {} " + attributes).format(sql.Identifier(name))
                 )
+            cursor.execute("SELECT current_user")
+            current_user = str(cursor.fetchone()[0])
+            for role_name, member_name in (
+                ("app_auth_lookup", "app_account_provisioner"),
+                ("app_account_provisioner", current_user),
+            ):
+                cursor.execute(
+                    "SELECT pg_has_role(%s, %s, 'member')",
+                    (member_name, role_name),
+                )
+                if not bool(cursor.fetchone()[0]):
+                    cursor.execute(
+                        sql.SQL("GRANT {} TO {}").format(
+                            sql.Identifier(role_name),
+                            sql.Identifier(member_name),
+                        )
+                    )
     finally:
         connection.close()
 
