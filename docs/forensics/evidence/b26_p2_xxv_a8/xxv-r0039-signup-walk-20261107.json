@@ -1,0 +1,549 @@
+{
+  "account_evidence": {
+    "a": {
+      "account": {
+        "auth_provider": "password",
+        "found": true,
+        "is_active": true,
+        "login_hash_matches": true,
+        "memberships": [
+          {
+            "id": "2748c471-677b-49df-8ce6-4d766e7f4c0e",
+            "membership_status": "active",
+            "tenant_id": "5b227388-ba98-4760-9ebc-510960ee04fd"
+          }
+        ],
+        "password_hash_bcrypt": true,
+        "password_hash_differs_from_clear": true,
+        "roles": [
+          {
+            "membership_id": "2748c471-677b-49df-8ce6-4d766e7f4c0e",
+            "role_code": "admin",
+            "tenant_id": "5b227388-ba98-4760-9ebc-510960ee04fd"
+          }
+        ],
+        "user_id": "cfa8c02d-7b89-4f69-a9f3-522f9f53530a"
+      },
+      "tenant": {
+        "api_key_hash_sha256_hex": true,
+        "financial_and_source_counts": {
+          "agent_clients": 0,
+          "agent_service_credentials": 0,
+          "attribution_allocations": 0,
+          "attribution_events": 0,
+          "b23_match_verdicts": 0,
+          "b23_revenue_events": 0,
+          "b26_p2_source_money_attestation": 0,
+          "revenue_ledger": 0,
+          "webhook_ingress_identities": 0
+        },
+        "found": true,
+        "name": "Walk Business A ad180ed3",
+        "notification_email": "unavailable@skeldir.invalid",
+        "notification_email_is_unavailable_sentinel": true,
+        "provider_connections": 0,
+        "provider_credentials": 0,
+        "provider_secret_columns_all_null": true
+      }
+    },
+    "b": {
+      "account": {
+        "auth_provider": "password",
+        "found": true,
+        "is_active": true,
+        "login_hash_matches": true,
+        "memberships": [
+          {
+            "id": "bc38131b-e34e-4e7a-b3bb-abd4f0225375",
+            "membership_status": "active",
+            "tenant_id": "97e7ed9b-aa2c-4aad-b19e-17a5f7b82684"
+          }
+        ],
+        "password_hash_bcrypt": true,
+        "password_hash_differs_from_clear": true,
+        "roles": [
+          {
+            "membership_id": "bc38131b-e34e-4e7a-b3bb-abd4f0225375",
+            "role_code": "admin",
+            "tenant_id": "97e7ed9b-aa2c-4aad-b19e-17a5f7b82684"
+          }
+        ],
+        "user_id": "ff8f4d85-484e-456c-9e40-37d8ac9f6016"
+      },
+      "tenant": {
+        "api_key_hash_sha256_hex": true,
+        "financial_and_source_counts": {
+          "agent_clients": 0,
+          "agent_service_credentials": 0,
+          "attribution_allocations": 0,
+          "attribution_events": 0,
+          "b23_match_verdicts": 0,
+          "b23_revenue_events": 0,
+          "b26_p2_source_money_attestation": 0,
+          "revenue_ledger": 0,
+          "webhook_ingress_identities": 0
+        },
+        "found": true,
+        "name": "Walk Business B e7b851d8",
+        "notification_email": "unavailable@skeldir.invalid",
+        "notification_email_is_unavailable_sentinel": true,
+        "provider_connections": 0,
+        "provider_credentials": 0,
+        "provider_secret_columns_all_null": true
+      }
+    }
+  },
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-07T23:28:17.099233Z",
+    "commit_sha": "66c732071f7913cdcb217e9675c7404f0bdfe9f8",
+    "compiled_genesis_hash": "dcdae967bcc593d8d69cbcc151715f603d68dc3aad6ad83f27b8491cc17f4c97",
+    "compiled_public_key_sha256": "3a2fdf46a8b75632771b3787c9312774373a02c0f122aa85e03eaa7a2cd5fe41",
+    "compiled_source_attestation_public_key_sha256": "a997d128fe8c3afa02088af32db4b3f17e55d8f493bd725b4deb50f4c37d62e0",
+    "compiled_trust_public_key_sha256": "94fd7e9aee2c15edd1d12b332466cc33f5a500a8feb67c3c7ef1c84e90f23011",
+    "compiled_trust_registry_sha256": "0c62b681493d0393d80ff4f6ece97a1e2a4a951c4d7e42d27fc17ac751380708",
+    "image_id": "sha256:48068d2377096f74f3750dd698da23f4211609a11c62838eca054c1c5017de9f",
+    "image_tag": "b26p2xxvsignupa5503f5c-final:latest",
+    "migration_head": "202611070001",
+    "tree_sha": "764d0977faab8f997a85725a724eb1213e0d5e9b",
+    "worktree_status_summary": {
+      "entries": 3,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M frontend/src/types/api/index.ts",
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "check_details": {
+    "account_a_no_financial_or_source_record": {
+      "agent_clients": 0,
+      "agent_service_credentials": 0,
+      "attribution_allocations": 0,
+      "attribution_events": 0,
+      "b23_match_verdicts": 0,
+      "b23_revenue_events": 0,
+      "b26_p2_source_money_attestation": 0,
+      "revenue_ledger": 0,
+      "webhook_ingress_identities": 0
+    },
+    "account_b_no_financial_or_source_record": {
+      "agent_clients": 0,
+      "agent_service_credentials": 0,
+      "attribution_allocations": 0,
+      "attribution_events": 0,
+      "b23_match_verdicts": 0,
+      "b23_revenue_events": 0,
+      "b26_p2_source_money_attestation": 0,
+      "revenue_ledger": 0,
+      "webhook_ingress_identities": 0
+    },
+    "concurrent_duplicate_exactly_one_success": [
+      201,
+      409
+    ],
+    "concurrent_duplicate_one_identity": 1,
+    "concurrent_duplicate_one_workspace": [
+      0,
+      1
+    ],
+    "cross_account_tenant_refused": 401,
+    "duplicate_created_no_partial_tenant": 0,
+    "duplicate_created_one_identity": 1,
+    "duplicate_first_created": 201,
+    "duplicate_normalized_refused": 409,
+    "execute_grant_was_present": true,
+    "explicit_own_tenant_succeeds": 200,
+    "image_matches_committed_tree": {
+      "entries": 3,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M frontend/src/types/api/index.ts",
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    },
+    "invalid_inputs_governed_422": [
+      422,
+      422,
+      422,
+      422
+    ],
+    "invalid_inputs_no_partial_account_tables": {
+      "after": {
+        "membership_roles": 4,
+        "memberships": 4,
+        "tenants": 6,
+        "users": 6
+      },
+      "before": {
+        "membership_roles": 4,
+        "memberships": 4,
+        "tenants": 6,
+        "users": 6
+      }
+    },
+    "login_a_without_selector": 200,
+    "login_b_without_selector": 200,
+    "migration_head_is_supported_signup": "202611070001",
+    "no_runtime_role_inherits_provisioner": [],
+    "provisioner_has_no_financial_provider_signing_table_authority": {
+      "agent_clients": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "attribution_events": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "b23_match_verdicts": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "b23_revenue_events": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "b26_p2_auth_root_evidence": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "b26_p2_source_money_attestation": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "platform_credentials": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "sensitive_execute": [],
+      "trust_envelope_issuance_log": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "webhook_ingress_identities": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      }
+    },
+    "provisioner_has_no_sensitive_function_authority": [],
+    "provisioner_is_nologin_bypassrls": [
+      [
+        false,
+        true
+      ]
+    ],
+    "restored_signup_logs_in": 200,
+    "same_uncreated_signup_succeeds_after_restore": 201,
+    "signup_a_created": 201,
+    "signup_b_created": 201,
+    "signup_refused_without_execute": 500,
+    "signup_without_execute_created_nothing": {
+      "after": {
+        "membership_roles": 4,
+        "memberships": 4,
+        "tenants": 6,
+        "users": 6
+      },
+      "before": {
+        "membership_roles": 4,
+        "memberships": 4,
+        "tenants": 6,
+        "users": 6
+      },
+      "privilege": false,
+      "status": 500
+    },
+    "verify_a": 200,
+    "verify_b": 200,
+    "wrong_password_refused": 401
+  },
+  "checks": {
+    "account_a_admin_role_only_new_tenant": true,
+    "account_a_api_key_hash_discarded_shape": true,
+    "account_a_login_hash_matches": true,
+    "account_a_no_financial_or_source_record": true,
+    "account_a_no_provider_connection": true,
+    "account_a_no_provider_secret": true,
+    "account_a_notification_sentinel": true,
+    "account_a_one_active_membership": true,
+    "account_a_password_is_bcrypt_hash": true,
+    "account_a_password_provider_active": true,
+    "account_a_workspace_name": true,
+    "account_b_admin_role_only_new_tenant": true,
+    "account_b_api_key_hash_discarded_shape": true,
+    "account_b_login_hash_matches": true,
+    "account_b_no_financial_or_source_record": true,
+    "account_b_no_provider_connection": true,
+    "account_b_no_provider_secret": true,
+    "account_b_notification_sentinel": true,
+    "account_b_one_active_membership": true,
+    "account_b_password_is_bcrypt_hash": true,
+    "account_b_password_provider_active": true,
+    "account_b_workspace_name": true,
+    "app_user_cannot_directly_insert_identity": true,
+    "concurrent_duplicate_exactly_one_success": true,
+    "concurrent_duplicate_one_identity": true,
+    "concurrent_duplicate_one_workspace": true,
+    "cross_account_tenant_no_token": true,
+    "cross_account_tenant_refused": true,
+    "duplicate_created_no_partial_tenant": true,
+    "duplicate_created_one_identity": true,
+    "duplicate_first_created": true,
+    "duplicate_normalized_refused": true,
+    "execute_grant_restored_exactly": true,
+    "execute_grant_was_present": true,
+    "explicit_own_tenant_succeeds": true,
+    "image_matches_committed_tree": true,
+    "invalid_inputs_create_no_accounts": true,
+    "invalid_inputs_governed_422": true,
+    "invalid_inputs_no_partial_account_tables": true,
+    "login_a_selected_own_tenant": true,
+    "login_a_tokens_present": true,
+    "login_a_without_selector": true,
+    "login_b_selected_own_tenant": true,
+    "login_b_tokens_present": true,
+    "login_b_without_selector": true,
+    "migration_head_is_supported_signup": true,
+    "no_runtime_role_inherits_provisioner": true,
+    "provisioner_has_no_financial_provider_signing_table_authority": true,
+    "provisioner_has_no_sensitive_function_authority": true,
+    "provisioner_is_nologin_bypassrls": true,
+    "restored_signup_logs_in": true,
+    "same_uncreated_signup_succeeds_after_restore": true,
+    "signup_a_created": true,
+    "signup_b_created": true,
+    "signup_ids_distinct": true,
+    "signup_refused_without_execute": true,
+    "signup_without_execute_created_nothing": true,
+    "verify_a": true,
+    "verify_a_identity": true,
+    "verify_b": true,
+    "verify_b_identity": true,
+    "wrong_password_no_token": true,
+    "wrong_password_refused": true
+  },
+  "created": {
+    "a": {
+      "tenant_id": "5b227388-ba98-4760-9ebc-510960ee04fd",
+      "user_id": "cfa8c02d-7b89-4f69-a9f3-522f9f53530a"
+    },
+    "b": {
+      "tenant_id": "97e7ed9b-aa2c-4aad-b19e-17a5f7b82684",
+      "user_id": "ff8f4d85-484e-456c-9e40-37d8ac9f6016"
+    }
+  },
+  "failures": [],
+  "finished_at_utc": "2026-11-07T23:28:36.423930Z",
+  "fixture_disclosure": {
+    "control_tenant_ids": [
+      "df75dd3a-3b96-4b32-961e-3d4d5135a47c",
+      "0d83f5b2-7e61-4200-a53d-e80ee1f19ab7"
+    ],
+    "note": "The lane seeds unrelated control tenants and machine credentials. No fixture identity, password, key or minted token is used by this walk.",
+    "source": "existing XXV lane up command",
+    "used_for_walk": false
+  },
+  "lane": {
+    "database": "skeldir_signup_a5503f5c",
+    "lane_root": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b26p2xxvsignupa5503f5c-lane",
+    "ports": {
+      "api": 52047,
+      "auth": 52048,
+      "pg": 52046
+    },
+    "prefix": "b26p2xxvsignupa5503f5c"
+  },
+  "login": {
+    "a": {
+      "access_token_present": true,
+      "refresh_token_present": true,
+      "selected_tenant_id": "5b227388-ba98-4760-9ebc-510960ee04fd",
+      "status": 200,
+      "verify_status": 200
+    },
+    "b": {
+      "access_token_present": true,
+      "refresh_token_present": true,
+      "selected_tenant_id": "97e7ed9b-aa2c-4aad-b19e-17a5f7b82684",
+      "status": 200,
+      "verify_status": 200
+    }
+  },
+  "passed": true,
+  "prohibited_shortcuts_used": {
+    "account_insert": false,
+    "contract_testing_or_testing_bypass": false,
+    "identity_injection": false,
+    "mint_jwt": false,
+    "seed_tenant": false
+  },
+  "role_posture": {
+    "app_user_direct_users_insert": false,
+    "provisioner_can_login": false,
+    "provisioner_has_bypassrls": true,
+    "provisioner_sensitive_privileges": {
+      "agent_clients": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "attribution_events": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "b23_match_verdicts": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "b23_revenue_events": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "b26_p2_auth_root_evidence": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "b26_p2_source_money_attestation": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "platform_credentials": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "sensitive_execute": [],
+      "trust_envelope_issuance_log": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      },
+      "webhook_ingress_identities": {
+        "delete": false,
+        "insert": false,
+        "select": false,
+        "update": false
+      }
+    },
+    "runtime_roles": {
+      "app_b28_requester": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_b28_solver": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_beat": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_celery_transport": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_dispatch_publisher": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_ingress": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_relay": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_ro": {
+        "rolbypassrls": false,
+        "rolcanlogin": false,
+        "rolsuper": false
+      },
+      "app_rw": {
+        "rolbypassrls": false,
+        "rolcanlogin": false,
+        "rolsuper": false
+      },
+      "app_trust_issuer": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_trust_signer": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_user": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      },
+      "app_worker": {
+        "rolbypassrls": false,
+        "rolcanlogin": true,
+        "rolsuper": false
+      }
+    },
+    "runtime_roles_inheriting_provisioner": []
+  },
+  "selector_checks": {
+    "cross_account_status": 401,
+    "cross_account_token_present": false,
+    "explicit_own_tenant_status": 200,
+    "wrong_password_status": 401,
+    "wrong_password_token_present": false
+  },
+  "started_at_utc": "2026-11-07T23:26:36.523746Z",
+  "teardown": {
+    "command": "b26_p2_xxv_lane.py down + prefix image removal",
+    "resources_absent": true,
+    "resources_after": {
+      "containers": [],
+      "networks": [],
+      "volumes": []
+    }
+  }
+}
