@@ -1,0 +1,37 @@
+{
+  "gate_id": "B2.6-P2-XXII-COMPOSITION",
+  "status": "FAIL",
+  "violations": [
+    "xxii_comp_source_evidence_failed:SourceEvidenceError:source_evidence_tenant_failures:ebaf8ce7-91b9-47fb-bca7-011c8de36f6a:source_fact_journal_source_unverified:80109373-07c6-4c9a-9176-58fd85d676ab",
+    "xxv_source_money_unattested:51770aee-c835-40b7-97ad-1483fedc1da1:ingress_amount_diverged_from_attestation"
+  ],
+  "checks": {
+    "static_xxv_attestation_law": true,
+    "static_xxv_no_owner_written_instant": true,
+    "static_xxv_2_amendment_law": true,
+    "static_xxv_a3_observation_on_growth": true,
+    "static_laws": true,
+    "live_head": true,
+    "live_reader_surface": true,
+    "live_conservation_surface": true,
+    "live_chronology_triggers": true,
+    "live_creation_law": true,
+    "live_future_refusals": true,
+    "live_coherent_rewrite_refused": true,
+    "live_conservation_cells": true,
+    "live_prefix_digest": true,
+    "live_truncate_refused": true,
+    "live_conduction_completeness": true,
+    "live_external_false_world_refused": true,
+    "live_external_false_world_restored": true,
+    "live_external_false_world_chain_preserved": true,
+    "live_xxv_attestation_sweep": false,
+    "live_xxv_attestation_census": {
+      "xxv_attested": 0,
+      "unattested_not_claimed_current": 0,
+      "attested_but_not_claimed_current": 0,
+      "source_not_root_authenticated": 0
+    },
+    "live_xxv_verdicts_examined": 1
+  }
+}
