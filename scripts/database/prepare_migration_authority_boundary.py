@@ -680,15 +680,16 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                             sql.Identifier(config.runtime_user),
                         )
                     )
-            cursor.execute(
-                sql.SQL(
-                    "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA public "
-                    "GRANT SELECT, INSERT ON TABLES TO {}"
-                ).format(
-                    sql.Identifier(config.migration_user),
-                    sql.Identifier(config.runtime_user),
+            if not hardened:
+                cursor.execute(
+                    sql.SQL(
+                        "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA public "
+                        "GRANT SELECT, INSERT ON TABLES TO {}"
+                    ).format(
+                        sql.Identifier(config.migration_user),
+                        sql.Identifier(config.runtime_user),
+                    )
                 )
-            )
             _assert_runtime_authority_not_expanded(cursor, config, hardened=hardened)
             return hardened
     finally:
