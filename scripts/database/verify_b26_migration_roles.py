@@ -4,8 +4,9 @@
 The XXV migrations grant and transfer ownership; they do not silently skip a
 missing role. This preflight is the deployment-side consumer of that law:
 
-* ``app_auth_lookup`` is a NOLOGIN BYPASSRLS owner role. It is created here
-  when the migration principal has CREATEROLE, or the run fails visibly.
+* ``app_auth_lookup`` is a NOLOGIN BYPASSRLS owner role. Creating it requires
+  suitable administrative authority; CREATEROLE alone is insufficient on
+  PostgreSQL 15. Failure is reported explicitly.
 * Every runtime role the migration grants to must already exist. Production
   login roles must be LOGIN; this script never invents passwords.
 * Before construction, the migration principal must be able to own the
