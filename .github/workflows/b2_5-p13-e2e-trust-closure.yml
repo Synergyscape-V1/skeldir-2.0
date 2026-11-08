@@ -2561,6 +2561,10 @@ jobs:
           role_flags=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT rolbypassrls::text || ':' || rolsuper::text FROM pg_roles WHERE rolname = current_user")
           test "$role_flags" = "false:false" || test "$role_flags" = "f:f"
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --database-name skeldir_b25_p13_c16 \
+            --prepare-downgrade
           python -m alembic downgrade 202608291200
           python -m alembic upgrade head
           # The head is read from the migration graph rather than pinned, so a

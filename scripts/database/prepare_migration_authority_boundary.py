@@ -86,6 +86,7 @@ class AuthorityConfig:
     b28_solver_user: str = "app_b28_solver"
     b28_solver_password: str = "app_b28_solver"
     rotate_existing_credentials: bool = False
+    prepare_downgrade: bool = False
 
 
 def _parse_args() -> AuthorityConfig:
@@ -98,6 +99,14 @@ def _parse_args() -> AuthorityConfig:
         "--admin-dsn", required=True, help="Superuser/admin PostgreSQL DSN."
     )
     parser.add_argument("--database-name", required=True, help="Target database name.")
+    parser.add_argument(
+        "--prepare-downgrade",
+        action="store_true",
+        help=(
+            "Recreate the temporary account ownership-transfer graph before a "
+            "downgrade. Ordinary preparation never recreates it once removed."
+        ),
+    )
     parser.add_argument("--runtime-user", default="app_user")
     parser.add_argument("--runtime-password", default="app_user")
     parser.add_argument("--migration-user", default="migration_owner")
@@ -165,6 +174,7 @@ def _parse_args() -> AuthorityConfig:
         b28_solver_user=args.b28_solver_user,
         b28_solver_password=args.b28_solver_password,
         rotate_existing_credentials=bool(args.rotate_existing_credentials),
+        prepare_downgrade=bool(args.prepare_downgrade),
     )
 
 
@@ -332,6 +342,7 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
     ownership_transfer_needed, cleanup_grants_needed = _temporary_owner_state(
         config.admin_dsn, config.database_name
     )
+    cleanup_grants_needed = cleanup_grants_needed or config.prepare_downgrade
     admin_conn = psycopg2.connect(config.admin_dsn)
     try:
         admin_conn.autocommit = True
