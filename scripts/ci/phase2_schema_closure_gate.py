@@ -267,6 +267,11 @@ def _reset_public_schema(migration_url: str) -> None:
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute("DROP SCHEMA IF EXISTS public CASCADE")
+            # Account construction adds functions under the auth schema.
+            # Reset it with the public schema so the determinism cycles start
+            # from the same true base rather than re-running CREATE OR REPLACE
+            # against a function owned by a different role.
+            cur.execute("DROP SCHEMA IF EXISTS auth CASCADE")
             cur.execute("CREATE SCHEMA public")
             cur.execute("GRANT ALL ON SCHEMA public TO current_user")
             cur.execute("GRANT USAGE, CREATE ON SCHEMA public TO app_user")
@@ -458,11 +463,13 @@ def _eg21_parity(
 
 def _eg22_determinism(*, migration_url: str, env: dict[str, str], artifacts_dir: Path, log_dir: Path) -> GateResult:
     _reset_public_schema(migration_url)
+    _prepare_downgrade_graph(migration_url, env, log_dir, "eg22_a")
     _apply_migrations(migration_url, env, log_dir)
     dump_a = _normalize_schema(_schema_dump(migration_url))
     (artifacts_dir / "eg2_2_cycle_a.normalized.sql").write_text(dump_a, encoding="utf-8")
 
     _reset_public_schema(migration_url)
+    _prepare_downgrade_graph(migration_url, env, log_dir, "eg22_b")
     _apply_migrations(migration_url, env, log_dir)
     dump_b = _normalize_schema(_schema_dump(migration_url))
     (artifacts_dir / "eg2_2_cycle_b.normalized.sql").write_text(dump_b, encoding="utf-8")
