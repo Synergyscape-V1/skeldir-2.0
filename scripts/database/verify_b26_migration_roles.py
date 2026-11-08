@@ -8,9 +8,14 @@ missing role. This preflight is the deployment-side consumer of that law:
   when the migration principal has CREATEROLE, or the run fails visibly.
 * Every runtime role the migration grants to must already exist. Production
   login roles must be LOGIN; this script never invents passwords.
-* The migration principal must be able to own the auth-lookup functions.
+* Before construction, the migration principal must be able to own the
+  auth-lookup functions; finalized post-migration service does not require
+  that temporary ownership path.
 
 Run before ``alembic upgrade head`` with the production migration DSN.
+With ``--post-migration`` the verifier inspects the finalized service state:
+the construction-only migration-owner lookup membership is not required and
+is neither granted nor recreated by the post-migration check.
 """
 
 from __future__ import annotations
@@ -265,7 +270,8 @@ def main() -> int:
         conn.autocommit = True
         with conn.cursor() as cursor:
             _ensure_auth_lookup(cursor, errors)
-            _ensure_migration_can_own(cursor, errors)
+            if not args.post_migration:
+                _ensure_migration_can_own(cursor, errors)
             _check_runtime_roles(
                 cursor,
                 require_login=args.require_login_runtime_roles,
