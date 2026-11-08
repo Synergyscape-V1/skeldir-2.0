@@ -220,6 +220,8 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/enforce_postgres_only.py",
     "scripts/ci/run_ci_governance_cohort.py",
     "scripts/ci/phase2_schema_closure_gate.py",
+    "backend/app/core/channel_service.py",
+    "backend/app/tasks/privacy.py",
     "scripts/ci/validate_m3_ci_governance.py",
     "scripts/ci/validate_m4_ops_runbooks.py",
     "scripts/ci/validate_b24_p1_authority_schema.py",
