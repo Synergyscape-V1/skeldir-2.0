@@ -69,16 +69,19 @@ def _grant_if_both_present(role: str, member: str) -> None:
 
 
 def upgrade() -> None:
-    # The provisioner carries the temporary ADMIN OPTION on its lookup
-    # membership, and can therefore revoke that membership itself.  The
-    # migration principal is a member of the provisioner.
-    op.execute("SET LOCAL ROLE app_account_provisioner")
-    op.execute("REVOKE app_auth_lookup FROM app_account_provisioner")
-    op.execute("RESET ROLE")
-    _revoke_if_present("app_account_provisioner", "migration_owner")
-    # The direct membership was temporary in the predecessor migration; any
-    # copy reintroduced by an out-of-band preparation is removed here too.
-    _revoke_if_present("app_auth_lookup", "migration_owner")
+    from sqlalchemy import text
+
+    actor = str(op.get_bind().execute(text("SELECT current_user")).scalar())
+
+    # PostgreSQL 16 only lets the grantor (or a superuser) revoke a
+    # membership.  Preparation grants the lookup -> provisioner edge with the
+    # migration principal as grantor, so this edge is removable here.  The
+    # principal's own two memberships are attempted directly: PostgreSQL 15
+    # removes them, while PostgreSQL 16 leaves memberships granted by another
+    # role in place without making the cleanup fail.
+    _revoke_if_present("app_auth_lookup", "app_account_provisioner")
+    _revoke_if_present("app_account_provisioner", actor)
+    _revoke_if_present("app_auth_lookup", actor)
 
 
 def downgrade() -> None:

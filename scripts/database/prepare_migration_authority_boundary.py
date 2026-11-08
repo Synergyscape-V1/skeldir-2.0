@@ -354,79 +354,36 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
             _create_bypass_rls_nologin_role(cursor, "app_auth_lookup")
             _create_bypass_rls_nologin_role(cursor, "app_account_provisioner")
             if cleanup_grants_needed:
-                # Admin option on the lookup owner lets the cleanup migration
-                # revoke the temporary chain.  It is revoked together with
-                # that chain in the same upgrade.
+                # The migration principal needs membership in both owners for
+                # the owner transfer.  The lookup -> provisioner edge is
+                # granted by the migration principal itself so that the
+                # cleanup migration is its grantor and can remove it on
+                # PostgreSQL 16, where a non-superuser cannot revoke a
+                # membership granted by a different role.
                 cursor.execute(
                     sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
                         sql.Identifier("app_auth_lookup"),
                         sql.Identifier(config.migration_user),
                     )
                 )
-            if ownership_transfer_needed:
-                # Account provisioning owns its account-only DEFINER function.
-                # The auth lookup owner is reached through this migration
-                # helper so the initial revision can transfer the lookup
-                # function without a direct runtime membership.  The helper is
-                # never granted to a runtime principal, and a fully upgraded
-                # preparation does not recreate either temporary edge.
-                cursor.execute(
-                    sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
-                        sql.Identifier("app_auth_lookup"),
-                        sql.Identifier("app_account_provisioner"),
-                    )
-                )
-            if cleanup_grants_needed:
-                # The provisioner must be able to revoke its own temporary
-                # lookup membership during cleanup.  If the edge already
-                # exists, this only adds the admin option; a fully upgraded
-                # database has no edge and this block does not run.
-                cursor.execute(
-                    sql.SQL(
-                        "DO $$ BEGIN "
-                        "IF EXISTS (SELECT 1 FROM pg_auth_members m "
-                        "JOIN pg_roles r ON r.oid = m.roleid "
-                        "JOIN pg_roles u ON u.oid = m.member "
-                        "WHERE r.rolname = {role} AND u.rolname = {member}) "
-                        "THEN EXECUTE {grant}; END IF; END $$;"
-                    ).format(
-                        role=sql.Literal("app_auth_lookup"),
-                        member=sql.Literal("app_account_provisioner"),
-                        grant=sql.Literal(
-                            "GRANT app_auth_lookup TO "
-                            "app_account_provisioner WITH ADMIN OPTION"
-                        ),
-                    )
-                )
-            if ownership_transfer_needed:
                 cursor.execute(
                     sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
                         sql.Identifier("app_account_provisioner"),
                         sql.Identifier(config.migration_user),
                     )
                 )
-            elif cleanup_grants_needed:
-                # The migration principal must be able to revoke its own
-                # temporary membership.  If the edge already exists, this only
-                # adds the admin option; a fully upgraded database has no edge
-                # and this block does not run.
                 cursor.execute(
-                    sql.SQL(
-                        "DO $$ BEGIN "
-                        "IF EXISTS (SELECT 1 FROM pg_auth_members m "
-                        "JOIN pg_roles r ON r.oid = m.roleid "
-                        "JOIN pg_roles u ON u.oid = m.member "
-                        "WHERE r.rolname = {role} AND u.rolname = {member}) "
-                        "THEN EXECUTE {grant}; END IF; END $$;"
-                    ).format(
-                        role=sql.Literal("app_account_provisioner"),
-                        member=sql.Literal(config.migration_user),
-                        grant=sql.Literal(
-                            "GRANT app_account_provisioner TO "
-                            f'"{config.migration_user}" WITH ADMIN OPTION'
-                        ),
+                    sql.SQL("SET ROLE {}").format(
+                        sql.Identifier(config.migration_user)
                     )
                 )
+                cursor.execute(
+                    sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                        sql.Identifier("app_auth_lookup"),
+                        sql.Identifier("app_account_provisioner"),
+                    )
+                )
+                cursor.execute("RESET ROLE")
             _create_or_alter_login_role(
                 cursor,
                 config.worker_user,
