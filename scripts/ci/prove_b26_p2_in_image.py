@@ -562,6 +562,7 @@ def main() -> int:
             f"{REPO_ROOT / 'backend' / 'tests'}:/app/backend/tests:ro",
             f"{REPO_ROOT / 'monitoring'}:/app/monitoring:ro",
             f"{REPO_ROOT / 'scripts' / 'ops'}:/app/scripts/ops:ro",
+            f"{REPO_ROOT / 'scripts' / 'database'}:/app/scripts/database:ro",
         ]
         proc = run_img(
             args.image_tag,
