@@ -867,6 +867,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b26_p2_xxii_composition.py",
     "scripts/ci/verify_b23_p1_migration_reversibility.py",
     "backend/tests/finance_reconciliation/test_b26_p2_corrective_viii_context_robust.py",
+    "backend/tests/finance_reconciliation/test_b26_p2_corrective_ix_consequence.py",
     "docs/forensics/evidence/b11_p1/ssot_contract_snapshot.json",
     "contracts-internal/governance/b26_p2_authority_universe.pin.json",
     "contracts-internal/governance/b26_p2_x_semantic_universe.pin.json",

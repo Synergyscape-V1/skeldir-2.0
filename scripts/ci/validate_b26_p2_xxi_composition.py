@@ -1054,6 +1054,37 @@ def _live_checks(
         # Explicit supported-boundary target (not -1): with the
         # additive 300005 follow-up, -1 would stop at 300004 and never
         # exercise the 300003 boundary this leg exists to prove.
+        from urllib.parse import urlparse as _urlparse
+
+        _parsed_admin = _urlparse(admin_dsn)
+        _admin_db = _parsed_admin.path.lstrip("/")
+        _admin_super = _os.environ.get("B26_P2_SUPERUSER_DSN", "").strip() or (
+            "postgresql://postgres:postgres@"
+            f"{_parsed_admin.hostname or '127.0.0.1'}:"
+            f"{_parsed_admin.port or 5432}/{_admin_db}"
+        )
+        _prepare = _sp.run(
+            [
+                sys.executable,
+                str(
+                    REPO_ROOT
+                    / "scripts/database/prepare_migration_authority_boundary.py"
+                ),
+                "--admin-dsn",
+                _admin_super,
+                "--database-name",
+                _admin_db,
+                "--prepare-downgrade",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT),
+        )
+        if _prepare.returncode != 0:
+            violations.append(
+                "xxi_comp_prepare_downgrade_failed:"
+                + (_prepare.stderr or _prepare.stdout)[-200:]
+            )
         down = _sp.run(
             [sys.executable, "-m", "alembic", "downgrade", "202609300003"],
             capture_output=True, text=True, cwd=str(REPO_ROOT), env=env,
