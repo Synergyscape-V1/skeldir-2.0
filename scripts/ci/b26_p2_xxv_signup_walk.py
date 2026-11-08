@@ -454,12 +454,14 @@ def _account_owner_posture() -> dict:
             """
             SELECT p.proname, pg_get_userbyid(p.proowner)
               FROM pg_proc p
-              JOIN pg_namespace n ON n.oid = p.pronamespace
-             WHERE n.nspname = 'auth'
-               AND p.oid::regprocedure::text IN (
-                   'auth.register_business_account(text,text,text)',
+             WHERE p.oid IN (
+                 to_regprocedure(
+                   'auth.register_business_account(text,text,text)'
+                 )::oid,
+                 to_regprocedure(
                    'auth.lookup_single_active_tenant(uuid)'
-               )
+                 )::oid
+             )
             """
         )
     }

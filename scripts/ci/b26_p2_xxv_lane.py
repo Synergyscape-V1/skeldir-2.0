@@ -694,6 +694,28 @@ def migrate(image: str) -> str:
         raise RuntimeError(
             f"migrate_failed:{proc.stdout[-800:]}:{proc.stderr[-800:]}"
         )
+    finalize = subprocess.run(
+        [
+            sys.executable,
+            str(
+                REPO_ROOT
+                / "scripts/database/prepare_migration_authority_boundary.py"
+            ),
+            "--admin-dsn",
+            admin_dsn(),
+            "--database-name",
+            DB_NAME,
+            "--finalize-owner-transfer",
+        ],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if finalize.returncode != 0:
+        raise RuntimeError(
+            "account_owner_transfer_finalize_failed:"
+            + (finalize.stdout + finalize.stderr)[-1500:]
+        )
     return sql("SELECT version_num FROM public.alembic_version")[0][0]
 
 

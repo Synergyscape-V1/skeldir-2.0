@@ -113,6 +113,72 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _account_owner_state(connection) -> bool:
+    """Return whether the pre-account transfer graph is needed.
+
+    Account authority is inferred from the actual function OIDs and owners.
+    An applied account-construction revision with missing or unexpected
+    metadata is an explicit failure, never a virgin database.
+    """
+    applied = connection.execute(
+        text("SELECT to_regclass('public.alembic_version')")
+    ).scalar()
+    if applied is None:
+        return True
+
+    heads = tuple(
+        str(row[0])
+        for row in connection.execute(
+            text("SELECT version_num FROM public.alembic_version")
+        ).fetchall()
+    )
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(config)
+    account_applied = any(
+        revision.revision == "202611070001"
+        for revision in script.iterate_revisions(heads, "base")
+    ) if heads else False
+    if not account_applied:
+        return True
+
+    rows = connection.execute(
+        text(
+            "SELECT to_regprocedure(:register)::oid,"
+            " to_regprocedure(:lookup)::oid"
+        ),
+        {
+            "register": "auth.register_business_account(text,text,text)",
+            "lookup": "auth.lookup_single_active_tenant(uuid)",
+        },
+    ).fetchone()
+    if rows is None:
+        raise RuntimeError("account_function_lookup_unavailable")
+    names = ("register_business_account", "lookup_single_active_tenant")
+    owners: dict[str, str] = {}
+    for name, oid in zip(names, rows):
+        if oid is None:
+            raise RuntimeError(f"account_function_metadata_unavailable:{name}")
+        owner = connection.execute(
+            text(
+                "SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid = :oid"
+            ),
+            {"oid": oid},
+        ).scalar()
+        if owner is None:
+            raise RuntimeError(f"account_function_metadata_unavailable:{name}")
+        owners[name] = str(owner)
+    if owners["register_business_account"] != "app_account_provisioner":
+        raise RuntimeError(
+            "account_function_owner_unexpected:register_business_account"
+        )
+    if owners["lookup_single_active_tenant"] != "app_auth_lookup":
+        raise RuntimeError(
+            "account_function_owner_unexpected:lookup_single_active_tenant"
+        )
+    return False
+
+
 def _provision_ci_migration_roles(connection) -> None:
     """Create CI-only role placeholders before the migration chain runs.
 
@@ -124,6 +190,9 @@ def _provision_ci_migration_roles(connection) -> None:
     themselves before this step.
     """
     if not ci_mode:
+        return
+    ownership_transfer_needed = _account_owner_state(connection)
+    if not ownership_transfer_needed:
         return
     roles = (
         ("app_auth_lookup", "NOLOGIN BYPASSRLS"),
@@ -144,63 +213,7 @@ def _provision_ci_migration_roles(connection) -> None:
             connection.execute(
                 text(f'CREATE ROLE "{role}" {attributes}')
             )
-    # The temporary owner chain is needed only while the two account
-    # functions have not yet reached their intended owners.  A fully upgraded
-    # preparation must not recreate either edge.
-    owners = {
-        str(name): str(owner)
-        for name, owner in connection.execute(
-            text(
-                """
-                SELECT p.proname, pg_get_userbyid(p.proowner)
-                  FROM pg_proc AS p
-                  JOIN pg_namespace AS n ON n.oid = p.pronamespace
-                 WHERE n.nspname = 'auth'
-                   AND p.oid::regprocedure::text IN (
-                       'auth.register_business_account(text,text,text)',
-                       'auth.lookup_single_active_tenant(uuid)'
-                   )
-                """
-            )
-        ).fetchall()
-    }
-    ownership_transfer_needed = not (
-        owners.get("register_business_account") == "app_account_provisioner"
-        and owners.get("lookup_single_active_tenant") == "app_auth_lookup"
-    )
-    temporary_edges = connection.execute(
-        text(
-            """
-            SELECT
-              EXISTS (
-                SELECT 1 FROM pg_auth_members m
-                  JOIN pg_roles r ON r.oid = m.roleid
-                  JOIN pg_roles u ON u.oid = m.member
-                 WHERE r.rolname = 'app_auth_lookup'
-                   AND u.rolname = current_user
-              ),
-              EXISTS (
-                SELECT 1 FROM pg_auth_members m
-                  JOIN pg_roles r ON r.oid = m.roleid
-                  JOIN pg_roles u ON u.oid = m.member
-                 WHERE r.rolname = 'app_account_provisioner'
-                   AND u.rolname = current_user
-              ),
-              EXISTS (
-                SELECT 1 FROM pg_auth_members m
-                  JOIN pg_roles r ON r.oid = m.roleid
-                  JOIN pg_roles u ON u.oid = m.member
-                 WHERE r.rolname = 'app_auth_lookup'
-                   AND u.rolname = 'app_account_provisioner'
-              )
-            """
-        )
-    ).fetchone()
-    cleanup_grants_needed = ownership_transfer_needed or any(
-        bool(value) for value in temporary_edges
-    )
-    if not cleanup_grants_needed:
-        return
+    cleanup_grants_needed = True
 
     current = connection.execute(
         text(
@@ -238,11 +251,6 @@ def _provision_ci_migration_roles(connection) -> None:
             ).scalar()
         )
 
-    # A superuser needs no direct lookup membership, and creating one would
-    # become the grantor of later grants that the predecessor migration tries
-    # to revoke.  Non-superusers keep the transient membership needed for the
-    # owner transfer, but never attempt to grant ADMIN back to themselves when
-    # the membership already exists.
     lookup_admin = is_superuser or _has_admin("app_auth_lookup", current_role)
     if (
         not is_superuser
@@ -258,10 +266,6 @@ def _provision_ci_migration_roles(connection) -> None:
         )
         lookup_admin = True
 
-    # The cleanup migration revokes the lookup edge from
-    # app_account_provisioner while acting as that role, so the edge needs
-    # ADMIN OPTION.  Only the superuser or a principal that already holds
-    # ADMIN OPTION on the lookup owner can add it.
     if (
         (is_superuser or lookup_admin)
         and _has_membership("app_auth_lookup", "app_account_provisioner")
@@ -285,9 +289,6 @@ def _provision_ci_migration_roles(connection) -> None:
             )
         )
 
-    # The migration principal needs ADMIN OPTION on the provisioner only when
-    # it is the one that will revoke its own temporary membership.  A
-    # superuser needs neither edge.
     if not is_superuser and current_role:
         if _has_membership("app_account_provisioner", current_role):
             if not _has_admin("app_account_provisioner", current_role):

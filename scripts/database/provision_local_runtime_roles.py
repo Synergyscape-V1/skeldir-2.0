@@ -9,10 +9,14 @@ role to exist instead of silently skipping its grants.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import psycopg2
 from psycopg2 import sql
 
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ACCOUNT_PREREQUISITE_REVISION = "202611070001"
 
 _ROLES: tuple[tuple[str, str], ...] = (
     ("app_auth_lookup", "NOLOGIN BYPASSRLS"),
@@ -27,6 +31,54 @@ _ROLES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _account_construction_applied(cursor) -> bool:
+    cursor.execute("SELECT to_regclass('public.alembic_version')")
+    if cursor.fetchone()[0] is None:
+        return False
+    cursor.execute("SELECT version_num FROM public.alembic_version")
+    heads = tuple(str(row[0]) for row in cursor.fetchall())
+    if not heads:
+        return False
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    config = Config(str(_REPO_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(_REPO_ROOT / "alembic"))
+    script = ScriptDirectory.from_config(config)
+    return any(
+        revision.revision == _ACCOUNT_PREREQUISITE_REVISION
+        for revision in script.iterate_revisions(heads, "base")
+    )
+
+
+def _account_owners(cursor) -> dict[str, str]:
+    cursor.execute(
+        "SELECT to_regprocedure(%s)::oid, to_regprocedure(%s)::oid",
+        (
+            "auth.register_business_account(text,text,text)",
+            "auth.lookup_single_active_tenant(uuid)",
+        ),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError("account_function_lookup_unavailable")
+    owners: dict[str, str] = {}
+    for name, oid in zip(
+        ("register_business_account", "lookup_single_active_tenant"), row
+    ):
+        if oid is None:
+            raise RuntimeError(f"account_function_metadata_unavailable:{name}")
+        cursor.execute(
+            "SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid = %s",
+            (oid,),
+        )
+        owner = cursor.fetchone()
+        if owner is None:
+            raise RuntimeError(f"account_function_metadata_unavailable:{name}")
+        owners[name] = str(owner[0])
+    return owners
+
+
 def main() -> None:
     dsn = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not dsn:
@@ -35,6 +87,22 @@ def main() -> None:
     connection.autocommit = True
     try:
         with connection.cursor() as cursor:
+            if _account_construction_applied(cursor):
+                owners = _account_owners(cursor)
+                if owners["register_business_account"] != "app_account_provisioner":
+                    raise RuntimeError(
+                        "account_function_owner_unexpected:"
+                        "register_business_account"
+                    )
+                if owners["lookup_single_active_tenant"] != "app_auth_lookup":
+                    raise RuntimeError(
+                        "account_function_owner_unexpected:"
+                        "lookup_single_active_tenant"
+                    )
+                # Fully constructed current authority: do not create any
+                # temporary edge, including when an unexpected edge survives.
+                return
+
             for name, attributes in _ROLES:
                 cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (name,))
                 if cursor.fetchone() is not None:
@@ -50,90 +118,19 @@ def main() -> None:
             current_user = str(current[0])
             is_superuser = bool(current[1])
 
-            def has_membership(role_name: str, member_name: str) -> bool:
-                cursor.execute(
-                    "SELECT EXISTS ("
-                    " SELECT 1 FROM pg_auth_members m"
-                    " JOIN pg_roles r ON r.oid = m.roleid"
-                    " JOIN pg_roles u ON u.oid = m.member"
-                    " WHERE r.rolname = %s AND u.rolname = %s)",
-                    (role_name, member_name),
-                )
-                return bool(cursor.fetchone()[0])
-
-            def has_admin(role_name: str, member_name: str) -> bool:
-                cursor.execute(
-                    "SELECT m.admin_option FROM pg_auth_members m"
-                    " JOIN pg_roles r ON r.oid = m.roleid"
-                    " JOIN pg_roles u ON u.oid = m.member"
-                    " WHERE r.rolname = %s AND u.rolname = %s",
-                    (role_name, member_name),
-                )
-                row = cursor.fetchone()
-                return bool(row[0]) if row else False
-
             cursor.execute(
-                """
-                SELECT p.proname, pg_get_userbyid(p.proowner)
-                  FROM pg_proc AS p
-                  JOIN pg_namespace AS n ON n.oid = p.pronamespace
-                 WHERE n.nspname = 'auth'
-                   AND p.oid::regprocedure::text IN (
-                       'auth.register_business_account(text,text,text)',
-                       'auth.lookup_single_active_tenant(uuid)'
-                   )
-                """
+                sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                    sql.Identifier("app_auth_lookup"),
+                    sql.Identifier("app_account_provisioner"),
+                )
             )
-            owners = {
-                str(name): str(owner) for name, owner in cursor.fetchall()
-            }
-            ownership_transfer_needed = not (
-                owners.get("register_business_account")
-                == "app_account_provisioner"
-                and owners.get("lookup_single_active_tenant")
-                == "app_auth_lookup"
-            )
-            temporary_edges = (
-                has_membership("app_auth_lookup", "app_account_provisioner")
-                or has_membership("app_account_provisioner", current_user)
-                or has_membership("app_auth_lookup", current_user)
-            )
-            if not ownership_transfer_needed and not temporary_edges:
-                return
-
-            if ownership_transfer_needed or has_membership(
-                "app_auth_lookup", "app_account_provisioner"
-            ):
-                if (
-                    ownership_transfer_needed
-                    or not has_admin(
-                        "app_auth_lookup", "app_account_provisioner"
-                    )
-                ):
-                    cursor.execute(
-                        sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
-                            sql.Identifier("app_auth_lookup"),
-                            sql.Identifier("app_account_provisioner"),
-                        )
-                    )
             if not is_superuser:
-                if ownership_transfer_needed or has_membership(
-                    "app_account_provisioner", current_user
-                ):
-                    if (
-                        ownership_transfer_needed
-                        or not has_admin(
-                            "app_account_provisioner", current_user
-                        )
-                    ):
-                        cursor.execute(
-                            sql.SQL(
-                                "GRANT {} TO {} WITH ADMIN OPTION"
-                            ).format(
-                                sql.Identifier("app_account_provisioner"),
-                                sql.Identifier(current_user),
-                            )
-                        )
+                cursor.execute(
+                    sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                        sql.Identifier("app_account_provisioner"),
+                        sql.Identifier(current_user),
+                    )
+                )
     finally:
         connection.close()
 

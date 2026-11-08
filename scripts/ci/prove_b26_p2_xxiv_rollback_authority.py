@@ -133,6 +133,48 @@ def _provision(admin_dsn: str, database: str) -> None:
     )
 
 
+def _prepare_downgrade(admin_dsn: str, database: str) -> None:
+    _run(
+        [
+            sys.executable,
+            str(
+                REPO_ROOT
+                / "scripts"
+                / "database"
+                / "prepare_migration_authority_boundary.py"
+            ),
+            "--admin-dsn",
+            admin_dsn,
+            "--database-name",
+            database,
+            "--prepare-downgrade",
+        ],
+        env=dict(os.environ),
+        timeout=600,
+    )
+
+
+def _finalize_owner_transfer(admin_dsn: str, database: str) -> None:
+    _run(
+        [
+            sys.executable,
+            str(
+                REPO_ROOT
+                / "scripts"
+                / "database"
+                / "prepare_migration_authority_boundary.py"
+            ),
+            "--admin-dsn",
+            admin_dsn,
+            "--database-name",
+            database,
+            "--finalize-owner-transfer",
+        ],
+        env=dict(os.environ),
+        timeout=600,
+    )
+
+
 def _append_checkpoint(
     *,
     journal_path: Path,
@@ -204,6 +246,7 @@ def main() -> int:
     env = _alembic_env(migration_dsn)
 
     _run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env)
+    _finalize_owner_transfer(args.admin_dsn, args.database)
     head_revision = _revision(migration_dsn)
     if head_revision != HEAD_REVISION:
         raise RuntimeError(
@@ -230,6 +273,7 @@ def main() -> int:
         universe=universe_before,
     )
 
+    _prepare_downgrade(args.admin_dsn, args.database)
     _run(
         [sys.executable, "-m", "alembic", "downgrade", DOWN_REVISION],
         env=env,
@@ -250,6 +294,7 @@ def main() -> int:
     )
 
     _run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env)
+    _finalize_owner_transfer(args.admin_dsn, args.database)
     restored_revision = _revision(migration_dsn)
     if restored_revision != HEAD_REVISION:
         raise RuntimeError(
