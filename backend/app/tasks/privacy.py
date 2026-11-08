@@ -40,7 +40,7 @@ def _selector_where_clause_for_events(selector: Dict[str, str]) -> tuple[str, Di
         predicates.append("idempotency_key = :idempotency_key")
         params["idempotency_key"] = selector["idempotency_key"]
     if "correlation_id" in selector:
-        predicates.append("correlation_id = :correlation_id::uuid")
+        predicates.append("correlation_id = CAST(:correlation_id AS uuid)")
         params["correlation_id"] = selector["correlation_id"]
     if not predicates:
         raise ValueError("selector_where_clause requires at least one predicate")
@@ -54,7 +54,7 @@ def _selector_where_clause_for_dead_events(selector: Dict[str, str]) -> tuple[st
         predicates.append("idempotency_key = :idempotency_key")
         params["idempotency_key"] = selector["idempotency_key"]
     if "correlation_id" in selector:
-        predicates.append("correlation_id = :correlation_id::uuid")
+        predicates.append("correlation_id = CAST(:correlation_id AS uuid)")
         params["correlation_id"] = selector["correlation_id"]
     if not predicates:
         raise ValueError("selector_where_clause requires at least one predicate")
