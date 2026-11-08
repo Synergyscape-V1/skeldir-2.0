@@ -104,7 +104,9 @@ def _seed_ingress(
     tenant_id = uuid.uuid4()
     ingress_id = uuid.uuid4()
     event_uuid = uuid.uuid4()
-    conn = psycopg2.connect(_admin_dsn())
+    conn = psycopg2.connect(
+        os.environ.get("B26_P2_SUPERUSER_DSN", "").strip() or _admin_dsn()
+    )
     conn.autocommit = True
     try:
         with conn.cursor() as cur:

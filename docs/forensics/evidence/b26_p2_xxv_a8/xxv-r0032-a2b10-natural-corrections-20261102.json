@@ -1,0 +1,424 @@
+{
+  "actor": "provider (three signed amendment events over one payment intent) + shipping correction caller + real B2.3 worker + live beat schedule + Trust builder/signer + independent verification",
+  "all_three_established": true,
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T12:09:36.605423Z",
+    "commit_sha": "9bd34adc3e08a2792de222fdbe075ec1c42fde80",
+    "compiled_genesis_hash": "480ae2a0e7249758450f9046993eaaab4779ea2890f8d2145e6439edb125096b",
+    "compiled_public_key_sha256": "7c86b55e67ac4e63ff07e0e88c990772683c3d6e2ae415b409c51301250cf6a3",
+    "compiled_source_attestation_public_key_sha256": "ff5368c57d812b5afb2ee7f711d78726dabcd9fa1fe0c4e2671fea20df1b3073",
+    "image_id": "sha256:598816bf00e16cbb3c77501a0b7cadf3729da49299fa4a9852c24166857a22d7",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "36e9909165c994a8516b06db2f09be4ec0639678",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "03e96769-aef8-402f-b169-76485930f7aa",
+  "baseline": {
+    "authority_state": "current",
+    "captured_minor": 4321,
+    "correction_events": 0,
+    "expected_minor": 4321,
+    "linked_event_reference": "evt_xxv3Ac741f4c1e30c",
+    "linked_ingress_id": "860b1283-aa97-4911-93d7-cb8e8ae9a43b",
+    "net_minor": 4321,
+    "supersession_rows": 0,
+    "verdicts_for_identity": 1
+  },
+  "commerce_reference": "pi_xxv3corrfd682587c98448",
+  "cycles": [
+    {
+      "after_worker": {
+        "authority_state": "current",
+        "captured_minor": 5100,
+        "correction_events": 1,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B11995057097",
+        "linked_ingress_id": "0b1af0f3-a65a-48f4-aac8-2d164ec06049",
+        "net_minor": 5100,
+        "supersession_rows": 2,
+        "verdicts_for_identity": 1
+      },
+      "amending_event": {
+        "amount_minor": 5100,
+        "body_sha256": "561a97b7657ed1a7da8bbfa74af78a927676c6e90542e900cee2b17ac9ae217d",
+        "event_reference": "evt_xxv3B11995057097",
+        "http": {
+          "body": "{\"status\":\"success\",\"event_id\":\"fb274f84-9f5c-4fa7-b12d-a0a1ee89291a\",\"idempotency_key\":\"a9232f70-f76b-4f34-9dd8-f0b5a86f34b3\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+          "status": 200
+        }
+      },
+      "amending_event_created_its_own_verdict": 0,
+      "before": {
+        "authority_state": "current",
+        "captured_minor": 4321,
+        "correction_events": 0,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3Ac741f4c1e30c",
+        "linked_ingress_id": "860b1283-aa97-4911-93d7-cb8e8ae9a43b",
+        "net_minor": 4321,
+        "supersession_rows": 0,
+        "verdicts_for_identity": 1
+      },
+      "correction_http": {
+        "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"79adadbc-8448-4b0c-8da9-d22c2391c570\",\"revenue_event_written\":false,\"net_verified_amount_minor\":4321}",
+        "status": 200
+      },
+      "cycle": 1,
+      "history_after_worker": {
+        "ledger_prefix_digest": "c9eaa2584464c5b61420d774f26eb27d66acb3ae3416885ee9e29c6e3e7abdb3",
+        "ledger_rows": 2,
+        "ledger_tip_hash": "e4b08210f4d107a3d959c81f9e43b643b9813525c8f4e5383cbe9d9ef9ecde1d",
+        "ledger_tip_seq": 2
+      },
+      "history_before": {
+        "ledger_prefix_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ledger_rows": 0,
+        "ledger_tip_hash": null,
+        "ledger_tip_seq": null
+      },
+      "ingress": {
+        "amount_minor": 5100,
+        "commerce_reference": "pi_xxv3corrfd682587c98448",
+        "created_at": "2026-11-02 12:18:54.228884+00:00",
+        "currency": "USD",
+        "demotion_reason": null,
+        "event_reference": "evt_xxv3B11995057097",
+        "event_timestamp": "2026-11-02 12:18:50+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "0b1af0f3-a65a-48f4-aac8-2d164ec06049",
+        "is_current": true,
+        "provenance": "authenticated_known"
+      },
+      "last_observation_before": {
+        "author": "app_worker",
+        "ledger_count": 0,
+        "observation_id": 3,
+        "observed_at": "2026-11-02T12:18:51.884961+00:00",
+        "observed_at_epoch": 1793621931.884961,
+        "violations": ""
+      },
+      "old_source": {
+        "amount_minor": 4321,
+        "commerce_reference": "pi_xxv3corrfd682587c98448",
+        "created_at": "2026-11-02 12:18:50.088963+00:00",
+        "currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_xxv3B11995057097",
+        "event_reference": "evt_xxv3Ac741f4c1e30c",
+        "event_timestamp": "2026-11-02 12:18:49+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "860b1283-aa97-4911-93d7-cb8e8ae9a43b",
+        "is_current": false,
+        "provenance": "authenticated_known"
+      },
+      "reconciliation": {
+        "attestation_status": "xxv_attested",
+        "net": 5100,
+        "source_authority_state": "current",
+        "status": 200
+      },
+      "scheduled_observation": {
+        "author": "app_worker",
+        "ledger_count": 2,
+        "observation_id": 6,
+        "observed_at": "2026-11-02T12:24:37.794831+00:00",
+        "violations": ""
+      },
+      "signed_financial_result": {
+        "currency": "USD",
+        "established": true,
+        "trust_status": 200,
+        "verification_status": "verified",
+        "verified_revenue_minor": 5100
+      }
+    },
+    {
+      "after_worker": {
+        "authority_state": "current",
+        "captured_minor": 6200,
+        "correction_events": 2,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B25a50608564",
+        "linked_ingress_id": "a04b8150-8ddc-4f83-ae45-b119da395027",
+        "net_minor": 6200,
+        "supersession_rows": 4,
+        "verdicts_for_identity": 1
+      },
+      "amending_event": {
+        "amount_minor": 6200,
+        "body_sha256": "d8ee3509d20f03a0a5d69cbabae3f6cdd93bbdd49480a57e406292c9ef532a81",
+        "event_reference": "evt_xxv3B25a50608564",
+        "http": {
+          "body": "{\"status\":\"success\",\"event_id\":\"65bcab45-0cf3-4597-b600-1525a7de37d4\",\"idempotency_key\":\"77175073-6957-4ed5-b493-37181963a35c\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+          "status": 200
+        }
+      },
+      "amending_event_created_its_own_verdict": 0,
+      "before": {
+        "authority_state": "current",
+        "captured_minor": 5100,
+        "correction_events": 1,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B11995057097",
+        "linked_ingress_id": "0b1af0f3-a65a-48f4-aac8-2d164ec06049",
+        "net_minor": 5100,
+        "supersession_rows": 2,
+        "verdicts_for_identity": 1
+      },
+      "correction_http": {
+        "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"79adadbc-8448-4b0c-8da9-d22c2391c570\",\"revenue_event_written\":false,\"net_verified_amount_minor\":5100}",
+        "status": 200
+      },
+      "cycle": 2,
+      "history_after_worker": {
+        "ledger_prefix_digest": "4a2deefe74f867c59f32c252ab530a0c3bd1fb280063f7519731794cd1fbbc5a",
+        "ledger_rows": 4,
+        "ledger_tip_hash": "65063a0bcc5759af410bac12934b8f3e73d4226a78b80800175525fb35179eea",
+        "ledger_tip_seq": 4
+      },
+      "history_before": {
+        "ledger_prefix_digest": "c9eaa2584464c5b61420d774f26eb27d66acb3ae3416885ee9e29c6e3e7abdb3",
+        "ledger_rows": 2,
+        "ledger_tip_hash": "e4b08210f4d107a3d959c81f9e43b643b9813525c8f4e5383cbe9d9ef9ecde1d",
+        "ledger_tip_seq": 2
+      },
+      "ingress": {
+        "amount_minor": 6200,
+        "commerce_reference": "pi_xxv3corrfd682587c98448",
+        "created_at": "2026-11-02 12:24:39.879823+00:00",
+        "currency": "USD",
+        "demotion_reason": null,
+        "event_reference": "evt_xxv3B25a50608564",
+        "event_timestamp": "2026-11-02 12:18:51+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "a04b8150-8ddc-4f83-ae45-b119da395027",
+        "is_current": true,
+        "provenance": "authenticated_known"
+      },
+      "last_observation_before": {
+        "author": "app_worker",
+        "ledger_count": 2,
+        "observation_id": 6,
+        "observed_at": "2026-11-02T12:24:37.794831+00:00",
+        "observed_at_epoch": 1793622277.794831,
+        "violations": ""
+      },
+      "old_source": {
+        "amount_minor": 5100,
+        "commerce_reference": "pi_xxv3corrfd682587c98448",
+        "created_at": "2026-11-02 12:18:54.228884+00:00",
+        "currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_xxv3B25a50608564",
+        "event_reference": "evt_xxv3B11995057097",
+        "event_timestamp": "2026-11-02 12:18:50+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "0b1af0f3-a65a-48f4-aac8-2d164ec06049",
+        "is_current": false,
+        "provenance": "authenticated_known"
+      },
+      "reconciliation": {
+        "attestation_status": "xxv_attested",
+        "net": 6200,
+        "source_authority_state": "current",
+        "status": 200
+      },
+      "scheduled_observation": {
+        "author": "app_worker",
+        "ledger_count": 4,
+        "observation_id": 8,
+        "observed_at": "2026-11-02T12:29:38.124894+00:00",
+        "violations": ""
+      },
+      "signed_financial_result": {
+        "currency": "USD",
+        "established": true,
+        "trust_status": 200,
+        "verification_status": "verified",
+        "verified_revenue_minor": 6200
+      }
+    },
+    {
+      "after_worker": {
+        "authority_state": "current",
+        "captured_minor": 7300,
+        "correction_events": 3,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B3f7433d44da",
+        "linked_ingress_id": "c3bf9116-c2da-44d4-9b0c-223a9522679b",
+        "net_minor": 7300,
+        "supersession_rows": 6,
+        "verdicts_for_identity": 1
+      },
+      "amending_event": {
+        "amount_minor": 7300,
+        "body_sha256": "e0a78f1410aa03edeee60550dd6e08ec69fb9494059ea9bc0c18d3f88c627bdc",
+        "event_reference": "evt_xxv3B3f7433d44da",
+        "http": {
+          "body": "{\"status\":\"success\",\"event_id\":\"51708103-13f1-4e57-9f25-f10f595fad25\",\"idempotency_key\":\"39e0f5a1-06c0-4eea-8899-f2b88493cc17\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+          "status": 200
+        }
+      },
+      "amending_event_created_its_own_verdict": 0,
+      "before": {
+        "authority_state": "current",
+        "captured_minor": 6200,
+        "correction_events": 2,
+        "expected_minor": 4321,
+        "linked_event_reference": "evt_xxv3B25a50608564",
+        "linked_ingress_id": "a04b8150-8ddc-4f83-ae45-b119da395027",
+        "net_minor": 6200,
+        "supersession_rows": 4,
+        "verdicts_for_identity": 1
+      },
+      "correction_http": {
+        "body": "{\"status\":\"accepted\",\"match_verdict_id\":\"79adadbc-8448-4b0c-8da9-d22c2391c570\",\"revenue_event_written\":false,\"net_verified_amount_minor\":6200}",
+        "status": 200
+      },
+      "cycle": 3,
+      "history_after_worker": {
+        "ledger_prefix_digest": "45e77ca955ab833386446958ed45de9ced927d2f6b9ffc51ddf322c496b3de20",
+        "ledger_rows": 6,
+        "ledger_tip_hash": "394f9e8391f5f7d2d93c9fcd9a5bf957b0cd3d24ab77104e86522d2a538f4c9b",
+        "ledger_tip_seq": 6
+      },
+      "history_before": {
+        "ledger_prefix_digest": "4a2deefe74f867c59f32c252ab530a0c3bd1fb280063f7519731794cd1fbbc5a",
+        "ledger_rows": 4,
+        "ledger_tip_hash": "65063a0bcc5759af410bac12934b8f3e73d4226a78b80800175525fb35179eea",
+        "ledger_tip_seq": 4
+      },
+      "ingress": {
+        "amount_minor": 7300,
+        "commerce_reference": "pi_xxv3corrfd682587c98448",
+        "created_at": "2026-11-02 12:29:39.441582+00:00",
+        "currency": "USD",
+        "demotion_reason": null,
+        "event_reference": "evt_xxv3B3f7433d44da",
+        "event_timestamp": "2026-11-02 12:18:52+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "c3bf9116-c2da-44d4-9b0c-223a9522679b",
+        "is_current": true,
+        "provenance": "authenticated_known"
+      },
+      "last_observation_before": {
+        "author": "app_worker",
+        "ledger_count": 4,
+        "observation_id": 8,
+        "observed_at": "2026-11-02T12:29:38.124894+00:00",
+        "observed_at_epoch": 1793622578.124894,
+        "violations": ""
+      },
+      "old_source": {
+        "amount_minor": 6200,
+        "commerce_reference": "pi_xxv3corrfd682587c98448",
+        "created_at": "2026-11-02 12:24:39.879823+00:00",
+        "currency": "USD",
+        "demotion_reason": "superseded_by_provider_amendment:evt_xxv3B3f7433d44da",
+        "event_reference": "evt_xxv3B25a50608564",
+        "event_timestamp": "2026-11-02 12:18:51+00:00",
+        "has_attestation": true,
+        "has_root_evidence": true,
+        "has_witness": true,
+        "ingress_id": "a04b8150-8ddc-4f83-ae45-b119da395027",
+        "is_current": false,
+        "provenance": "authenticated_known"
+      },
+      "reconciliation": {
+        "attestation_status": "xxv_attested",
+        "net": 7300,
+        "source_authority_state": "current",
+        "status": 200
+      },
+      "scheduled_observation": {
+        "author": "app_worker",
+        "ledger_count": 6,
+        "observation_id": 10,
+        "observed_at": "2026-11-02T12:34:38.647759+00:00",
+        "violations": ""
+      },
+      "signed_financial_result": {
+        "currency": "USD",
+        "established": true,
+        "trust_status": 200,
+        "verification_status": "verified",
+        "verified_revenue_minor": 7300
+      }
+    }
+  ],
+  "event_references": [
+    "evt_xxv3Ac741f4c1e30c",
+    "evt_xxv3B11995057097",
+    "evt_xxv3B25a50608564",
+    "evt_xxv3B3f7433d44da"
+  ],
+  "expected_amounts_minor": [
+    4321,
+    5100,
+    6200,
+    7300
+  ],
+  "falsifier": "xxv-a2b10-natural-corrections",
+  "initial_event": {
+    "amount_minor": 4321,
+    "body_sha256": "a279cc1c1b08f08d325cd2ea901c2203f792bd02e5bcc40e0b60d44a3ced4bfe",
+    "event_reference": "evt_xxv3Ac741f4c1e30c",
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"17dda5fe-4b9a-4501-bf0b-881fe6488ac7\",\"idempotency_key\":\"7c294c3a-c97e-4cd8-8c8e-33edc12fd06b\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    }
+  },
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:598816bf00e16cbb3c77501a0b7cadf3729da49299fa4a9852c24166857a22d7",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "limit_of_inference": "three corrections establish the A2/B10 positive path on this artifact. They do not establish READY-FOR-AUDIT, exact historical restoration, or any other XXV gate.",
+  "observation_control": "the beat schedule was never paused and the observer was never invoked by this run; observations are the live scheduled rows and their ids/timestamps are recorded per cycle",
+  "property": "P-XXV A2/B10: three lawful amount-changing corrections conduct through the shipping correction surface and the real B2.3 worker, are witnessed by the live scheduled observer, and are served by the signed Trust consumer",
+  "recorded_at_utc": "2026-11-02T12:34:43.955268Z",
+  "scheduler_after": {
+    "beat_instance_id": "b877f7b8-fab0-43b5-a602-dbf63eb1e4a7",
+    "last_tick": "2026-11-02T12:34:40.126538+00:00",
+    "tenant_rows": 2
+  },
+  "scheduler_before": {
+    "beat_instance_id": "b877f7b8-fab0-43b5-a602-dbf63eb1e4a7",
+    "last_tick": "2026-11-02T12:18:37.480869+00:00",
+    "tenant_rows": 2
+  },
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "5c92d388-e208-4a67-9239-d366c45d145f"
+    }
+  ],
+  "verdict_id": "79adadbc-8448-4b0c-8da9-d22c2391c570"
+}

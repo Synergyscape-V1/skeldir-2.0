@@ -1,0 +1,37 @@
+{
+  "gate_id": "B2.6-P2-XXII-COMPOSITION",
+  "status": "PASS",
+  "violations": [],
+  "checks": {
+    "static_xxv_attestation_law": true,
+    "static_xxv_no_owner_written_instant": true,
+    "static_xxv_2_amendment_law": true,
+    "static_xxv_a3_observation_on_growth": true,
+    "static_laws": true,
+    "live_source_evidence": true,
+    "live_head": true,
+    "live_reader_surface": true,
+    "live_conservation_surface": true,
+    "live_chronology_triggers": true,
+    "live_creation_law": true,
+    "live_future_refusals": true,
+    "live_coherent_rewrite_refused": true,
+    "live_conservation_cells": true,
+    "live_prefix_digest": true,
+    "live_truncate_refused": true,
+    "live_conduction_tenants_examined": 2,
+    "live_conduction_completeness": true,
+    "live_external_false_world_refused": true,
+    "live_external_false_world_restored": true,
+    "live_external_false_world_chain_preserved": true,
+    "live_xxv_attestation_sweep": true,
+    "live_xxv_attestation_census": {
+      "xxv_attested": 2,
+      "unattested_not_claimed_current": 0,
+      "attested_but_not_claimed_current": 0,
+      "source_not_root_authenticated": 1
+    },
+    "live_xxv_verdicts_examined": 3,
+    "live_xxv_tenants_examined": 3
+  }
+}

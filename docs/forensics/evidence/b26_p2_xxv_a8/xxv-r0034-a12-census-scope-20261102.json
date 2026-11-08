@@ -1,0 +1,34 @@
+{
+  "caller_tenant_id": "424d3a4e-ba83-48a1-bea5-20e180da2915",
+  "mechanism": "b26_p2_xxv_attestation_sweep.sweep on the same live cohort",
+  "results": {
+    "scoped": {
+      "tenants_examined": 8,
+      "verdicts_examined": 9,
+      "census": {
+        "xxv_attested": 3,
+        "unattested_not_claimed_current": 0,
+        "attested_but_not_claimed_current": 0,
+        "source_not_root_authenticated": 6
+      },
+      "unverifiable_ids": []
+    },
+    "unscoped": {
+      "tenants_examined": 8,
+      "verdicts_examined": 9,
+      "census": {
+        "xxv_attested": 3,
+        "unattested_not_claimed_current": 0,
+        "attested_but_not_claimed_current": 0,
+        "source_not_root_authenticated": 6
+      },
+      "unverifiable_ids": []
+    }
+  },
+  "coverage_equal": {
+    "tenants_examined": true,
+    "verdicts_examined": true,
+    "census": true,
+    "unverifiable_ids": true
+  }
+}

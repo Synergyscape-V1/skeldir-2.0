@@ -30,6 +30,18 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ingress') THEN
     CREATE ROLE app_ingress LOGIN PASSWORD 'app_ingress';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_auth_lookup') THEN
+    CREATE ROLE app_auth_lookup NOLOGIN BYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_account_provisioner') THEN
+    CREATE ROLE app_account_provisioner NOLOGIN BYPASSRLS;
+  END IF;
+  IF NOT pg_has_role('app_account_provisioner', 'app_auth_lookup', 'member') THEN
+    EXECUTE 'GRANT app_auth_lookup TO app_account_provisioner';
+  END IF;
+  IF NOT pg_has_role(current_user, 'app_account_provisioner', 'member') THEN
+    EXECUTE 'GRANT app_account_provisioner TO ' || quote_ident(current_user) || ' WITH ADMIN OPTION';
+  END IF;
 END
 \$\$;
 SQL

@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "property": "coverage mathematics is checked by independent property vectors, not by one authored spelling",
+  "base_head": "b5c5a0f2a46f35b55be951e54968ae35d84c846a",
+  "failure_reproduced": {
+    "mutation": "independent_coverage_percent changed ROUND_HALF_UP to ROUND_DOWN (equivalent spelling, different rounding law)",
+    "old_guard_result": "B26_P1_AUTHORITY_PASS",
+    "why_old_guard_missed_it": "the guard compared only the 95.00 golden vector and zero denominator, both of which agree under ROUND_DOWN; it did not pin or property-test the independent oracle",
+    "vector_that_exposes_it": "1/20000 -> 0.01 half-up, 0.00 truncation"
+  },
+  "repair": {
+    "validator": "scripts/ci/validate_b26_p1_authority.py",
+    "test": "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py::test_b26_p1_coverage_property_vectors_not_one_spelling",
+    "control": "scripts/ci/_b26_p1_controlled_defect.py coverage_oracle_rounding_equiv",
+    "control_registered_in": "scripts/ci/test_b26_p1_negative_controls.py",
+    "expected_token": "coverage_oracle_vector_mismatch",
+    "vectors": [
+      "1/20000",
+      "3/40000",
+      "1/3",
+      "2/3",
+      "1/6",
+      "1/8",
+      "7/9",
+      "999999/1000000",
+      "1/1000000",
+      "0/5",
+      "5/5"
+    ]
+  },
+  "verification": {
+    "wrong_oracle_after_repair": "B26_P1_AUTHORITY_FAIL with coverage_oracle_vector_mismatch",
+    "correct_source": "B26_P1_AUTHORITY_PASS",
+    "pytest": "21 passed in test_b26_p1_semantic_contract.py"
+  },
+  "limits": [
+    "The full 104-control battery was not rerun end-to-end in this pass; the new control was applied and the validator was observed RED by the vectors.",
+    "The property vectors close the rounding/truncation/equivalence class; no claim is made that every conceivable hardcoded implementation is detected."
+  ]
+}

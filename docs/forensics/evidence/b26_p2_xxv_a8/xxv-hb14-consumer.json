@@ -1,0 +1,60 @@
+{
+  "actor": "deployment operator removing the B2.3 consumer edge",
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
+    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
+    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
+    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
+    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "expected_independently": "the governing conduction proof and the operational health surface report the missing financial consequence",
+  "falsifier": "xxv-hb14-consumer",
+  "health_ready": {
+    "body": "{\"status\":\"ok\",\"database\":\"ok\",\"rls\":\"ok\",\"tenant_guc\":\"ok\",\"secrets\":\"ok\",\"construction_authority\":\"ok\",\"missing_required_secrets\":[]}",
+    "status": 200
+  },
+  "health_worker": {
+    "body": "{\"status\":\"unhealthy\",\"broker\":\"ok\",\"database\":\"error\",\"worker\":\"error\",\"probe_latency_ms\":15490,\"cached\":false,\"cache_scope\":\"process\"}",
+    "status": 503
+  },
+  "ingress_http": {
+    "body": "{\"status\":\"success\",\"event_id\":\"ac9fe215-1f59-463d-8600-755eb2ebf151\",\"idempotency_key\":\"75605510-a07a-43c3-a668-9fc80e337a93\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+    "status": 200
+  },
+  "ingress_rows": [
+    {
+      "amount": 7777,
+      "id": "db57524e-ae1d-4f0f-8519-d5e721388b58",
+      "provenance": "authenticated_known"
+    }
+  ],
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "mandatory_proof": "FAIL",
+  "observed_result": "RED if ingress is accepted with zero financial consequence while /health/worker reports worker ok and the mandatory proof prints PASS",
+  "property": "P-XXV 1(a)(ii): accepted authenticated ingress must have a durable financial consequence",
+  "recorded_at_utc": "2026-11-01T09:46:23.349361Z",
+  "verdicts_after_consumer_restored": 1,
+  "verdicts_while_consumer_absent": 0
+}

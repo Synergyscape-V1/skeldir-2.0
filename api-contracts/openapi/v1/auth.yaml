@@ -41,7 +41,6 @@ paths:
               required:
                 - email
                 - password
-                - tenant_id
               properties:
                 email:
                   type: string
@@ -52,9 +51,12 @@ paths:
                   format: password
                   minLength: 8
                 tenant_id:
-                  type: string
+                  type:
+                    - string
+                    - 'null'
                   format: uuid
-                  description: Required tenant selector for deterministic tenant-scoped token issuance
+                  default: null
+                  description: Optional tenant selector; omitted means the user's unique active membership
             example:
               email: user@example.com
               password: securepassword123
@@ -75,6 +77,7 @@ paths:
                   - access_token
                   - refresh_token
                   - expires_in
+                  - tenant_id
                   - user
                 properties:
                   access_token:
@@ -87,6 +90,10 @@ paths:
                     type: integer
                     description: Token expiration time in seconds
                     example: 3600
+                  tenant_id:
+                    type: string
+                    format: uuid
+                    description: Tenant selected for this token pair
                   user:
                     type: object
                     properties:
@@ -102,6 +109,7 @@ paths:
                 access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                 refresh_token: 550e8400-e29b-41d4-a716-446655440000.a88f7ea2-7c26-4ec8-9f85-e55cb3f45ec5.zf9X1K...
                 expires_in: 900
+                tenant_id: 550e8400-e29b-41d4-a716-446655440000
                 user:
                   id: 550e8400-e29b-41d4-a716-446655440000
                   email: user@example.com
@@ -110,6 +118,80 @@ paths:
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '429':
+          $ref: './_common/base.yaml#/components/responses/RateLimitError'
+
+  /api/auth/signup:
+    post:
+      summary: Create a supported business account
+      description: >-
+        Create a new tenant, password identity, active membership and admin role
+        atomically. The caller supplies only email, password and workspace_name;
+        tenant, user, membership and role identifiers are server-generated.
+      operationId: signup
+      tags:
+        - Authentication
+      security: []
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - email
+                - password
+                - workspace_name
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                  minLength: 12
+                  maxLength: 72
+                workspace_name:
+                  type: string
+                  minLength: 1
+                  description: Nonempty after trimming
+            example:
+              email: owner@example.com
+              password: a-long-supported-password
+              workspace_name: Example Workspace
+      responses:
+        '201':
+          description: Account created
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - user_id
+                  - tenant_id
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+              example:
+                user_id: 550e8400-e29b-41d4-a716-446655440001
+                tenant_id: 550e8400-e29b-41d4-a716-446655440000
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '422':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
         '429':
           $ref: './_common/base.yaml#/components/responses/RateLimitError'
 

@@ -3,7 +3,8 @@
 
 The probe provisions a CI-faithful database, mints one signed witness
 checkpoint bound to the database authority universe, applies the supported
-003 -> 002 downgrade, and re-applies 002 -> 003. It then verifies that:
+data-carrying downgrade from the current head to 202610180002, and re-applies
+the chain to head. It then verifies that:
 
 * the same authority-universe row and DEFINER reader survive both directions;
 * the signed checkpoint still verifies against that universe while the
@@ -32,7 +33,7 @@ import psycopg2
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
-HEAD_REVISION = "202610180003"
+HEAD_REVISION = "202611080001"
 DOWN_REVISION = "202610180002"
 EMPTY_DIGEST = hashlib.sha256(b"").hexdigest()
 
@@ -132,6 +133,48 @@ def _provision(admin_dsn: str, database: str) -> None:
     )
 
 
+def _prepare_downgrade(admin_dsn: str, database: str) -> None:
+    _run(
+        [
+            sys.executable,
+            str(
+                REPO_ROOT
+                / "scripts"
+                / "database"
+                / "prepare_migration_authority_boundary.py"
+            ),
+            "--admin-dsn",
+            admin_dsn,
+            "--database-name",
+            database,
+            "--prepare-downgrade",
+        ],
+        env=dict(os.environ),
+        timeout=600,
+    )
+
+
+def _finalize_owner_transfer(admin_dsn: str, database: str) -> None:
+    _run(
+        [
+            sys.executable,
+            str(
+                REPO_ROOT
+                / "scripts"
+                / "database"
+                / "prepare_migration_authority_boundary.py"
+            ),
+            "--admin-dsn",
+            admin_dsn,
+            "--database-name",
+            database,
+            "--finalize-owner-transfer",
+        ],
+        env=dict(os.environ),
+        timeout=600,
+    )
+
+
 def _append_checkpoint(
     *,
     journal_path: Path,
@@ -203,6 +246,7 @@ def main() -> int:
     env = _alembic_env(migration_dsn)
 
     _run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env)
+    _finalize_owner_transfer(args.admin_dsn, args.database)
     head_revision = _revision(migration_dsn)
     if head_revision != HEAD_REVISION:
         raise RuntimeError(
@@ -229,7 +273,11 @@ def main() -> int:
         universe=universe_before,
     )
 
-    _run([sys.executable, "-m", "alembic", "downgrade", "-1"], env=env)
+    _prepare_downgrade(args.admin_dsn, args.database)
+    _run(
+        [sys.executable, "-m", "alembic", "downgrade", DOWN_REVISION],
+        env=env,
+    )
     down_revision = _revision(migration_dsn)
     if down_revision != DOWN_REVISION:
         raise RuntimeError(
@@ -246,6 +294,7 @@ def main() -> int:
     )
 
     _run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env)
+    _finalize_owner_transfer(args.admin_dsn, args.database)
     restored_revision = _revision(migration_dsn)
     if restored_revision != HEAD_REVISION:
         raise RuntimeError(

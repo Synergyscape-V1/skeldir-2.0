@@ -1,0 +1,96 @@
+{
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T14:23:09.933070Z",
+    "commit_sha": "4d3e7c4354b2a6dafe03aa08524c87b47e8598de",
+    "compiled_genesis_hash": "e019bab976b77e9240172011140773cd310189152275eb9af827dae079339710",
+    "compiled_public_key_sha256": "8fa538607875a3b23ec4ddabf339be76286dc47140c2345c3bfe582ea27ebf25",
+    "compiled_source_attestation_public_key_sha256": "cb7c6b993072b4a18dd20be7ccacebc3aa4db93e6630b9d3dc3bc9074534ceb9",
+    "image_id": "sha256:960ab36f82a8aaf7653030228085914fb77d981145cb32dbe3cfe49d97ab8f5d",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "4a53dc788743d6a0f8995190b30ec383d5ee8bb4",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "ae804afd-e865-4945-aeed-cd3113e85768",
+  "capture": {
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"72192f3c-53b4-4541-a49b-692a8b45a1de\",\"idempotency_key\":\"463c6541-b261-54ca-92e7-0d863222bfc8\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+      "status": 200
+    },
+    "verdict": {
+      "attributed_amount_minor": 4200,
+      "attribution_event_id": "72192f3c-53b4-4541-a49b-692a8b45a1de",
+      "canonical_net_verified_amount_minor": 4200,
+      "commerce_reference": "176179181",
+      "currency_code": "USD",
+      "match_status": "matched_provisional",
+      "source_authority_state": "current",
+      "verdict_id": "34cc356c-b516-4bd6-9b1a-c0a0e74ec1fe",
+      "verified_amount_minor": 4200
+    }
+  },
+  "falsifier": "xxv-b1b2-shopify-refund-adjustment",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:960ab36f82a8aaf7653030228085914fb77d981145cb32dbe3cfe49d97ab8f5d",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "missing_status": {
+    "evidence_count_before_valid_refund": 0,
+    "http": {
+      "body": "{\"detail\":\"b26_p2_ingress_relay_refused: status=400\"}",
+      "status": 409
+    },
+    "net_before_valid_refund": 4200
+  },
+  "property": "B1/B2: a genuine Shopify refund adjusts net money without creating or replacing the Shopify capture source",
+  "recorded_at_utc": "2026-11-02T14:37:57.611558Z",
+  "refund": {
+    "adjustment_attestation_count": 1,
+    "applied": {
+      "authority_state": "current",
+      "captured_minor": 4200,
+      "net_minor": 3200,
+      "status": "adjusted"
+    },
+    "current_capture_source_count": 1,
+    "http": {
+      "body": "{\"status\":\"success\",\"event_id\":\"bcde198b-eaca-4c1f-8b0d-4f8e95f4a205\",\"idempotency_key\":\"934149917\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+      "status": 200
+    },
+    "reconciliation": {
+      "attestation_status": "xxv_attested",
+      "net_minor": 3200,
+      "source_authority_state": "current",
+      "status": 200
+    },
+    "signed_trust": {
+      "status": 200,
+      "verified_revenue_minor": 3200
+    }
+  },
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "e06ae6da-d7be-4de8-a888-5b33d7c11780"
+    }
+  ]
+}

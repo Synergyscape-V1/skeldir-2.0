@@ -37,6 +37,7 @@
         "unavailable_reason": "not_applicable"
       },
       "created_at": "2026-08-10T12:00:00Z",
+      "currency": "USD",
       "data_completeness_status": "complete",
       "envelope_id": "env_11111111111111111111111111111111",
       "envelope_version": "trust-envelope-v1",
@@ -117,7 +118,8 @@
         "text_disposition_version": "text-disposition-v1",
         "text_trust_class": "none"
       },
-      "valid_until": "2026-08-11T12:00:00Z"
+      "valid_until": "2026-08-11T12:00:00Z",
+      "verified_revenue_minor": 125000
     }
   ],
   "generated_at": "2026-08-10T12:00:00Z",

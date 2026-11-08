@@ -176,15 +176,23 @@ def _validate_verification_coverage(
         / "verification_coverage.py"
     )
     coverage_text = _read_text(coverage_path)
+    # XXV closes coverage over the authentication root's signed source
+    # amount. The aggregate is deliberately a per-row attestation
+    # verification loop now, not a bare SUM over owner-written ingress
+    # state; the tokens below bind the SQL window/currency census and the
+    # signature/current-authority checks that replace the old SUM.
     aggregate_tokens = (
         "VerificationCoverageAggregate",
         "fetch_verification_coverage_aggregate",
-        "SUM(",
         "tenant_id = :tenant_id",
-        "occurred_at >= :window_start",
-        "occurred_at < :window_end",
+        "event_timestamp >= :window_start",
+        "event_timestamp < :window_end",
         "provider IN :supported_platforms",
-        "currency_code = :currency_code",
+        "verified_amount_currency) = :currency_code",
+        "b26_p2_source_money_attestation",
+        "b26_p2_ingress_has_current_authority",
+        "read_verdict_source_attestation_status",
+        "verify_signature",
         "matched_webhook_revenue_minor",
         "connected_platform_revenue_minor",
     )
@@ -194,7 +202,6 @@ def _validate_verification_coverage(
     forbidden_query_tokens = (
         "SELECT *",
         "fetch_matched_webhook_revenue_rows",
-        "for row in rows",
         "Iterable[VerificationCoverageRevenue]",
         "VerificationCoverageRevenue",
         "external_api",

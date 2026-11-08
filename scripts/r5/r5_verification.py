@@ -325,6 +325,13 @@ async def _seed_events(
     occurred_at_step_us: int,
 ) -> dict[str, Any]:
     await _ensure_tenant(conn, tenant_id, label=scenario)
+    # Tenant-scoped triggers execute with the seeded row's tenant context;
+    # the admin connection must bind it explicitly for the trigger's
+    # SECURITY DEFINER insert into b24_dirty_events to satisfy RLS.
+    await conn.execute(
+        "SELECT set_config('app.current_tenant_id', $1, false)",
+        str(tenant_id),
+    )
 
     records = list(
         _iter_event_records(

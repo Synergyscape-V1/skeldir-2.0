@@ -1,0 +1,77 @@
+{
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T15:22:25.120209Z",
+    "commit_sha": "288cd127e875f5b39462ec3b61bf85b03a151499",
+    "compiled_genesis_hash": "8faebb157aa20677d0280936c4ee3fdd1cd5ab5a8512ed02ee63a5cc13df9aad",
+    "compiled_public_key_sha256": "53fdef235cc3b95ac7ef0b8207d6c3a62d1618398e0af8af9b9f19939ec9c553",
+    "compiled_source_attestation_public_key_sha256": "22b9d1b10690ad41ae071a742d77ceb2efe537f7af4bcde8e1c5e8b717658253",
+    "image_id": "sha256:0fd7052da0b45899b09bd1c3f84aeee896b8004f13c97dcd2146fb98b69c230d",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "f3e945d26f0b795176fcfd3d8323d2919eac72cd",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "3a34a94c-782d-47f4-adcb-e4671b662fae",
+  "cert_sha256": "f5895041665f0182922542b7df9709cb62351ca6a74502a914ce2e0d3e558fb7",
+  "cert_url": "https://api.paypal.com/v1/notifications/certs/CERT-XXV-LOCAL-TEST",
+  "falsifier": "xxv-b1b2-paypal-local-ca",
+  "http": {
+    "body": "{\"status\":\"success\",\"event_id\":\"8bdf6bfe-a79f-4b2d-8ebc-542664ca100d\",\"idempotency_key\":\"5e3df8b9-517e-5aa7-bc96-6248eafea254\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+    "status": 200
+  },
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:0fd7052da0b45899b09bd1c3f84aeee896b8004f13c97dcd2146fb98b69c230d",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "limit_of_inference": "Local CA physical verifier test only; external PayPal connectivity and PayPal-hosted certificate retrieval are not established.",
+  "paypal_id": "PAY-XXV-35990383886F43F8",
+  "property": "B1/B2 PayPal physical verifier: a local-CA signed sale passes the shipped RSA-SHA256 envelope verifier and becomes attested",
+  "reconciliation": {
+    "source_money_attestation_status": "xxv_attested",
+    "status": 200,
+    "verified_amount_minor": 7777
+  },
+  "recorded_at_utc": "2026-11-02T15:32:24.468917Z",
+  "source_attestation_count": 1,
+  "tenant_id": "841e92f3-3f85-406a-940c-0c6b7d8166a0",
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "841e92f3-3f85-406a-940c-0c6b7d8166a0"
+    }
+  ],
+  "trust": {
+    "status": 200,
+    "verified_revenue_minor": 7777
+  },
+  "verdict": {
+    "attributed_amount_minor": 7777,
+    "attribution_event_id": "8bdf6bfe-a79f-4b2d-8ebc-542664ca100d",
+    "canonical_net_verified_amount_minor": 7777,
+    "commerce_reference": "PAY-XXV-35990383886F43F8",
+    "currency_code": "USD",
+    "match_status": "matched_provisional",
+    "source_authority_state": "current",
+    "verdict_id": "dbc0694d-5bb2-4ade-afef-b5384852d42f",
+    "verified_amount_minor": 7777
+  }
+}

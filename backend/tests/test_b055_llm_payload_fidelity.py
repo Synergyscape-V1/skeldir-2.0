@@ -43,7 +43,9 @@ def test_llm_payload_json_roundtrip_fidelity():
 def test_llm_enqueue_payload_mapping(monkeypatch):
     captured = {}
 
-    def _fake_apply_async(*, kwargs, headers=None, queue=None, correlation_id=None):
+    def _fake_apply_async(
+        *, kwargs, headers=None, queue=None, correlation_id=None, countdown=None
+    ):
         captured["kwargs"] = kwargs
         captured["headers"] = headers or {}
         captured["queue"] = queue

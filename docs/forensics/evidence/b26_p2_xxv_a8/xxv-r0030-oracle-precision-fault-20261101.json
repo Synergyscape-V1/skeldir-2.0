@@ -1,0 +1,25 @@
+{
+  "check": "R-0030 held-out precision-loss oracle is rejected by the full validator",
+  "run_at": "2026-11-01",
+  "fault": "Independent oracle localcontext precision reduced from 28 to 6, no vector-specific branch.",
+  "physical_function_result": {
+    "numerator_minor": 100,
+    "denominator_minor": 2000001,
+    "expected_percent": "0.00",
+    "faulted_oracle_percent": "0.01"
+  },
+  "full_validator_with_fault": {
+    "exit_code": 1,
+    "verdict": "B26_P1_AUTHORITY_FAIL",
+    "violations": [
+      "coverage_oracle_vector_mismatch:100/2000001:expected=0.00:actual=0.01",
+      "coverage_oracle_precision_coupled"
+    ]
+  },
+  "restoration": "source restored from byte backup immediately after the run",
+  "control": "backend/tests/finance_reconciliation/test_b26_p1_semantic_contract.py::test_b26_p1_coverage_oracle_is_pinned_against_ambient_precision",
+  "limits": [
+    "The fault was applied in a disposable worktree, not the repository.",
+    "A source-validating CI run remains the admission proof."
+  ]
+}

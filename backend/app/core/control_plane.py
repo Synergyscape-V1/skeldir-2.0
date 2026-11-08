@@ -1,7 +1,8 @@
-from __future__ import annotations
-
 """B11-P1 runtime resolver for environment-namespaced config/secret retrieval."""
 
+from __future__ import annotations
+
+import base64
 import json
 import os
 import subprocess
@@ -11,6 +12,8 @@ from app.core.managed_settings_contract import (
     ALLOWED_SECRET_ENVS,
     MANAGED_SETTINGS_CONTRACT,
     ManagedSettingContract,
+    process_role_allows,
+    resolve_process_database_secret_path,
 )
 
 _ENV_ALIAS_MAP: dict[str, str] = {
@@ -38,6 +41,26 @@ def resolve_control_plane_env(raw_value: str | None) -> str:
     return canonical
 
 
+#: The canonical environments whose deployments carry production authority:
+#: compiled cryptographic anchors, control-plane custody and least-privilege
+#: credentials are mandatory in these and only these.
+#:
+#: XXV (HB-01): every caller that needs "is this a real deployment?" MUST use
+#: ``is_production_like`` with the ALREADY CANONICAL value. Comparing
+#: ``settings.ENVIRONMENT`` to a raw literal such as ``"production"`` is a
+#: defect class, not a style choice: ``resolve_control_plane_env`` canonicalises
+#: every alias before Settings stores it, so a literal comparison against a
+#: non-canonical alias is dead code in every possible deployment. Two such
+#: comparisons silently disabled the issuance-time historical-root and custody
+#: guards for the whole life of corrective XXIV.
+PRODUCTION_LIKE_ENVS: frozenset[str] = frozenset({"prod", "stage"})
+
+
+def is_production_like(canonical_env: str | None) -> bool:
+    """True when the canonical environment carries production authority."""
+    return (canonical_env or "").strip().lower() in PRODUCTION_LIKE_ENVS
+
+
 def resolve_aws_path_for_key(*, key: str, canonical_env: str) -> str:
     contract = MANAGED_SETTINGS_CONTRACT.get(key)
     if contract is None:
@@ -56,6 +79,42 @@ def resolve_aws_path_for_key(*, key: str, canonical_env: str) -> str:
 
 def _fetch_value_from_aws(contract: ManagedSettingContract, path: str) -> str:
     region = os.getenv("AWS_REGION", "us-east-2")
+    client_mode = os.getenv("SKELDIR_CONTROL_PLANE_CLIENT", "auto").strip().lower()
+    if client_mode in {"auto", "boto3"}:
+        try:
+            import boto3  # noqa: PLC0415
+            from botocore.exceptions import ClientError  # noqa: PLC0415
+        except ImportError as exc:
+            if client_mode == "boto3":
+                raise RuntimeError(
+                    "boto3 control-plane client is not installed"
+                ) from exc
+        else:
+            try:
+                if contract.classification == "secret":
+                    response = boto3.client(
+                        "secretsmanager", region_name=region
+                    ).get_secret_value(SecretId=path)
+                    value = response.get("SecretString")
+                    if value is None and response.get("SecretBinary") is not None:
+                        value = base64.b64decode(
+                            response["SecretBinary"]
+                        ).decode("utf-8")
+                    if value is None:
+                        raise RuntimeError(
+                            f"AWS secret {path} has no string or binary value"
+                        )
+                    return str(value)
+                response = boto3.client(
+                    "ssm", region_name=region
+                ).get_parameter(Name=path, WithDecryption=True)
+                return str(response["Parameter"]["Value"])
+            except ClientError as exc:
+                error = exc.response.get("Error", {})
+                raise RuntimeError(
+                    f"AWS read failed for {path}: "
+                    f"{error.get('Code', 'client_error')}"
+                ) from exc
 
     if contract.classification == "secret":
         cmd = [
@@ -101,15 +160,34 @@ def should_enable_control_plane() -> bool:
     return os.getenv("SKELDIR_CONTROL_PLANE_ENABLED", "0") == "1"
 
 
+def _path_for_key(
+    key: str, *, canonical_env: str, process_role: str
+) -> str:
+    if key == "DATABASE_URL" and process_role:
+        return resolve_process_database_secret_path(process_role, canonical_env)
+    if key == "DATABASE_URL" and is_production_like(canonical_env):
+        raise RuntimeError(
+            "process_role_required_for_database_url"
+        )
+    return resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
+
+
 def preload_environment_from_control_plane() -> None:
     if not should_enable_control_plane():
         return
 
     canonical_env = resolve_control_plane_env(os.getenv("ENVIRONMENT"))
+    process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
     for key, contract in MANAGED_SETTINGS_CONTRACT.items():
+        if not process_role_allows(process_role, key):
+            continue
         if os.getenv(key):
             continue
-        path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
+        path = _path_for_key(
+            key,
+            canonical_env=canonical_env,
+            process_role=process_role,
+        )
         os.environ[key] = _fetch_value_from_aws(contract, path)
 
 
@@ -118,13 +196,22 @@ def hydrate_settings_from_control_plane(settings_obj: Any) -> None:
         return
 
     canonical_env = resolve_control_plane_env(getattr(settings_obj, "ENVIRONMENT", None))
+    process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
 
     for key, contract in MANAGED_SETTINGS_CONTRACT.items():
+        if not process_role_allows(process_role, key):
+            continue
         current_value = getattr(settings_obj, key, None)
-        if current_value is not None:
+        if current_value is not None and not (
+            key == "DATABASE_URL" and process_role
+        ):
             continue
 
-        path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
+        path = _path_for_key(
+            key,
+            canonical_env=canonical_env,
+            process_role=process_role,
+        )
         resolved = _fetch_value_from_aws(contract, path)
         if contract.classification == "config":
             maybe_json = resolved.strip()

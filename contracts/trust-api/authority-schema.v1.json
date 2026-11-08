@@ -1,5 +1,5 @@
 {
-  "revision": "202609250001",
+  "revision": "202611080001",
   "objects": [
     [
       "column",
@@ -3744,6 +3744,30 @@
     ],
     [
       "role",
+      "app_account_provisioner",
+      {
+        "super": false,
+        "inherit": true,
+        "createdb": false,
+        "bypassrls": true,
+        "createrole": false,
+        "memberships": null
+      }
+    ],
+    [
+      "role",
+      "app_auth_lookup",
+      {
+        "super": false,
+        "inherit": true,
+        "createdb": false,
+        "bypassrls": true,
+        "createrole": false,
+        "memberships": null
+      }
+    ],
+    [
+      "role",
       "app_b28_requester",
       {
         "super": false,
@@ -3805,6 +3829,18 @@
     [
       "role",
       "app_ingress",
+      {
+        "super": false,
+        "inherit": true,
+        "createdb": false,
+        "bypassrls": false,
+        "createrole": false,
+        "memberships": null
+      }
+    ],
+    [
+      "role",
+      "app_ops",
       {
         "super": false,
         "inherit": true,

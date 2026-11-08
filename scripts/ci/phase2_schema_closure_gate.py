@@ -210,10 +210,46 @@ def _apply_migrations(migration_url: str, env: dict[str, str], log_dir: Path) ->
     _run(["alembic", "upgrade", "head"], env=mig_env, cwd=REPO_ROOT, log_path=log_dir / "alembic_upgrade_head.log")
 
 
+def _prepare_downgrade_graph(migration_url: str, env: dict[str, str], log_dir: Path, prefix: str) -> None:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(migration_url)
+    database_name = parsed.path.lstrip("/")
+    if not database_name:
+        raise RuntimeError("migration URL has no database name")
+    admin_dsn = os.environ.get("B26_P2_SUPERUSER_DSN", "").strip() or (
+        "postgresql://postgres:postgres@"
+        f"{parsed.hostname or '127.0.0.1'}:{parsed.port or 5432}/{database_name}"
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/database/prepare_migration_authority_boundary.py"),
+            "--admin-dsn",
+            admin_dsn,
+            "--database-name",
+            database_name,
+            "--prepare-downgrade",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    log_path = log_dir / f"{prefix}_prepare_downgrade.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text((proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"prepare downgrade failed ({proc.returncode}); log={log_path}"
+        )
+
+
 def _downgrade_base_then_upgrade(migration_url: str, env: dict[str, str], log_dir: Path, prefix: str) -> None:
     mig_env = env.copy()
     mig_env["MIGRATION_DATABASE_URL"] = migration_url
     mig_env["DATABASE_URL"] = migration_url
+    _prepare_downgrade_graph(migration_url, env, log_dir, prefix)
     _run(["alembic", "downgrade", "base"], env=mig_env, cwd=REPO_ROOT, log_path=log_dir / f"{prefix}_alembic_downgrade_base.log")
     _ensure_schema_create_for_migration_role(migration_url)
     _run(["alembic", "upgrade", "head"], env=mig_env, cwd=REPO_ROOT, log_path=log_dir / f"{prefix}_alembic_upgrade_head.log")
@@ -231,6 +267,11 @@ def _reset_public_schema(migration_url: str) -> None:
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute("DROP SCHEMA IF EXISTS public CASCADE")
+            # Account construction adds functions under the auth schema.
+            # Reset it with the public schema so the determinism cycles start
+            # from the same true base rather than re-running CREATE OR REPLACE
+            # against a function owned by a different role.
+            cur.execute("DROP SCHEMA IF EXISTS auth CASCADE")
             cur.execute("CREATE SCHEMA public")
             cur.execute("GRANT ALL ON SCHEMA public TO current_user")
             cur.execute("GRANT USAGE, CREATE ON SCHEMA public TO app_user")
@@ -422,11 +463,13 @@ def _eg21_parity(
 
 def _eg22_determinism(*, migration_url: str, env: dict[str, str], artifacts_dir: Path, log_dir: Path) -> GateResult:
     _reset_public_schema(migration_url)
+    _prepare_downgrade_graph(migration_url, env, log_dir, "eg22_a")
     _apply_migrations(migration_url, env, log_dir)
     dump_a = _normalize_schema(_schema_dump(migration_url))
     (artifacts_dir / "eg2_2_cycle_a.normalized.sql").write_text(dump_a, encoding="utf-8")
 
     _reset_public_schema(migration_url)
+    _prepare_downgrade_graph(migration_url, env, log_dir, "eg22_b")
     _apply_migrations(migration_url, env, log_dir)
     dump_b = _normalize_schema(_schema_dump(migration_url))
     (artifacts_dir / "eg2_2_cycle_b.normalized.sql").write_text(dump_b, encoding="utf-8")

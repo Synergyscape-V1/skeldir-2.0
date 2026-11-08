@@ -72,6 +72,7 @@ UNTRUSTED_SERVICES = (
     "worker_b23_b",
     "worker_bayesian",
     "worker_publisher",
+    "worker_history",
     "beat",
     "trust_signer",
     "auth_ingress",

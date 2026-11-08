@@ -1,0 +1,64 @@
+{
+  "actor": "authentic witness-key holder re-signing a foreign-universe journal",
+  "adverse_durable_reason": "refused:history_integrity_unverifiable",
+  "adverse_trust_read": {
+    "body_head": "{'detail': 'Subject not found.'}",
+    "status": 404
+  },
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
+    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
+    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
+    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
+    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "falsifier": "xxv-a4-foreign-universe",
+  "foreign_universe": "75c3bdd9-1025-44fc-9556-a3426cc82f83",
+  "forged_journal_lines": 2,
+  "journal_note": "the compiled genesis line is preserved; the forged latest line carries the foreign universe and is signed by the authentic key",
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "live_journal_lines": 22,
+  "live_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "patched_verifier_without_universe_check": {
+    "accepted": true,
+    "reason": null
+  },
+  "pristine_trust_read": {
+    "body_head": "{'artifact_hash': None, 'artifact_ref': None, 'audience_binding': {'audience_id_hash': 'sha256:0d04179037df1879ba199df8b33481bbb65c3712cfca2cab24aa5485a24c8fc2', 'audience_mode': 'tenant_internal', 'audience_scope': ['trust.envelope.read', 'trust.envelope.verify'], 'presentation_policy': 'bearer_not",
+    "status": 200
+  },
+  "property": "A4: a coherently signed foreign authority universe cannot establish current historical authority",
+  "recorded_at_utc": "2026-11-01T09:22:56.880260Z",
+  "restored_trust_read": {
+    "body_head": "{'artifact_hash': None, 'artifact_ref': None, 'audience_binding': {'audience_id_hash': 'sha256:0d04179037df1879ba199df8b33481bbb65c3712cfca2cab24aa5485a24c8fc2', 'audience_mode': 'tenant_internal', 'audience_scope': ['trust.envelope.read', 'trust.envelope.verify'], 'presentation_policy': 'bearer_not",
+    "status": 200
+  },
+  "unpatched_verifier": {
+    "accepted": false,
+    "reason": "witness_authority_universe_changed",
+    "refused": true
+  },
+  "verdict_id": "b6e8713f-fbbe-47a1-982f-42145538c1d0"
+}

@@ -18,10 +18,12 @@ import math
 import multiprocessing as mp
 import os
 import platform
+import random
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -704,11 +706,13 @@ async def db_activity_trace_sample(
         SELECT state AS state,
                COALESCE(wait_event_type, '-') AS wait_type,
                COALESCE(wait_event, '-') AS wait_event,
+               usename AS usename,
+               COALESCE(application_name, '') AS application_name,
                COUNT(*)::int AS n
         FROM pg_stat_activity
         WHERE datname = $1 AND backend_type = 'client backend'
-        GROUP BY 1, 2, 3
-        ORDER BY 4 DESC
+        GROUP BY 1, 2, 3, 4, 5
+        ORDER BY 6 DESC
         """,
         database_name,
     )
@@ -741,7 +745,8 @@ async def db_activity_trace_sample(
     return {
         "groups": [
             {"state": r["state"], "wait_type": r["wait_type"],
-             "wait_event": r["wait_event"], "n": int(r["n"])}
+             "wait_event": r["wait_event"], "usename": r["usename"],
+             "application_name": r["application_name"], "n": int(r["n"])}
             for r in rows
         ],
         "holding_queries": [
@@ -778,6 +783,59 @@ async def db_activity_trace_during(
         except Exception:
             break
     return samples
+
+
+def _read_proc(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def host_observation() -> dict[str, Any]:
+    """Capture host pressure so a slow run can be attributed to its regime."""
+    load = _read_proc("/proc/loadavg").split()
+    cpu_fields = _read_proc("/proc/stat").splitlines()
+    cpu = [int(part) for part in cpu_fields[0].split()[1:]] if cpu_fields else []
+    mem: dict[str, int] = {}
+    for line in _read_proc("/proc/meminfo").splitlines():
+        parts = line.replace(":", "").split()
+        if len(parts) >= 2:
+            mem[parts[0]] = int(parts[1])
+    pressure: dict[str, str] = {}
+    for resource in ("cpu", "io", "memory"):
+        pressure[resource] = _read_proc(f"/proc/pressure/{resource}").strip()
+    return {
+        "loadavg": load,
+        "cpu_stat": cpu,
+        "mem_available_kb": mem.get("MemAvailable"),
+        "pressure": pressure,
+    }
+
+
+def host_cpu_busy_percent(before: dict[str, Any], after: dict[str, Any]) -> float | None:
+    b = before.get("cpu_stat") or []
+    a = after.get("cpu_stat") or []
+    if len(b) < 4 or len(a) < 4:
+        return None
+    total = sum(a) - sum(b)
+    idle = (a[3] - b[3]) + (a[4] - b[4] if len(a) > 4 else 0)
+    if total <= 0:
+        return None
+    return round(100.0 * (total - idle) / total, 3)
+
+
+def pressure_avg10_max(observation: dict[str, Any]) -> float | None:
+    best: float | None = None
+    for text in (observation.get("pressure") or {}).values():
+        for token in str(text).split():
+            if token.startswith("avg10="):
+                try:
+                    value = float(token.split("=", 1)[1])
+                except ValueError:
+                    continue
+                best = value if best is None else max(best, value)
+    return best
 
 
 async def db_connection_snapshot(conn: asyncpg.Connection, database_name: str) -> dict[str, int]:
@@ -1110,12 +1168,17 @@ def _build_s8_requests_from_config(
         )
         reqs.append((url, headers, body))
 
-    # Deterministic shuffle (same as original S8)
-    reqs.sort(
-        key=lambda r: hashlib.sha256(
-            r[1]["X-Idempotency-Key"].encode("utf-8")
-        ).hexdigest()
+    # Deterministic shuffle. Sorting by the idempotency-key hash alone
+    # placed every replay of one event contiguously, turning the 25%
+    # duplicate cohort into one head-of-line storm rather than the
+    # sustained mixed traffic this profile names. A seeded PRNG keeps
+    # the order reproducible per run while distributing replays across
+    # the whole fire.
+    seed_material = (
+        f"{cfg.name}|{cfg.tenant_id}|{cfg.run_start_epoch}".encode("utf-8")
     )
+    seed = int(hashlib.sha256(seed_material).hexdigest()[:16], 16)
+    random.Random(seed).shuffle(reqs)
     return reqs
 
 
@@ -1720,6 +1783,7 @@ async def scenario_s8_perf_gate(
     all_keys = [replay_key, *unique_keys, *malformed_keys, *pii_keys]
 
     test_start_utc = _now_utc()
+    host_before = host_observation()
     request_templates = _build_s8_requests_from_config(
         S8WorkerConfig(
             worker_id=0,
@@ -1774,6 +1838,7 @@ async def scenario_s8_perf_gate(
     except Exception:
         db_activity_trace = []
     test_end_utc = _now_utc()
+    host_after = host_observation()
     resource_after = await db_connection_snapshot(admin_conn, runtime_database_name)
 
     replay_canonical = await db_count_canonical_for_key(conn, tenant.tenant_id, replay_key)
@@ -1841,6 +1906,12 @@ async def scenario_s8_perf_gate(
         http_connection_errors=conn_errors,
         db={
             "duration_s": profile.duration_s,
+            "host_cpu_busy_percent": host_cpu_busy_percent(
+                host_before, host_after
+            ),
+            "host_pressure_avg10_max": pressure_avg10_max(host_after),
+            "host_before": host_before,
+            "host_after": host_after,
             "target_rps": profile.target_rps,
             "target_request_count": target_request_count,
             "observed_request_count": observed_count,

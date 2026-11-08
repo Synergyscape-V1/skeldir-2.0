@@ -1,0 +1,41 @@
+{
+  "status": "PASS",
+  "scope": "isolated lock-contention probes; not demonstrated signed-customer failures",
+  "date_utc": "2026-11-01T12:25:00Z",
+  "repo_head_at_probe": "667d615a3ef32fe1e4ab16c66e5bf97c9e8fc46a plus uncommitted durable fixes",
+  "matview_refresh": {
+    "source_sha256": "4f99bc372107af232070cfcd3cfb332053bcc163cfb0dd9306a00c15d99b224d",
+    "test_sha256": "7ca0932dc28305166b292d258effd22363863a00821c63e773fd4b574f2b53cc",
+    "old_behavior": "SKIPPED_LOCK_HELD retried at 1s with max_retries=10; a lock held longer than the 10-attempt budget left the last refresh stale until another event arrived.",
+    "new_behavior": "Both matview tasks have max_retries=None; lock-held retries use capped exponential countdown 1,2,4,8,16,30s and never exhaust. The task itself remains the durable retry chain; no external event is required.",
+    "tests": [
+      "backend/tests/test_b26_p2_matview_trailing_refresh.py::test_lock_held_is_retry_not_silent_success",
+      "attempt=12 still requests retry with countdown=30 and max_retries=None",
+      "matview_refresh_single.max_retries is None",
+      "matview_refresh_all_for_tenant.max_retries is None"
+    ],
+    "deployment_consequence": "Longer legitimate lock contention delays the refresh by at most the capped interval; it no longer strands the last update permanently."
+  },
+  "jwt_verification": {
+    "source_sha256": "7771021f5636d7892cad9fa7993302de22c18aca57a11b0abfa3b670a9ec6a1c",
+    "test_sha256": "3567c40f9e5697d874fd0a5343c668017fce966cf2c87f5844dc039cf2788027",
+    "old_behavior": "When another process held the PostgreSQL refresh lease past the bounded unknown-kid poll, the verifier returned the cached ring and a token carrying the rotated kid was rejected until a later request happened to retry.",
+    "new_behavior": "If the refreshed ring still lacks the requested kid, the verifier reads the sanctioned source-of-truth ring directly for this request and updates its local cache. It does not write the shared cache while another process owns the lease.",
+    "tests": [
+      "backend/tests/test_b11_p3_jwt_rotation_semantics.py::test_unknown_kid_lock_contention_reads_source_instead_of_stale_ring",
+      "stale shared ring returned; source read once; rotated token accepted"
+    ],
+    "deployment_consequence": "Unknown-kid verification is no longer left stale by a long-held refresh lease; the source ring remains the authority."
+  },
+  "verification": {
+    "matview_test_command": "python -m pytest backend/tests/test_b26_p2_matview_trailing_refresh.py -q",
+    "matview_result": "4 passed",
+    "jwt_test_command": "python -m pytest backend/tests/test_b11_p3_jwt_rotation_semantics.py -q",
+    "jwt_result": "8 passed"
+  },
+  "limits": [
+    "The lock-contention probes are isolated unit/contract probes, not signed-customer failures.",
+    "The production-lane advisory-lock proof covers a 5-second real PostgreSQL lock; the 12-attempt retry behavior is proven at the task-policy boundary, not by holding a lock for 12 seconds in a live container.",
+    "No threshold was lowered; the retry budget was made durable rather than bounded."
+  ]
+}

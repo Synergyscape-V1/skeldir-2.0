@@ -29,3 +29,10 @@ output "ci_role_arn" {
 output "rotation_lambda_role_arn" {
   value = aws_iam_role.rotation_lambda.arn
 }
+
+output "process_task_database_secret_arns" {
+  value = {
+    for process, path in local.process_authority.task_database_secrets :
+    process => "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:${replace(path, "{env}", var.environment)}-??????"
+  }
+}

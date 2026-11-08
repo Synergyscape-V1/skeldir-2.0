@@ -1,0 +1,74 @@
+{
+  "status": "PASS_WITH_PRESERVED_CAPACITY_FAILURES",
+  "final_head": "6aed19c41d072a03a8dee0272d5bd3c625563970",
+  "code_head": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+  "final_head_delta": "evidence and checkpoint documents only; no image-copied path changed",
+  "base_main": "0d11ab07e0a2cf2bc5f66f6d7e0fd4f424ef0ac0",
+  "checks": {
+    "success": 190,
+    "skipped": 6,
+    "neutral": 3
+  },
+  "phase8": {
+    "run_id": 41312160149,
+    "job_id": 124864608423,
+    "conclusion": "success",
+    "attempts": 1,
+    "r3_test2_achieved_rps": 45.957,
+    "r3_test2_latency_p95_ms": 270.708,
+    "r3_test2_latency_p99_ms": 376.327,
+    "all_scenarios_passed": true,
+    "earlier_failure_preserved": {
+      "head": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+      "run_id": 41306045556,
+      "attempt_1": "42.671 rps / p95 2792.0 ms (artifact 13083667090)",
+      "attempt_2": "45.895 rps / p95 814.897 ms (artifact 13084118674)"
+    }
+  },
+  "b2_5_p13": {
+    "run_id": 41312160052,
+    "conclusion": "success",
+    "c9_positive_job_id": 124864608554,
+    "c17_lineage_job_id": null,
+    "e2e_core_conclusion": "success"
+  },
+  "b11_p3": {
+    "run_id": 41312159831,
+    "job_id": 124864606220,
+    "conclusion": "success"
+  },
+  "m1": {
+    "run_id": 41312159840,
+    "job_id": 124864606182,
+    "conclusion": "success"
+  },
+  "b0_4_and_b2_1": {
+    "run_id": 41312160202,
+    "attempt_1_b2_1_p6_failure": "isolated_elapsed_not_under_threshold:5.2576>=5.0000",
+    "attempt_2_b2_1_p6_job_id": 124872883291,
+    "attempt_2_conclusion": "success",
+    "b0_4_job_id": 124872885313,
+    "b0_4_conclusion": "success"
+  },
+  "lane_recheck": {
+    "code_head": "f0f582b2749424766a2e9b2ca658281bb90037cd",
+    "image_id": "sha256:d0d1e4f088a6c355f62ee1258d08106d3c7f00096fec7b997e586013ea43ee11",
+    "migration_head": "202610280001",
+    "passed": [
+      "journey",
+      "A2/B10 4321->5100->6200->7300",
+      "B4 95.00->100.00",
+      "B6/HB-14 PASS->FAIL->PASS",
+      "B9 same-cohort unity",
+      "A8 observer-kill recovery",
+      "HB-12 process-scoped control-plane refusal"
+    ],
+    "evidence_dir": "docs/forensics/evidence/b26_p2_xxv_a8/"
+  },
+  "disposition": "No threshold was lowered. Both the B2.1-P6 queue-isolation timing failure and the earlier Phase 8 Test2 failure are preserved; the unchanged reruns and the final exact-head Phase 8 run are recorded separately.",
+  "limits": [
+    "This is exact-head CI and production-lane evidence, not protected-main exact-main proof.",
+    "Real-AWS/deployed control-plane equivalence and live PayPal/AWS/Neon remain external.",
+    "No READY-FOR-AUDIT or B2.6-P2 completion claim is made."
+  ]
+}

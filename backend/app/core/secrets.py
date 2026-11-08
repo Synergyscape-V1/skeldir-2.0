@@ -17,12 +17,16 @@ import psycopg2
 from app.core import clock as clock_module
 from app.core.config import settings
 from app.core.control_plane import (
+    is_production_like,
     resolve_aws_path_for_key,
     resolve_control_plane_env,
     should_enable_control_plane,
     _fetch_value_from_aws,  # sanctioned internal control-plane fetch path
 )
-from app.core.managed_settings_contract import MANAGED_SETTINGS_CONTRACT
+from app.core.managed_settings_contract import (
+    MANAGED_SETTINGS_CONTRACT,
+    resolve_process_database_secret_path,
+)
 
 RuntimeRole = Literal["api", "worker", "readiness"]
 MAX_ACCEPTED_CRYPTO_KEYS = 3
@@ -185,11 +189,43 @@ def was_loaded_from_control_plane(key: str) -> bool:
     return os.getenv(_control_plane_source_marker(key), "0").strip() == "1"
 
 
+def _assert_process_secret_role(key: str) -> None:
+    """Bind every secret read to the declaring process role.
+
+    The preload filter alone left direct ``get_secret`` calls able to resolve
+    a foreign process's credential. The process role is the deployed identity,
+    not an advisory label; a role that does not declare the key is refused
+    before the control-plane fetch.
+    """
+    from app.core.managed_settings_contract import (  # noqa: PLC0415
+        process_role_allows,
+    )
+
+    role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+    if not role:
+        contract = _contract_for(key)
+        if contract.process_roles is not None:
+            raise RuntimeError(f"process_role_required_for_setting:{key}")
+    elif not process_role_allows(role, key):
+        raise RuntimeError(f"process_role_forbidden_setting:{key}")
+
+
 def _read_secret_source_of_truth_value(key: str) -> str | None:
     if should_enable_control_plane():
-        canonical_env = resolve_control_plane_env(os.getenv("ENVIRONMENT", settings.ENVIRONMENT))
+        _assert_process_secret_role(key)
+        canonical_env = resolve_control_plane_env(
+            os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
+        )
         contract = _contract_for(key)
-        path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
+        process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+        if key == "DATABASE_URL" and process_role:
+            path = resolve_process_database_secret_path(
+                process_role, canonical_env
+            )
+        elif key == "DATABASE_URL" and is_production_like(canonical_env):
+            raise RuntimeError("process_role_required_for_database_url")
+        else:
+            path = resolve_aws_path_for_key(key=key, canonical_env=canonical_env)
         value = _fetch_value_from_aws(contract, path)
         cleaned = _coerce_str(value)
         if cleaned is None:
@@ -301,18 +337,7 @@ def _database_url_for_sync_pg() -> str:
         if _DATABASE_DSN_CACHE:
             return _DATABASE_DSN_CACHE
 
-        candidate = _read_setting("DATABASE_URL")
-        if not candidate:
-            try:
-                from app.db import session as db_session  # local import avoids import-cycle during module init
-
-                candidate = getattr(db_session, "_ASYNC_DATABASE_URL", None)
-                if candidate:
-                    candidate = str(candidate).replace("postgresql+asyncpg://", "postgresql://", 1)
-            except Exception:
-                candidate = None
-        if not candidate:
-            candidate = require_secret("DATABASE_URL")
+        candidate = get_database_url()
 
         _DATABASE_DSN_CACHE = candidate
         return _DATABASE_DSN_CACHE
@@ -578,7 +603,10 @@ def _refresh_verification_ring_from_source_of_truth() -> tuple[JwtKeyRing, str]:
     value = _read_secret_source_of_truth_value("AUTH_JWT_PUBLIC_KEY_RING")
     if value is None:
         env_name = (_read_setting("ENVIRONMENT") or "").lower()
-        if env_name in {"local", "dev", "ci", "test"}:
+        # XXV (HB-01 sibling sweep): "test" is not a canonical environment --
+        # resolve_control_plane_env maps it to "ci"/"local" -- so the member
+        # was dead. The reachable canonical members are unchanged.
+        if env_name in {"local", "dev", "ci"}:
             value = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
     if value is None:
         raise RuntimeError("required secret missing: AUTH_JWT_PUBLIC_KEY_RING")
@@ -695,6 +723,40 @@ def require_secret(key: str) -> str:
 
 
 def get_database_url() -> str:
+    """Resolve the database DSN without allowing a shared override.
+
+    Production-like processes must resolve their own control-plane path. A
+    process may not supply ``SKELDIR_PROCESS_DATABASE_URL`` or a shared
+    ``DATABASE_URL`` environment value: either would let a proof harness or a
+    misconfigured deployment act under another process's database authority.
+    Non-production lanes may still use the explicit override for fixtures, but
+    the shipping path always goes through the process-scoped secret.
+    """
+    process_role = os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+    explicit = os.getenv("SKELDIR_PROCESS_DATABASE_URL", "").strip()
+    canonical_env = resolve_control_plane_env(
+        os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
+    )
+    if is_production_like(canonical_env):
+        if explicit:
+            raise RuntimeError(
+                "explicit_process_database_url_forbidden_in_production"
+            )
+        if not process_role:
+            raise RuntimeError("process_role_required_for_database_url")
+        if not should_enable_control_plane():
+            raise RuntimeError("process_database_url_requires_control_plane")
+        path = resolve_process_database_secret_path(process_role, canonical_env)
+        value = _coerce_str(
+            _fetch_value_from_aws(
+                MANAGED_SETTINGS_CONTRACT["DATABASE_URL"], path
+            )
+        )
+        if not value:
+            raise RuntimeError("required secret missing: DATABASE_URL")
+        return value
+    if explicit:
+        return explicit
     return require_secret("DATABASE_URL")
 
 
@@ -717,7 +779,10 @@ def get_jwt_validation_config() -> JwtValidationConfig:
     public_ring = _read_setting("AUTH_JWT_PUBLIC_KEY_RING")
     if public_ring is None:
         env_name = (_read_setting("ENVIRONMENT") or "").lower()
-        if env_name in {"local", "dev", "ci", "test"}:
+        # XXV (HB-01 sibling sweep): "test" is not a canonical environment --
+        # resolve_control_plane_env maps it to "ci"/"local" -- so the member
+        # was dead. The reachable canonical members are unchanged.
+        if env_name in {"local", "dev", "ci"}:
             public_ring = _read_setting("AUTH_JWT_SECRET")
     return JwtValidationConfig(
         public_key_ring=public_ring,
@@ -947,6 +1012,16 @@ def resolve_jwt_verification_keys(*, kid: str | None) -> tuple[str, list[str], b
                 refreshed = _resolve_verification_ring_via_postgres(reason="unknown_kid", kid=kid)
             except Exception:
                 refreshed = ring
+            if kid not in refreshed.keys:
+                # A held refresh lease can outlast the bounded poll. Read the
+                # sanctioned source directly for this request rather than
+                # returning the stale ring until some later arrival happens to
+                # retry. This does not write the shared cache while another
+                # process owns the refresh lease.
+                try:
+                    refreshed = _refresh_jwt_verification_ring()
+                except Exception:
+                    refreshed = ring
             selected_after_refresh = refreshed.keys.get(kid)
             if selected_after_refresh:
                 return selected_after_refresh, [], refreshed.requires_kid
@@ -993,11 +1068,36 @@ def reset_jwt_verification_pg_cache_for_testing() -> None:
     try:
         with _open_pg_conn() as conn:
             with conn.cursor() as cursor:
-                _ensure_pg_jwt_cache_table(cursor)
                 cursor.execute(f"DELETE FROM {_JWT_PG_CACHE_TABLE} WHERE singleton_id = 1")
             conn.commit()
+        return
+    except psycopg2.errors.InsufficientPrivilege:
+        # Runtime roles intentionally lack DELETE (and schema CREATE for
+        # _ensure_pg_jwt_cache_table) on this table; tests still need an empty
+        # cache and have UPDATE. A null ring is a cache miss.
+        pass
     except Exception:
         # Some unit tests run without Postgres; keep tests that don't require DB unaffected.
+        return
+    try:
+        with _open_pg_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    UPDATE {_JWT_PG_CACHE_TABLE}
+                       SET jwks_json = NULL,
+                           fetched_at = NULL,
+                           next_allowed_refresh_at = NOW(),
+                           last_refresh_error_at = NULL,
+                           refresh_error_count = 0,
+                           refresh_event_count = 0,
+                           last_refresh_reason = NULL,
+                           updated_at = NOW()
+                     WHERE singleton_id = 1
+                    """
+                )
+            conn.commit()
+    except Exception:
         return
 
 
@@ -1080,7 +1180,20 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
 
     if get_secret("DATABASE_URL") is None:
         missing.append("DATABASE_URL")
-    if role in {"readiness", "worker"} and get_secret("MIGRATION_DATABASE_URL") is None:
+    from app.core.managed_settings_contract import (  # noqa: PLC0415
+        process_role_allows,
+    )
+
+    process_role = (
+        os.getenv("SKELDIR_PROCESS_ROLE", "").strip()
+        if should_enable_control_plane()
+        else role
+    ) or role
+    if (
+        role in {"readiness", "worker"}
+        and process_role_allows(role, "MIGRATION_DATABASE_URL")
+        and get_secret("MIGRATION_DATABASE_URL") is None
+    ):
         env_name = _read_setting("ENVIRONMENT")
         if env_name not in {"local", "dev", "ci"}:
             missing.append("MIGRATION_DATABASE_URL")
@@ -1138,7 +1251,14 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
         env_name in {"stage", "prod"}
         or os.getenv("SKELDIR_REQUIRE_PROVIDER_SECRETS", "0").strip().lower() in {"1", "true", "yes", "on"}
     )
-    if role in {"api", "worker", "readiness"} and llm_required:
+    if (
+        role in {"api", "worker", "readiness"}
+        and llm_required
+        and (
+            not should_enable_control_plane()
+            or process_role_allows(process_role, "LLM_PROVIDER_API_KEY")
+        )
+    ):
         llm_secret = get_secret("LLM_PROVIDER_API_KEY")
         if llm_secret is None:
             missing.append("LLM_PROVIDER_API_KEY")
@@ -1159,6 +1279,8 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
             if llm_required:
                 control_plane_keys.append("LLM_PROVIDER_API_KEY")
             for key in control_plane_keys:
+                if not process_role_allows(process_role, key):
+                    continue
                 try:
                     _read_secret_source_of_truth_value(key)
                 except Exception:

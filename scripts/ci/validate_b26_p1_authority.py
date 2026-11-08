@@ -9,9 +9,10 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP, localcontext
 from pathlib import Path
 from typing import Any, Iterable
 from uuid import UUID
@@ -48,6 +49,7 @@ PRODUCER_JOBS = {
     "b26-p1-inherited-conduction",
     "b26-p2-production-topology",
     "b26-p2-in-image-proof",
+    "b26-p2-xxv-recovery",
 }
 EXPECTED_AGGREGATE_NAME = (
     "${{ github.event_name == 'push' && 'B2.6 P1 Exact-Main Diagnostics' "
@@ -176,6 +178,14 @@ COVERAGE_SQL_GRANDFATHERED_FILES = frozenset(
         "backend/app/revenue_verification/match_engine_kernel.py",
         "backend/app/bayesian/eligibility.py",
     }
+)
+# XXV source attestation has exactly one legitimate coverage-money read: the
+# verdict/source statement used to verify the signed amount. It is not a
+# coverage authority. Pin the exact SQL value rather than exempting the file,
+# so any aggregation or other change in that file remains RED.
+SOURCE_ATTESTATION_PATH = "backend/app/revenue_verification/source_attestation.py"
+SOURCE_ATTESTATION_READ_SQL_SHA256 = (
+    "ea6b926a6c3564bc7dbae4ca7fbf81526b39202b8b71cfe5fc64685d66117424"
 )
 # semantic_contract.py legitimately names total_business_minor inside the golden
 # falsification vector as the forbidden reference. Exclude only that file from
@@ -611,30 +621,69 @@ def _validate_contract_and_b23_binding(
             coverage_percent=Decimal("76.00"),
             zero_denominator=False,
         )
-        forged_wrong = CanonicalVerificationCoverage(
-            aggregate=golden_aggregate,
-            result=wrong_result,
-            producer=producer,
-            supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
-        )
         try:
-            scope_verifier(
-                forged_wrong,
-                tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
-                currency_code="USD",
-                window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
-                supported_platforms=["paypal", "shopify", "stripe", "woocommerce"],
+            CanonicalVerificationCoverage(
+                aggregate=golden_aggregate,
+                result=wrong_result,
+                producer=producer,
+                supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
             )
         except Exception:  # noqa: BLE001
             pass
         else:
-            violations.append("coverage_scope_verifier_trusts_wrong_mathematics")
+            violations.append("coverage_wrong_math_carrier_constructed")
         # Independent oracle (never calls sovereign compute for expected):
         if oracle(76000, 80000) != (Decimal("95.00"), False):
             violations.append("coverage_independent_oracle_wrong_95")
         if oracle(0, 0) != (Decimal("0.00"), True):
             violations.append("coverage_independent_oracle_wrong_zero")
+        # Property vectors, not one authored spelling. An equivalent wrong
+        # implementation can agree on the 95/0 golden vector while using a
+        # different rounding law or numerator/denominator treatment. These
+        # legs distinguish half-up two-place law from truncation, banker's
+        # rounding, float rounding and percent scaling errors.
+        coverage_vectors = (
+            (1, 20000),
+            (3, 40000),
+            (100, 2000001),
+            (1, 3),
+            (2, 3),
+            (1, 6),
+            (1, 8),
+            (7, 9),
+            (999999, 1000000),
+            (1, 1000000),
+            (0, 5),
+            (5, 5),
+        )
+        for numerator, denominator in coverage_vectors:
+            with localcontext() as context:
+                context.prec = 28
+                expected = (
+                    (Decimal(numerator) * Decimal("100")) / Decimal(denominator)
+                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            actual = oracle(numerator, denominator)
+            if actual != (expected, False):
+                violations.append(
+                    "coverage_oracle_vector_mismatch:"
+                    f"{numerator}/{denominator}:"
+                    f"expected={expected}:actual={actual[0]}"
+                )
+            vector_aggregate = VerificationCoverageAggregate(
+                tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                currency_code="USD",
+                window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+                matched_webhook_revenue_minor=numerator,
+                connected_platform_revenue_minor=denominator,
+            )
+            observed_vector = metric.compute(vector_aggregate).coverage_percent
+            if observed_vector != expected:
+                violations.append(
+                    "coverage_compute_vector_mismatch:"
+                    f"{numerator}/{denominator}:"
+                    f"expected={expected}:actual={observed_vector}"
+                )
         # Diagnostic must project only the one-way tenant hash, never raw UUID.
         rendered = diagnostic(forged_correct)
         if "tenant_id" in rendered:
@@ -852,6 +901,95 @@ def _validate_b26_namespace(
     details["b26_successor_product_machinery_enforced"] = enforce_product_machinery
 
 
+def _normalize_source_attestation_sql(value: str) -> str:
+    """Normalize formatting, not meaning.
+
+    Whitespace and SQL comments are not authority. Case is folded for
+    keywords/identifiers; the resulting token stream is pinned, so a
+    formatting-only edit remains the same read while any added aggregation,
+    grouping, projection, table, or predicate changes the hash.
+    """
+    without_comments = re.sub(
+        r"--[^\n]*|/\*.*?\*/", " ", value, flags=re.DOTALL
+    )
+    return re.sub(r"\s+", "", without_comments).lower().rstrip(";")
+
+
+def _is_source_attestation_read(rel: str, value: str) -> bool:
+    return (
+        rel == SOURCE_ATTESTATION_PATH
+        and hashlib.sha256(
+            _normalize_source_attestation_sql(value).encode("utf-8")
+        ).hexdigest()
+        == SOURCE_ATTESTATION_READ_SQL_SHA256
+    )
+
+
+def _constant_string(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _constant_string(node.left)
+        right = _constant_string(node.right)
+        if left is not None and right is not None:
+            return left + right
+    return None
+
+
+def _string_values(tree: ast.AST):
+    """Yield every literal and every fully-literal concatenation.
+
+    Formatting is not authority: the classifier normalizes whitespace
+    before looking for SQL, and a SQL string split with ``+`` is still one
+    candidate read. Both are needed so newline/tab/concatenation variants
+    cannot hide a duplicate coverage authority.
+    """
+    for node in ast.walk(tree):
+        value = _constant_string(node)
+        if value is not None:
+            yield node.lineno, value
+
+
+def _normalize_sql_text(value: str) -> str:
+    """Strip SQL comments and formatting before authority matching."""
+    without_block = re.sub(r"/\*.*?\*/", "", value, flags=re.DOTALL)
+    without_line = re.sub(r"--[^\n]*", "", without_block)
+    return re.sub(r"\s+", "", without_line.lower())
+
+
+def _call_is_sum(node: ast.Call) -> bool:
+    func = node.func
+    if isinstance(func, ast.Name) and func.id == "sum":
+        return True
+    return isinstance(func, ast.Attribute) and func.attr == "sum"
+
+
+def _node_mentions_coverage_money(node: ast.AST) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name) and child.id in COVERAGE_MONEY_SQL_TOKENS:
+            return True
+        if isinstance(child, ast.Attribute) and child.attr in COVERAGE_MONEY_SQL_TOKENS:
+            return True
+        if isinstance(child, ast.Constant) and isinstance(child.value, str):
+            compact = _normalize_sql_text(child.value)
+            if any(token in compact for token in COVERAGE_MONEY_SQL_TOKENS):
+                return True
+    return False
+
+
+def _call_is_func_sum(node: ast.Call) -> bool:
+    return isinstance(node.func, ast.Attribute) and node.func.attr == "sum"
+
+
+def _node_has_coverage_string_literal(node: ast.AST) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.Constant) and isinstance(child.value, str):
+            compact = _normalize_sql_text(child.value)
+            if any(token in compact for token in COVERAGE_MONEY_SQL_TOKENS):
+                return True
+    return False
+
+
 def _check_repo_wide_coverage_and_denominator(
     path: Path, source: str, tree: ast.AST, violations: list[str]
 ) -> None:
@@ -866,15 +1004,46 @@ def _check_repo_wide_coverage_and_denominator(
     """
     rel = path.relative_to(REPO_ROOT).as_posix()
     if rel not in COVERAGE_SQL_GRANDFATHERED_FILES:
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                lowered = node.value.lower()
-                if "select " in lowered or "sum(" in lowered:
-                    if any(token in lowered for token in COVERAGE_MONEY_SQL_TOKENS):
-                        violations.append(
-                            f"b26_duplicate_coverage_authority:{rel}:{node.lineno}"
-                        )
-                        break
+        for lineno, value in _string_values(tree):
+            compact = _normalize_sql_text(value)
+            if not any(
+                marker in compact
+                for marker in (
+                    "sum(",
+                    "count(",
+                    "avg(",
+                    "groupby",
+                    "over(",
+                    "func.sum",
+                    "total(",
+                )
+            ):
+                continue
+            if not any(token in compact for token in COVERAGE_MONEY_SQL_TOKENS):
+                continue
+            if _is_source_attestation_read(rel, value):
+                continue
+            violations.append(
+                f"b26_duplicate_coverage_authority:{rel}:{lineno}"
+            )
+            break
+        if not any(
+            f"b26_duplicate_coverage_authority:{rel}:" in item
+            for item in violations
+        ):
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not _call_is_sum(node):
+                    continue
+                mentions = (
+                    _node_mentions_coverage_money(node)
+                    if _call_is_func_sum(node)
+                    else _node_has_coverage_string_literal(node)
+                )
+                if mentions:
+                    violations.append(
+                        f"b26_duplicate_coverage_authority:{rel}:{node.lineno}"
+                    )
+                    break
     if rel not in TOTAL_BUSINESS_ALLOWLIST_FILES:
         found = False
         for node in ast.walk(tree):
@@ -1465,6 +1634,11 @@ def _validate_corrective_v_authority(
                 False,
             ):
                 violations.append("coverage_oracle_context_coupled")
+            if independent_coverage_percent(100, 2000001) != (
+                Decimal("0.00"),
+                False,
+            ):
+                violations.append("coverage_oracle_precision_coupled")
         finally:
             getcontext().prec = previous
     except Exception as exc:  # noqa: BLE001

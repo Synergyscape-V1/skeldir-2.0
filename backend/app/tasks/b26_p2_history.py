@@ -8,6 +8,7 @@ deployment-time continuity against the committed anchor file.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any, Dict
 
@@ -83,6 +84,10 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         load_private_key,
         verify_journal,
     )
+    from app.revenue_verification.source_evidence import (  # noqa: PLC0415
+        global_source_evidence_digest,
+        source_evidence_snapshots_with_failures,
+    )
 
     private_key_path = settings.B26_P2_HISTORY_WITNESS_PRIVATE_KEY_PATH
     if not private_key_path:
@@ -129,6 +134,44 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         raw_violations = snapshot["violations"]
         authority_universe = snapshot["authority_universe"]
         previous_tip_hash: str | None = snapshot["prior_tip_hash"]
+    from sqlalchemy.ext.asyncio import AsyncSession  # noqa: PLC0415
+
+    async with AsyncSession(_engine) as evidence_session:
+        snapshots, source_failures = await source_evidence_snapshots_with_failures(
+            evidence_session
+        )
+    source_by_tenant = {
+        tenant: str(snapshot["digest"])
+        for tenant, snapshot in snapshots.items()
+    }
+    source_count = sum(int(snapshot["count"]) for snapshot in snapshots.values())
+    source_global = global_source_evidence_digest(snapshots)
+    source_manifest = {
+        tenant: {
+            "facts": tuple(snapshot["facts"]),
+            "states": tuple(snapshot["states"]),
+        }
+        for tenant, snapshot in snapshots.items()
+    }
+    source_failure_digests = {
+        tenant: hashlib.sha256(reason.encode("utf-8")).hexdigest()
+        for tenant, reason in source_failures.items()
+    }
+    from app.revenue_verification.source_evidence_journal import (  # noqa: PLC0415
+        journal_record_hash,
+        load_source_fact_records,
+    )
+
+    journal_records = load_source_fact_records(
+        settings.B26_P2_SOURCE_EVIDENCE_JOURNAL_PATH
+    ) or []
+    source_journal_count = len(journal_records)
+    source_journal_tip = (
+        journal_record_hash(journal_records[-1])
+        if journal_records
+        else None
+    )
+
     violations = str(raw_violations or "").strip()
     if violations:
         raise HistoryWitnessError(
@@ -172,6 +215,13 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         ),
         custody_path=settings.B26_P2_HISTORY_WITNESS_CUSTODY_PATH,
         heartbeat_path=settings.B26_P2_HISTORY_WITNESS_HEARTBEAT_PATH,
+        source_evidence_digest=source_global,
+        source_evidence_by_tenant=source_by_tenant,
+        source_evidence_count=source_count,
+        source_evidence_manifest_by_tenant=source_manifest,
+        source_evidence_failures_by_tenant=source_failure_digests,
+        source_journal_count=source_journal_count,
+        source_journal_tip=source_journal_tip,
     )
     return {
         "ledger_count": checkpoint.ledger_count,
@@ -180,6 +230,7 @@ async def _record_signed_checkpoint() -> Dict[str, Any] | None:
         "ledger_prefix_digest": checkpoint.ledger_prefix_digest,
         "checkpoint_hash": checkpoint.checkpoint_hash,
         "observed_at": checkpoint.observed_at.isoformat(),
+        "source_evidence_failures": source_failures,
     }
 
 

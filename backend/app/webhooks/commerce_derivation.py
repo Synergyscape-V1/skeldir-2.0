@@ -225,7 +225,10 @@ class SovereignCommerce:
 # near-creation and reversed shapes. Future instants are refused against
 # the receipt clock. This law mirrors the database lifecycle admission
 # (b26_p2_enforce_lifecycle_admission).
-SHOPIFY_CREATION_SKEW_SECONDS = 0
+# XXV (A9/B2): align the parser with the published v4 contract and the DB
+# lifecycle admission, both of which admit a 60-second creation/update window.
+# The XXIV audit's P8 over-refusal was this parser's stricter 0-second rule.
+SHOPIFY_CREATION_SKEW_SECONDS = 60
 SHOPIFY_CREATION_FUTURE_TOLERANCE_SECONDS = 300
 SHOPIFY_CREATION_FINANCIAL_STATUSES = frozenset(
     {"pending", "authorized", "paid", "partially_paid"}
@@ -767,6 +770,484 @@ def derive_event_family_source(
     """
     _family, source = _derive_family_and_source(provider, raw_body, topic)
     return source
+
+
+@dataclass(frozen=True)
+class SovereignAdjustment:
+    provider: str
+    provider_native_event_reference: str
+    provider_native_commerce_reference: str
+    verified_amount_minor: int
+    verified_amount_currency: str
+    verified_amount_scale: int
+    event_timestamp: datetime
+    provider_event_type: str
+
+
+def _derive_shopify_adjustment(payload: Mapping[str, Any]) -> SovereignAdjustment:
+    """Read a Shopify refund object without granting creation authority.
+
+    Every refund-kind transaction must explicitly prove successful completion.
+    A missing/ambiguous status is refused; a non-refund transaction is ignored.
+    """
+    event_ref = _require_nonblank(
+        payload.get("id"), field="shopify adjustment event id"
+    )
+    parent_ref = _require_nonblank(
+        payload.get("order_id"), field="shopify adjustment parent order id"
+    )
+    transactions = payload.get("transactions")
+    if not isinstance(transactions, list) or not transactions:
+        raise CommerceDerivationError(
+            "shopify adjustment requires refund transactions"
+        )
+    amount_minor = 0
+    currency: str | None = None
+    transaction_instant: Any = None
+    for transaction in transactions:
+        if not isinstance(transaction, Mapping):
+            continue
+        kind = _normalize_family_token(transaction.get("kind") or "refund")
+        if kind not in (None, "refund"):
+            continue
+        status = _normalize_family_token(transaction.get("status"))
+        if status is None:
+            raise CommerceDerivationError(
+                "shopify refund transaction is not completed: status=missing"
+            )
+        if status not in ("success", "succeeded", "processed"):
+            continue
+        raw_amount = transaction.get("amount")
+        raw_currency = transaction.get("currency")
+        if raw_amount is None or raw_currency is None:
+            raise CommerceDerivationError(
+                "shopify refund transaction is missing amount or currency"
+            )
+        transaction_currency = _require_nonblank(
+            raw_currency, field="shopify adjustment currency"
+        ).upper()
+        if len(transaction_currency) != 3 or not transaction_currency.isalpha():
+            raise CommerceDerivationError(
+                "shopify adjustment currency must be a 3-letter code:"
+                f" {transaction_currency!r}"
+            )
+        if currency is not None and transaction_currency != currency:
+            raise CommerceDerivationError(
+                "shopify adjustment transactions disagree on currency"
+            )
+        try:
+            transaction_amount = decimal_to_minor_units(
+                raw_amount, scale=canonical_money_scale(transaction_currency)
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise CommerceDerivationError(
+                f"shopify adjustment amount invalid: {raw_amount!r}"
+            ) from exc
+        if transaction_amount <= 0:
+            raise CommerceDerivationError(
+                "shopify adjustment amount must be positive"
+            )
+        currency = transaction_currency
+        amount_minor += transaction_amount
+        transaction_instant = (
+            transaction_instant
+            or transaction.get("created_at")
+            or transaction.get("processed_at")
+        )
+    if amount_minor <= 0 or currency is None:
+        raise CommerceDerivationError(
+            "shopify adjustment has no successful refund transaction"
+        )
+    event_instant = (
+        payload.get("created_at")
+        or payload.get("processed_at")
+        or transaction_instant
+    )
+    return SovereignAdjustment(
+        provider="shopify",
+        provider_native_event_reference=event_ref,
+        provider_native_commerce_reference=parent_ref,
+        verified_amount_minor=amount_minor,
+        verified_amount_currency=currency,
+        verified_amount_scale=canonical_money_scale(currency),
+        event_timestamp=_coerce_utc_instant(
+            event_instant, field="shopify adjustment created_at"
+        ),
+        provider_event_type="refund",
+    )
+
+
+def _derive_paypal_adjustment(
+    payload: Mapping[str, Any],
+) -> SovereignAdjustment:
+    """Read a completed PayPal capture refund from signed provider bytes."""
+    resource = payload.get("resource")
+    if not isinstance(resource, Mapping):
+        raise CommerceDerivationError(
+            "paypal adjustment requires a resource object"
+        )
+    event_type = str(payload.get("event_type") or "").strip().upper()
+    if event_type and event_type != "PAYMENT.CAPTURE.REFUNDED":
+        raise CommerceDerivationError(
+            f"paypal adjustment event type refused: {event_type!r}"
+        )
+    status = str(resource.get("status") or "").strip().upper()
+    if status != "COMPLETED":
+        raise CommerceDerivationError(
+            "paypal adjustment is not financially completed:"
+            f" status={status or 'missing'}"
+        )
+    event_ref = _require_nonblank(
+        resource.get("id") or payload.get("id"),
+        field="paypal adjustment event id",
+    )
+    supplementary = resource.get("supplementary_data")
+    related = (
+        supplementary.get("related_ids")
+        if isinstance(supplementary, Mapping)
+        else None
+    )
+    parent = related.get("capture_id") if isinstance(related, Mapping) else None
+    parent_ref = _require_nonblank(
+        parent, field="paypal adjustment parent capture id"
+    )
+    amount = resource.get("amount")
+    if not isinstance(amount, Mapping):
+        raise CommerceDerivationError("paypal adjustment amount is required")
+    currency = _require_nonblank(
+        amount.get("currency_code"), field="paypal adjustment currency"
+    ).upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise CommerceDerivationError(
+            f"paypal adjustment currency must be a 3-letter code: {currency!r}"
+        )
+    raw_amount = amount.get("value")
+    if raw_amount is None:
+        raise CommerceDerivationError("paypal adjustment amount is required")
+    try:
+        amount_minor = decimal_to_minor_units(
+            raw_amount, scale=canonical_money_scale(currency)
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise CommerceDerivationError(
+            f"paypal adjustment amount invalid: {raw_amount!r}"
+        ) from exc
+    if amount_minor <= 0:
+        raise CommerceDerivationError(
+            "paypal adjustment amount must be positive"
+        )
+    return SovereignAdjustment(
+        provider="paypal",
+        provider_native_event_reference=event_ref,
+        provider_native_commerce_reference=parent_ref,
+        verified_amount_minor=amount_minor,
+        verified_amount_currency=currency,
+        verified_amount_scale=canonical_money_scale(currency),
+        event_timestamp=_coerce_utc_instant(
+            resource.get("create_time") or payload.get("create_time"),
+            field="paypal adjustment create_time",
+        ),
+        provider_event_type="refund",
+    )
+
+
+def _derive_woocommerce_adjustments(
+    payload: Mapping[str, Any],
+) -> list[SovereignAdjustment]:
+    """Read every completed refund in a WooCommerce order snapshot.
+
+    A first snapshot can carry several unseen refunds. Each refund id becomes
+    its own adjustment; choosing only the last entry silently loses the other
+    economic effects. WooCommerce order-refund entries do not carry a native
+    per-refund status: the authenticated order snapshot's refund entry is the
+    provider's completed refund evidence. No invented status is required, and
+    an optional status field is not used to replace the native meaning.
+    """
+    parent_ref = _require_nonblank(
+        payload.get("id"), field="woocommerce adjustment parent order id"
+    )
+    refunds = payload.get("refunds")
+    if not isinstance(refunds, list) or not refunds:
+        raise CommerceDerivationError(
+            "woocommerce adjustment requires a refund entry"
+        )
+    currency = _require_nonblank(
+        payload.get("currency"), field="woocommerce adjustment currency"
+    ).upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise CommerceDerivationError(
+            f"woocommerce adjustment currency must be a 3-letter code: {currency!r}"
+        )
+    adjustments: list[SovereignAdjustment] = []
+    for refund in refunds:
+        if not isinstance(refund, Mapping):
+            continue
+        event_ref = _require_nonblank(
+            refund.get("id"), field="woocommerce adjustment event id"
+        )
+        raw_amount = refund.get("total")
+        if raw_amount is None:
+            raise CommerceDerivationError(
+                "woocommerce adjustment refund total is required"
+            )
+        try:
+            amount_minor = abs(
+                decimal_to_minor_units(
+                    raw_amount, scale=canonical_money_scale(currency)
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise CommerceDerivationError(
+                f"woocommerce adjustment amount invalid: {raw_amount!r}"
+            ) from exc
+        if amount_minor <= 0:
+            raise CommerceDerivationError(
+                "woocommerce adjustment amount must be positive"
+            )
+        refund_instant = refund.get("date_created") or refund.get(
+            "date_created_gmt"
+        )
+        if refund_instant is None:
+            raise CommerceDerivationError(
+                "woocommerce refund date_created is required"
+            )
+        adjustments.append(
+            SovereignAdjustment(
+                provider="woocommerce",
+                provider_native_event_reference=event_ref,
+                provider_native_commerce_reference=parent_ref,
+                verified_amount_minor=amount_minor,
+                verified_amount_currency=currency,
+                verified_amount_scale=canonical_money_scale(currency),
+                event_timestamp=_coerce_utc_instant(
+                    refund_instant,
+                    field="woocommerce adjustment created_at",
+                ),
+                provider_event_type="refund",
+            )
+        )
+    if not adjustments:
+        raise CommerceDerivationError(
+            "woocommerce adjustment has no completed refund entry"
+        )
+    return adjustments
+
+
+def _stripe_refund_entries(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    data = payload.get("data")
+    obj: Mapping[str, Any]
+    if isinstance(data, Mapping) and isinstance(data.get("object"), Mapping):
+        obj = data["object"]
+    else:
+        obj = payload
+    event_type = str(payload.get("type") or "").strip().lower()
+    if event_type == "refund.created" or str(obj.get("object") or "") == "refund":
+        return [obj]
+    container = obj.get("refunds")
+    entries: Any = None
+    if isinstance(container, Mapping):
+        entries = container.get("data")
+    elif isinstance(container, list):
+        entries = container
+    if not isinstance(entries, list) or not entries:
+        raise CommerceDerivationError(
+            "stripe charge.refunded requires refund entries"
+        )
+    return [entry for entry in entries if isinstance(entry, Mapping)]
+
+
+def _derive_stripe_adjustments(
+    payload: Mapping[str, Any],
+) -> list[SovereignAdjustment]:
+    event_type = str(payload.get("type") or "").strip().lower()
+    if event_type not in {"charge.refunded", "refund.created"}:
+        raise CommerceDerivationError(
+            f"stripe adjustment event type refused: {event_type!r}"
+        )
+    adjustments: list[SovereignAdjustment] = []
+    data = payload.get("data")
+    charge_parent = None
+    charge_currency = None
+    charge_object: Mapping[str, Any] | None = None
+    if isinstance(data, Mapping) and isinstance(data.get("object"), Mapping):
+        charge_object = data["object"]
+        charge_parent = charge_object.get("payment_intent")
+        charge_currency = charge_object.get("currency")
+    entries = _stripe_refund_entries(payload)
+    if event_type == "charge.refunded":
+        if any(
+            str(entry.get("status") or "").strip().lower()
+            not in {"succeeded", "approved"}
+            for entry in entries
+        ):
+            raise CommerceDerivationError(
+                "stripe refund collection is incomplete: unresolved refund entry"
+            )
+        declared_total = (
+            charge_object.get("amount_refunded")
+            if charge_object is not None
+            else None
+        )
+        if declared_total is None:
+            raise CommerceDerivationError(
+                "stripe refund collection declared total is missing"
+            )
+        if isinstance(declared_total, bool) or not isinstance(
+            declared_total, (int, str)
+        ):
+            raise CommerceDerivationError(
+                "stripe refund collection total must be integer cents"
+            )
+        if isinstance(declared_total, str) and not declared_total.strip().isdigit():
+            raise CommerceDerivationError(
+                "stripe refund collection total must be integer cents"
+            )
+        entry_total = 0
+        for entry in entries:
+            entry_amount = entry.get("amount")
+            if isinstance(entry_amount, bool) or not isinstance(
+                entry_amount, (int, str)
+            ):
+                raise CommerceDerivationError(
+                    "stripe refund entry amount must be integer cents"
+                )
+            if isinstance(entry_amount, str) and not entry_amount.strip().isdigit():
+                raise CommerceDerivationError(
+                    "stripe refund entry amount must be integer cents"
+                )
+            entry_total += int(entry_amount)
+        if entry_total != int(declared_total):
+            raise CommerceDerivationError(
+                "stripe refund collection is incomplete:"
+                f" declared={int(declared_total)} listed={entry_total}"
+            )
+    for refund in entries:
+        status = str(refund.get("status") or "").strip().lower()
+        if status not in {"succeeded", "approved"}:
+            continue
+        event_ref = str(refund.get("id") or "").strip()
+        if not event_ref:
+            raise CommerceDerivationError(
+                "stripe adjustment refund id is required"
+            )
+        parent = (
+            refund.get("payment_intent")
+            or refund.get("charge")
+            or charge_parent
+            or payload.get("payment_intent")
+        )
+        parent_ref = _require_nonblank(
+            parent, field="stripe adjustment parent commerce reference"
+        )
+        raw_amount = refund.get("amount")
+        if raw_amount is None:
+            raise CommerceDerivationError("stripe adjustment amount is required")
+        if isinstance(raw_amount, bool) or not isinstance(raw_amount, (int, str)):
+            raise CommerceDerivationError(
+                f"stripe adjustment amount must be integer cents: {raw_amount!r}"
+            )
+        if isinstance(raw_amount, str) and not raw_amount.strip().isdigit():
+            raise CommerceDerivationError(
+                f"stripe adjustment amount must be integer cents: {raw_amount!r}"
+            )
+        amount_minor = int(raw_amount)
+        if amount_minor <= 0:
+            raise CommerceDerivationError(
+                "stripe adjustment amount must be positive"
+            )
+        currency = _require_nonblank(
+            refund.get("currency")
+            or charge_currency
+            or payload.get("currency"),
+            field="stripe adjustment currency",
+        ).upper()
+        if len(currency) != 3 or not currency.isalpha():
+            raise CommerceDerivationError(
+                f"stripe adjustment currency must be a 3-letter code: {currency!r}"
+            )
+        adjustments.append(
+            SovereignAdjustment(
+                provider="stripe",
+                provider_native_event_reference=event_ref,
+                provider_native_commerce_reference=parent_ref,
+                verified_amount_minor=amount_minor,
+                verified_amount_currency=currency,
+                verified_amount_scale=canonical_money_scale(currency),
+                event_timestamp=_coerce_utc_instant(
+                    refund.get("created") or payload.get("created"),
+                    field="stripe adjustment created",
+                ),
+                provider_event_type=event_type,
+            )
+        )
+    if not adjustments:
+        raise CommerceDerivationError(
+            "stripe adjustment has no financially completed refund"
+        )
+    return adjustments
+
+
+def derive_adjustments(
+    provider: str, raw_body: bytes
+) -> list[SovereignAdjustment]:
+    """Derive every completed adjustment carried by verified provider bytes."""
+    normalized = (provider or "").strip().lower()
+    payload = _parse_json_object(bytes(raw_body))
+    if normalized == "shopify":
+        return [_derive_shopify_adjustment(payload)]
+    if normalized == "woocommerce":
+        return _derive_woocommerce_adjustments(payload)
+    if normalized == "paypal":
+        return [_derive_paypal_adjustment(payload)]
+    if normalized == "stripe":
+        return _derive_stripe_adjustments(payload)
+    raise CommerceDerivationError(
+        f"adjustment provider not implemented: {normalized!r}"
+    )
+
+
+def derive_adjustment(
+    provider: str,
+    raw_body: bytes,
+    *,
+    provider_event_reference: str | None = None,
+) -> SovereignAdjustment:
+    """Derive exactly one adjustment, refusing silent multi-effect loss.
+
+    Creation-family law is untouched. A provider snapshot carrying several
+    completed refunds requires an explicit provider event reference; the
+    caller must process each reference rather than accepting the newest one.
+    """
+    adjustments = derive_adjustments(provider, raw_body)
+    if provider_event_reference is not None:
+        matches = [
+            adjustment
+            for adjustment in adjustments
+            if adjustment.provider_native_event_reference
+            == provider_event_reference
+        ]
+        if len(matches) != 1:
+            raise CommerceDerivationError(
+                "adjustment provider event reference did not resolve exactly once"
+            )
+        return matches[0]
+    if len(adjustments) != 1:
+        raise CommerceDerivationError(
+            "multiple completed adjustments require an explicit provider event"
+            " reference"
+        )
+    return adjustments[0]
+
+
+def adjustment_event_references(
+    provider: str, raw_body: bytes
+) -> list[str]:
+    """List completed adjustment identities in a verified provider snapshot."""
+    adjustments = derive_adjustments(provider, raw_body)
+    return [
+        adjustment.provider_native_event_reference
+        for adjustment in adjustments
+    ]
 
 
 def derive_commerce(provider: str, raw_body: bytes) -> SovereignCommerce:

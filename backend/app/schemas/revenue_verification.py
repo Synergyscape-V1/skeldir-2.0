@@ -68,6 +68,9 @@ class B23MatchVerdictDetailResponse(BaseModel):
     canonical_gross_expected_amount_minor: int = Field(ge=0)
     canonical_gross_captured_amount_minor: int = Field(ge=0)
     canonical_net_verified_amount_minor: int = Field(ge=0)
+    # The row's canonical currency, copied verbatim. It is never converted,
+    # guessed, or defaulted; an invalid legacy currency is reported instead.
+    currency_code: str = Field(min_length=3, max_length=3)
     discrepancy: B23DiscrepancyContext
     adjustments_applied: bool
     pending_since: datetime
@@ -92,6 +95,18 @@ class B23MatchVerdictDetailResponse(BaseModel):
     # current-law verified meaning). None when the law does not govern
     # the provider.
     event_family_law_current: bool | None = None
+    # XXV (A6/A10/HB-04): whether the money in this response is justified by
+    # a sovereign source attestation the database owner cannot forge. The
+    # unsigned reader and the signed Trust reader apply the SAME predicate:
+    # both audits defeated XXIV precisely because they did not.
+    source_money_attestation_status: str | None = None
+    source_money_attestation_reason: str | None = None
+    # XXV reader-boundary unity: source-money attestation alone does not
+    # establish historical authority. This mirrors the signed Trust path's
+    # live history-integrity gate; when history is unwitnessed, stale, or
+    # divergent the money is explicitly non-authoritative history.
+    history_integrity_status: str | None = None
+    history_integrity_reason: str | None = None
 
 
 class B23ExceptionRecordResponse(BaseModel):
@@ -152,6 +167,14 @@ class B23P2CandidateClassificationResponse(BaseModel):
     window_end: datetime
     scope_policy_version: str
     source_verified_gross_amount_minor: int | None
+    # B3: this receipt classifies request shape only. It is not a live
+    # financial-authority read; a consumer must consult the persisted
+    # source/verdict readers for currentness.
+    authority_scope: Literal["structural_candidate_only"] = (
+        "structural_candidate_only"
+    )
+    live_financial_authority: bool = False
+    live_authority_checked: bool = False
 
 
 class B23PostCaptureCorrectionRequest(BaseModel):

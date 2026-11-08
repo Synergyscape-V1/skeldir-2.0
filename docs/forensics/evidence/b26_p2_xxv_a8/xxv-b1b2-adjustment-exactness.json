@@ -1,0 +1,121 @@
+{
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-01T07:50:07.774064Z",
+    "commit_sha": "e335c28c2fb4d3d51ada418240ec52c6d2665b89",
+    "compiled_genesis_hash": "f05e0da1703ae6ebb0f23cb591dde089d6023b10186634ae07b81d2accd6d972",
+    "compiled_public_key_sha256": "bd3be0b68bbe56a954a5a180a2db7b8408825d927699e95dea5fcafd25546fa8",
+    "compiled_source_attestation_public_key_sha256": "aa40bf4a87352282500306316ad2c8fc3fa58d902ee98bf825dc42c59de947dd",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "e0392345ce3377c92f7ecf6ca35ca4687983ddc3",
+    "worktree_status_summary": {
+      "entries": 2,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "e35ef80d-5640-4f52-b589-d180bbba5fe2",
+  "before_first": {
+    "evidence_count": 0,
+    "net_minor": 4321
+  },
+  "capture": {
+    "body": "{\"status\":\"success\",\"event_id\":\"b59cfd78-0f1d-4497-891b-2c8b57def9a9\",\"idempotency_key\":\"3194366d-1cb1-4c3f-a965-018ee46118b0\",\"dead_event_id\":null,\"channel\":\"unknown\",\"error\":null}",
+    "http": 200,
+    "verdict": {
+      "attributed_amount_minor": 4321,
+      "attribution_event_id": "b59cfd78-0f1d-4497-891b-2c8b57def9a9",
+      "canonical_net_verified_amount_minor": 4321,
+      "commerce_reference": "pi_xxvexactb693a99ff10e4c",
+      "currency_code": "USD",
+      "match_status": "matched_provisional",
+      "source_authority_state": "current",
+      "verdict_id": "63c94fe4-8655-4e78-adcf-79accab443c7",
+      "verified_amount_minor": 4321
+    }
+  },
+  "cumulative": {
+    "body": "{\"status\":\"success\",\"event_id\":\"784fa5a9-43f9-40a9-80d1-7e3e883b38e1\",\"idempotency_key\":\"re_xxvexacta\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+    "evidence_count": 2,
+    "http": 200,
+    "net_minor": 2821
+  },
+  "failed": {
+    "body": "{\"detail\":\"b26_p2_ingress_relay_refused: status=400\"}",
+    "http": 409
+  },
+  "falsifier": "xxv-b1b2-adjustment-exactness",
+  "final": {
+    "body": "{\"status\":\"success\",\"event_id\":\"6224cb89-880d-42a9-baa7-fd283c69499a\",\"idempotency_key\":\"re_xxvexactc\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+    "evidence_count": 3,
+    "http": 200,
+    "net_minor": 0
+  },
+  "first": {
+    "body": "{\"status\":\"success\",\"event_id\":\"784fa5a9-43f9-40a9-80d1-7e3e883b38e1\",\"idempotency_key\":\"re_xxvexacta\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+    "evidence_count": 1,
+    "http": 200,
+    "net_minor": 3321
+  },
+  "fractional": {
+    "body": "{\"detail\":\"b26_p2_ingress_relay_refused: status=400\"}",
+    "http": 409
+  },
+  "incomplete_collection": {
+    "body": "{\"detail\":\"b26_p2_ingress_relay_refused: status=400\"}",
+    "http": 409
+  },
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:bdf1e9b6155fadde178fe3f1a391a7c1275b942b32fb11077d5b6b31eaedec21",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "overlap_and_reorder": {
+    "evidence_count": 2,
+    "net_minor": 2821,
+    "overlap_body": "{\"status\":\"success\",\"event_id\":\"c1b325f6-18a2-4cc1-9913-4f723b02c003\",\"idempotency_key\":\"re_xxvexactb\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+    "overlap_http": 200,
+    "reorder_body": "{\"status\":\"success\",\"event_id\":\"c1b325f6-18a2-4cc1-9913-4f723b02c003\",\"idempotency_key\":\"re_xxvexactb\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+    "reorder_http": 200
+  },
+  "pending": {
+    "body": "{\"detail\":\"b26_p2_ingress_relay_refused: status=400\"}",
+    "http": 409
+  },
+  "property": "B1/B2 exactness: pending/failed/fractional notifications are non-authoritative; completed effects apply once across retries, cumulative and overlapping notifications",
+  "readers": {
+    "attestation_status": "xxv_attested",
+    "reconciliation_status": 200,
+    "source_authority_state": "current",
+    "trust_status": 200,
+    "trust_verified_revenue_minor": 0
+  },
+  "recorded_at_utc": "2026-11-01T08:26:27.444989Z",
+  "retry": {
+    "body": "{\"status\":\"success\",\"event_id\":\"784fa5a9-43f9-40a9-80d1-7e3e883b38e1\",\"idempotency_key\":\"re_xxvexacta\",\"dead_event_id\":null,\"channel\":null,\"error\":null}",
+    "evidence_count": 1,
+    "http": 200,
+    "net_minor": 3321
+  },
+  "token_warmup": [
+    {
+      "scopes": [
+        "viewer",
+        "manager"
+      ],
+      "statuses": [
+        200
+      ],
+      "tenant_id": "1e854c40-3e6e-40b6-b031-c964a374af81"
+    }
+  ]
+}

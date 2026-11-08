@@ -272,6 +272,12 @@ def _live_checks(
             # identity (SELECT-only observability; no INSERT/UPDATE/
             # DELETE granted to any runtime principal).
             "b26_p2_auth_root_evidence",
+            # XXV: the authentication root is the only writer of the
+            # sovereign source-money and post-capture adjustment
+            # attestations, and reads the same rows to resolve replays.
+            "b26_p2_source_money_attestation",
+            "b26_p2_adjustment_attestation",
+            "b26_p2_adjustment_evidence",
         }
         for table, priv in grants:
             if table not in allowed_tables:
@@ -300,6 +306,14 @@ def _live_checks(
             ) and priv != "SELECT":
                 violations.append(
                     f"xi_isolation_ingress_twin_beyond_select:{table}:{priv}"
+                )
+            if table in (
+                "b26_p2_source_money_attestation",
+                "b26_p2_adjustment_attestation",
+                "b26_p2_adjustment_evidence",
+            ) and priv not in ("SELECT", "INSERT"):
+                violations.append(
+                    f"xi_isolation_ingress_source_attestation_beyond_select_insert:{table}:{priv}"
                 )
         # Routine ceiling: witness + attest (+ read-only P3
         # eligibility) only.
@@ -345,6 +359,13 @@ def _live_checks(
             # revision through this STABLE DEFINER; answers only, mints
             # nothing). Granted by 202609300008, role-guarded.
             "skeldir_database_construction_revisions",
+            # XXV: the root signs source-money and adjustment
+            # attestations and resolves the current verdict/pre-XXV
+            # lift. These answer or write attestation rows only; none
+            # mints completion or conduction authority.
+            "b26_p2_authority_universe",
+            "b26_p2_current_verdict_for_adjustment",
+            "b26_p2_lift_pre_xxv_demotion",
         }
         for routine in routines:
             if routine not in allowed_routines:

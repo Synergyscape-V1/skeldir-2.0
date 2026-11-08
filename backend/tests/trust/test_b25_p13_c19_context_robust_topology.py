@@ -342,6 +342,40 @@ def _publish_tenant_policy(control: dict[str, str], state: str) -> None:
     ], check=True, capture_output=True, text=True)
 
 
+def _observe_history_witness() -> None:
+    """Run the shipping history observer once before Trust issuance.
+
+    Trust refuses to issue when the signed checkpoint does not agree with
+    live correction-ledger state. The observer runs under the worker
+    credential with the private seed mounted only in its container; the
+    API holds the public half and the shared journal/custody.
+    """
+    try:
+        _compose(
+            "exec",
+            "-T",
+            "worker_history",
+            "python",
+            "-c",
+            "import asyncio; "
+            "from app.tasks.b26_p2_history import observe_history_integrity; "
+            "print(asyncio.run(observe_history_integrity()))",
+        )
+    except subprocess.CalledProcessError as exc:
+        # A beat-scheduled observation may already hold a checkpoint at the
+        # same live ledger count. The witness deliberately refuses a second
+        # checkpoint for one count (its hash includes observed_at), so the
+        # benign fork is not a failure; the caller's wait below still proves
+        # the existing observation agrees with live state and Trust issuance
+        # verifies the signed journal.
+        if "witness_custody_fork" in str(exc.stderr or ""):
+            return
+        raise AssertionError(
+            "history observer failed:"
+            f" stdout={exc.stdout!r} stderr={exc.stderr!r}"
+        ) from exc
+
+
 def _record_evidence(payload: dict[str, object]) -> None:
     target = Path(_required("C19_EVIDENCE_PATH"))
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -485,6 +519,26 @@ def test_c19_context_robust_production_topology() -> None:
     assert fit[9] in {"high", "medium", "low"}
 
     _publish_tenant_policy(control_a, "simulation_only")
+    _observe_history_witness()
+    _wait_for(
+        "signed history witness agrees with the live correction ledger",
+        """
+        SELECT o.ledger_count, s.n, o.ledger_tip, s.tip_hash,
+               o.observer_violations
+        FROM (
+            SELECT ledger_count, ledger_tip, observer_violations
+            FROM public.b26_p2_history_integrity_observations
+            ORDER BY id DESC LIMIT 1
+        ) AS o
+        CROSS JOIN public.b26_p2_read_history_snapshot(NULL) AS s
+        """,
+        (),
+        lambda row: (
+            int(row[0]) == int(row[1])
+            and (row[2] or None) == (row[3] or None)
+            and not str(row[4] or "").strip()
+        ),
+    )
     subject_ref = f"urn:skeldir:confidence_projection:{fit_id}"
     response = httpx.get(
         f"{base_url}/api/trust/v1/envelopes/confidence_projection/{subject_ref}",

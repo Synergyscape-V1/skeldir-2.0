@@ -7,13 +7,15 @@ from datetime import datetime
 from typing import Annotated, Literal, Optional
 from uuid import UUID
 
-from pydantic import AnyUrl, BaseModel, EmailStr, Field, SecretStr
+from pydantic import AnyUrl, BaseModel, ConfigDict, EmailStr, Field, SecretStr
 
 
 class LoginRequest(BaseModel):
     email: Annotated[EmailStr, Field(example='user@example.com')]
     password: Annotated[SecretStr, Field(example='securePassword123')]
-    tenant_id: Annotated[UUID, Field(example='550e8400-e29b-41d4-a716-446655440000')]
+    tenant_id: Annotated[
+        Optional[UUID], Field(example='550e8400-e29b-41d4-a716-446655440000')
+    ] = None
 
 
 class User(BaseModel):
@@ -35,6 +37,10 @@ class LoginResponse(BaseModel):
     """
     Token expiration time in seconds
     """
+    tenant_id: UUID
+    """
+    Tenant selected for this token pair
+    """
     user: User
     """
     Authenticated user profile for the session
@@ -43,6 +49,21 @@ class LoginResponse(BaseModel):
     """
     Token type
     """
+
+
+class SignupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: Annotated[SecretStr, Field(min_length=12, max_length=72)]
+    workspace_name: Annotated[str, Field(min_length=1)]
+
+
+class SignupResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: UUID
+    tenant_id: UUID
 
 
 class RefreshRequest(BaseModel):

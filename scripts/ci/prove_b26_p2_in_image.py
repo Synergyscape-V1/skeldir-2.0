@@ -69,6 +69,13 @@ IDENTITY_FILES = [
     "backend/app/webhooks/commerce_derivation.py",
     "backend/app/auth_service/server.py",
     "backend/app/api/webhooks.py",
+    "backend/app/revenue_verification/source_attestation.py",
+    "backend/app/revenue_verification/match_engine_kernel.py",
+    "backend/app/revenue_verification/corrections.py",
+    "alembic/versions/007_skeldir_foundation/202610270002_b26_p2_corrective_xxv_provider_amendment.py",
+    "alembic/versions/007_skeldir_foundation/202610280001_b26_p2_xxv_post_capture_adjustment.py",
+    "alembic/versions/007_skeldir_foundation/202611070001_supported_signup.py",
+    "alembic/versions/007_skeldir_foundation/202611080001_account_owner_chain_cleanup.py",
 ]
 
 # Corrective XIV stale falsifier probe (single-authority delta): the base
@@ -344,7 +351,7 @@ def _am8_cycle(image: str, harness: str, out_mount: str,
                 image, "python", "/proof/assert_b26_p2_authority_universe.py",
                 "--dsn", f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                 "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                "--migration-head", "202610180003",
+                "--migration-head", "202611080001",
                 "--covered"] + covered
         proc = _docker(*cmd)
         full = proc.stdout + proc.stderr
@@ -555,6 +562,7 @@ def main() -> int:
             f"{REPO_ROOT / 'backend' / 'tests'}:/app/backend/tests:ro",
             f"{REPO_ROOT / 'monitoring'}:/app/monitoring:ro",
             f"{REPO_ROOT / 'scripts' / 'ops'}:/app/scripts/ops:ro",
+            f"{REPO_ROOT / 'scripts' / 'database'}:/app/scripts/database:ro",
         ]
         proc = run_img(
             args.image_tag,
@@ -630,6 +638,7 @@ def main() -> int:
 
         covered = None
         for _modname, _fname, _attr in (
+            ("b26_p2_xxv_coverage", "b26_p2_xxv_coverage.py", "XXV_COVERED_SURFACES"),
             ("b26_p2_xxiv_coverage", "b26_p2_xxiv_coverage.py", "XXIV_COVERED_SURFACES"),
             ("b26_p2_xxiii_coverage", "b26_p2_xxiii_coverage.py", "XXIII_COVERED_SURFACES"),
             ("b26_p2_xxii_coverage", "b26_p2_xxii_coverage.py", "XXII_COVERED_SURFACES"),
@@ -665,7 +674,7 @@ def main() -> int:
             ["python", "/proof/assert_b26_p2_authority_universe.py", "--dsn",
               f"postgresql://postgres:{PG_PASSWORD}@pg:5432/{DB_NAME}",
                   "--pin", "/app/contracts-internal/governance/b26_p2_authority_universe.pin.json",
-                   "--migration-head", "202610180003",
+                   "--migration-head", "202611080001",
                 "--evidence-out", "/out/authority-universe.json",
              "--covered"] + covered,
             mounts=[harness, out_mount],

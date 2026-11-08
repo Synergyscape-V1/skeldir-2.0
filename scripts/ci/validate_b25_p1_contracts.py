@@ -102,8 +102,6 @@ SUBJECT_CONDITIONAL_FIELDS = {
         "required": {"match_verdict_status"},
         "forbidden": {
             "deterministic_verification_status",
-            "verified_revenue_minor",
-            "currency",
             "discrepancy_class",
             "attribution_model",
             "model_assumption",
@@ -369,6 +367,13 @@ def _custom_trust_checks(doc: dict[str, Any]) -> None:
         _forbid_present(
             doc, conditional.get("forbidden", set()), f"{subject_type}.forbidden"
         )
+
+    if subject_type == "match_verdict" and doc.get("fallback_applied") is False:
+        for field in ("verified_revenue_minor", "currency"):
+            if field not in doc:
+                raise ContractValidationError(
+                    f"custom:subject_required:{subject_type}.{field}"
+                )
 
     truth_type = doc.get("truth_type")
     allowed_truth_by_subject = {
@@ -763,6 +768,18 @@ def _negative_controls() -> list[NegativeControl]:
         "match_verdict_missing_match_verdict_status",
         "match",
         _remove("match_verdict_status"),
+        "required",
+    )
+    add(
+        "match_verdict_missing_verified_revenue_minor",
+        "match",
+        _remove("verified_revenue_minor"),
+        "required",
+    )
+    add(
+        "match_verdict_missing_currency",
+        "match",
+        _remove("currency"),
         "required",
     )
     add(

@@ -48,6 +48,9 @@ FORBIDDEN_RUNTIME_SCHEMA_PRIVILEGES = ("CREATE",)
 # function of the applied head, not a constant: CREATE is required strictly
 # below this revision and forbidden at or above it.
 RUNTIME_SCHEMA_HARDENING_REVISION = "202512301930"
+ACCOUNT_PREREQUISITE_REVISION = "202611070001"
+ACCOUNT_OWNER_REGISTER = "app_account_provisioner"
+ACCOUNT_OWNER_LOOKUP = "app_auth_lookup"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -86,6 +89,8 @@ class AuthorityConfig:
     b28_solver_user: str = "app_b28_solver"
     b28_solver_password: str = "app_b28_solver"
     rotate_existing_credentials: bool = False
+    prepare_downgrade: bool = False
+    finalize_owner_transfer: bool = False
 
 
 def _parse_args() -> AuthorityConfig:
@@ -98,6 +103,23 @@ def _parse_args() -> AuthorityConfig:
         "--admin-dsn", required=True, help="Superuser/admin PostgreSQL DSN."
     )
     parser.add_argument("--database-name", required=True, help="Target database name.")
+    parser.add_argument(
+        "--prepare-downgrade",
+        action="store_true",
+        help=(
+            "Recreate the temporary account ownership-transfer graph before a "
+            "downgrade. Ordinary preparation never recreates it once removed."
+        ),
+    )
+    parser.add_argument(
+        "--finalize-owner-transfer",
+        action="store_true",
+        help=(
+            "Revoke the temporary account ownership-transfer graph using each "
+            "edge's actual grantor. The database must already be at the current "
+            "migration head with the intended account function owners."
+        ),
+    )
     parser.add_argument("--runtime-user", default="app_user")
     parser.add_argument("--runtime-password", default="app_user")
     parser.add_argument("--migration-user", default="migration_owner")
@@ -165,6 +187,8 @@ def _parse_args() -> AuthorityConfig:
         b28_solver_user=args.b28_solver_user,
         b28_solver_password=args.b28_solver_password,
         rotate_existing_credentials=bool(args.rotate_existing_credentials),
+        prepare_downgrade=bool(args.prepare_downgrade),
+        finalize_owner_transfer=bool(args.finalize_owner_transfer),
     )
 
 
@@ -176,6 +200,123 @@ def _role_exists(cursor, role_name: str) -> bool:
 def _database_exists(cursor, database_name: str) -> bool:
     cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (database_name,))
     return cursor.fetchone() is not None
+
+
+def _database_admin_dsn(admin_dsn: str, database_name: str) -> str:
+    base = admin_dsn.split("?", 1)[0]
+    return base.rsplit("/", 1)[0] + "/" + database_name
+
+
+def _current_migration_head() -> str:
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    config = Config(str(REPOSITORY_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(REPOSITORY_ROOT / "alembic"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    if not head:
+        raise RuntimeError("migration_graph_has_no_head")
+    return str(head)
+
+
+def _revision_applied(heads: tuple[str, ...], target: str) -> bool:
+    if not heads:
+        return False
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    config = Config(str(REPOSITORY_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(REPOSITORY_ROOT / "alembic"))
+    script = ScriptDirectory.from_config(config)
+    return any(
+        revision.revision == target
+        for revision in script.iterate_revisions(heads, "base")
+    )
+
+
+def _account_function_oids(cursor) -> dict[str, int | None]:
+    cursor.execute(
+        "SELECT to_regprocedure(%s)::oid, to_regprocedure(%s)::oid",
+        (
+            "auth.register_business_account(text,text,text)",
+            "auth.lookup_single_active_tenant(uuid)",
+        ),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError("account_function_lookup_unavailable")
+    return {
+        "register_business_account": row[0],
+        "lookup_single_active_tenant": row[1],
+    }
+
+
+def _account_function_owners(cursor) -> dict[str, str]:
+    owners: dict[str, str] = {}
+    for name, oid in _account_function_oids(cursor).items():
+        if oid is None:
+            raise RuntimeError(f"account_function_metadata_unavailable:{name}")
+        cursor.execute(
+            "SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid = %s",
+            (oid,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError(f"account_function_metadata_unavailable:{name}")
+        owners[name] = str(row[0])
+    return owners
+
+
+def _temporary_owner_state(
+    admin_dsn: str, database_name: str
+) -> tuple[bool, bool]:
+    """Return ``(ownership_transfer_needed, cleanup_grants_needed)``.
+
+    Authority is inferred from the actual function OIDs and owners, never from
+    formatted signature strings.  Absent database/pre-account construction is
+    proven from the administrative catalog and applied revision; an existing
+    database whose account metadata cannot be resolved fails explicitly.
+    """
+    admin = psycopg2.connect(admin_dsn)
+    try:
+        with admin.cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s",
+                (database_name,),
+            )
+            database_exists = cursor.fetchone() is not None
+    finally:
+        admin.close()
+    if not database_exists:
+        return True, True
+
+    # An existing database must be readable through the administrative DSN.
+    # Connection/metadata failures propagate and are never treated as virgin.
+    connection = psycopg2.connect(
+        _database_admin_dsn(admin_dsn, database_name)
+    )
+    try:
+        with connection.cursor() as cursor:
+            heads = _applied_migration_heads(cursor)
+            if not _revision_applied(heads, ACCOUNT_PREREQUISITE_REVISION):
+                # Genuinely pre-account construction (including no applied
+                # revision): the existing initial transfer path applies.
+                return True, True
+            owners = _account_function_owners(cursor)
+    finally:
+        connection.close()
+
+    if owners.get("register_business_account") != ACCOUNT_OWNER_REGISTER:
+        raise RuntimeError(
+            "account_function_owner_unexpected:register_business_account"
+        )
+    if owners.get("lookup_single_active_tenant") != ACCOUNT_OWNER_LOOKUP:
+        raise RuntimeError(
+            "account_function_owner_unexpected:lookup_single_active_tenant"
+        )
+    # Fully constructed current authority: ordinary preparation must not
+    # create any temporary edge, including when an unexpected edge survives.
+    return False, False
 
 
 def _create_or_alter_login_role(
@@ -211,6 +352,29 @@ def _create_nologin_role_if_missing(cursor, role_name: str) -> None:
     cursor.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role_name)))
 
 
+def _create_bypass_rls_nologin_role(cursor, role_name: str) -> None:
+    """Create the dedicated cross-tenant login lookup role.
+
+    The login lookup must find a user by an identifier hash before any user
+    identity exists, while public.users is FORCE RLS with a self-select
+    policy. A NOLOGIN role with BYPASSRLS and only the SELECT privilege the
+    function needs is the physical boundary; it is not a runtime login and is
+    not a member of any generic runtime role.
+    """
+    if _role_exists(cursor, role_name):
+        cursor.execute(
+            sql.SQL("ALTER ROLE {} NOLOGIN BYPASSRLS").format(
+                sql.Identifier(role_name)
+            )
+        )
+        return
+    cursor.execute(
+        sql.SQL("CREATE ROLE {} NOLOGIN BYPASSRLS").format(
+            sql.Identifier(role_name)
+        )
+    )
+
+
 def _ensure_role_membership(cursor, *, role_name: str, member_name: str) -> None:
     cursor.execute(
         """
@@ -234,6 +398,10 @@ def _ensure_role_membership(cursor, *, role_name: str, member_name: str) -> None
 
 
 def _prepare_authority_surface(config: AuthorityConfig) -> bool:
+    ownership_transfer_needed, cleanup_grants_needed = _temporary_owner_state(
+        config.admin_dsn, config.database_name
+    )
+    cleanup_grants_needed = cleanup_grants_needed or config.prepare_downgrade
     admin_conn = psycopg2.connect(config.admin_dsn)
     try:
         admin_conn.autocommit = True
@@ -253,6 +421,40 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
             )
             _create_nologin_role_if_missing(cursor, config.app_rw_role)
             _create_nologin_role_if_missing(cursor, config.app_ro_role)
+            _create_nologin_role_if_missing(cursor, "app_ops")
+            _create_bypass_rls_nologin_role(cursor, "app_auth_lookup")
+            _create_bypass_rls_nologin_role(cursor, "app_account_provisioner")
+            if cleanup_grants_needed:
+                # The migration principal needs membership in both owners for
+                # the owner transfer.  The lookup -> provisioner edge is
+                # granted by the migration principal itself so that the
+                # cleanup migration is its grantor and can remove it on
+                # PostgreSQL 16, where a non-superuser cannot revoke a
+                # membership granted by a different role.
+                cursor.execute(
+                    sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                        sql.Identifier("app_auth_lookup"),
+                        sql.Identifier(config.migration_user),
+                    )
+                )
+                cursor.execute(
+                    sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                        sql.Identifier("app_account_provisioner"),
+                        sql.Identifier(config.migration_user),
+                    )
+                )
+                cursor.execute(
+                    sql.SQL("SET ROLE {}").format(
+                        sql.Identifier(config.migration_user)
+                    )
+                )
+                cursor.execute(
+                    sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                        sql.Identifier("app_auth_lookup"),
+                        sql.Identifier("app_account_provisioner"),
+                    )
+                )
+                cursor.execute("RESET ROLE")
             _create_or_alter_login_role(
                 cursor,
                 config.worker_user,
@@ -479,15 +681,16 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
                             sql.Identifier(config.runtime_user),
                         )
                     )
-            cursor.execute(
-                sql.SQL(
-                    "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA public "
-                    "GRANT SELECT, INSERT ON TABLES TO {}"
-                ).format(
-                    sql.Identifier(config.migration_user),
-                    sql.Identifier(config.runtime_user),
+            if not hardened:
+                cursor.execute(
+                    sql.SQL(
+                        "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA public "
+                        "GRANT SELECT, INSERT ON TABLES TO {}"
+                    ).format(
+                        sql.Identifier(config.migration_user),
+                        sql.Identifier(config.runtime_user),
+                    )
                 )
-            )
             _assert_runtime_authority_not_expanded(cursor, config, hardened=hardened)
             return hardened
     finally:
@@ -565,8 +768,250 @@ def _host_port_fragment(admin_dsn: str) -> str:
     return host_part
 
 
+def _edge_grantor(cursor, role_name: str, member_name: str) -> str | None:
+    cursor.execute(
+        """
+        SELECT m.grantor::regrole::text
+          FROM pg_auth_members m
+          JOIN pg_roles r ON r.oid = m.roleid
+          JOIN pg_roles u ON u.oid = m.member
+         WHERE r.rolname = %s AND u.rolname = %s
+        """,
+        (role_name, member_name),
+    )
+    row = cursor.fetchone()
+    return str(row[0]) if row else None
+
+
+def _owner_transfer_postcondition(
+    cursor, config: AuthorityConfig, expected_owners: dict[str, str]
+) -> list[str]:
+    failures: list[str] = []
+    for role_name, member_name in (
+        (ACCOUNT_OWNER_LOOKUP, ACCOUNT_OWNER_REGISTER),
+        (ACCOUNT_OWNER_REGISTER, config.migration_user),
+        (ACCOUNT_OWNER_LOOKUP, config.migration_user),
+    ):
+        if _edge_grantor(cursor, role_name, member_name) is not None:
+            failures.append(f"temporary_edge_present:{role_name}:{member_name}")
+    cursor.execute(
+        "SELECT pg_has_role(%s, %s, 'MEMBER'), pg_has_role(%s, %s, 'MEMBER')",
+        (
+            config.migration_user,
+            ACCOUNT_OWNER_REGISTER,
+            config.migration_user,
+            ACCOUNT_OWNER_LOOKUP,
+        ),
+    )
+    transitive = cursor.fetchone()
+    if bool(transitive[0]):
+        failures.append(f"transitive_path_present:{ACCOUNT_OWNER_REGISTER}")
+    if bool(transitive[1]):
+        failures.append(f"transitive_path_present:{ACCOUNT_OWNER_LOOKUP}")
+
+    cursor.execute(
+        """
+        SELECT
+          has_column_privilege(
+            'app_account_provisioner', 'public.users',
+            'password_hash', 'SELECT'
+          ),
+          has_column_privilege(
+            'app_account_provisioner', 'public.users',
+            'login_identifier_hash', 'SELECT'
+          ),
+          has_column_privilege(
+            'app_account_provisioner', 'public.users',
+            'password_hash', 'INSERT'
+          ),
+          has_column_privilege(
+            'app_account_provisioner', 'public.tenants',
+            'api_key_hash', 'INSERT'
+          ),
+          has_column_privilege(
+            'app_account_provisioner', 'public.tenant_memberships',
+            'membership_status', 'INSERT'
+          ),
+          has_column_privilege(
+            'app_account_provisioner', 'public.tenant_membership_roles',
+            'role_code', 'INSERT'
+          ),
+          has_column_privilege(
+            'app_account_provisioner', 'public.roles', 'code', 'SELECT'
+          ),
+          has_schema_privilege('app_account_provisioner', 'auth', 'USAGE'),
+          has_column_privilege(
+            'app_auth_lookup', 'public.users',
+            'login_identifier_hash', 'SELECT'
+          ),
+          has_column_privilege(
+            'app_auth_lookup', 'public.users', 'password_hash', 'SELECT'
+          ),
+          has_column_privilege(
+            'app_auth_lookup', 'public.tenant_memberships',
+            'membership_status', 'SELECT'
+          ),
+          has_function_privilege(
+            'app_user', 'auth.register_business_account(text,text,text)',
+            'EXECUTE'
+          ),
+          has_function_privilege(
+            'app_user', 'auth.lookup_single_active_tenant(uuid)', 'EXECUTE'
+          )
+        """
+    )
+    row = cursor.fetchone()
+    labels = (
+        "provisioner_inherited_password_select",
+        "provisioner_inherited_login_select",
+        "provisioner_users_insert_missing",
+        "provisioner_tenants_insert_missing",
+        "provisioner_memberships_insert_missing",
+        "provisioner_roles_insert_missing",
+        "provisioner_roles_select_missing",
+        "provisioner_auth_usage_missing",
+        "lookup_login_select_missing",
+        "lookup_password_select_missing",
+        "lookup_membership_select_missing",
+        "app_user_register_execute_missing",
+        "app_user_lookup_execute_missing",
+    )
+    for index, label in enumerate(labels):
+        value = bool(row[index])
+        if index < 2:
+            if value:
+                failures.append(label)
+        elif not value:
+            failures.append(label)
+    try:
+        current_owners = _account_function_owners(cursor)
+    except Exception:
+        failures.append("function_owner_metadata_unavailable")
+    else:
+        for name, owner in expected_owners.items():
+            if current_owners.get(name) != owner:
+                failures.append(f"function_owner_changed:{name}")
+    return failures
+
+
+def _safe_exception(exc: Exception, config: AuthorityConfig) -> str:
+    message = f"{type(exc).__name__}:{exc}"
+    for secret in (
+        config.admin_dsn,
+        config.migration_password,
+        config.runtime_password,
+        config.worker_password,
+        config.publisher_password,
+        config.ingress_password,
+        config.trust_issuer_password,
+        config.trust_signer_password,
+        config.b28_requester_password,
+        config.b28_solver_password,
+    ):
+        if secret:
+            message = message.replace(str(secret), "<redacted>")
+    return message[:500]
+
+
+def _finalize_owner_transfer(config: AuthorityConfig) -> int:
+    connection = None
+    try:
+        connection = psycopg2.connect(
+            _database_admin_dsn(config.admin_dsn, config.database_name)
+        )
+        connection.autocommit = False
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT current_user, session_user, r.rolsuper"
+                " FROM pg_roles AS r WHERE r.rolname = current_user"
+            )
+            identity = cursor.fetchone()
+            if (
+                identity is None
+                or str(identity[0]) != str(identity[1])
+                or not bool(identity[2])
+            ):
+                raise RuntimeError("administrative_session_required")
+
+            heads = _applied_migration_heads(cursor)
+            expected_head = _current_migration_head()
+            if heads != (expected_head,):
+                raise RuntimeError(
+                    "current_head_required:" + ",".join(heads or ("absent",))
+                )
+
+            expected_owners = _account_function_owners(cursor)
+            if (
+                expected_owners.get("register_business_account")
+                != ACCOUNT_OWNER_REGISTER
+            ):
+                raise RuntimeError(
+                    "account_function_owner_unexpected:register_business_account"
+                )
+            if (
+                expected_owners.get("lookup_single_active_tenant")
+                != ACCOUNT_OWNER_LOOKUP
+            ):
+                raise RuntimeError(
+                    "account_function_owner_unexpected:lookup_single_active_tenant"
+                )
+
+            for role_name, member_name in (
+                (ACCOUNT_OWNER_LOOKUP, ACCOUNT_OWNER_REGISTER),
+                (ACCOUNT_OWNER_REGISTER, config.migration_user),
+                (ACCOUNT_OWNER_LOOKUP, config.migration_user),
+            ):
+                grantor = _edge_grantor(cursor, role_name, member_name)
+                if grantor is None:
+                    continue
+                cursor.execute(
+                    sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(grantor))
+                )
+                cursor.execute(
+                    sql.SQL("REVOKE {} FROM {} RESTRICT").format(
+                        sql.Identifier(role_name),
+                        sql.Identifier(member_name),
+                    )
+                )
+                cursor.execute("RESET ROLE")
+
+            failures = _owner_transfer_postcondition(
+                cursor, config, expected_owners
+            )
+            if failures:
+                raise RuntimeError(
+                    "owner_transfer_postcondition_failed:" + ",".join(failures)
+                )
+        connection.commit()
+        print("account_owner_transfer_finalized")
+        print("temporary_owner_edges_absent=true")
+        print("temporary_owner_paths_absent=true")
+        print("account_function_owners_intact=true")
+        print("account_direct_privileges_intact=true")
+        return 0
+    except Exception as exc:  # noqa: BLE001 - finalization must fail closed
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        print(
+            "account_owner_transfer_finalize_failed:"
+            + _safe_exception(exc, config)
+        )
+        return 1
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 def main() -> int:
     config = _parse_args()
+    if config.prepare_downgrade and config.finalize_owner_transfer:
+        print("migration_authority_boundary_failed:mutually_exclusive_actions")
+        return 1
+    if config.finalize_owner_transfer:
+        return _finalize_owner_transfer(config)
     if config.runtime_user == config.migration_user:
         raise RuntimeError(
             "runtime_user and migration_user must be distinct principals"
@@ -578,6 +1023,12 @@ def main() -> int:
         # one issued by a superuser -- must never be reported as a normal
         # provisioning success. Fail closed and name the exact privilege.
         print(f"migration_authority_boundary_failed:{exc}")
+        return 1
+    except Exception as exc:  # noqa: BLE001 - provisioning must fail closed
+        print(
+            "migration_authority_boundary_failed:"
+            + _safe_exception(exc, config)
+        )
         return 1
     print("migration_authority_boundary_prepared")
     print(f"database={config.database_name}")

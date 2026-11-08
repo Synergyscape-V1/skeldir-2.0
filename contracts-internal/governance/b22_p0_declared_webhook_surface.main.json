@@ -1,6 +1,6 @@
 {
   "contract_id": "b22.p0.declared_webhook_surface.main",
-  "contract_version": "2.0.0",
+  "contract_version": "2.1.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.2-P0",
@@ -54,6 +54,36 @@
       "alias_of": "POST /api/webhooks/stripe/payment_intent/succeeded",
       "visibility": "runtime_transport_only",
       "reason": "Legacy compatibility alias remains mounted but is intentionally excluded from public OpenAPI/contracts/typegen."
+    }
+  ],
+  "runtime_internal_operations": [
+    {
+      "method": "POST",
+      "path": "/api/webhooks/stripe/charge_refunded",
+      "provider": "stripe",
+      "visibility": "runtime_internal_only",
+      "reason": "XXV post-capture refund adjustment ingress; provider-signed, deliberately excluded from the one-capture-per-provider public OpenAPI/typegen surface."
+    },
+    {
+      "method": "POST",
+      "path": "/api/webhooks/shopify/refunds_create",
+      "provider": "shopify",
+      "visibility": "runtime_internal_only",
+      "reason": "XXV post-capture refund adjustment ingress; provider-signed, deliberately excluded from the one-capture-per-provider public OpenAPI/typegen surface."
+    },
+    {
+      "method": "POST",
+      "path": "/api/webhooks/woocommerce/order_refunded",
+      "provider": "woocommerce",
+      "visibility": "runtime_internal_only",
+      "reason": "XXV post-capture refund adjustment ingress; provider-signed, deliberately excluded from the one-capture-per-provider public OpenAPI/typegen surface."
+    },
+    {
+      "method": "POST",
+      "path": "/api/webhooks/paypal/payment_capture_refunded",
+      "provider": "paypal",
+      "visibility": "runtime_internal_only",
+      "reason": "XXV post-capture refund adjustment ingress; provider-signed, deliberately excluded from the one-capture-per-provider public OpenAPI/typegen surface."
     }
   ]
 }

@@ -1,0 +1,65 @@
+{
+  "actor": "secrets-manager/IAM principal and the deployment control plane",
+  "artifact": {
+    "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "captured_at_utc": "2026-11-02T16:17:27.229440Z",
+    "commit_sha": "dde1e86f0b35719369b8ad9c9be717557c64d372",
+    "compiled_genesis_hash": "e168e4fdad7964ce2a4b2a067babf07d66f062e2f4df09d64c7cc99a464f7c33",
+    "compiled_public_key_sha256": "08e6a542b0dbbf4826cee98baf1dcde5d4547707be17901ded9fa3f07492c67b",
+    "compiled_source_attestation_public_key_sha256": "2e1ff0bea6d65faa176ee640bd21c0bb31a09d650a79ba2de00cde194c729d38",
+    "image_id": "sha256:9bed39801583ce25ecb00cddd8194bc20bd7f039af0feb8e03aba2fbb99438a6",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "tree_sha": "f15820e439fdd2c2e8345a075f7f7483491735ac",
+    "worktree_status_summary": {
+      "entries": 3,
+      "image_bytes_match_committed_tree": true,
+      "image_copied_path_entries": [],
+      "non_image_entry_sample": [
+        " M scripts/ci/b26_p2_xxv_falsify.py",
+        "?? session-ses_ebfe.md",
+        "?? session-ses_efc3.md"
+      ]
+    }
+  },
+  "authority_universe": "4fbc9cbb-cc69-4012-b858-f9f4f1b6ae20",
+  "aws_client_in_production_image": "boto3:1.43.119",
+  "control_plane_process_scope_present": "backend/app/core/control_plane.py:15:    process_role_allows,\nbackend/app/core/control_plane.py:182:        if not process_role_allows(process_role, key):\nbackend/app/core/control_plane.py:202:        if not process_role_allows(process_role, key):",
+  "expected_independently": "every shipping process boots under the shipped production control plane with only the credentials its role declares",
+  "falsifier": "xxv-hb12-control-plane",
+  "hb12_passed": true,
+  "lane": {
+    "database": "skeldir_xxv",
+    "environment": "prod",
+    "image_id": "sha256:9bed39801583ce25ecb00cddd8194bc20bd7f039af0feb8e03aba2fbb99438a6",
+    "image_tag": "b26p2xxv-final:latest",
+    "migration_head": "202610280001",
+    "roles": "least-privilege graph from prepare_migration_authority_boundary.py"
+  },
+  "observed_result": "PASS: the valid signer process boots with only its declared credentials, and the same process with MIGRATION_DATABASE_URL is denied specifically with trust_signer_forbidden_authority:MIGRATION_DATABASE_URL. Real-AWS equivalence is external.",
+  "prod_boot_with_control_plane_enabled": {
+    "returncode": 1,
+    "stderr_tail": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/app/backend/app/core/config.py\", line 26, in <module>\n    preload_environment_from_control_plane()\n  File \"/app/backend/app/core/control_plane.py\", line 186, in preload_environment_from_control_plane\n    path = _path_for_key(\n           ^^^^^^^^^^^^^^\n  File \"/app/backend/app/core/control_plane.py\", line 169, in _path_for_key\n    raise RuntimeError(\nRuntimeError: process_role_required_for_database_url\n",
+    "stdout_tail": ""
+  },
+  "property": "P-XXV 1(b)(iii): production process authority must be process-scoped and resolvable from the shipped artifact",
+  "recorded_at_utc": "2026-11-02T16:37:52.092350Z",
+  "running_signer_process_scope": {
+    "returncode": 0,
+    "stderr_tail": "",
+    "stdout_tail": "control=1\nmigration=\n"
+  },
+  "signer_custody_with_migration_dsn_present": {
+    "expected_token": "trust_signer_forbidden_authority:MIGRATION_DATABASE_URL",
+    "intended_denial": true,
+    "returncode": 1,
+    "stderr_tail": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/app/backend/app/trust/signer_service.py\", line 71, in assert_signer_process_custody\n    raise RuntimeError(f\"trust_signer_forbidden_authority:{forbidden}\")\nRuntimeError: trust_signer_forbidden_authority:MIGRATION_DATABASE_URL\n",
+    "stdout_tail": ""
+  },
+  "signer_positive_operation": {
+    "custody_ok": true,
+    "returncode": 0,
+    "stderr_tail": "",
+    "stdout_tail": "CUSTODY_OK\n"
+  }
+}

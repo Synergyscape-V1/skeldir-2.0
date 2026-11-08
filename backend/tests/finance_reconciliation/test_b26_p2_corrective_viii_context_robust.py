@@ -102,7 +102,9 @@ def _seed_ingress(
     tenant_id = uuid.uuid4()
     ingress_id = uuid.uuid4()
     event_uuid = uuid.uuid4()
-    conn = psycopg2.connect(_admin_dsn())
+    conn = psycopg2.connect(
+        os.environ.get("B26_P2_SUPERUSER_DSN", "").strip() or _admin_dsn()
+    )
     conn.autocommit = True
     try:
         with conn.cursor() as cur:
@@ -940,8 +942,43 @@ def test_hc8_dirty_vii_contradictions_quarantined_on_upgrade():
 
     repo_root = _Path(__file__).resolve().parents[3]
     env = dict(os.environ)
+    # Alembic remains on the ordinary migration principal. The administrative
+    # helper prepares the transfer graph before the downgrade and finalizes
+    # after each return to head, so this test does not leave migration-owner
+    # function authority poisoned for later proof consumers.
     env["MIGRATION_DATABASE_URL"] = _admin_dsn()
     env["DATABASE_URL"] = _admin_dsn()
+
+    from urllib.parse import urlparse
+
+    admin_database = urlparse(_admin_dsn()).path.lstrip("/")
+    admin_super_dsn = _superuser_dsn()
+
+    def prepare(action: str) -> None:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(
+                    repo_root
+                    / "scripts"
+                    / "database"
+                    / "prepare_migration_authority_boundary.py"
+                ),
+                "--admin-dsn",
+                admin_super_dsn,
+                "--database-name",
+                admin_database,
+                action,
+            ],
+            cwd=str(repo_root),
+            env=dict(os.environ),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        assert proc.returncode == 0, (
+            f"prepare {action} failed: {proc.stderr[-2000:]}"
+        )
 
     def alembic(*args: str) -> None:
         proc = subprocess.run(
@@ -954,6 +991,7 @@ def test_hc8_dirty_vii_contradictions_quarantined_on_upgrade():
         )
         assert proc.returncode == 0, f"alembic {' '.join(args)} failed: {proc.stderr[-2000:]}"
 
+    prepare("--prepare-downgrade")
     alembic("downgrade", "202609210001")
     try:
         skew_ids = _seed_ingress("hc8skew")
@@ -1044,6 +1082,7 @@ def test_hc8_dirty_vii_contradictions_quarantined_on_upgrade():
         finally:
             admin2.close()
         alembic("upgrade", "head")
+        prepare("--finalize-owner-transfer")
         # Quarantine/history assertions bypass RLS as the auditor does:
         # the migration owner's lane connection carries no tenant GUC.
         check = psycopg2.connect(_superuser_dsn())
@@ -1086,3 +1125,4 @@ def test_hc8_dirty_vii_contradictions_quarantined_on_upgrade():
             check.close()
     finally:
         alembic("upgrade", "head")
+        prepare("--finalize-owner-transfer")

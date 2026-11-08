@@ -1,6 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP, localcontext
 
 from app.finance_reconciliation.semantic_contract import (
     B26_DISCREPANCY_TAXONOMY_V1,
@@ -45,6 +45,71 @@ def test_b26_p1_golden_vector_uses_inherited_b23_metric() -> None:
 
     assert result.coverage_percent == Decimal("95.00")
     assert result.denominator_connected_platform_revenue_minor == 80000
+
+
+def test_b26_p1_coverage_property_vectors_not_one_spelling() -> None:
+    from datetime import datetime, timezone
+    from uuid import UUID
+
+    from app.finance_reconciliation.coverage_authority import (
+        independent_coverage_percent,
+    )
+
+    vectors = (
+        (1, 20000),
+        (3, 40000),
+        (100, 2000001),
+        (1, 3),
+        (2, 3),
+        (1, 6),
+        (1, 8),
+        (7, 9),
+        (999999, 1000000),
+        (1, 1000000),
+        (0, 5),
+        (5, 5),
+    )
+    for numerator, denominator in vectors:
+        with localcontext() as context:
+            context.prec = 28
+            expected = (
+                (Decimal(numerator) * Decimal("100")) / Decimal(denominator)
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        assert independent_coverage_percent(numerator, denominator) == (
+            expected,
+            False,
+        )
+        aggregate = VerificationCoverageAggregate(
+            tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            currency_code="USD",
+            window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            matched_webhook_revenue_minor=numerator,
+            connected_platform_revenue_minor=denominator,
+        )
+        assert compute_verification_coverage(aggregate).coverage_percent == expected
+
+
+def test_b26_p1_coverage_oracle_is_pinned_against_ambient_precision() -> None:
+    from decimal import getcontext
+
+    from app.finance_reconciliation.coverage_authority import (
+        independent_coverage_percent,
+    )
+
+    previous = getcontext().prec
+    getcontext().prec = 2
+    try:
+        assert independent_coverage_percent(100, 2000001) == (
+            Decimal("0.00"),
+            False,
+        )
+        assert independent_coverage_percent(76000, 80000) == (
+            Decimal("95.00"),
+            False,
+        )
+    finally:
+        getcontext().prec = previous
 
 
 def test_b26_p1_provisional_coverage_is_not_confirmation() -> None:
@@ -389,16 +454,97 @@ def test_b26_p1_wrong_mathematics_is_refused_at_scope_boundary() -> None:
         supported_platforms=["paypal", "shopify", "stripe", "woocommerce"],
     )
     for bad_percent in (Decimal("76.00"), Decimal("94.99"), Decimal("95.01")):
-        bad = CanonicalVerificationCoverage(
+        with pytest.raises(CanonicalCoverageAuthorityError):
+            CanonicalVerificationCoverage(
+                aggregate=aggregate,
+                result=VerificationCoverageResult(
+                    tenant_id=aggregate.tenant_id,
+                    currency_code="USD",
+                    window_start=aggregate.window_start,
+                    window_end=aggregate.window_end,
+                    numerator_matched_webhook_revenue_minor=76000,
+                    denominator_connected_platform_revenue_minor=80000,
+                    coverage_percent=bad_percent,
+                    zero_denominator=False,
+                ),
+                producer="app.revenue_verification.verification_coverage."
+                "fetch_verification_coverage_aggregate"
+                "+app.revenue_verification.verification_coverage."
+                "VERIFICATION_COVERAGE.compute",
+                supported_platforms=(
+                    "paypal",
+                    "shopify",
+                    "stripe",
+                    "woocommerce",
+                ),
+            )
+    coherent = CanonicalVerificationCoverage(
+        aggregate=aggregate,
+        result=VerificationCoverageResult(
+            tenant_id=aggregate.tenant_id,
+            currency_code="USD",
+            window_start=aggregate.window_start,
+            window_end=aggregate.window_end,
+            numerator_matched_webhook_revenue_minor=76000,
+            denominator_connected_platform_revenue_minor=80000,
+            coverage_percent=Decimal("95.00"),
+            zero_denominator=False,
+        ),
+        producer="app.revenue_verification.verification_coverage."
+        "fetch_verification_coverage_aggregate"
+        "+app.revenue_verification.verification_coverage."
+        "VERIFICATION_COVERAGE.compute",
+        supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
+    )
+    assert require_canonical_scope(coherent, **scope) is coherent
+
+
+def test_alternate_python_aggregation_cannot_construct_canonical_coverage() -> None:
+    """R-0031 F2: wrong arithmetic is refused at the type boundary.
+
+    This deliberately uses an unremarkable Python aggregation over the two
+    integer legs: `100 * 1900 / (2000 + 100) = 90.476...`. The source spelling
+    cannot acquire authority because the carrier validates the legs before it
+    exists; the canonical consumer never sees a wrong numeric claim.
+    """
+
+    import pytest
+
+    from datetime import datetime, timezone
+    from uuid import UUID
+
+    from app.finance_reconciliation.coverage_authority import (
+        CanonicalCoverageAuthorityError,
+        CanonicalVerificationCoverage,
+    )
+    from app.revenue_verification.verification_coverage import (
+        VerificationCoverageAggregate,
+        VerificationCoverageResult,
+    )
+
+    aggregate = VerificationCoverageAggregate(
+        tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        currency_code="USD",
+        window_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        window_end=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        matched_webhook_revenue_minor=1900,
+        connected_platform_revenue_minor=2000,
+    )
+    wrong_percent = Decimal(100.0 * 1900 / (2000 + 100))
+    with pytest.raises(
+        CanonicalCoverageAuthorityError,
+        match="canonical_coverage_percent_not_derived_from_integer_legs",
+    ):
+        CanonicalVerificationCoverage(
             aggregate=aggregate,
             result=VerificationCoverageResult(
                 tenant_id=aggregate.tenant_id,
                 currency_code="USD",
                 window_start=aggregate.window_start,
                 window_end=aggregate.window_end,
-                numerator_matched_webhook_revenue_minor=76000,
-                denominator_connected_platform_revenue_minor=80000,
-                coverage_percent=bad_percent,
+                numerator_matched_webhook_revenue_minor=1900,
+                denominator_connected_platform_revenue_minor=2000,
+                coverage_percent=wrong_percent,
                 zero_denominator=False,
             ),
             producer="app.revenue_verification.verification_coverage."
@@ -407,8 +553,6 @@ def test_b26_p1_wrong_mathematics_is_refused_at_scope_boundary() -> None:
             "VERIFICATION_COVERAGE.compute",
             supported_platforms=("paypal", "shopify", "stripe", "woocommerce"),
         )
-        with pytest.raises(CanonicalCoverageAuthorityError):
-            require_canonical_scope(bad, **scope)
 
 
 def test_b26_p1_diagnostic_is_tenant_safe_and_non_reconstructible() -> None:
@@ -526,6 +670,39 @@ def test_b26_p1_canonical_sinks_are_executably_registered() -> None:
     assert executor_signature_has_no_session_capability() is True
 
 
+def test_coverage_guard_rejects_inline_comment_alternate_sum() -> None:
+    import ast
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "ci"))
+    from validate_b26_p1_authority import (  # noqa: PLC0415
+        REPO_ROOT,
+        _check_repo_wide_coverage_and_denominator,
+    )
+
+    source = (
+        "def alternate_coverage(connection):\n"
+        "    with connection.cursor() as cursor:\n"
+        '        cursor.execute("SELECT 100.0*SUM /* independently chosen */ '
+        "(canonical_net_verified_amount_minor)/(SUM /* independently chosen */ "
+        '(verified_amount_minor)+100) FROM r30_coverage")\n'
+        "        return cursor.fetchone()[0]\n"
+    )
+    path = REPO_ROOT / "backend/app/revenue_verification/r0030_fixture.py"
+    violations: list[str] = []
+    _check_repo_wide_coverage_and_denominator(
+        path, source, ast.parse(source), violations
+    )
+    assert any(
+        item.startswith(
+            "b26_duplicate_coverage_authority:"
+            "backend/app/revenue_verification/r0030_fixture.py:"
+        )
+        for item in violations
+    )
+
+
 def test_b26_p1_migration_graph_is_alembic_native() -> None:
     import sys
     from pathlib import Path
@@ -562,7 +739,7 @@ def test_b26_p1_migration_graph_is_alembic_native() -> None:
     assert set(graph) == native_revisions
     assert "202512151410" in graph
     assert "202511171000" not in graph
-    assert heads == set(script.get_heads()) == {"202610180003"}
+    assert heads == set(script.get_heads()) == {"202611080001"}
     assert "202609072001" in graph
     assert "202609170001" in graph
     assert "202609180001" in graph
@@ -584,3 +761,15 @@ def test_b26_p1_migration_graph_is_alembic_native() -> None:
     assert "202609300001" in graph
     assert "202609300002" in graph
     assert "202609300003" in graph
+
+
+
+def test_coverage_numerator_implementation_includes_provisional_match() -> None:
+    """The SQL numerator must implement the contract, not a later test goal."""
+    from app.revenue_verification.verification_coverage import (
+        _MATCHED_VERDICT_STATUSES,
+    )
+
+    assert "matched_provisional" in _MATCHED_VERDICT_STATUSES
+    assert "matched_confirmed" in _MATCHED_VERDICT_STATUSES
+    assert "adjusted" in _MATCHED_VERDICT_STATUSES

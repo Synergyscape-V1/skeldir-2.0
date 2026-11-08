@@ -285,7 +285,7 @@ def correct_assignment(
                         from_channel, to_channel, corrected_by, reason, metadata
                     ) VALUES (
                         :tenant_id, 'event', :entity_id,
-                        :from_channel, :to_channel, :corrected_by, :reason, :metadata::jsonb
+                        :from_channel, :to_channel, :corrected_by, :reason, CAST(:metadata AS jsonb)
                     )
                     """
                 ),

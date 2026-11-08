@@ -55,15 +55,26 @@ def _load_trusted_baseline_contract(path: Path | None = None) -> dict[str, Any]:
             _require(isinstance(data, dict), "trusted baseline contract must be a JSON object")
             _require(isinstance(data.get("required_contexts"), list), "trusted baseline missing required_contexts")
             return data
-    fetch = subprocess.run(
-        ["git", "fetch", "--no-tags", "--depth=1", "origin", "main:refs/remotes/origin/main"],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        timeout=60,
-    )
-    if fetch.returncode != 0:
-        raise ValidationError(f"unable to fetch trusted origin/main baseline: {fetch.stderr.strip()}")
+    # Shallow CI checkouts often need to fetch main; allow for a slow mirror
+    # and one transport retry without weakening any proof condition.
+    fetch_failure = ""
+    for _ in range(2):
+        try:
+            fetch = subprocess.run(
+                ["git", "fetch", "--no-tags", "--depth=1", "origin", "main:refs/remotes/origin/main"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                timeout=180,
+            )
+        except subprocess.TimeoutExpired:
+            fetch_failure = "timed out after 180 seconds"
+            continue
+        if fetch.returncode == 0:
+            break
+        fetch_failure = fetch.stderr.strip()
+    else:
+        raise ValidationError(f"unable to fetch trusted origin/main baseline: {fetch_failure}")
     completed = subprocess.run(
         ["git", "show", f"origin/main:{git_path}"],
         cwd=ROOT,

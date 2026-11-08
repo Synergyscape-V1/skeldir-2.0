@@ -118,19 +118,23 @@ def _fetch_latest_dlq_row(runtime_db_url: str, tenant_id: UUID) -> dict | None:
             text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
             {"tenant_id": str(tenant_id)},
         )
-        row = conn.execute(
-            text(
-                """
-                SELECT task_name, error_message, tenant_id
-                FROM public.worker_failed_jobs
-                WHERE tenant_id = :tenant_id
-                ORDER BY failed_at DESC
-                LIMIT 1
-                """
-            ),
-            {"tenant_id": str(tenant_id)},
-        ).mappings().first()
-        return dict(row) if row else None
+        for _ in range(50):
+            row = conn.execute(
+                text(
+                    """
+                    SELECT task_name, error_message, tenant_id
+                    FROM public.worker_failed_jobs
+                    WHERE tenant_id = :tenant_id
+                    ORDER BY failed_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {"tenant_id": str(tenant_id)},
+            ).mappings().first()
+            if row is not None:
+                return dict(row)
+            time.sleep(0.1)
+        return None
 
 
 def _start_worker(env: dict) -> tuple[subprocess.Popen[str], list[str]]:

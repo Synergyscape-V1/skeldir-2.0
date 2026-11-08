@@ -1,0 +1,220 @@
+{
+  "gate_id": "B26-P2-XXV-B8-LEGACY-GENERATIONS",
+  "status": "PASS",
+  "head_revision": "202610280001",
+  "generations": [
+    {
+      "generation": "VII",
+      "recovery": {
+        "generation": "VII",
+        "provider_signature_verified": true,
+        "body_binding_created": true,
+        "demotion_lifted": false,
+        "inherited_ingress_id": "80f1e52e-4800-44fc-b479-e6ff4ed65315",
+        "verdict_id": "2826a1f4-53b9-4606-b8c9-949895fa05a6",
+        "demotion_reason_preserved": null,
+        "verdict_authority_state": "current",
+        "reader": {
+          "status": "xxv_attested",
+          "reason": "sovereign_source_attestation_verified",
+          "attested": true,
+          "attested_amount_minor": 1000
+        },
+        "source_journal": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b8-replay-vem59xq2\\source.jsonl",
+        "source_public_key": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b8-replay-vem59xq2\\source.pub",
+        "passed": true,
+        "limit_of_inference": "The provider bytes are real and the source statement is signed for the existing inherited ingress. A pre-XXV demotion, when present, is lifted only by the auth-root governed function after the signed source statement exists; no owner or runtime principal can clear it. The source reader is attested; Trust and coverage are exercised separately on the same DB, tenant and window."
+      },
+      "provider_input": {
+        "provider": "stripe",
+        "body": "{\"id\":\"evt-b8-vii-f32687c20973\",\"type\":\"payment_intent.succeeded\",\"data\":{\"object\":{\"id\":\"ord-b8-vii-f32687c20973\",\"amount\":1000,\"currency\":\"usd\",\"created\":1769947200}}}",
+        "signature_header": "t=1793529785,v1=c7cc53774bd9acb196071f76585f67e7ee4c07ccf9911e00280fbf0582061a0b",
+        "body_sha256": "72c5717ba5ca463e723611021bc50ed6d95769d7311fa185df4be4ff9024d68c",
+        "signature_sha256": "4d860eceea87adacdf7c113e52a6d156a71421628746222e90a50829781f81bf",
+        "event_reference": "evt-b8-vii-f32687c20973",
+        "commerce_reference": "ord-b8-vii-f32687c20973",
+        "normalized_kind": "stripe_payment_intent_id",
+        "normalized_value": "ord-b8-vii-f32687c20973",
+        "amount_minor": 1000,
+        "currency": "USD"
+      },
+      "before": {
+        "verdict": [
+          "2826a1f4-53b9-4606-b8c9-949895fa05a6",
+          "cd8c4897-df88-4237-8d15-1546d42f51ee",
+          "80f1e52e-4800-44fc-b479-e6ff4ed65315",
+          "matched_confirmed",
+          1000,
+          "USD",
+          null
+        ],
+        "ingress": [
+          "80f1e52e-4800-44fc-b479-e6ff4ed65315",
+          "stripe",
+          1000,
+          "USD",
+          "authenticity_verified"
+        ],
+        "attestation_count": 0
+      },
+      "after": {
+        "verdict": [
+          "2826a1f4-53b9-4606-b8c9-949895fa05a6",
+          "cd8c4897-df88-4237-8d15-1546d42f51ee",
+          "80f1e52e-4800-44fc-b479-e6ff4ed65315",
+          "matched_confirmed",
+          1000,
+          "USD",
+          "historically_unverifiable"
+        ],
+        "ingress": [
+          "80f1e52e-4800-44fc-b479-e6ff4ed65315",
+          "stripe",
+          1000,
+          "USD",
+          "authenticity_verified"
+        ],
+        "attestation_count": 0
+      },
+      "reader": {
+        "status": "unverifiable:attestation_missing",
+        "reason": "attestation_missing",
+        "attested": false,
+        "attested_amount_minor": null
+      },
+      "confidence_projection": {
+        "count": 0,
+        "deterministic_revenue_minor": []
+      },
+      "sweep": {
+        "status": "PASS",
+        "census": {
+          "xxv_attested": 0,
+          "unattested_not_claimed_current": 0,
+          "attested_but_not_claimed_current": 0,
+          "source_not_root_authenticated": 1
+        },
+        "unverifiable": []
+      },
+      "checks": {
+        "signed_input_replayable": true,
+        "row_preserved": true,
+        "ingress_preserved": true,
+        "no_new_attestation": true,
+        "sweep_pass": true,
+        "classified_unqualified": true,
+        "reader_unverifiable": true,
+        "not_current_money": true,
+        "confidence_projection_absent": true
+      },
+      "passed": true
+    },
+    {
+      "generation": "XX",
+      "recovery": {
+        "generation": "XX",
+        "provider_signature_verified": true,
+        "body_binding_created": false,
+        "demotion_lifted": true,
+        "inherited_ingress_id": "29da3bc6-2dd4-4fba-85cf-baeabb3bd3e3",
+        "verdict_id": "ff40039c-e4de-4552-8556-75fe1bf073c0",
+        "demotion_reason_preserved": null,
+        "verdict_authority_state": "current",
+        "reader": {
+          "status": "xxv_attested",
+          "reason": "sovereign_source_attestation_verified",
+          "attested": true,
+          "attested_amount_minor": 1000
+        },
+        "source_journal": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b8-replay-2rsd2bgw\\source.jsonl",
+        "source_public_key": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b8-replay-2rsd2bgw\\source.pub",
+        "passed": true,
+        "limit_of_inference": "The provider bytes are real and the source statement is signed for the existing inherited ingress. A pre-XXV demotion, when present, is lifted only by the auth-root governed function after the signed source statement exists; no owner or runtime principal can clear it. The source reader is attested; Trust and coverage are exercised separately on the same DB, tenant and window."
+      },
+      "provider_input": {
+        "provider": "stripe",
+        "body": "{\"id\":\"evt-b8-xx-4eb5cf570cdf\",\"type\":\"payment_intent.succeeded\",\"data\":{\"object\":{\"id\":\"ord-b8-xx-4eb5cf570cdf\",\"amount\":1000,\"currency\":\"usd\",\"created\":1769947200}}}",
+        "signature_header": "t=1793529799,v1=90abaad67d76437ea0d6b675c8d90a58dd0e7e08080c69e1df075ed04d5d8127",
+        "body_sha256": "19a6a3c444914c6773d9495d8ee1518075fa9af56867414520198863eae3b10d",
+        "signature_sha256": "30af75377a96e314aff38bbf8a2bfd68eb944721efc781af90f55094c307343b",
+        "event_reference": "evt-b8-xx-4eb5cf570cdf",
+        "commerce_reference": "ord-b8-xx-4eb5cf570cdf",
+        "normalized_kind": "stripe_payment_intent_id",
+        "normalized_value": "ord-b8-xx-4eb5cf570cdf",
+        "amount_minor": 1000,
+        "currency": "USD"
+      },
+      "before": {
+        "verdict": [
+          "ff40039c-e4de-4552-8556-75fe1bf073c0",
+          "13ecc413-9cb0-4c22-a2ce-8240f34cd34b",
+          "29da3bc6-2dd4-4fba-85cf-baeabb3bd3e3",
+          "matched_confirmed",
+          1000,
+          "USD",
+          "current"
+        ],
+        "ingress": [
+          "29da3bc6-2dd4-4fba-85cf-baeabb3bd3e3",
+          "stripe",
+          1000,
+          "USD",
+          "authenticity_verified"
+        ],
+        "attestation_count": 0
+      },
+      "after": {
+        "verdict": [
+          "ff40039c-e4de-4552-8556-75fe1bf073c0",
+          "13ecc413-9cb0-4c22-a2ce-8240f34cd34b",
+          "29da3bc6-2dd4-4fba-85cf-baeabb3bd3e3",
+          "matched_confirmed",
+          1000,
+          "USD",
+          "historically_unverifiable"
+        ],
+        "ingress": [
+          "29da3bc6-2dd4-4fba-85cf-baeabb3bd3e3",
+          "stripe",
+          1000,
+          "USD",
+          "authenticity_verified"
+        ],
+        "attestation_count": 0
+      },
+      "reader": {
+        "status": "unverifiable:attestation_missing",
+        "reason": "attestation_missing",
+        "attested": false,
+        "attested_amount_minor": null
+      },
+      "confidence_projection": {
+        "count": 0,
+        "deterministic_revenue_minor": []
+      },
+      "sweep": {
+        "status": "PASS",
+        "census": {
+          "xxv_attested": 0,
+          "unattested_not_claimed_current": 1,
+          "attested_but_not_claimed_current": 0,
+          "source_not_root_authenticated": 0
+        },
+        "unverifiable": []
+      },
+      "checks": {
+        "signed_input_replayable": true,
+        "row_preserved": true,
+        "ingress_preserved": true,
+        "no_new_attestation": true,
+        "sweep_pass": true,
+        "classified_unqualified": true,
+        "reader_unverifiable": true,
+        "not_current_money": true,
+        "confidence_projection_absent": true
+      },
+      "passed": true
+    }
+  ],
+  "limitation": "The predecessor cohorts are persisted legacy-schema rows; VII has no atomic transition and XX's transition is used only to authenticate the ingress. Provider inputs are genuine signed Stripe bytes retained in this evidence and XX digests are real. The proof still demonstrates preservation/refusal, not a provider replay into a new current lineage; that remains open."
+}

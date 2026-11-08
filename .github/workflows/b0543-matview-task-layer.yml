@@ -42,20 +42,20 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: app_user
-          POSTGRES_PASSWORD: app_user
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
           POSTGRES_DB: skeldir_validation
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U app_user -d skeldir_validation"
+          --health-cmd="pg_isready -U postgres -d skeldir_validation"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
     env:
       PYTHONPATH: ${{ github.workspace }}/backend
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
-      MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_validation
       TESTING: "1"
       CI: "true"
     steps:
@@ -77,9 +77,16 @@ jobs:
       - name: Wait for Postgres
         run: |
           for i in {1..30}; do
-            pg_isready -h 127.0.0.1 -p 5432 -U app_user -d skeldir_validation && break
+            pg_isready -h 127.0.0.1 -p 5432 -U postgres -d skeldir_validation && break
             sleep 1
           done
+
+      - name: Provision non-superuser runtime role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE; END IF; END \$\$;"
+          psql -h 127.0.0.1 -U postgres -d skeldir_validation -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO app_user; GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
 
       - name: Apply migrations
         env:

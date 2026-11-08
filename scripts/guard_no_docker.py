@@ -137,6 +137,12 @@ ALLOWED_DOCKER_PATHS = {
     # Same reason as Corrective IV: it executes the authorized substrate,
     # it does not add one.
     Path("scripts/ci/prove_b26_p2_in_image.py"),
+    # B2.6-P2 Corrective XXV's lane and custody proofs build/boot the same
+    # already-authorized `backend/Dockerfile` image and inspect the running
+    # containers' credential mounts. Same reason as Corrective IV: they
+    # execute the authorized substrate, they do not add one.
+    Path("scripts/ci/b26_p2_xxv_lane.py"),
+    Path("scripts/ci/b26_p2_xxv_a1a5_custody.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
     Path("scripts/ci/validate_m2_test_feedback_loop.py"),
     # B2.6-P2 Corrective XI's ingress-isolation validator reads the

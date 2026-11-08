@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
 from alembic import context
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -112,6 +113,200 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _account_owner_state(connection) -> bool:
+    """Return whether the pre-account transfer graph is needed.
+
+    Account authority is inferred from the actual function OIDs and owners.
+    An applied account-construction revision with missing or unexpected
+    metadata is an explicit failure, never a virgin database.
+    """
+    applied = connection.execute(
+        text("SELECT to_regclass('public.alembic_version')")
+    ).scalar()
+    if applied is None:
+        return True
+
+    heads = tuple(
+        str(row[0])
+        for row in connection.execute(
+            text("SELECT version_num FROM public.alembic_version")
+        ).fetchall()
+    )
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(config)
+    account_applied = any(
+        revision.revision == "202611070001"
+        for revision in script.iterate_revisions(heads, "base")
+    ) if heads else False
+    if not account_applied:
+        return True
+
+    rows = connection.execute(
+        text(
+            "SELECT to_regprocedure(:register)::oid,"
+            " to_regprocedure(:lookup)::oid"
+        ),
+        {
+            "register": "auth.register_business_account(text,text,text)",
+            "lookup": "auth.lookup_single_active_tenant(uuid)",
+        },
+    ).fetchone()
+    if rows is None:
+        raise RuntimeError("account_function_lookup_unavailable")
+    names = ("register_business_account", "lookup_single_active_tenant")
+    owners: dict[str, str] = {}
+    for name, oid in zip(names, rows):
+        if oid is None:
+            raise RuntimeError(f"account_function_metadata_unavailable:{name}")
+        owner = connection.execute(
+            text(
+                "SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid = :oid"
+            ),
+            {"oid": oid},
+        ).scalar()
+        if owner is None:
+            raise RuntimeError(f"account_function_metadata_unavailable:{name}")
+        owners[name] = str(owner)
+    if owners["register_business_account"] != "app_account_provisioner":
+        raise RuntimeError(
+            "account_function_owner_unexpected:register_business_account"
+        )
+    if owners["lookup_single_active_tenant"] != "app_auth_lookup":
+        raise RuntimeError(
+            "account_function_owner_unexpected:lookup_single_active_tenant"
+        )
+    return False
+
+
+def _provision_ci_migration_roles(connection) -> None:
+    """Create CI-only role placeholders before the migration chain runs.
+
+    Production deployments use the explicit preflight/provisioner and fail if
+    a runtime login role is absent. CI lanes that migrate with an admin
+    principal need the full role graph before the earliest grant-bearing
+    migration, otherwise a later-created role would miss governed grants.
+    The placeholders are NOLOGIN; workflows that need a login provision it
+    themselves before this step.
+    """
+    if not ci_mode:
+        return
+    ownership_transfer_needed = _account_owner_state(connection)
+    if not ownership_transfer_needed:
+        return
+    roles = (
+        ("app_auth_lookup", "NOLOGIN BYPASSRLS"),
+        ("app_account_provisioner", "NOLOGIN BYPASSRLS"),
+        ("app_user", "NOLOGIN"),
+        ("app_ingress", "NOLOGIN"),
+        ("app_worker", "NOLOGIN"),
+        ("app_trust_issuer", "NOLOGIN"),
+        ("app_ro", "NOLOGIN"),
+        ("app_relay", "NOLOGIN"),
+    )
+    for role, attributes in roles:
+        exists = connection.execute(
+            text("SELECT 1 FROM pg_roles WHERE rolname = :role"),
+            {"role": role},
+        ).scalar()
+        if not exists:
+            connection.execute(
+                text(f'CREATE ROLE "{role}" {attributes}')
+            )
+    cleanup_grants_needed = True
+
+    current = connection.execute(
+        text(
+            "SELECT current_user, r.rolsuper FROM pg_roles AS r"
+            " WHERE r.rolname = current_user"
+        )
+    ).fetchone()
+    current_role = str(current[0]) if current else ""
+    is_superuser = bool(current[1]) if current else False
+
+    def _has_membership(role: str, member: str) -> bool:
+        return bool(
+            connection.execute(
+                text(
+                    "SELECT EXISTS ("
+                    " SELECT 1 FROM pg_auth_members m"
+                    " JOIN pg_roles r ON r.oid = m.roleid"
+                    " JOIN pg_roles u ON u.oid = m.member"
+                    " WHERE r.rolname = :role AND u.rolname = :member)"
+                ),
+                {"role": role, "member": member},
+            ).scalar()
+        )
+
+    def _has_admin(role: str, member: str) -> bool:
+        return bool(
+            connection.execute(
+                text(
+                    "SELECT m.admin_option FROM pg_auth_members m"
+                    " JOIN pg_roles r ON r.oid = m.roleid"
+                    " JOIN pg_roles u ON u.oid = m.member"
+                    " WHERE r.rolname = :role AND u.rolname = :member"
+                ),
+                {"role": role, "member": member},
+            ).scalar()
+        )
+
+    lookup_admin = is_superuser or _has_admin("app_auth_lookup", current_role)
+    if (
+        not is_superuser
+        and current_role
+        and current_role != "app_auth_lookup"
+        and not _has_membership("app_auth_lookup", current_role)
+    ):
+        connection.execute(
+            text(
+                'GRANT "app_auth_lookup" TO '
+                f'"{current_role}" WITH ADMIN OPTION'
+            )
+        )
+        lookup_admin = True
+
+    if (
+        (is_superuser or lookup_admin)
+        and _has_membership("app_auth_lookup", "app_account_provisioner")
+        and not _has_admin("app_auth_lookup", "app_account_provisioner")
+    ):
+        connection.execute(
+            text(
+                'GRANT "app_auth_lookup" TO "app_account_provisioner"'
+                ' WITH ADMIN OPTION'
+            )
+        )
+    elif (
+        ownership_transfer_needed
+        and (is_superuser or lookup_admin)
+        and not _has_membership("app_auth_lookup", "app_account_provisioner")
+    ):
+        connection.execute(
+            text(
+                'GRANT "app_auth_lookup" TO "app_account_provisioner"'
+                ' WITH ADMIN OPTION'
+            )
+        )
+
+    if not is_superuser and current_role:
+        if _has_membership("app_account_provisioner", current_role):
+            if not _has_admin("app_account_provisioner", current_role):
+                connection.execute(
+                    text(
+                        'GRANT "app_account_provisioner" TO '
+                        f'"{current_role}" WITH ADMIN OPTION'
+                    )
+                )
+        elif ownership_transfer_needed:
+            connection.execute(
+                text(
+                    'GRANT "app_account_provisioner" TO '
+                    f'"{current_role}" WITH ADMIN OPTION'
+                )
+            )
+
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
@@ -126,6 +321,8 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        _provision_ci_migration_roles(connection)
+        connection.commit()
         context.configure(
             connection=connection, target_metadata=target_metadata
         )

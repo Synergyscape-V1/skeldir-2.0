@@ -108,12 +108,15 @@ def _static_checks(violations: list[str], checks: dict) -> None:
     # Any denominator/ratio/total/benchmark consumer is a violation.
     allowed_readers = (
         "backend/app/revenue_verification/verification_coverage.py",
+        # The API projection carries the same explicit non-authoritative
+        # context in the response envelope; it does not enter arithmetic.
+        "backend/app/api/revenue_verification.py",
     )
     for path in sorted((REPO_ROOT / "backend").rglob("*.py")):
         rel = path.as_posix()
         if "backend/tests/" in rel or "/tests/" in rel:
             continue
-        if rel.endswith("/backend/app/revenue_verification/verification_coverage.py"):
+        if any(rel.endswith(reader) for reader in allowed_readers):
             continue
         try:
             body = path.read_text(encoding="utf-8")

@@ -14,6 +14,7 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,8 +39,29 @@ def _seed(admin_dsn: str) -> dict[str, Any]:
     tag = uuid.uuid4().hex[:10]
     day = datetime(2026, 10, 23, tzinfo=timezone.utc)
     conn = psycopg2.connect(admin_dsn)
-    conn.autocommit = False
+    conn.autocommit = True
     verdicts: list[str] = []
+    from app.core.config import settings  # noqa: PLC0415
+    from app.revenue_verification.source_attestation import (  # noqa: PLC0415
+        DEFAULT_ATTESTATION_KEY_ID,
+        build_statement,
+        generate_keypair,
+        sign_statement,
+    )
+
+    key_dir = Path(tempfile.mkdtemp(prefix="xxiv-cohort-attest-"))
+    private_seed, public_b64 = generate_keypair()
+    private_path = key_dir / "source.key"
+    public_path = key_dir / "source.pub"
+    private_path.write_text(private_seed, encoding="utf-8")
+    public_path.write_text(public_b64, encoding="utf-8")
+    settings.B26_P2_SOURCE_ATTESTATION_REQUIRED = True
+    settings.B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH = str(public_path)
+    ingress_dsn = admin_dsn.replace(
+        "migration_owner:migration_owner", "app_ingress:app_ingress"
+    )
+    ing = psycopg2.connect(ingress_dsn)
+    ing.autocommit = False
     try:
         cur = conn.cursor()
         cur.execute(
@@ -57,7 +79,8 @@ def _seed(admin_dsn: str) -> dict[str, Any]:
         cur.execute(
             "SELECT set_config('app.current_tenant_id', %s, false)", (tenant,)
         )
-        for index in range(8):
+        for index in range(9):
+            amount = 6000 if index == 7 else (4000 if index == 8 else 10000)
             event = str(uuid.uuid4())
             ingress = str(uuid.uuid4())
             verdict = str(uuid.uuid4())
@@ -69,16 +92,18 @@ def _seed(admin_dsn: str) -> dict[str, Any]:
                 " idempotency_key, event_type, channel, campaign_id,"
                 " conversion_value_cents, currency, event_timestamp, processed_at,"
                 " processing_status)"
-                " VALUES (%s,%s,%s,%s,%s,10000,'{}'::jsonb,%s,'conversion',%s,"
-                " 'c',10000,'USD',%s,now(),'processed')",
+                " VALUES (%s,%s,%s,%s,%s,%s,'{}'::jsonb,%s,'conversion',%s,"
+                " 'c',%s,'USD',%s,now(),'processed')",
                 (
                     event,
                     tenant,
                     day,
                     str(uuid.uuid4()),
                     str(uuid.uuid4()),
+                    amount,
                     event_ref,
                     "xxiv_" + tag,
+                    amount,
                     day,
                 ),
             )
@@ -91,7 +116,7 @@ def _seed(admin_dsn: str) -> dict[str, Any]:
                 " verified_amount_currency, event_timestamp, idempotency_key,"
                 " verified_commerce_ingress_state)"
                 " VALUES (%s,%s,%s,'stripe',%s,%s,'stripe_payment_intent_id',%s,"
-                " 10000,'USD',%s,%s,'authenticity_verified')",
+                " %s,'USD',%s,%s,'authenticity_verified')",
                 (
                     ingress,
                     tenant,
@@ -99,55 +124,108 @@ def _seed(admin_dsn: str) -> dict[str, Any]:
                     event_ref,
                     commerce_ref,
                     commerce_ref,
+                    amount,
                     day,
                     str(uuid.uuid4()),
                 ),
             )
-            cur.execute(
-                "SELECT set_config('app.b26_p2_event_family',"
-                " 'payment_intent.succeeded', false)"
-            )
-            cur.execute(
-                "SELECT set_config('app.b26_p2_event_family_source',"
-                " 'body-signal:type', false)"
-            )
-            cur.execute(
-                "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
-                " %s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1',"
-                " NULL,NULL,FALSE,NULL,NULL)",
-                (ingress, event_ref, "c" * 64, "d" * 64),
-            )
-            net = 6000 if index == 7 else 10000
-            cur.execute(
-                "INSERT INTO public.b23_match_verdicts (id, tenant_id,"
-                " attribution_event_id, webhook_ingress_identity_id, provider,"
-                " canonical_commerce_reference, provider_native_event_reference,"
-                " provider_native_commerce_reference, status, match_quality,"
-                " attributed_amount_minor, verified_amount_minor, currency_code,"
-                " last_transition_at, created_at, updated_at,"
-                " canonical_expected_gross_amount_minor,"
-                " canonical_captured_gross_amount_minor,"
-                " canonical_net_verified_amount_minor, discrepancy_amount_minor,"
-                " discrepancy_ratio_bps, discrepancy_band)"
-                " VALUES (%s,%s,%s,%s,'stripe',%s,%s,%s,'matched_confirmed',"
-                " 'high',10000,10000,'USD',%s,%s,%s,10000,10000,%s,0,0,'exact')",
-                (
-                    verdict,
-                    tenant,
-                    event,
-                    ingress,
-                    commerce_ref,
-                    event_ref,
-                    commerce_ref,
-                    day,
-                    day,
-                    day,
-                    net,
-                ),
-            )
-            verdicts.append(verdict)
-        conn.commit()
+            with ing.cursor() as icur:
+                icur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, false)",
+                    (tenant,),
+                )
+                icur.execute(
+                    "SELECT set_config('app.b26_p2_event_family',"
+                    " 'payment_intent.succeeded', false)"
+                )
+                icur.execute(
+                    "SELECT set_config('app.b26_p2_event_family_source',"
+                    " 'body-signal:type', false)"
+                )
+                icur.execute(
+                    "SELECT public.b26_p2_authenticate_ingress_atomic_v2("
+                    " %s,'stripe',%s,%s,%s,'hmac-sha256-timestamped-hex','v1',"
+                    " NULL,NULL,FALSE,NULL,NULL)",
+                    (ingress, event_ref, "c" * 64, "d" * 64),
+                )
+                icur.execute(
+                    "SELECT public.b26_p2_authority_universe()::text"
+                )
+                universe = icur.fetchone()[0]
+                statement = build_statement(
+                    tenant_id=tenant,
+                    webhook_ingress_identity_id=ingress,
+                    provider="stripe",
+                    provider_native_event_reference=event_ref,
+                    provider_native_commerce_reference=commerce_ref,
+                    normalized_commerce_reference_kind="stripe_payment_intent_id",
+                    normalized_commerce_reference_value=commerce_ref,
+                    verified_amount_minor=amount,
+                    verified_amount_currency="USD",
+                    verified_amount_scale=2,
+                    event_timestamp=day,
+                    body_sha256="c" * 64,
+                    authority_universe=universe,
+                )
+                signature, key_sha256 = sign_statement(
+                    statement, private_key_path=private_path
+                )
+                icur.execute(
+                    "INSERT INTO public.b26_p2_source_money_attestation ("
+                    " webhook_ingress_identity_id, tenant_id, statement_version,"
+                    " attested_amount_minor, attested_amount_currency,"
+                    " attested_amount_scale, statement, signature, key_id, key_sha256"
+                    ") VALUES (%s,%s,%s,%s,%s,%s,CAST(%s AS jsonb),%s,%s,%s)"
+                    " ON CONFLICT (webhook_ingress_identity_id) DO NOTHING",
+                    (
+                        ingress,
+                        tenant,
+                        int(statement["version"]),
+                        amount,
+                        "USD",
+                        2,
+                        json.dumps(statement, sort_keys=True),
+                        signature,
+                        DEFAULT_ATTESTATION_KEY_ID,
+                        key_sha256,
+                    ),
+                )
+            ing.commit()
+            if index < 8:
+                cur.execute(
+                    "INSERT INTO public.b23_match_verdicts (id, tenant_id,"
+                    " attribution_event_id, webhook_ingress_identity_id, provider,"
+                    " canonical_commerce_reference, provider_native_event_reference,"
+                    " provider_native_commerce_reference, status, match_quality,"
+                    " attributed_amount_minor, verified_amount_minor, currency_code,"
+                    " last_transition_at, created_at, updated_at,"
+                    " canonical_expected_gross_amount_minor,"
+                    " canonical_captured_gross_amount_minor,"
+                    " canonical_net_verified_amount_minor, discrepancy_amount_minor,"
+                    " discrepancy_ratio_bps, discrepancy_band)"
+                    " VALUES (%s,%s,%s,%s,'stripe',%s,%s,%s,'matched_confirmed',"
+                    " 'high',%s,%s,'USD',%s,%s,%s,%s,%s,%s,0,0,'exact')",
+                    (
+                        verdict,
+                        tenant,
+                        event,
+                        ingress,
+                        commerce_ref,
+                        event_ref,
+                        commerce_ref,
+                        amount,
+                        amount,
+                        day,
+                        day,
+                        day,
+                        amount,
+                        amount,
+                        amount,
+                    ),
+                )
+                verdicts.append(verdict)
     finally:
+        ing.close()
         conn.close()
     return {
         "tenant": tenant,

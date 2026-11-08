@@ -92,9 +92,15 @@ def _build_session_factory(
         "yes",
         "on",
     }
-    use_null_pool = (
-        os.getenv("TESTING") == "1" or settings.ENVIRONMENT.lower() == "test"
-    ) and not force_pooling
+    # XXV (HB-01 sibling sweep): the former disjunct
+    # ``settings.ENVIRONMENT.lower() == "test"`` was unreachable --
+    # resolve_control_plane_env canonicalises "test" to "ci"/"local" before
+    # Settings stores it -- so the pooling decision has always been driven
+    # by TESTING alone. The dead disjunct is removed rather than
+    # "fixed": making it live would change pool behaviour in CI, which no
+    # directive asks for. Guarded by
+    # scripts/ci/validate_b26_p2_xxv_environment_predicates.py.
+    use_null_pool = os.getenv("TESTING") == "1" and not force_pooling
 
     engine_kwargs: dict = {
         "connect_args": connect_args,

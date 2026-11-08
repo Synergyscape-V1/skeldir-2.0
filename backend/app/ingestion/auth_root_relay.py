@@ -68,6 +68,8 @@ async def relay_verified_ingress_to_auth_root(
     root_url: str,
     payload: Mapping[str, Any],
     timeout_seconds: float = 10.0,
+    *,
+    path: str = "/v1/authenticate-ingress",
 ) -> dict[str, Any]:
     """POST the relay envelope to the auth root; return its JSON body.
 
@@ -88,7 +90,7 @@ async def relay_verified_ingress_to_auth_root(
     """
     import httpx  # noqa: PLC0415  -- bounded transport lives here only.
 
-    url = root_url.rstrip("/") + "/v1/authenticate-ingress"
+    url = root_url.rstrip("/") + path
     body = dict(payload)
     try:
         response = await _relay_client(timeout_seconds).post(url, json=body)
@@ -105,10 +107,26 @@ async def relay_verified_ingress_to_auth_root(
             f"b26_p2_ingress_relay_unreachable:{type(exc).__name__}"
         ) from exc
     if response.status_code != 200:
+        # XXV (A9/B7): a governed refusal from the root travels as its own
+        # token. Only an UNgoverned failure carries the status/body, and it
+        # carries no internal text: a provider must be able to tell "your
+        # event was refused, and this is the rule" from "something broke
+        # here", and must never receive our internals either way.
+        governed = None
+        if 400 <= response.status_code < 500:
+            try:
+                payload = response.json()
+            except Exception:  # noqa: BLE001 - non-JSON refusal body
+                payload = None
+            if isinstance(payload, dict):
+                candidate = str(payload.get("detail") or "")
+                if candidate.startswith("b26_p2_"):
+                    governed = candidate
+        if governed is not None:
+            raise AuthRootRelayError(f"b26_p2_ingress_authority_refused:{governed}")
         raise AuthRootRelayError(
             "b26_p2_ingress_relay_refused:"
             f" status={response.status_code}"
-            f" body={response.text[:200]}"
         )
     try:
         return dict(response.json())

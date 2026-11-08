@@ -40,6 +40,37 @@ def _run_alembic(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _prepare_downgrade(sync_dsn: str) -> subprocess.CompletedProcess[str]:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(sync_dsn)
+    database_name = parsed.path.lstrip("/")
+    if not database_name:
+        raise RuntimeError("migration DSN has no database name")
+    admin_dsn = os.getenv("B23_P1_ADMIN_DSN") or (
+        "postgresql://postgres:postgres@"
+        f"{parsed.hostname or '127.0.0.1'}:{parsed.port or 5432}/postgres"
+    )
+    return subprocess.run(
+        [
+            sys.executable,
+            str(
+                REPO_ROOT
+                / "scripts/database/prepare_migration_authority_boundary.py"
+            ),
+            "--admin-dsn",
+            admin_dsn,
+            "--database-name",
+            database_name,
+            "--prepare-downgrade",
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
 def _database_url_for_sync_pg(dsn_input: str) -> str:
     if not dsn_input:
         raise RuntimeError("B23_P1_MIGRATION_DSN is required")
@@ -179,6 +210,14 @@ def main() -> int:
         print("phase=upgrade_head")
         return 1
     before_signature = _capture_signature(sync_dsn)
+
+    prepare_proc = _prepare_downgrade(sync_dsn)
+    if prepare_proc.returncode != 0:
+        sys.stdout.write(prepare_proc.stdout)
+        sys.stderr.write(prepare_proc.stderr)
+        print("result=FAIL")
+        print("phase=prepare_downgrade")
+        return 1
 
     down_proc = _run_alembic("downgrade", "-1")
     if down_proc.returncode != 0:

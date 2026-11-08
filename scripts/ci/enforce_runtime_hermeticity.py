@@ -41,6 +41,9 @@ PATH_SCOPED_ALLOWLIST: dict[str, set[str]] = {
     # boundary of the same shape (explicitly configured root URL, raw bytes
     # never persist, fail-closed relay). Only this relay module may do so.
     "backend/app/ingestion/auth_root_relay.py": {"httpx"},
+    # B11 control-plane resolution is the sanctioned AWS credential path;
+    # boto3 is a control-plane client, not an LLM/provider egress path.
+    "backend/app/core/control_plane.py": {"boto3"},
 }
 
 ENTRYPOINTS = [

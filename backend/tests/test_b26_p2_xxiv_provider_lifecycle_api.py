@@ -316,6 +316,27 @@ async def test_shopify_terminal_lifecycle_refused(lifecycle: dict) -> None:
     assert await _ingress_count(tenant_id, "shopify") == 0
 
 
+async def test_shopify_creation_skew_30s_passes_the_relay_preflight() -> None:
+    """A9/B2 P8: the v4 contract's 60 s creation window reaches the relay."""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    payload = _shopify(
+        {
+            "created_at": (now - timedelta(seconds=30)).isoformat(),
+            "updated_at": now.isoformat(),
+        }
+    )
+    assert (
+        webhooks._unsupported_event_family_reason(
+            provider="shopify",
+            payload=payload,
+            request_headers={"x-shopify-topic": "orders/create"},
+        )
+        is None
+    )
+
+
 async def test_supported_lifecycle_states_pass_the_relay_preflight() -> None:
     assert (
         webhooks._unsupported_event_family_reason(

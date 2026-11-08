@@ -58,14 +58,15 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, Request
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.api import trust_api, trust_keys
 from app.bayesian.model_identity import active_identity
 from app.core.secrets import get_database_url
-from app.db.dsn import to_sync_postgres_dsn
+from app.db.dsn import to_asyncpg_postgres_dsn, to_sync_postgres_dsn
 from app.trust.machine_identity import AgentScope
 
 
@@ -834,6 +835,28 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
     app.include_router(trust_keys.router, prefix="/api")
     assert not app.dependency_overrides
 
+    # The worker and the public Trust API are distinct production principals.
+    # The fit path must run as app_worker; the API path must run as app_user.
+    # A single-DSN test would either deny the worker its registration function
+    # or deny the API the trust tables. Exercise both real boundaries here.
+    api_database_url = os.getenv("B25_API_DATABASE_URL") or get_database_url().replace(
+        "app_worker", "app_user"
+    )
+    api_engine = create_async_engine(to_asyncpg_postgres_dsn(api_database_url))
+
+    async def app_user_session(request: Request, x_tenant_id: uuid.UUID = Header(
+        alias="X-Tenant-ID"
+    )):
+        async with AsyncSession(api_engine) as session:
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :t, false)"),
+                {"t": str(x_tenant_id)},
+            )
+            request.state.db_session = session
+            yield session
+
+    app.dependency_overrides[trust_api.get_machine_db_session] = app_user_session
+
     async def query() -> tuple[dict, dict]:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -911,6 +934,45 @@ def test_c9_a_real_posterior_is_produced_by_the_chain_that_claims_it(
 
     # The envelope is about this fit, and about a source state that is current.
     assert str(dispatch["fit_id"]) in envelope["subject_ref"], envelope
+
+    # B5 data isolation: the confidence subject is tenant-scoped. A foreign
+    # tenant's app_user session must not resolve this fit, while the owning
+    # tenant still resolves it. This is the confidence-reader boundary, not
+    # the planner-failure containment control.
+    from app.trust.source_adapters import read_confidence_projection_source
+
+    subject_ref = f"urn:skeldir:confidence_projection:{dispatch['fit_id']}"
+    foreign_tenant = uuid.uuid4()
+    isolation_engine = create_async_engine(to_asyncpg_postgres_dsn(api_database_url))
+
+    async def isolation_read(tenant: uuid.UUID):
+        async with AsyncSession(isolation_engine) as session:
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :t, false)"),
+                {"t": str(tenant)},
+            )
+            return await read_confidence_projection_source(
+                session, tenant_id=tenant, subject_ref=subject_ref
+            )
+
+    isolation_loop = asyncio.new_event_loop()
+    try:
+        foreign_source = isolation_loop.run_until_complete(
+            isolation_read(foreign_tenant)
+        )
+        own_source = isolation_loop.run_until_complete(
+            isolation_read(tenant_id)
+        )
+        isolation_loop.run_until_complete(isolation_engine.dispose())
+    finally:
+        isolation_loop.close()
+
+    assert foreign_source is None, (
+        "a foreign tenant resolved another tenant's confidence projection"
+    )
+    assert own_source is not None, (
+        "the owning tenant could not resolve its own confidence projection"
+    )
 
 
 def test_c9_the_inference_policies_are_authorised_to_operate_together() -> None:
