@@ -422,6 +422,12 @@ def test_b07_p8_three_topologies_contract_fidelity_and_non_vacuous_controls() ->
         "X-Correlation-ID": sync_correlation_id,
     }
     with create_engine(runtime_db).connect() as conn:
+        conn.execute(
+            text(
+                "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
+            ),
+            {"tenant_id": str(tenant.tenant_id)},
+        )
         runs_before = conn.execute(
             text(
                 "SELECT COUNT(*) FROM reconciliation_runs"
@@ -454,6 +460,12 @@ def test_b07_p8_three_topologies_contract_fidelity_and_non_vacuous_controls() ->
     )
     _validate_payload(sync_schema, sync_payload)
     with create_engine(runtime_db).connect() as conn:
+        conn.execute(
+            text(
+                "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
+            ),
+            {"tenant_id": str(tenant.tenant_id)},
+        )
         runs_after = conn.execute(
             text(
                 "SELECT COUNT(*) FROM reconciliation_runs"
