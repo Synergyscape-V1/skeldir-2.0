@@ -539,7 +539,8 @@ jobs:
           # Restore the governed function by replaying the C7 revision.
           MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e \
           DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e \
-            alembic downgrade 202608202300
+            python scripts/database/prepare_migration_authority_boundary.py --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres --database-name skeldir_b25_p13_e2e --prepare-downgrade
+          MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e alembic downgrade 202608202300
           MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e \
           DATABASE_URL=postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b25_p13_e2e \
             alembic upgrade head
@@ -2561,10 +2562,7 @@ jobs:
           role_flags=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT rolbypassrls::text || ':' || rolsuper::text FROM pg_roles WHERE rolname = current_user")
           test "$role_flags" = "false:false" || test "$role_flags" = "f:f"
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
-            --database-name skeldir_b25_p13_c16 \
-            --prepare-downgrade
+          python scripts/database/prepare_migration_authority_boundary.py --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres --database-name skeldir_b25_p13_c16 --prepare-downgrade
           python -m alembic downgrade 202608291200
           python -m alembic upgrade head
           # The head is read from the migration graph rather than pinned, so a
@@ -2685,6 +2683,7 @@ jobs:
           SQL
           if run_matrix; then echo 'NC-C16-02 did not fire'; exit 1; fi
           fired=$((fired + 1))
+          python scripts/database/prepare_migration_authority_boundary.py --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres --database-name skeldir_b25_p13_c16 --prepare-downgrade
           python -m alembic downgrade 202608291200
           python -m alembic upgrade head
           run_matrix
@@ -2769,6 +2768,7 @@ jobs:
           flags=$(psql "$MIGRATION_DATABASE_URL" -tAc \
             "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname=current_user")
           test "$flags" = "false:false" || test "$flags" = "f:f"
+          python scripts/database/prepare_migration_authority_boundary.py --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres --database-name skeldir_b25_p13_c17 --prepare-downgrade
           python -m alembic downgrade 202608301200
           tenant='17171717-1717-4717-8717-171717171717'
           psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -c \
@@ -2809,6 +2809,7 @@ jobs:
           attempts=$(psql "$TRUST_ISSUANCE_DATABASE_URL" -Atc \
             "BEGIN; SELECT set_config('app.current_tenant_id','$tenant',true); SELECT count(*) FROM public.trust_issuance_attempts WHERE tenant_id='$tenant'; COMMIT;")
           test "$(grep -c '^0$' <<<"$attempts")" = 1
+          python scripts/database/prepare_migration_authority_boundary.py --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres --database-name skeldir_b25_p13_c17 --prepare-downgrade
           python -m alembic downgrade 202608301200
           python -m alembic upgrade head
           # The head is read from the migration graph rather than pinned, so a
@@ -3047,6 +3048,7 @@ jobs:
               -q --no-header -p no:randomly > /tmp/c17-nc.out 2>&1
           }
           restore_head() {
+            python scripts/database/prepare_migration_authority_boundary.py --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres --database-name skeldir_b25_p13_c17 --prepare-downgrade
             python -m alembic downgrade 202608301200
             python -m alembic upgrade head
           }
