@@ -109,6 +109,7 @@ paths:
                 access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                 refresh_token: 550e8400-e29b-41d4-a716-446655440000.a88f7ea2-7c26-4ec8-9f85-e55cb3f45ec5.zf9X1K...
                 expires_in: 900
+                tenant_id: 550e8400-e29b-41d4-a716-446655440000
                 user:
                   id: 550e8400-e29b-41d4-a716-446655440000
                   email: user@example.com
