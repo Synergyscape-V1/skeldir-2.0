@@ -8,21 +8,21 @@
         "login_hash_matches": true,
         "memberships": [
           {
-            "id": "8803ca16-d9cd-49c0-becf-dca0bd7a17dd",
+            "id": "8d7eeae0-2f7a-482e-9328-277014e7232a",
             "membership_status": "active",
-            "tenant_id": "650103f8-264c-4f95-a293-16f343c4bbdd"
+            "tenant_id": "0c1bf3d5-1010-4ef2-8869-bf555c27faa3"
           }
         ],
         "password_hash_bcrypt": true,
         "password_hash_differs_from_clear": true,
         "roles": [
           {
-            "membership_id": "8803ca16-d9cd-49c0-becf-dca0bd7a17dd",
+            "membership_id": "8d7eeae0-2f7a-482e-9328-277014e7232a",
             "role_code": "admin",
-            "tenant_id": "650103f8-264c-4f95-a293-16f343c4bbdd"
+            "tenant_id": "0c1bf3d5-1010-4ef2-8869-bf555c27faa3"
           }
         ],
-        "user_id": "e87fe1a0-b68b-42ab-bc8b-11098dfa53d9"
+        "user_id": "b1b07149-17d1-46a7-b053-0b813ba1f90e"
       },
       "tenant": {
         "api_key_hash_sha256_hex": true,
@@ -38,7 +38,7 @@
           "webhook_ingress_identities": 0
         },
         "found": true,
-        "name": "Walk Business A 8c8d11ef",
+        "name": "Walk Business A 612ba832",
         "notification_email": "unavailable@skeldir.invalid",
         "notification_email_is_unavailable_sentinel": true,
         "provider_connections": 0,
@@ -54,21 +54,21 @@
         "login_hash_matches": true,
         "memberships": [
           {
-            "id": "64b2f613-c2df-4bed-9ee1-b94d8ee187b5",
+            "id": "2c3284b5-2c04-4c27-8368-9572d96401bf",
             "membership_status": "active",
-            "tenant_id": "7eeac774-457c-4a1e-a441-b6abab9c7c63"
+            "tenant_id": "8fb31143-64af-48e2-bc98-283c47514145"
           }
         ],
         "password_hash_bcrypt": true,
         "password_hash_differs_from_clear": true,
         "roles": [
           {
-            "membership_id": "64b2f613-c2df-4bed-9ee1-b94d8ee187b5",
+            "membership_id": "2c3284b5-2c04-4c27-8368-9572d96401bf",
             "role_code": "admin",
-            "tenant_id": "7eeac774-457c-4a1e-a441-b6abab9c7c63"
+            "tenant_id": "8fb31143-64af-48e2-bc98-283c47514145"
           }
         ],
-        "user_id": "2ed21a08-2bf4-4ebe-a5ac-460dcd7e463f"
+        "user_id": "3e86f480-49fd-430a-8a3b-bde08eb23be4"
       },
       "tenant": {
         "api_key_hash_sha256_hex": true,
@@ -84,7 +84,7 @@
           "webhook_ingress_identities": 0
         },
         "found": true,
-        "name": "Walk Business B 457ac4cb",
+        "name": "Walk Business B fc5c120f",
         "notification_email": "unavailable@skeldir.invalid",
         "notification_email_is_unavailable_sentinel": true,
         "provider_connections": 0,
@@ -110,17 +110,17 @@
   },
   "artifact": {
     "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
-    "captured_at_utc": "2026-11-08T04:31:44.334823Z",
-    "commit_sha": "1664ee5488e5246e6de58b5d9fddad614a93a40d",
-    "compiled_genesis_hash": "495cff60c0fa3e1b0905257b87687e0506d6ca48cef58c8722b1b97a7771b9d2",
-    "compiled_public_key_sha256": "c546f7c82dcdebd0772dda95e1dabfca92843f0f509d2e9bfa2b461fc90c6091",
-    "compiled_source_attestation_public_key_sha256": "4ec7d64299f38817df9f86505ccf60f08168810a86ae26fb7a6d4713bb8683cf",
-    "compiled_trust_public_key_sha256": "5a60345e2dcb537b3f6369df1f87689b1d357218a982008f43ec26b18369e8ca",
-    "compiled_trust_registry_sha256": "35f7f3964a6242454ff46f81d910816bf2dcf87946bfc015fa3a81d7d9f393de",
-    "image_id": "sha256:b5593cc5f428da6ec279aadad72525ac34e1cac781cefaf3595d7fcb38032a92",
-    "image_tag": "b26p2xxvsignup806f4d03-final:latest",
+    "captured_at_utc": "2026-11-08T07:52:25.500748Z",
+    "commit_sha": "226c98796b09c9a50d4dd391180bd78a785a500a",
+    "compiled_genesis_hash": "24eee9d7ae00835887645d55baa101e781e334c9f27d3b54ecc86a630adcd583",
+    "compiled_public_key_sha256": "eb364d72318b554d0f97b5743389574e8db6afedea0d7bd7f1b89b60e940e1ae",
+    "compiled_source_attestation_public_key_sha256": "8abfacfb48c0752bd34332638e79edfaee6bf07b67bd2df5ca85767d71c935d1",
+    "compiled_trust_public_key_sha256": "50e93fa4b9a8df3de9c179151a80dae918b3d89673ad663604fa1934a2d32898",
+    "compiled_trust_registry_sha256": "41e25252e44b20640fe2fc80308b26c0814e5efa8254f9754fd0e57b62bbf2d4",
+    "image_id": "sha256:527c8bdb6698d71f626258cc88ccdd0194be7e5dacd41ce3a6e057adff7e6c05",
+    "image_tag": "b26p2xxvsignup800af53f-final:latest",
     "migration_head": "202611080001",
-    "tree_sha": "fb00b12deb98ad3670175e38053e1103360c0365",
+    "tree_sha": "4915963679294fcf30e9072d6d7302c5dd0c9240",
     "worktree_status_summary": {
       "entries": 2,
       "image_bytes_match_committed_tree": true,
@@ -179,8 +179,8 @@
     ],
     "concurrent_duplicate_one_identity": 1,
     "concurrent_duplicate_one_workspace": [
-      0,
-      1
+      1,
+      0
     ],
     "cross_account_tenant_refused": 401,
     "duplicate_created_no_partial_tenant": 0,
@@ -432,47 +432,47 @@
   },
   "created": {
     "a": {
-      "tenant_id": "650103f8-264c-4f95-a293-16f343c4bbdd",
-      "user_id": "e87fe1a0-b68b-42ab-bc8b-11098dfa53d9"
+      "tenant_id": "0c1bf3d5-1010-4ef2-8869-bf555c27faa3",
+      "user_id": "b1b07149-17d1-46a7-b053-0b813ba1f90e"
     },
     "b": {
-      "tenant_id": "7eeac774-457c-4a1e-a441-b6abab9c7c63",
-      "user_id": "2ed21a08-2bf4-4ebe-a5ac-460dcd7e463f"
+      "tenant_id": "8fb31143-64af-48e2-bc98-283c47514145",
+      "user_id": "3e86f480-49fd-430a-8a3b-bde08eb23be4"
     }
   },
   "failures": [],
-  "finished_at_utc": "2026-11-08T04:32:05.893601Z",
+  "finished_at_utc": "2026-11-08T07:52:46.321481Z",
   "fixture_disclosure": {
     "control_tenant_ids": [
-      "066579cb-fe68-45d2-a7c8-3a9dc558b492",
-      "f812f328-3f95-4fa0-aec1-5721b4c36ecf"
+      "4e18a941-28d7-4e9a-80f7-d998d716b74b",
+      "4c9a78a6-091d-4245-a1a2-8d803525bf5c"
     ],
     "note": "The lane seeds unrelated control tenants and machine credentials. No fixture identity, password, key or minted token is used by this walk.",
     "source": "existing XXV lane up command",
     "used_for_walk": false
   },
   "lane": {
-    "database": "skeldir_signup_806f4d03",
-    "lane_root": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b26p2xxvsignup806f4d03-lane",
+    "database": "skeldir_signup_800af53f",
+    "lane_root": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b26p2xxvsignup800af53f-lane",
     "ports": {
-      "api": 56606,
-      "auth": 56607,
-      "pg": 56605
+      "api": 61197,
+      "auth": 61198,
+      "pg": 61196
     },
-    "prefix": "b26p2xxvsignup806f4d03"
+    "prefix": "b26p2xxvsignup800af53f"
   },
   "login": {
     "a": {
       "access_token_present": true,
       "refresh_token_present": true,
-      "selected_tenant_id": "650103f8-264c-4f95-a293-16f343c4bbdd",
+      "selected_tenant_id": "0c1bf3d5-1010-4ef2-8869-bf555c27faa3",
       "status": 200,
       "verify_status": 200
     },
     "b": {
       "access_token_present": true,
       "refresh_token_present": true,
-      "selected_tenant_id": "7eeac774-457c-4a1e-a441-b6abab9c7c63",
+      "selected_tenant_id": "8fb31143-64af-48e2-bc98-283c47514145",
       "status": 200,
       "verify_status": 200
     }
@@ -622,7 +622,7 @@
     "wrong_password_status": 401,
     "wrong_password_token_present": false
   },
-  "started_at_utc": "2026-11-08T04:29:45.519330Z",
+  "started_at_utc": "2026-11-08T07:50:45.149636Z",
   "teardown": {
     "command": "b26_p2_xxv_lane.py down + prefix image removal",
     "resources_absent": true,
