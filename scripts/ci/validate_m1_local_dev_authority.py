@@ -813,6 +813,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     # runtime, its forward migration, and the account-only owner provisioning.
     # These are account surfaces, not financial/Trust authority changes.
     "api-contracts/openapi/v1/auth.yaml",
+    "api-contracts/governance/invariants.yaml",
     "api-contracts/dist/openapi/v1/auth.bundled.yaml",
     "backend/app/api/auth.py",
     "backend/app/schemas/auth.py",

@@ -129,6 +129,13 @@ domain_invariants:
       - db: "UUID primary key or foreign key"
       - pydantic: "UUID field type"
       - tests: "Valid UUIDs, invalid formats, null handling"
+    exceptions:
+      - platform: "auth"
+        path_pattern: '^/api/auth/login\.post\.request\.tenant_id$'
+        type:
+          - string
+          - 'null'
+        rationale: "The login tenant selector is optional for single-membership accounts; omission is resolved by the authenticated server lookup."
   
   correlation_id:
     type: string
