@@ -11,7 +11,6 @@ from pathlib import Path
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlalchemy import text
-from sqlalchemy.exc import ProgrammingError
 from alembic import context
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -202,68 +201,102 @@ def _provision_ci_migration_roles(connection) -> None:
     )
     if not cleanup_grants_needed:
         return
-    # CI lanes migrate as a role that may not yet inherit the lookup owner.
-    # The XXV owner-transfer migration requires that inheritance; grant it
-    # here for the CI placeholder only. Production uses the governed preflight
-    # and never relies on this branch.
-    current_role = connection.execute(text("SELECT current_user")).scalar()
-    if current_role and current_role != "app_auth_lookup":
-        try:
+
+    current = connection.execute(
+        text(
+            "SELECT current_user, r.rolsuper FROM pg_roles AS r"
+            " WHERE r.rolname = current_user"
+        )
+    ).fetchone()
+    current_role = str(current[0]) if current else ""
+    is_superuser = bool(current[1]) if current else False
+
+    def _has_membership(role: str, member: str) -> bool:
+        return bool(
             connection.execute(
                 text(
-                    'GRANT "app_auth_lookup" TO '
-                    f'"{current_role}" WITH ADMIN OPTION'
-                )
-            )
-        except ProgrammingError:
-            # A re-upgrade can reach this point after the migration revoked
-            # membership. The migration itself verifies either membership or
-            # already-transferred ownership and raises a precise error if
-            # neither holds.
-            pass
-    if ownership_transfer_needed:
-        if current_role and current_role != "app_account_provisioner":
-            lookup_to_provisioner = connection.execute(
-                text(
-                    "SELECT pg_has_role('app_account_provisioner',"
-                    " 'app_auth_lookup', 'member')"
-                )
+                    "SELECT EXISTS ("
+                    " SELECT 1 FROM pg_auth_members m"
+                    " JOIN pg_roles r ON r.oid = m.roleid"
+                    " JOIN pg_roles u ON u.oid = m.member"
+                    " WHERE r.rolname = :role AND u.rolname = :member)"
+                ),
+                {"role": role, "member": member},
             ).scalar()
-            if not lookup_to_provisioner:
+        )
+
+    def _has_admin(role: str, member: str) -> bool:
+        return bool(
+            connection.execute(
+                text(
+                    "SELECT m.admin_option FROM pg_auth_members m"
+                    " JOIN pg_roles r ON r.oid = m.roleid"
+                    " JOIN pg_roles u ON u.oid = m.member"
+                    " WHERE r.rolname = :role AND u.rolname = :member"
+                ),
+                {"role": role, "member": member},
+            ).scalar()
+        )
+
+    # A superuser needs no direct lookup membership, and creating one would
+    # become the grantor of later grants that the predecessor migration tries
+    # to revoke.  Non-superusers keep the transient membership needed for the
+    # owner transfer, but never attempt to grant ADMIN back to themselves when
+    # the membership already exists.
+    lookup_admin = is_superuser or _has_admin("app_auth_lookup", current_role)
+    if (
+        not is_superuser
+        and current_role
+        and current_role != "app_auth_lookup"
+        and not _has_membership("app_auth_lookup", current_role)
+    ):
+        connection.execute(
+            text(
+                'GRANT "app_auth_lookup" TO '
+                f'"{current_role}" WITH ADMIN OPTION'
+            )
+        )
+        lookup_admin = True
+
+    # The cleanup migration revokes the lookup edge from
+    # app_account_provisioner while acting as that role, so the edge needs
+    # ADMIN OPTION.  Only the superuser or a principal that already holds
+    # ADMIN OPTION on the lookup owner can add it.
+    if (
+        (is_superuser or lookup_admin)
+        and _has_membership("app_auth_lookup", "app_account_provisioner")
+        and not _has_admin("app_auth_lookup", "app_account_provisioner")
+    ):
+        connection.execute(
+            text(
+                'GRANT "app_auth_lookup" TO "app_account_provisioner"'
+                ' WITH ADMIN OPTION'
+            )
+        )
+    elif (
+        ownership_transfer_needed
+        and (is_superuser or lookup_admin)
+        and not _has_membership("app_auth_lookup", "app_account_provisioner")
+    ):
+        connection.execute(
+            text(
+                'GRANT "app_auth_lookup" TO "app_account_provisioner"'
+                ' WITH ADMIN OPTION'
+            )
+        )
+
+    # The migration principal needs ADMIN OPTION on the provisioner only when
+    # it is the one that will revoke its own temporary membership.  A
+    # superuser needs neither edge.
+    if not is_superuser and current_role:
+        if _has_membership("app_account_provisioner", current_role):
+            if not _has_admin("app_account_provisioner", current_role):
                 connection.execute(
                     text(
-                        'GRANT "app_auth_lookup" TO "app_account_provisioner"'
-                        ' WITH ADMIN OPTION'
+                        'GRANT "app_account_provisioner" TO '
+                        f'"{current_role}" WITH ADMIN OPTION'
                     )
                 )
-    if not ownership_transfer_needed:
-        lookup_to_provisioner = connection.execute(
-            text(
-                "SELECT pg_has_role('app_account_provisioner',"
-                " 'app_auth_lookup', 'member')"
-            )
-        ).scalar()
-        if lookup_to_provisioner:
-            connection.execute(
-                text(
-                    'GRANT "app_auth_lookup" TO "app_account_provisioner"'
-                    ' WITH ADMIN OPTION'
-                )
-            )
-    if current_role and current_role != "app_account_provisioner":
-        provisioner_to_migration = connection.execute(
-            text(
-                "SELECT pg_has_role(current_user,"
-                " 'app_account_provisioner', 'member')"
-            )
-        ).scalar()
-        if provisioner_to_migration:
-            connection.execute(
-                text(
-                    'GRANT "app_account_provisioner" TO '
-                    f'"{current_role}" WITH ADMIN OPTION'
-                )
-            )
         elif ownership_transfer_needed:
             connection.execute(
                 text(

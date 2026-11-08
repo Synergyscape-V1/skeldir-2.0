@@ -40,7 +40,7 @@ BEGIN
     EXECUTE 'GRANT app_auth_lookup TO app_account_provisioner';
   END IF;
   IF NOT pg_has_role(current_user, 'app_account_provisioner', 'member') THEN
-    EXECUTE 'GRANT app_account_provisioner TO ' || quote_ident(current_user);
+    EXECUTE 'GRANT app_account_provisioner TO ' || quote_ident(current_user) || ' WITH ADMIN OPTION';
   END IF;
 END
 \$\$;
