@@ -290,6 +290,7 @@ PUBLIC_ALLOWLIST: set[tuple[str, str]] = {
     ("GET", "/metrics"),
     ("GET", "/api/trust/v1/keys/jwks"),
     ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/signup"),
 }
 
 

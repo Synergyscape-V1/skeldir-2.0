@@ -316,7 +316,7 @@ async def test_login_issues_tenant_scoped_access_and_opaque_refresh(_app):
     assert not payload["refresh_token"].startswith("eyJ")
 
 
-async def test_login_requires_tenant_id_for_token_issuance(_app):
+async def test_login_uses_unique_single_membership_tenant(_app):
     tenant_id = uuid4()
     user_id = uuid4()
     email = f"user-{uuid4().hex[:8]}@example.com"
@@ -330,8 +330,24 @@ async def test_login_requires_tenant_id_for_token_issuance(_app):
             json={"email": email, "password": password},
             headers={"X-Correlation-ID": str(uuid4())},
         )
+        assert response.status_code == 200, response.text
+        assert response.json()["tenant_id"] == str(tenant_id)
 
-    assert response.status_code == 422, response.text
+        second_tenant = uuid4()
+        _seed_login_identity(
+            tenant_id=second_tenant,
+            user_id=user_id,
+            email=email,
+            password=password,
+        )
+        ambiguous = await client.post(
+            "/api/auth/login",
+            json={"email": email, "password": password},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+
+    assert ambiguous.status_code == 400, ambiguous.text
+    assert ambiguous.json()["detail"] == "tenant_required"
 
 
 async def test_refresh_rotation_single_use(_app):
