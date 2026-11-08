@@ -1,5 +1,5 @@
 {
-  "revision": "202611070001",
+  "revision": "202611080001",
   "objects": [
     [
       "column",
@@ -3751,9 +3751,7 @@
         "createdb": false,
         "bypassrls": true,
         "createrole": false,
-        "memberships": [
-          "app_auth_lookup"
-        ]
+        "memberships": null
       }
     ],
     [

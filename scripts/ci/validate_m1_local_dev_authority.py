@@ -823,6 +823,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "backend/tests/test_b12_p4_token_lifecycle.py",
     "backend/tests/test_b12_p6_rbac_enforcement.py",
     "alembic/versions/007_skeldir_foundation/202611070001_supported_signup.py",
+    "alembic/versions/007_skeldir_foundation/202611080001_account_owner_chain_cleanup.py",
     # --- B2.6-P2 Corrective XXV auth downgrade compatibility ---
     # The runtime lookup stays owned by the dedicated BYPASSRLS role while
     # the legacy lookup remains migration-owned, so the predecessor B1.2
@@ -877,6 +878,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "alembic/versions/007_skeldir_foundation/202610270002_b26_p2_corrective_xxv_provider_amendment.py",
     "alembic/versions/007_skeldir_foundation/202610280001_b26_p2_xxv_post_capture_adjustment.py",
     "alembic/versions/007_skeldir_foundation/202611070001_supported_signup.py",
+    "alembic/versions/007_skeldir_foundation/202611080001_account_owner_chain_cleanup.py",
     "backend/app/auth_service/server.py",
     "backend/app/core/construction_authority.py",
     "backend/app/core/control_plane.py",

@@ -386,7 +386,7 @@ def verify_trust(tenant: dict, envelope: dict) -> tuple[int, dict | str]:
         return status, text
 
 
-def composition_proof() -> dict:
+def composition_proof(dsn: str | None = None) -> dict:
     """Run the mandatory composition validator against the lane DB."""
     env = dict(os.environ)
     env["B26_P2_SOURCE_ATTESTATION_PUBLIC_KEY_PATH"] = str(
@@ -397,7 +397,8 @@ def composition_proof() -> dict:
             sys.executable,
             str(REPO_ROOT / "scripts/ci/validate_b26_p2_xxii_composition.py"),
             "--dsn",
-            f"postgresql://postgres:postgres@127.0.0.1:{PG_PORT}/{DB_NAME}",
+            dsn
+            or f"postgresql://postgres:postgres@127.0.0.1:{PG_PORT}/{DB_NAME}",
         ],
         text=True,
         capture_output=True,
@@ -1170,7 +1171,7 @@ def f_b6_worker_loss(args: argparse.Namespace) -> int:
     """
     state = load_state()
     tenant = state["tenant_a"]
-    baseline = composition_proof()
+    baseline = composition_proof(role_dsn("migration_owner"))
     if baseline["printed_verdict"] != "PASS":
         write_evidence(
             "xxv-b6-worker-loss",
@@ -1183,13 +1184,13 @@ def f_b6_worker_loss(args: argparse.Namespace) -> int:
     intent = f"pi_xxvb6{uuid.uuid4().hex[:16]}"
     status, body, _raw = post_stripe(state, tenant, intent, 4321)
     time.sleep(70)
-    adverse = composition_proof()
+    adverse = composition_proof(role_dsn("migration_owner"))
     start = subprocess.run(
         ["docker", "start", WORKER_B23], capture_output=True, text=True
     )
     verdict = wait_verdict(tenant["tenant_id"], intent, timeout_s=180)
     time.sleep(10)
-    restored = composition_proof()
+    restored = composition_proof(role_dsn("migration_owner"))
     record = {
         "property": (
             "B6/HB-14: an accepted authenticated source with its required"

@@ -41,7 +41,7 @@ import psycopg2
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = REPO_ROOT / "backend"
-HEAD = "202611070001"
+HEAD = "202611080001"
 GENERATIONS = (("VII", "202609210001"), ("XX", "202609300003"))
 TENANT_DAY = datetime(2026, 2, 1, 12, 0, tzinfo=timezone.utc)
 

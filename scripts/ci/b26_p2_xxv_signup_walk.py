@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -88,6 +89,7 @@ from b26_p2_xxv_lane import (  # noqa: E402
     cmd_up,
     docker,
     load_state,
+    migrate,
     role_dsn,
     sql,
 )
@@ -409,6 +411,83 @@ def _provisioner_sensitive_privileges() -> dict:
     return result
 
 
+def _account_owner_posture() -> dict:
+    edge_rows = sql(
+        """
+        SELECT
+          EXISTS (
+            SELECT 1 FROM pg_auth_members m
+              JOIN pg_roles r ON r.oid = m.roleid
+              JOIN pg_roles u ON u.oid = m.member
+             WHERE r.rolname = 'app_account_provisioner'
+               AND u.rolname = 'migration_owner'
+          ),
+          EXISTS (
+            SELECT 1 FROM pg_auth_members m
+              JOIN pg_roles r ON r.oid = m.roleid
+              JOIN pg_roles u ON u.oid = m.member
+             WHERE r.rolname = 'app_auth_lookup'
+               AND u.rolname = 'app_account_provisioner'
+          ),
+          EXISTS (
+            SELECT 1 FROM pg_auth_members m
+              JOIN pg_roles r ON r.oid = m.roleid
+              JOIN pg_roles u ON u.oid = m.member
+             WHERE r.rolname = 'app_auth_lookup'
+               AND u.rolname = 'migration_owner'
+          ),
+          pg_has_role('migration_owner', 'app_account_provisioner', 'MEMBER'),
+          pg_has_role('migration_owner', 'app_auth_lookup', 'MEMBER'),
+          has_column_privilege(
+            'app_account_provisioner', 'public.users',
+            'password_hash', 'SELECT'
+          ),
+          has_column_privilege(
+            'app_account_provisioner', 'public.users',
+            'login_identifier_hash', 'SELECT'
+          )
+        """
+    )[0]
+    owners = {
+        str(name): str(owner)
+        for name, owner in sql(
+            """
+            SELECT p.proname, pg_get_userbyid(p.proowner)
+              FROM pg_proc p
+              JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = 'auth'
+               AND p.oid::regprocedure::text IN (
+                   'auth.register_business_account(text,text,text)',
+                   'auth.lookup_single_active_tenant(uuid)'
+               )
+            """
+        )
+    }
+    lookup_columns = sql(
+        """
+        SELECT
+          has_column_privilege(
+            'app_auth_lookup', 'public.users', 'login_identifier_hash', 'SELECT'
+          ),
+          has_column_privilege(
+            'app_auth_lookup', 'public.users', 'password_hash', 'SELECT'
+          )
+        """
+    )[0]
+    return {
+        "migration_owner_to_provisioner": bool(edge_rows[0]),
+        "provisioner_to_lookup": bool(edge_rows[1]),
+        "migration_owner_direct_to_lookup": bool(edge_rows[2]),
+        "migration_owner_transitively_has_provisioner": bool(edge_rows[3]),
+        "migration_owner_transitively_has_lookup": bool(edge_rows[4]),
+        "provisioner_can_read_password_hash": bool(edge_rows[5]),
+        "provisioner_can_read_login_identifier_hash": bool(edge_rows[6]),
+        "function_owners": owners,
+        "lookup_can_read_login_identifier_hash": bool(lookup_columns[0]),
+        "lookup_can_read_password_hash": bool(lookup_columns[1]),
+    }
+
+
 def _resources_present() -> dict:
     containers = docker(
         "ps", "-a", "--filter", f"name={PREFIX}", "--format", "{{.Names}}"
@@ -481,8 +560,72 @@ def main() -> int:
         )
         require(
             "migration_head_is_supported_signup",
-            artifact.get("migration_head") == "202611070001",
+            artifact.get("migration_head") == "202611080001",
             artifact.get("migration_head"),
+        )
+
+        prepare = subprocess.run(
+            [
+                sys.executable,
+                str(
+                    REPO
+                    / "scripts/database/prepare_migration_authority_boundary.py"
+                ),
+                "--admin-dsn",
+                admin_dsn(),
+                "--database-name",
+                os.environ["B26_P2_XXV_DB"],
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        require("ordinary_preparation_rerun", prepare.returncode == 0,
+                prepare.stderr[-800:])
+        try:
+            migrated_head = migrate(FINAL_IMAGE)
+            migrate_detail = migrated_head
+        except Exception as exc:  # noqa: BLE001 - the walk must report failure
+            migrated_head = None
+            migrate_detail = str(exc)
+        require("ordinary_upgrade_to_head_noop", migrated_head == "202611080001",
+                migrate_detail)
+        owner_posture = _account_owner_posture()
+        observations["account_owner_posture"] = owner_posture
+        require(
+            "temporary_owner_edges_absent",
+            not owner_posture["migration_owner_to_provisioner"]
+            and not owner_posture["provisioner_to_lookup"]
+            and not owner_posture["migration_owner_direct_to_lookup"],
+            owner_posture,
+        )
+        require(
+            "migration_owner_transitive_authority_absent",
+            not owner_posture["migration_owner_transitively_has_provisioner"]
+            and not owner_posture["migration_owner_transitively_has_lookup"],
+            owner_posture,
+        )
+        require(
+            "provisioner_has_no_inherited_password_select",
+            not owner_posture["provisioner_can_read_password_hash"]
+            and not owner_posture["provisioner_can_read_login_identifier_hash"],
+            owner_posture,
+        )
+        require(
+            "account_function_owners_intact",
+            owner_posture["function_owners"].get(
+                "register_business_account"
+            ) == "app_account_provisioner"
+            and owner_posture["function_owners"].get(
+                "lookup_single_active_tenant"
+            ) == "app_auth_lookup",
+            owner_posture["function_owners"],
+        )
+        require(
+            "auth_lookup_capabilities_intact",
+            owner_posture["lookup_can_read_login_identifier_hash"]
+            and owner_posture["lookup_can_read_password_hash"],
+            owner_posture,
         )
 
         password_a = "walk-password-a-123456"
@@ -880,12 +1023,17 @@ def main() -> int:
             if bool(
                 sql(
                     "SELECT pg_has_role(%s, 'app_account_provisioner',"
+                    " 'MEMBER') OR pg_has_role(%s, 'app_auth_lookup',"
                     " 'MEMBER')",
-                    (name,),
+                    (name, name),
                 )[0][0]
             )
         ]
-        require("no_runtime_role_inherits_provisioner", inherited == [], inherited)
+        require(
+            "no_runtime_role_inherits_account_authority",
+            inherited == [],
+            inherited,
+        )
         require(
             "app_user_cannot_directly_insert_identity",
             _direct_insert_privilege() is False,

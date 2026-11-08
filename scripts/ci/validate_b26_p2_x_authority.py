@@ -504,7 +504,7 @@ def main() -> int:
                                         "202609300009",
                                         "202610180001",
                                         "202610270001",
-                                        "202611070001"):
+                                        "202611080001"):
                             violations.append(
                                 "x_authority_unexpected_migration_head:"
                                 f"{head}"

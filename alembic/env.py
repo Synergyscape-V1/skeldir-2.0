@@ -145,56 +145,130 @@ def _provision_ci_migration_roles(connection) -> None:
             connection.execute(
                 text(f'CREATE ROLE "{role}" {attributes}')
             )
+    # The temporary owner chain is needed only while the two account
+    # functions have not yet reached their intended owners.  A fully upgraded
+    # preparation must not recreate either edge.
+    owners = {
+        str(name): str(owner)
+        for name, owner in connection.execute(
+            text(
+                """
+                SELECT p.proname, pg_get_userbyid(p.proowner)
+                  FROM pg_proc AS p
+                  JOIN pg_namespace AS n ON n.oid = p.pronamespace
+                 WHERE n.nspname = 'auth'
+                   AND p.oid::regprocedure::text IN (
+                       'auth.register_business_account(text,text,text)',
+                       'auth.lookup_single_active_tenant(uuid)'
+                   )
+                """
+            )
+        ).fetchall()
+    }
+    ownership_transfer_needed = not (
+        owners.get("register_business_account") == "app_account_provisioner"
+        and owners.get("lookup_single_active_tenant") == "app_auth_lookup"
+    )
+    temporary_edges = connection.execute(
+        text(
+            """
+            SELECT
+              EXISTS (
+                SELECT 1 FROM pg_auth_members m
+                  JOIN pg_roles r ON r.oid = m.roleid
+                  JOIN pg_roles u ON u.oid = m.member
+                 WHERE r.rolname = 'app_auth_lookup'
+                   AND u.rolname = current_user
+              ),
+              EXISTS (
+                SELECT 1 FROM pg_auth_members m
+                  JOIN pg_roles r ON r.oid = m.roleid
+                  JOIN pg_roles u ON u.oid = m.member
+                 WHERE r.rolname = 'app_account_provisioner'
+                   AND u.rolname = current_user
+              ),
+              EXISTS (
+                SELECT 1 FROM pg_auth_members m
+                  JOIN pg_roles r ON r.oid = m.roleid
+                  JOIN pg_roles u ON u.oid = m.member
+                 WHERE r.rolname = 'app_auth_lookup'
+                   AND u.rolname = 'app_account_provisioner'
+              )
+            """
+        )
+    ).fetchone()
+    cleanup_grants_needed = ownership_transfer_needed or any(
+        bool(value) for value in temporary_edges
+    )
+    if not cleanup_grants_needed:
+        return
     # CI lanes migrate as a role that may not yet inherit the lookup owner.
     # The XXV owner-transfer migration requires that inheritance; grant it
     # here for the CI placeholder only. Production uses the governed preflight
     # and never relies on this branch.
     current_role = connection.execute(text("SELECT current_user")).scalar()
     if current_role and current_role != "app_auth_lookup":
-        already_member = connection.execute(
-            text(
-                "SELECT pg_has_role(current_user,"
-                " 'app_auth_lookup', 'member')"
+        try:
+            connection.execute(
+                text(
+                    'GRANT "app_auth_lookup" TO '
+                    f'"{current_role}" WITH ADMIN OPTION'
+                )
             )
-        ).scalar()
-        if not already_member:
-            try:
+        except ProgrammingError:
+            # A re-upgrade can reach this point after the migration revoked
+            # membership. The migration itself verifies either membership or
+            # already-transferred ownership and raises a precise error if
+            # neither holds.
+            pass
+    if ownership_transfer_needed:
+        if current_role and current_role != "app_account_provisioner":
+            lookup_to_provisioner = connection.execute(
+                text(
+                    "SELECT pg_has_role('app_account_provisioner',"
+                    " 'app_auth_lookup', 'member')"
+                )
+            ).scalar()
+            if not lookup_to_provisioner:
                 connection.execute(
                     text(
-                        'GRANT "app_auth_lookup" TO '
-                        f'"{current_role}"'
+                        'GRANT "app_auth_lookup" TO "app_account_provisioner"'
+                        ' WITH ADMIN OPTION'
                     )
                 )
-            except ProgrammingError:
-                # A re-upgrade can reach this point after the migration
-                # revoked membership. The migration itself verifies either
-                # membership or already-transferred ownership and raises a
-                # precise error if neither holds.
-                pass
-    if current_role and current_role != "app_account_provisioner":
+    if not ownership_transfer_needed:
         lookup_to_provisioner = connection.execute(
             text(
                 "SELECT pg_has_role('app_account_provisioner',"
                 " 'app_auth_lookup', 'member')"
             )
         ).scalar()
-        if not lookup_to_provisioner:
+        if lookup_to_provisioner:
             connection.execute(
                 text(
                     'GRANT "app_auth_lookup" TO "app_account_provisioner"'
+                    ' WITH ADMIN OPTION'
                 )
             )
+    if current_role and current_role != "app_account_provisioner":
         provisioner_to_migration = connection.execute(
             text(
                 "SELECT pg_has_role(current_user,"
                 " 'app_account_provisioner', 'member')"
             )
         ).scalar()
-        if not provisioner_to_migration:
+        if provisioner_to_migration:
             connection.execute(
                 text(
                     'GRANT "app_account_provisioner" TO '
-                    f'"{current_role}"'
+                    f'"{current_role}" WITH ADMIN OPTION'
+                )
+            )
+        elif ownership_transfer_needed:
+            connection.execute(
+                text(
+                    'GRANT "app_account_provisioner" TO '
+                    f'"{current_role}" WITH ADMIN OPTION'
                 )
             )
 

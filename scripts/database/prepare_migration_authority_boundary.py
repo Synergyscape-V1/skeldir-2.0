@@ -178,6 +178,78 @@ def _database_exists(cursor, database_name: str) -> bool:
     return cursor.fetchone() is not None
 
 
+def _database_admin_dsn(admin_dsn: str, database_name: str) -> str:
+    base = admin_dsn.split("?", 1)[0]
+    return base.rsplit("/", 1)[0] + "/" + database_name
+
+
+def _temporary_owner_state(
+    admin_dsn: str, database_name: str
+) -> tuple[bool, bool]:
+    """Return ``(ownership_transfer_needed, temporary_edges_present)``.
+
+    The chain exists only to perform the initial ownership transfer and to
+    let the cleanup migration revoke itself.  A fully upgraded database has
+    both functions under their intended owners and neither edge, and must not
+    regain either edge merely by being prepared again.
+    """
+    try:
+        connection = psycopg2.connect(
+            _database_admin_dsn(admin_dsn, database_name)
+        )
+    except Exception:  # noqa: BLE001 - a virgin database needs the chain
+        return True, True
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT p.proname, pg_get_userbyid(p.proowner)
+                  FROM pg_proc AS p
+                  JOIN pg_namespace AS n ON n.oid = p.pronamespace
+                 WHERE n.nspname = 'auth'
+                   AND p.oid::regprocedure::text IN (
+                       'auth.register_business_account(text,text,text)',
+                       'auth.lookup_single_active_tenant(uuid)'
+                   )
+                """
+            )
+            owners = {str(name): str(owner) for name, owner in cursor.fetchall()}
+            cursor.execute(
+                """
+                SELECT
+                  EXISTS (
+                    SELECT 1 FROM pg_auth_members m
+                      JOIN pg_roles r ON r.oid = m.roleid
+                      JOIN pg_roles u ON u.oid = m.member
+                     WHERE r.rolname = 'app_auth_lookup'
+                       AND u.rolname = current_user
+                  ),
+                  EXISTS (
+                    SELECT 1 FROM pg_auth_members m
+                      JOIN pg_roles r ON r.oid = m.roleid
+                      JOIN pg_roles u ON u.oid = m.member
+                     WHERE r.rolname = 'app_account_provisioner'
+                       AND u.rolname = current_user
+                  ),
+                  EXISTS (
+                    SELECT 1 FROM pg_auth_members m
+                      JOIN pg_roles r ON r.oid = m.roleid
+                      JOIN pg_roles u ON u.oid = m.member
+                     WHERE r.rolname = 'app_auth_lookup'
+                       AND u.rolname = 'app_account_provisioner'
+                  )
+                """
+            )
+            edges_present = any(bool(value) for value in cursor.fetchone())
+    finally:
+        connection.close()
+    ownership_transfer_needed = not (
+        owners.get("register_business_account") == "app_account_provisioner"
+        and owners.get("lookup_single_active_tenant") == "app_auth_lookup"
+    )
+    return ownership_transfer_needed, ownership_transfer_needed or edges_present
+
+
 def _create_or_alter_login_role(
     cursor, role_name: str, password: str, *, rotate_existing: bool
 ) -> None:
@@ -257,6 +329,9 @@ def _ensure_role_membership(cursor, *, role_name: str, member_name: str) -> None
 
 
 def _prepare_authority_surface(config: AuthorityConfig) -> bool:
+    ownership_transfer_needed, cleanup_grants_needed = _temporary_owner_state(
+        config.admin_dsn, config.database_name
+    )
     admin_conn = psycopg2.connect(config.admin_dsn)
     try:
         admin_conn.autocommit = True
@@ -278,27 +353,80 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
             _create_nologin_role_if_missing(cursor, config.app_ro_role)
             _create_bypass_rls_nologin_role(cursor, "app_auth_lookup")
             _create_bypass_rls_nologin_role(cursor, "app_account_provisioner")
-            cursor.execute(
-                sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
-                    sql.Identifier("app_auth_lookup"),
-                    sql.Identifier(config.migration_user),
+            if cleanup_grants_needed:
+                # Admin option on the lookup owner lets the cleanup migration
+                # revoke the temporary chain.  It is revoked together with
+                # that chain in the same upgrade.
+                cursor.execute(
+                    sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                        sql.Identifier("app_auth_lookup"),
+                        sql.Identifier(config.migration_user),
+                    )
                 )
-            )
-            # Account provisioning owns its account-only DEFINER function. The
-            # auth lookup owner is reached through this migration helper so a
-            # later revision can transfer the lookup function without a direct
-            # runtime membership. The helper is never granted to a runtime
-            # principal.
-            _ensure_role_membership(
-                cursor,
-                role_name="app_auth_lookup",
-                member_name="app_account_provisioner",
-            )
-            _ensure_role_membership(
-                cursor,
-                role_name="app_account_provisioner",
-                member_name=config.migration_user,
-            )
+            if ownership_transfer_needed:
+                # Account provisioning owns its account-only DEFINER function.
+                # The auth lookup owner is reached through this migration
+                # helper so the initial revision can transfer the lookup
+                # function without a direct runtime membership.  The helper is
+                # never granted to a runtime principal, and a fully upgraded
+                # preparation does not recreate either temporary edge.
+                cursor.execute(
+                    sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                        sql.Identifier("app_auth_lookup"),
+                        sql.Identifier("app_account_provisioner"),
+                    )
+                )
+            if cleanup_grants_needed:
+                # The provisioner must be able to revoke its own temporary
+                # lookup membership during cleanup.  If the edge already
+                # exists, this only adds the admin option; a fully upgraded
+                # database has no edge and this block does not run.
+                cursor.execute(
+                    sql.SQL(
+                        "DO $$ BEGIN "
+                        "IF EXISTS (SELECT 1 FROM pg_auth_members m "
+                        "JOIN pg_roles r ON r.oid = m.roleid "
+                        "JOIN pg_roles u ON u.oid = m.member "
+                        "WHERE r.rolname = {role} AND u.rolname = {member}) "
+                        "THEN EXECUTE {grant}; END IF; END $$;"
+                    ).format(
+                        role=sql.Literal("app_auth_lookup"),
+                        member=sql.Literal("app_account_provisioner"),
+                        grant=sql.Literal(
+                            "GRANT app_auth_lookup TO "
+                            "app_account_provisioner WITH ADMIN OPTION"
+                        ),
+                    )
+                )
+            if ownership_transfer_needed:
+                cursor.execute(
+                    sql.SQL("GRANT {} TO {} WITH ADMIN OPTION").format(
+                        sql.Identifier("app_account_provisioner"),
+                        sql.Identifier(config.migration_user),
+                    )
+                )
+            elif cleanup_grants_needed:
+                # The migration principal must be able to revoke its own
+                # temporary membership.  If the edge already exists, this only
+                # adds the admin option; a fully upgraded database has no edge
+                # and this block does not run.
+                cursor.execute(
+                    sql.SQL(
+                        "DO $$ BEGIN "
+                        "IF EXISTS (SELECT 1 FROM pg_auth_members m "
+                        "JOIN pg_roles r ON r.oid = m.roleid "
+                        "JOIN pg_roles u ON u.oid = m.member "
+                        "WHERE r.rolname = {role} AND u.rolname = {member}) "
+                        "THEN EXECUTE {grant}; END IF; END $$;"
+                    ).format(
+                        role=sql.Literal("app_account_provisioner"),
+                        member=sql.Literal(config.migration_user),
+                        grant=sql.Literal(
+                            "GRANT app_account_provisioner TO "
+                            f'"{config.migration_user}" WITH ADMIN OPTION'
+                        ),
+                    )
+                )
             _create_or_alter_login_role(
                 cursor,
                 config.worker_user,

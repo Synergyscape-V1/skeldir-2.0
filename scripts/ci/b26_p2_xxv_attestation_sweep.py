@@ -106,7 +106,96 @@ SELECT v.id::text AS verdict_id,
               AND a.tenant_id = e.tenant_id
        WHERE e.tenant_id = v.tenant_id AND e.verdict_id = v.id
   ) AS aj ON true
+ WHERE v.tenant_id = %s
 """
+
+
+class DatabaseScopeError(RuntimeError):
+    """The tenant-complete scope cannot be established for a census."""
+
+
+def _scoped_read_rows(
+    dsn: str,
+    query: str,
+    *,
+    params: tuple | None = None,
+) -> dict:
+    """Read one census across the complete tenant catalog.
+
+    Every census uses one read-only REPEATABLE READ transaction: the catalog
+    is read once, each tenant is bound transaction-locally, and the census
+    query carries an explicit tenant predicate.  The catalog must be
+    unfiltered (RLS disabled) and both financial relations must retain a
+    validated tenant foreign key before its IDs are treated as the scope.
+    """
+    import psycopg2  # noqa: PLC0415
+
+    conn = psycopg2.connect(dsn)
+    try:
+        conn.set_session(isolation_level="REPEATABLE READ", readonly=True)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT c.relrowsecurity, c.relforcerowsecurity"
+                " FROM pg_class AS c JOIN pg_namespace AS n"
+                " ON n.oid = c.relnamespace"
+                " WHERE n.nspname = 'public' AND c.relname = 'tenants'"
+            )
+            catalog_flags = cur.fetchone()
+            if catalog_flags is None:
+                raise DatabaseScopeError("tenant_catalog_missing")
+            if bool(catalog_flags[0]) or bool(catalog_flags[1]):
+                raise DatabaseScopeError("tenant_catalog_rls_enabled")
+            for relation in (
+                "b23_match_verdicts",
+                "webhook_ingress_identities",
+            ):
+                cur.execute(
+                    "SELECT count(*) FROM pg_constraint AS c"
+                    " JOIN pg_class AS t ON t.oid = c.conrelid"
+                    " JOIN pg_namespace AS n ON n.oid = t.relnamespace"
+                    " WHERE c.contype = 'f' AND c.convalidated"
+                    " AND n.nspname = 'public' AND t.relname = %s"
+                    " AND c.confrelid = 'public.tenants'::regclass"
+                    " AND pg_get_constraintdef(c.oid, true)"
+                    " ~ '^FOREIGN KEY \(tenant_id\) REFERENCES tenants\(id\)'",
+                    (relation,),
+                )
+                if int(cur.fetchone()[0] or 0) < 1:
+                    raise DatabaseScopeError(
+                        f"validated_tenant_fk_missing:{relation}"
+                    )
+            cur.execute("SELECT id FROM public.tenants ORDER BY id")
+            tenant_ids = [row[0] for row in cur.fetchall()]
+            rows: list[dict] = []
+            columns: list[str] = []
+            for tenant_id in tenant_ids:
+                cur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, true)",
+                    (str(tenant_id),),
+                )
+                query_params = (str(tenant_id), *(params or ()))
+                cur.execute(query, query_params)
+                if not columns:
+                    columns = [
+                        description[0] for description in cur.description
+                    ]
+                rows.extend(
+                    dict(zip(columns, record)) for record in cur.fetchall()
+                )
+        conn.rollback()
+        return {
+            "rows": rows,
+            "columns": columns,
+            "tenants_examined": len(tenant_ids),
+        }
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+    finally:
+        conn.close()
 
 
 def sweep(
@@ -125,15 +214,8 @@ def sweep(
         verify_signature,
     )
 
-    conn = psycopg2.connect(dsn)
-    try:
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute(SWEEP_SQL)
-        columns = [description[0] for description in cur.description]
-        rows = [dict(zip(columns, record)) for record in cur.fetchall()]
-    finally:
-        conn.close()
+    scoped = _scoped_read_rows(dsn, SWEEP_SQL)
+    rows = scoped["rows"]
 
     census = {
         "xxv_attested": 0,
@@ -384,6 +466,7 @@ def sweep(
         census["xxv_attested"] += 1
 
     return {
+        "tenants_examined": scoped["tenants_examined"],
         "verdicts_examined": len(rows),
         "census": census,
         "unverifiable": unverifiable,

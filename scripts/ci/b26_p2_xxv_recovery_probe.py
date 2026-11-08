@@ -2739,41 +2739,6 @@ def _a12_proof_dsn(tenant_id: str) -> str:
     return role_dsn("migration_owner")
 
 
-def _a12_apply_proof_scope(tenant_id: str) -> str | None:
-    """Give the required proof principal the real subject's RLS cohort.
-
-    ``public`` financial tables are FORCE RLS.  The mandatory proof runs as
-    ``migration_owner``, which has no BYPASSRLS attribute, so its census is
-    empty unless the tenant setting is present.  This is the actual tenant
-    under test, not a substitute principal or a different database.
-    """
-    rows = sql(
-        "SELECT setconfig FROM pg_roles r CROSS JOIN LATERAL"
-        " unnest(COALESCE(r.rolconfig, ARRAY[]::text[])) AS setconfig"
-        " WHERE r.rolname = 'migration_owner'"
-        " AND left(setconfig, length('app.current_tenant_id=')) ="
-        " 'app.current_tenant_id=' LIMIT 1"
-    )
-    previous = None
-    if rows:
-        previous = str(rows[0][0]).split("=", 1)[1]
-    sql(
-        "ALTER ROLE migration_owner SET app.current_tenant_id = %s",
-        (tenant_id,),
-    )
-    return previous
-
-
-def _a12_restore_proof_scope(previous: str | None) -> None:
-    if previous is None:
-        sql("ALTER ROLE migration_owner RESET app.current_tenant_id")
-    else:
-        sql(
-            "ALTER ROLE migration_owner SET app.current_tenant_id = %s",
-            (previous,),
-        )
-
-
 def _a12_role_identity(dsn: str) -> dict:
     import psycopg2  # noqa: PLC0415
 
@@ -3392,7 +3357,7 @@ def _a12_evidence_snapshot(tenant_id: str, verdict_id: str) -> dict:
     return payload
 
 
-def _a12_proof_observation_inner(
+def _a12_proof_observation(
     stage: str,
     *,
     tenant: dict,
@@ -3402,7 +3367,10 @@ def _a12_proof_observation_inner(
     temp: Path,
 ) -> dict:
     """Run the unchanged mandatory proof against this lane and exact subject."""
-    from b26_p2_xxv_attestation_sweep import sweep  # noqa: PLC0415
+    from b26_p2_xxv_attestation_sweep import (  # noqa: PLC0415
+        _scoped_read_rows,
+        sweep,
+    )
 
     proof_dir = temp / f"a12-proof-{stage}"
     proof_dir.mkdir(parents=True, exist_ok=True)
@@ -3460,22 +3428,21 @@ def _a12_proof_observation_inner(
     violations = list((evidence or {}).get("violations") or [])
     support = sweep(dsn, public_key_path=public_key, check_source_evidence=False)
     try:
-        import psycopg2  # noqa: PLC0415
-
-        conn = psycopg2.connect(dsn)
-        try:
-            conn.autocommit = True
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT count(*) FROM public.b23_match_verdicts"
-                    " WHERE tenant_id = %s AND id = %s",
-                    (str(tenant["tenant_id"]), verdict_id),
-                )
-                target_rows = int(cur.fetchone()[0] or 0)
-        finally:
-            conn.close()
+        scoped_target = _scoped_read_rows(
+            dsn,
+            "SELECT v.id FROM public.b23_match_verdicts AS v"
+            " WHERE v.tenant_id = %s AND v.id = %s",
+            params=(verdict_id,),
+        )
+        target_rows = len(scoped_target["rows"])
     except Exception as exc:  # noqa: BLE001
         target_rows = f"error:{type(exc).__name__}:{exc}"
+    try:
+        whole_db_verdicts = int(
+            sql("SELECT count(*) FROM public.b23_match_verdicts")[0][0]
+        )
+    except Exception as exc:  # noqa: BLE001
+        whole_db_verdicts = f"error:{type(exc).__name__}:{exc}"
     verdicts_examined = checks.get("live_xxv_verdicts_examined")
     target_visible = bool(
         isinstance(verdicts_examined, int)
@@ -3493,7 +3460,7 @@ def _a12_proof_observation_inner(
         "stage": stage,
         "command": (
             "scripts/ci/validate_b26_p2_xxii_composition.py --dsn "
-            "<migration_owner same lane, tenant RLS scope> --evidence-out "
+            "<migration_owner same lane, no role-default scope> --evidence-out "
             f"{evidence_out}"
         ),
         "dsn": dsn,
@@ -3507,7 +3474,14 @@ def _a12_proof_observation_inner(
         "attributable_subject_violations": attributable,
         "checks": checks,
         "census": checks.get("live_xxv_attestation_census"),
+        "tenants_examined": support.get("tenants_examined"),
+        "proof_tenants_examined": checks.get("live_xxv_tenants_examined"),
         "verdicts_examined": verdicts_examined,
+        "whole_db_verdicts": whole_db_verdicts,
+        "census_matches_whole_db": (
+            verdicts_examined == whole_db_verdicts
+            and support.get("verdicts_examined") == whole_db_verdicts
+        ),
         "target_visible": target_visible,
         "target_rows": target_rows,
         "supporting_sweep": {
@@ -3525,36 +3499,6 @@ def _a12_proof_observation_inner(
         "expected_amount_minor": amount_minor,
         "expected_currency": currency,
     }
-
-
-def _a12_proof_observation(
-    stage: str,
-    *,
-    tenant: dict,
-    verdict_id: str,
-    amount_minor: int,
-    currency: str,
-    temp: Path,
-) -> dict:
-    previous_scope = _a12_apply_proof_scope(str(tenant["tenant_id"]))
-    try:
-        result = _a12_proof_observation_inner(
-            stage,
-            tenant=tenant,
-            verdict_id=verdict_id,
-            amount_minor=amount_minor,
-            currency=currency,
-            temp=temp,
-        )
-    finally:
-        _a12_restore_proof_scope(previous_scope)
-    result["proof_scope"] = {
-        "principal": "migration_owner",
-        "app_current_tenant_id": str(tenant["tenant_id"]),
-        "previous_role_setting": previous_scope,
-        "restored": True,
-    }
-    return result
 
 
 def _a12_reconciliation_disposition(
@@ -3680,6 +3624,8 @@ def _a12_contradictory_financial_state(
     amount_minor: int,
     currency: str,
     temp: Path,
+    *,
+    whole_db_verdicts: int | None = None,
 ) -> dict:
     """Commit an independent in-scope contradiction, observe authority, restore.
 
@@ -3847,6 +3793,39 @@ def _a12_contradictory_financial_state(
     trust = (result.get("contradictory_consumers") or {}).get("trust") or {}
     recon = (result.get("contradictory_consumers") or {}).get("reconciliation") or {}
     false_proof = result.get("false_world_proof") or {}
+    census_observations = {
+        stage: result.get(stage) or {}
+        for stage in ("baseline_proof", "false_world_proof", "restored_proof")
+    }
+    census_whole_db = {
+        stage: observation.get("whole_db_verdicts")
+        for stage, observation in census_observations.items()
+    }
+    census_counts = {
+        stage: observation.get("verdicts_examined")
+        for stage, observation in census_observations.items()
+    }
+    result["census"] = {
+        "whole_db_verdicts_before_a12": whole_db_verdicts,
+        "whole_db_verdicts_before_mutation": (
+            result.get("baseline_proof") or {}
+        ).get("whole_db_verdicts"),
+        "whole_db_verdicts": census_whole_db,
+        "counts": census_counts,
+        "tenants_examined": {
+            stage: observation.get("tenants_examined")
+            for stage, observation in census_observations.items()
+        },
+        "matches_whole_db": all(
+            observation.get("census_matches_whole_db") is True
+            for observation in census_observations.values()
+        ),
+        "two_tenants_visible": all(
+            isinstance(observation.get("tenants_examined"), int)
+            and observation.get("tenants_examined") >= 2
+            for observation in census_observations.values()
+        ),
+    }
     result["detection"] = {
         "trust_definite_disposition": trust.get("definite_disposition") is True,
         "trust_did_not_assert_false_current": (
@@ -3877,14 +3856,22 @@ def _a12_contradictory_financial_state(
         and _a12_attestation_verifies(original_evidence)
         and _a12_attestation_verifies(restored_evidence)
         and result["source_hashes_after"] == result["source_hashes_before"]
+        and result["census"]["matches_whole_db"] is True
+        and result["census"]["two_tenants_visible"] is True
     )
     if not result["established"]:
         result["reason"] = "a12_required_conditions_not_met"
     return result
 
 
-def _positive(state: dict, tenant: dict, temp: Path) -> dict:
+def _positive(state: dict, tenant: dict, caller_tenant: dict, temp: Path) -> dict:
+    caller_baseline = None
+    if str(caller_tenant["tenant_id"]) != str(tenant["tenant_id"]):
+        caller_baseline, _ = _baseline(state, caller_tenant, 4321)
     baseline, initial = _baseline(state, tenant, 4321)
+    whole_db_verdicts = int(
+        sql("SELECT count(*) FROM public.b23_match_verdicts")[0][0]
+    )
     amended_amount = baseline["amount_minor"] + 779
     intent = baseline["subject"]
     baseline_signed = _wait_signed(
@@ -3905,6 +3892,7 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
         baseline["amount_minor"],
         baseline["currency"],
         temp,
+        whole_db_verdicts=whole_db_verdicts,
     )
     staged = _stage(state, temp)
     kept = False
@@ -3912,6 +3900,9 @@ def _positive(state: dict, tenant: dict, temp: Path) -> dict:
     record: dict = {
         "mode": "positive",
         "baseline": baseline,
+        "caller_tenant_id_hash": tenant_hash(caller_tenant["tenant_id"]),
+        "caller_baseline": caller_baseline,
+        "whole_db_verdicts_before_a12": whole_db_verdicts,
         "initial_subject": initial.get("commerce_reference"),
         "baseline_signed": baseline_signed,
         "a12_contradictory_state": a12,
@@ -4400,11 +4391,12 @@ def main() -> int:
     )
     args = parser.parse_args()
     state = load_state()
-    tenant = state["tenant_a"]
+    caller_tenant = state["tenant_a"]
+    tenant = state["tenant_b"]
     temp = Path(tempfile.mkdtemp(prefix="xxv-recovery-"))
     try:
         record = (
-            _positive(state, tenant, temp)
+            _positive(state, tenant, caller_tenant, temp)
             if args.mode == "positive"
             else _negative(state, tenant, temp, args.mode)
         )

@@ -94,7 +94,7 @@ WORKFLOW = (
     / "b2_6-p1-finance-reconciliation-adjudication.yml"
 )
 
-HEAD = "202611070001"
+HEAD = "202611080001"
 
 
 def _read(path: Path, violations: list[str], tag: str) -> str:
@@ -966,6 +966,7 @@ def _xxv_attestation_sweep_cell(dsn: str, violations: list[str], checks: dict) -
     checks["live_xxv_attestation_sweep"] = True
     checks["live_xxv_attestation_census"] = result["census"]
     checks["live_xxv_verdicts_examined"] = result["verdicts_examined"]
+    checks["live_xxv_tenants_examined"] = result["tenants_examined"]
     source_status = str(
         result.get("source_evidence", {}).get("status", "")
     )
@@ -991,56 +992,66 @@ def _live_conduction_completeness_cell(
     older than the grace window with no verdict is accepted ingress that the
     required B2.3 financial consumer did not conduct. This is the B6/HB-14
     negative-control oracle: removing the worker used to leave the mandatory
-    proof green.
+    proof green. The census is tenant-complete: the same read-only scoped
+    helper used by the attestation sweep binds each catalog tenant and the
+    query carries an explicit tenant predicate.
     """
-    import psycopg2  # noqa: PLC0415
+    from b26_p2_xxv_attestation_sweep import (  # noqa: PLC0415
+        _scoped_read_rows,
+    )
 
-    conn = psycopg2.connect(dsn)
     try:
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT i.id::text, i.provider,
-                       i.event_timestamp
-                  FROM public.webhook_ingress_identities AS i
-                 WHERE i.verified_commerce_ingress_state =
-                       'authenticity_verified'
-                   AND i.b26_p2_provenance_status = 'authenticated_known'
-                   AND i.b26_p2_demotion_reason IS NULL
-                   AND i.event_timestamp < now() - interval '60 seconds'
-                   AND NOT EXISTS (
-                       SELECT 1 FROM public.b23_match_verdicts AS v
-                        WHERE v.webhook_ingress_identity_id = i.id
-                   )
-                   AND NOT EXISTS (
-                       SELECT 1
-                         FROM public.webhook_ingress_identities AS prior
-                        WHERE prior.tenant_id = i.tenant_id
-                          AND prior.provider = i.provider
-                          AND prior.normalized_commerce_reference_kind
-                              IS NOT DISTINCT FROM
-                              i.normalized_commerce_reference_kind
-                          AND prior.normalized_commerce_reference_value
-                              IS NOT DISTINCT FROM
-                              i.normalized_commerce_reference_value
-                          AND prior.b26_p2_provenance_status =
-                              'authenticated_known'
-                          AND prior.id <> i.id
-                          AND (prior.created_at, prior.id)
-                              < (i.created_at, i.id)
-                   )
-                 ORDER BY i.event_timestamp ASC
-                 LIMIT 5
-                """
-            )
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+        scoped = _scoped_read_rows(
+            dsn,
+            """
+            SELECT i.id::text AS id, i.provider AS provider,
+                   i.event_timestamp AS event_timestamp
+              FROM public.webhook_ingress_identities AS i
+             WHERE i.tenant_id = %s
+               AND i.verified_commerce_ingress_state =
+                   'authenticity_verified'
+               AND i.b26_p2_provenance_status = 'authenticated_known'
+               AND i.b26_p2_demotion_reason IS NULL
+               AND i.event_timestamp < now() - interval '60 seconds'
+               AND NOT EXISTS (
+                   SELECT 1 FROM public.b23_match_verdicts AS v
+                    WHERE v.tenant_id = i.tenant_id
+                      AND v.webhook_ingress_identity_id = i.id
+               )
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM public.webhook_ingress_identities AS prior
+                    WHERE prior.tenant_id = i.tenant_id
+                      AND prior.provider = i.provider
+                      AND prior.normalized_commerce_reference_kind
+                          IS NOT DISTINCT FROM
+                          i.normalized_commerce_reference_kind
+                      AND prior.normalized_commerce_reference_value
+                          IS NOT DISTINCT FROM
+                          i.normalized_commerce_reference_value
+                      AND prior.b26_p2_provenance_status =
+                          'authenticated_known'
+                      AND prior.id <> i.id
+                      AND (prior.created_at, prior.id)
+                          < (i.created_at, i.id)
+               )
+             ORDER BY i.event_timestamp ASC
+             LIMIT 5
+            """,
+        )
+    except Exception as exc:  # noqa: BLE001 - an unscopable census is a failure
+        violations.append(
+            "xxii_comp_conduction_scope_unavailable:"
+            f"{type(exc).__name__}:{exc}"
+        )
+        checks["live_conduction_completeness"] = False
+        return
+    rows = scoped["rows"]
+    checks["live_conduction_tenants_examined"] = scoped["tenants_examined"]
     if rows:
         violations.append(
             "xxii_comp_conduction_missing:"
-            + ";".join(f"{row[0]}:{row[1]}" for row in rows)
+            + ";".join(f"{row['id']}:{row['provider']}" for row in rows)
         )
     checks["live_conduction_completeness"] = not rows
 
