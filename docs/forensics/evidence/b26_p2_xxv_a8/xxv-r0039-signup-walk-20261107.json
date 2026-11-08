@@ -8,21 +8,21 @@
         "login_hash_matches": true,
         "memberships": [
           {
-            "id": "026142a4-48b2-4acf-a035-7aa1236a231a",
+            "id": "dbf56f1e-d9cf-49e7-afa1-96432d1ceeb9",
             "membership_status": "active",
-            "tenant_id": "b3db2e56-7bb8-482b-b68c-309ddde2e520"
+            "tenant_id": "038e8a5e-440a-4fb1-b703-e7f8c546ab83"
           }
         ],
         "password_hash_bcrypt": true,
         "password_hash_differs_from_clear": true,
         "roles": [
           {
-            "membership_id": "026142a4-48b2-4acf-a035-7aa1236a231a",
+            "membership_id": "dbf56f1e-d9cf-49e7-afa1-96432d1ceeb9",
             "role_code": "admin",
-            "tenant_id": "b3db2e56-7bb8-482b-b68c-309ddde2e520"
+            "tenant_id": "038e8a5e-440a-4fb1-b703-e7f8c546ab83"
           }
         ],
-        "user_id": "b7406bb0-5fd0-4cc1-8623-1eae6394801c"
+        "user_id": "e7299488-8f21-4a3a-aa3a-ebdf96a0b975"
       },
       "tenant": {
         "api_key_hash_sha256_hex": true,
@@ -38,7 +38,7 @@
           "webhook_ingress_identities": 0
         },
         "found": true,
-        "name": "Walk Business A 813072fd",
+        "name": "Walk Business A 86c08969",
         "notification_email": "unavailable@skeldir.invalid",
         "notification_email_is_unavailable_sentinel": true,
         "provider_connections": 0,
@@ -54,21 +54,21 @@
         "login_hash_matches": true,
         "memberships": [
           {
-            "id": "2aa040f2-b84f-4666-9903-08eda643f502",
+            "id": "3c4412ad-fe1e-48fb-ad43-2484abfddfe3",
             "membership_status": "active",
-            "tenant_id": "9156eedf-4766-49f2-a3f2-367418b992c6"
+            "tenant_id": "835e6630-509a-4f3e-98ba-14edf24c4cfe"
           }
         ],
         "password_hash_bcrypt": true,
         "password_hash_differs_from_clear": true,
         "roles": [
           {
-            "membership_id": "2aa040f2-b84f-4666-9903-08eda643f502",
+            "membership_id": "3c4412ad-fe1e-48fb-ad43-2484abfddfe3",
             "role_code": "admin",
-            "tenant_id": "9156eedf-4766-49f2-a3f2-367418b992c6"
+            "tenant_id": "835e6630-509a-4f3e-98ba-14edf24c4cfe"
           }
         ],
-        "user_id": "76095f88-003b-4208-978a-5de9335e537f"
+        "user_id": "6d28e994-e30b-48bd-90a0-60978e55a180"
       },
       "tenant": {
         "api_key_hash_sha256_hex": true,
@@ -84,7 +84,7 @@
           "webhook_ingress_identities": 0
         },
         "found": true,
-        "name": "Walk Business B 742117ce",
+        "name": "Walk Business B 49f032fa",
         "notification_email": "unavailable@skeldir.invalid",
         "notification_email_is_unavailable_sentinel": true,
         "provider_connections": 0,
@@ -93,19 +93,34 @@
       }
     }
   },
+  "account_owner_posture": {
+    "function_owners": {
+      "lookup_single_active_tenant": "app_auth_lookup",
+      "register_business_account": "app_account_provisioner"
+    },
+    "lookup_can_read_login_identifier_hash": true,
+    "lookup_can_read_password_hash": true,
+    "migration_owner_direct_to_lookup": false,
+    "migration_owner_to_provisioner": false,
+    "migration_owner_transitively_has_lookup": false,
+    "migration_owner_transitively_has_provisioner": false,
+    "provisioner_can_read_login_identifier_hash": false,
+    "provisioner_can_read_password_hash": false,
+    "provisioner_to_lookup": false
+  },
   "artifact": {
     "base_image_id": "sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
-    "captured_at_utc": "2026-11-07T23:35:44.926305Z",
-    "commit_sha": "469b95235519e509fc71b354c443040f0ac5940f",
-    "compiled_genesis_hash": "0f4554388db039c2908d2c46aa01ce511e18fd290dfd89c61963d37747664de6",
-    "compiled_public_key_sha256": "a40d9c2a44c2f29ef3060e498fbc63316ab8ee44684d36474e79b1c0d48a4b17",
-    "compiled_source_attestation_public_key_sha256": "76e7dd4b79c44e380659fd163133a7f8ba7422fdd116a021c9ec635fc8de8536",
-    "compiled_trust_public_key_sha256": "3e4fee1e2721a259bc0388859c22bff7a01124b98e52131fd05e7f8e16ebeb0e",
-    "compiled_trust_registry_sha256": "99cd8cccc3c15c09e06eb7986283da5e46c421bb2f5ba750df3e051697c5aff5",
-    "image_id": "sha256:a5102240b37c9262af0fb964cf92174765cc2f1242dfc423f34b26dddb7aa57a",
-    "image_tag": "b26p2xxvsignup7db78d7c-final:latest",
-    "migration_head": "202611070001",
-    "tree_sha": "e732f16c0356267f09091122f9b7fb865646b4c9",
+    "captured_at_utc": "2026-11-08T03:46:49.425444Z",
+    "commit_sha": "b6d597311e4526413d3b499ce6d919ee4b6eb30b",
+    "compiled_genesis_hash": "a1779c1d8b6a62f35ffa54f2ef63f4e2a9438fe2e013c4ea7342640125861a63",
+    "compiled_public_key_sha256": "a3abdd7031453953a8661bf8ad3277539ef38a62acc4baefa1d88870afa13038",
+    "compiled_source_attestation_public_key_sha256": "7bdfd11553eae0e96f9b4dd0aeb940e5307b44800404a776ad094dee89a31fe6",
+    "compiled_trust_public_key_sha256": "891aa4e896c8f66645339e4959ab2024194f2dab2aab808062760245e44841d2",
+    "compiled_trust_registry_sha256": "91b136de7849dc54a42e94650699a0262ca48e07f602d5061e077502f074b5a7",
+    "image_id": "sha256:3fdc45a8add350f5640c05672bd37cac6a11e330b49d00b9e752541b54a7f5f9",
+    "image_tag": "b26p2xxvsignup113b12c5-final:latest",
+    "migration_head": "202611080001",
+    "tree_sha": "a797d7aa79476151f706f679ecbfdcdf35a0672a",
     "worktree_status_summary": {
       "entries": 2,
       "image_bytes_match_committed_tree": true,
@@ -138,6 +153,25 @@
       "b26_p2_source_money_attestation": 0,
       "revenue_ledger": 0,
       "webhook_ingress_identities": 0
+    },
+    "account_function_owners_intact": {
+      "lookup_single_active_tenant": "app_auth_lookup",
+      "register_business_account": "app_account_provisioner"
+    },
+    "auth_lookup_capabilities_intact": {
+      "function_owners": {
+        "lookup_single_active_tenant": "app_auth_lookup",
+        "register_business_account": "app_account_provisioner"
+      },
+      "lookup_can_read_login_identifier_hash": true,
+      "lookup_can_read_password_hash": true,
+      "migration_owner_direct_to_lookup": false,
+      "migration_owner_to_provisioner": false,
+      "migration_owner_transitively_has_lookup": false,
+      "migration_owner_transitively_has_provisioner": false,
+      "provisioner_can_read_login_identifier_hash": false,
+      "provisioner_can_read_password_hash": false,
+      "provisioner_to_lookup": false
     },
     "concurrent_duplicate_exactly_one_success": [
       201,
@@ -186,8 +220,25 @@
     },
     "login_a_without_selector": 200,
     "login_b_without_selector": 200,
-    "migration_head_is_supported_signup": "202611070001",
-    "no_runtime_role_inherits_provisioner": [],
+    "migration_head_is_supported_signup": "202611080001",
+    "migration_owner_transitive_authority_absent": {
+      "function_owners": {
+        "lookup_single_active_tenant": "app_auth_lookup",
+        "register_business_account": "app_account_provisioner"
+      },
+      "lookup_can_read_login_identifier_hash": true,
+      "lookup_can_read_password_hash": true,
+      "migration_owner_direct_to_lookup": false,
+      "migration_owner_to_provisioner": false,
+      "migration_owner_transitively_has_lookup": false,
+      "migration_owner_transitively_has_provisioner": false,
+      "provisioner_can_read_login_identifier_hash": false,
+      "provisioner_can_read_password_hash": false,
+      "provisioner_to_lookup": false
+    },
+    "no_runtime_role_inherits_account_authority": [],
+    "ordinary_preparation_rerun": "",
+    "ordinary_upgrade_to_head_noop": "202611080001",
     "provisioner_has_no_financial_provider_signing_table_authority": {
       "agent_clients": {
         "delete": false,
@@ -245,6 +296,21 @@
         "update": false
       }
     },
+    "provisioner_has_no_inherited_password_select": {
+      "function_owners": {
+        "lookup_single_active_tenant": "app_auth_lookup",
+        "register_business_account": "app_account_provisioner"
+      },
+      "lookup_can_read_login_identifier_hash": true,
+      "lookup_can_read_password_hash": true,
+      "migration_owner_direct_to_lookup": false,
+      "migration_owner_to_provisioner": false,
+      "migration_owner_transitively_has_lookup": false,
+      "migration_owner_transitively_has_provisioner": false,
+      "provisioner_can_read_login_identifier_hash": false,
+      "provisioner_can_read_password_hash": false,
+      "provisioner_to_lookup": false
+    },
     "provisioner_has_no_sensitive_function_authority": [],
     "provisioner_is_nologin_bypassrls": [
       [
@@ -273,6 +339,21 @@
       "privilege": false,
       "status": 500
     },
+    "temporary_owner_edges_absent": {
+      "function_owners": {
+        "lookup_single_active_tenant": "app_auth_lookup",
+        "register_business_account": "app_account_provisioner"
+      },
+      "lookup_can_read_login_identifier_hash": true,
+      "lookup_can_read_password_hash": true,
+      "migration_owner_direct_to_lookup": false,
+      "migration_owner_to_provisioner": false,
+      "migration_owner_transitively_has_lookup": false,
+      "migration_owner_transitively_has_provisioner": false,
+      "provisioner_can_read_login_identifier_hash": false,
+      "provisioner_can_read_password_hash": false,
+      "provisioner_to_lookup": false
+    },
     "verify_a": 200,
     "verify_b": 200,
     "wrong_password_refused": 401
@@ -300,7 +381,9 @@
     "account_b_password_is_bcrypt_hash": true,
     "account_b_password_provider_active": true,
     "account_b_workspace_name": true,
+    "account_function_owners_intact": true,
     "app_user_cannot_directly_insert_identity": true,
+    "auth_lookup_capabilities_intact": true,
     "concurrent_duplicate_exactly_one_success": true,
     "concurrent_duplicate_one_identity": true,
     "concurrent_duplicate_one_workspace": true,
@@ -324,8 +407,12 @@
     "login_b_tokens_present": true,
     "login_b_without_selector": true,
     "migration_head_is_supported_signup": true,
-    "no_runtime_role_inherits_provisioner": true,
+    "migration_owner_transitive_authority_absent": true,
+    "no_runtime_role_inherits_account_authority": true,
+    "ordinary_preparation_rerun": true,
+    "ordinary_upgrade_to_head_noop": true,
     "provisioner_has_no_financial_provider_signing_table_authority": true,
+    "provisioner_has_no_inherited_password_select": true,
     "provisioner_has_no_sensitive_function_authority": true,
     "provisioner_is_nologin_bypassrls": true,
     "restored_signup_logs_in": true,
@@ -335,6 +422,7 @@
     "signup_ids_distinct": true,
     "signup_refused_without_execute": true,
     "signup_without_execute_created_nothing": true,
+    "temporary_owner_edges_absent": true,
     "verify_a": true,
     "verify_a_identity": true,
     "verify_b": true,
@@ -344,47 +432,47 @@
   },
   "created": {
     "a": {
-      "tenant_id": "b3db2e56-7bb8-482b-b68c-309ddde2e520",
-      "user_id": "b7406bb0-5fd0-4cc1-8623-1eae6394801c"
+      "tenant_id": "038e8a5e-440a-4fb1-b703-e7f8c546ab83",
+      "user_id": "e7299488-8f21-4a3a-aa3a-ebdf96a0b975"
     },
     "b": {
-      "tenant_id": "9156eedf-4766-49f2-a3f2-367418b992c6",
-      "user_id": "76095f88-003b-4208-978a-5de9335e537f"
+      "tenant_id": "835e6630-509a-4f3e-98ba-14edf24c4cfe",
+      "user_id": "6d28e994-e30b-48bd-90a0-60978e55a180"
     }
   },
   "failures": [],
-  "finished_at_utc": "2026-11-07T23:36:02.926175Z",
+  "finished_at_utc": "2026-11-08T03:47:11.921184Z",
   "fixture_disclosure": {
     "control_tenant_ids": [
-      "8bc2b44d-f117-4da0-bf38-2577122f31d3",
-      "867c424c-685e-4420-9fa4-fdf854f8c18a"
+      "b1bdf398-616a-451d-9683-16acac55cf3d",
+      "4f510ccf-564c-4041-9f48-deb0a70d278f"
     ],
     "note": "The lane seeds unrelated control tenants and machine credentials. No fixture identity, password, key or minted token is used by this walk.",
     "source": "existing XXV lane up command",
     "used_for_walk": false
   },
   "lane": {
-    "database": "skeldir_signup_7db78d7c",
-    "lane_root": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b26p2xxvsignup7db78d7c-lane",
+    "database": "skeldir_signup_113b12c5",
+    "lane_root": "C:\\Users\\ayewhy\\AppData\\Local\\Temp\\b26p2xxvsignup113b12c5-lane",
     "ports": {
-      "api": 65428,
-      "auth": 65429,
-      "pg": 65427
+      "api": 50213,
+      "auth": 50214,
+      "pg": 50212
     },
-    "prefix": "b26p2xxvsignup7db78d7c"
+    "prefix": "b26p2xxvsignup113b12c5"
   },
   "login": {
     "a": {
       "access_token_present": true,
       "refresh_token_present": true,
-      "selected_tenant_id": "b3db2e56-7bb8-482b-b68c-309ddde2e520",
+      "selected_tenant_id": "038e8a5e-440a-4fb1-b703-e7f8c546ab83",
       "status": 200,
       "verify_status": 200
     },
     "b": {
       "access_token_present": true,
       "refresh_token_present": true,
-      "selected_tenant_id": "9156eedf-4766-49f2-a3f2-367418b992c6",
+      "selected_tenant_id": "835e6630-509a-4f3e-98ba-14edf24c4cfe",
       "status": 200,
       "verify_status": 200
     }
@@ -534,7 +622,7 @@
     "wrong_password_status": 401,
     "wrong_password_token_present": false
   },
-  "started_at_utc": "2026-11-07T23:34:07.673598Z",
+  "started_at_utc": "2026-11-08T03:44:51.014724Z",
   "teardown": {
     "command": "b26_p2_xxv_lane.py down + prefix image removal",
     "resources_absent": true,

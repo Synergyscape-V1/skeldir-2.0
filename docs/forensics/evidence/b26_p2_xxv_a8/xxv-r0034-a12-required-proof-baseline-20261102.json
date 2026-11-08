@@ -19,17 +19,19 @@
     "live_conservation_cells": true,
     "live_prefix_digest": true,
     "live_truncate_refused": true,
+    "live_conduction_tenants_examined": 2,
     "live_conduction_completeness": true,
     "live_external_false_world_refused": true,
     "live_external_false_world_restored": true,
     "live_external_false_world_chain_preserved": true,
     "live_xxv_attestation_sweep": true,
     "live_xxv_attestation_census": {
-      "xxv_attested": 1,
+      "xxv_attested": 2,
       "unattested_not_claimed_current": 0,
       "attested_but_not_claimed_current": 0,
-      "source_not_root_authenticated": 0
+      "source_not_root_authenticated": 1
     },
-    "live_xxv_verdicts_examined": 1
+    "live_xxv_verdicts_examined": 3,
+    "live_xxv_tenants_examined": 3
   }
 }
