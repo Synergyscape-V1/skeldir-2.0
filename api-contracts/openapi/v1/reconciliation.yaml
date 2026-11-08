@@ -146,35 +146,17 @@ paths:
                   default: false
                   description: Whether to perform a full historical sync
       responses:
-        '202':
-          description: Sync initiated
+        '503':
+          description: On-demand source synchronization is unavailable
           headers:
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
           content:
-            application/json:
+            application/problem+json:
               schema:
-                type: object
-                required:
-                  - sync_id
-                  - status
-                  - estimated_completion
-                properties:
-                  sync_id:
-                    type: string
-                    format: uuid
-                  status:
-                    type: string
-                    enum: [queued, in_progress]
-                  estimated_completion:
-                    type: string
-                    format: date-time
-              example:
-                sync_id: 99999999-aaaa-bbbb-cccc-111111111111
-                status: queued
-                estimated_completion: '2025-11-26T15:00:00Z'
+                $ref: './_common/base.yaml#/components/schemas/ProblemDetails'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':

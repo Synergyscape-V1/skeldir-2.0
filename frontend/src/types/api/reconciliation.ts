@@ -1434,30 +1434,6 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Sync initiated */
-            202: {
-                headers: {
-                    "X-Correlation-ID"?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "sync_id": "99999999-aaaa-bbbb-cccc-111111111111",
-                     *       "status": "queued",
-                     *       "estimated_completion": "2025-11-26T15:00:00Z"
-                     *     }
-                     */
-                    "application/json": {
-                        /** Format: uuid */
-                        sync_id: string;
-                        /** @enum {string} */
-                        status: "queued" | "in_progress";
-                        /** Format: date-time */
-                        estimated_completion: string;
-                    };
-                };
-            };
             /** @description Unauthorized - invalid or missing authentication */
             401: {
                 headers: {
@@ -1525,6 +1501,70 @@ export interface operations {
             };
             /** @description Forbidden - authenticated but insufficient permissions */
             403: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description On-demand source synchronization is unavailable */
+            503: {
                 headers: {
                     "X-Correlation-ID"?: string;
                     [name: string]: unknown;

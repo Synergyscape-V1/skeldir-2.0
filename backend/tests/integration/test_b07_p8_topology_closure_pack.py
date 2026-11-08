@@ -416,25 +416,52 @@ def test_b07_p8_three_topologies_contract_fidelity_and_non_vacuous_controls() ->
     order_id = f"order_b07_p8_{uuid4().hex[:10]}"
     reconciliation_result = asyncio.run(_write_verified_revenue(tenant.tenant_id, order_id))
 
+    sync_correlation_id = str(uuid4())
     headers = {
         "Authorization": f"Bearer {token}",
-        "X-Correlation-ID": str(uuid4()),
+        "X-Correlation-ID": sync_correlation_id,
     }
+    with create_engine(runtime_db).connect() as conn:
+        runs_before = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM reconciliation_runs"
+                " WHERE tenant_id = :tenant_id"
+            ),
+            {"tenant_id": str(tenant.tenant_id)},
+        ).scalar_one()
     sync_response = httpx.post(
         f"{api_base_url}/api/reconciliation/sync",
         headers=headers,
         json={"platforms": ["stripe"], "full_sync": False},
         timeout=20.0,
     )
-    assert sync_response.status_code == 202, sync_response.text
+    assert sync_response.status_code == 503, sync_response.text
     sync_payload = sync_response.json()
+    assert sync_response.headers.get("X-Correlation-ID") == sync_correlation_id
+    assert sync_payload.get("status") == 503
+    assert sync_payload.get("code") == "reconciliation_sync_unavailable"
+    assert sync_payload.get("type") == (
+        "https://api.skeldir.com/problems/reconciliation-sync-unavailable"
+    )
+    assert sync_payload.get("title") == "Synchronization Unavailable"
+    assert sync_payload.get("correlation_id") == sync_correlation_id
     sync_schema = _schema_for_response(
         reconciliation_doc,
         path="/api/reconciliation/sync",
         method="post",
-        status_code=202,
+        status_code=503,
+        content_type="application/problem+json",
     )
     _validate_payload(sync_schema, sync_payload)
+    with create_engine(runtime_db).connect() as conn:
+        runs_after = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM reconciliation_runs"
+                " WHERE tenant_id = :tenant_id"
+            ),
+            {"tenant_id": str(tenant.tenant_id)},
+        ).scalar_one()
+    assert runs_after == runs_before
 
     status_response = httpx.get(
         f"{api_base_url}/api/reconciliation/status",

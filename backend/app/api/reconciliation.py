@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Annotated, Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request, Response, Security, status
 from pydantic import BaseModel, Field
@@ -248,51 +247,28 @@ async def get_platform_reconciliation_status(
     }
 
 
-@router.post("/sync", status_code=202, operation_id="triggerSync")
+@router.post("/sync", status_code=503, operation_id="triggerSync")
 async def trigger_sync(
     payload: SyncRequest,
-    response: Response,
+    request: Request,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
     auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
 ):
-    now = datetime.now(timezone.utc)
-    sync_id = uuid4()
-    if _db_session_available(db_session):
-        try:
-            await db_session.execute(
-                text(
-                    """
-                    INSERT INTO reconciliation_runs (
-                        id, tenant_id, created_at, updated_at, last_run_at, state, run_metadata
-                    )
-                    VALUES (
-                        :id, :tenant_id, now(), now(), :last_run_at, 'running', :run_metadata::jsonb
-                    )
-                    """
-                ),
-                {
-                    "id": str(sync_id),
-                    "tenant_id": str(auth_context.tenant_id),
-                    "last_run_at": now,
-                    "run_metadata": json.dumps(
-                        {
-                            "requested_platforms": [_normalize_platform_key(v) for v in payload.platforms],
-                            "full_sync": bool(payload.full_sync),
-                        }
-                    ),
-                },
-            )
-        except Exception:
-            logger.exception(
-                "reconciliation_sync_enqueue_failed",
-                extra={"tenant_id": str(auth_context.tenant_id), "sync_id": str(sync_id)},
-            )
-
-    response.headers["X-Correlation-ID"] = str(x_correlation_id)
-    eta = (now + timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
-    return {
-        "sync_id": str(sync_id),
-        "status": "queued",
-        "estimated_completion": eta,
-    }
+    del payload, auth_context, db_session
+    error = problem_details_response(
+        request,
+        status_code=503,
+        title="Synchronization Unavailable",
+        detail=(
+            "On-demand source synchronization is not currently supported by "
+            "this endpoint."
+        ),
+        correlation_id=x_correlation_id,
+        type_url=(
+            "https://api.skeldir.com/problems/reconciliation-sync-unavailable"
+        ),
+        code="reconciliation_sync_unavailable",
+    )
+    error.headers["X-Correlation-ID"] = str(x_correlation_id)
+    return error
