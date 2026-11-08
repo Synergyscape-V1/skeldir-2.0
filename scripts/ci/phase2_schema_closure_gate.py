@@ -237,6 +237,7 @@ def _prepare_downgrade_graph(migration_url: str, env: dict[str, str], log_dir: P
         text=True,
     )
     log_path = log_dir / f"{prefix}_prepare_downgrade.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text((proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
     if proc.returncode != 0:
         raise RuntimeError(
