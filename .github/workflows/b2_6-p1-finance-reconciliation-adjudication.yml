@@ -1175,7 +1175,7 @@ jobs:
         # note above). SQLAlchemy stays on the 2.0 series. The adjudicator
         # also imports the Pydantic scope-policy authority directly; install
         # its pinned runtime rather than relying on a transitive cache hit.
-        run: pip install "pyyaml>=6.0" alembic "sqlalchemy>=2.0.23,<2.1" greenlet asyncpg psycopg2-binary pydantic==2.12.5 pydantic-settings==2.12.0
+        run: pip install "pyyaml>=6.0" alembic "sqlalchemy>=2.0.23,<2.1" greenlet asyncpg psycopg2-binary pydantic==2.12.5 pydantic-settings==2.12.0 "jsonschema>=4.25.0"
 
       - name: Download all producer evidence
         uses: actions/download-artifact@v4
