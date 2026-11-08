@@ -86,8 +86,10 @@ def _ensure_auth_lookup(cursor, errors: list[str]) -> None:
 def _ensure_migration_can_own(cursor, errors: list[str]) -> None:
     cursor.execute(
         "SELECT rolsuper OR pg_has_role("
-        "current_user, %s, 'member'"
-        ") FROM pg_roles WHERE rolname = current_user",
+        "current_user, %s, CASE WHEN"
+        " current_setting('server_version_num')::int >= 160000"
+        " THEN 'SET' ELSE 'MEMBER' END)"
+        " FROM pg_roles WHERE rolname = current_user",
         (AUTH_LOOKUP_ROLE,),
     )
     row = cursor.fetchone()
@@ -109,7 +111,9 @@ def _ensure_migration_can_own(cursor, errors: list[str]) -> None:
         )
         return
     cursor.execute(
-        "SELECT pg_has_role(current_user, %s, 'member')",
+        "SELECT pg_has_role(current_user, %s, CASE WHEN"
+        " current_setting('server_version_num')::int >= 160000"
+        " THEN 'SET' ELSE 'MEMBER' END)",
         (AUTH_LOOKUP_ROLE,),
     )
     row = cursor.fetchone()
