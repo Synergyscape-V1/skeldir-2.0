@@ -695,10 +695,41 @@ def main() -> int:
     if isinstance(expected_down, tuple):  # merge revisions name both sides
         expected_down = expected_down[0]
 
+    from urllib.parse import urlparse
+
+    parsed_admin = urlparse(admin_dsn)
+    admin_database = parsed_admin.path.lstrip("/")
+    admin_super_dsn = os.environ.get("B26_P2_SUPERUSER_DSN", "").strip() or (
+        "postgresql://postgres:postgres@"
+        f"{parsed_admin.hostname or '127.0.0.1'}:{parsed_admin.port or 5432}"
+        f"/{admin_database}"
+    )
+    prepare = subprocess.run(
+        [
+            sys.executable,
+            str(
+                REPO_ROOT
+                / "scripts/database/prepare_migration_authority_boundary.py"
+            ),
+            "--admin-dsn",
+            admin_super_dsn,
+            "--database-name",
+            admin_database,
+            "--prepare-downgrade",
+        ],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
     env = dict(os.environ)
     env["MIGRATION_DATABASE_URL"] = admin_dsn
     env["DATABASE_URL"] = admin_dsn
     try:
+        if prepare.returncode != 0:
+            violations.append(
+                "xix_nc09_prepare_downgrade_failed:"
+                + (prepare.stderr or prepare.stdout)[-300:]
+            )
         down = subprocess.run(
             [sys.executable, "-m", "alembic", "downgrade", "-1"],
             capture_output=True,

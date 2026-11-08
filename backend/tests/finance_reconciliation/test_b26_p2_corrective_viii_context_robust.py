@@ -940,8 +940,13 @@ def test_hc8_dirty_vii_contradictions_quarantined_on_upgrade():
 
     repo_root = _Path(__file__).resolve().parents[3]
     env = dict(os.environ)
-    env["MIGRATION_DATABASE_URL"] = _admin_dsn()
-    env["DATABASE_URL"] = _admin_dsn()
+    # The downgrade must pass through the account ownership-transfer
+    # revisions. Those memberships are intentionally removed at head, so the
+    # migration execution uses the lane's superuser DSN rather than the
+    # non-superuser migration principal; the dirty-upgrade physics under test
+    # is unchanged.
+    env["MIGRATION_DATABASE_URL"] = _superuser_dsn()
+    env["DATABASE_URL"] = _superuser_dsn()
 
     def alembic(*args: str) -> None:
         proc = subprocess.run(
