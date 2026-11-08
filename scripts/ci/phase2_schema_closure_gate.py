@@ -210,10 +210,45 @@ def _apply_migrations(migration_url: str, env: dict[str, str], log_dir: Path) ->
     _run(["alembic", "upgrade", "head"], env=mig_env, cwd=REPO_ROOT, log_path=log_dir / "alembic_upgrade_head.log")
 
 
+def _prepare_downgrade_graph(migration_url: str, env: dict[str, str], log_dir: Path, prefix: str) -> None:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(migration_url)
+    database_name = parsed.path.lstrip("/")
+    if not database_name:
+        raise RuntimeError("migration URL has no database name")
+    admin_dsn = os.environ.get("B26_P2_SUPERUSER_DSN", "").strip() or (
+        "postgresql://postgres:postgres@"
+        f"{parsed.hostname or '127.0.0.1'}:{parsed.port or 5432}/{database_name}"
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/database/prepare_migration_authority_boundary.py"),
+            "--admin-dsn",
+            admin_dsn,
+            "--database-name",
+            database_name,
+            "--prepare-downgrade",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    log_path = log_dir / f"{prefix}_prepare_downgrade.log"
+    log_path.write_text((proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"prepare downgrade failed ({proc.returncode}); log={log_path}"
+        )
+
+
 def _downgrade_base_then_upgrade(migration_url: str, env: dict[str, str], log_dir: Path, prefix: str) -> None:
     mig_env = env.copy()
     mig_env["MIGRATION_DATABASE_URL"] = migration_url
     mig_env["DATABASE_URL"] = migration_url
+    _prepare_downgrade_graph(migration_url, env, log_dir, prefix)
     _run(["alembic", "downgrade", "base"], env=mig_env, cwd=REPO_ROOT, log_path=log_dir / f"{prefix}_alembic_downgrade_base.log")
     _ensure_schema_create_for_migration_role(migration_url)
     _run(["alembic", "upgrade", "head"], env=mig_env, cwd=REPO_ROOT, log_path=log_dir / f"{prefix}_alembic_upgrade_head.log")
