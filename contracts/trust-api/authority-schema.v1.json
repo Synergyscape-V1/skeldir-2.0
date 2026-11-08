@@ -3840,6 +3840,18 @@
     ],
     [
       "role",
+      "app_ops",
+      {
+        "super": false,
+        "inherit": true,
+        "createdb": false,
+        "bypassrls": false,
+        "createrole": false,
+        "memberships": null
+      }
+    ],
+    [
+      "role",
       "app_relay",
       {
         "super": false,

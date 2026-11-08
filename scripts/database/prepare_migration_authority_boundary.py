@@ -421,6 +421,7 @@ def _prepare_authority_surface(config: AuthorityConfig) -> bool:
             )
             _create_nologin_role_if_missing(cursor, config.app_rw_role)
             _create_nologin_role_if_missing(cursor, config.app_ro_role)
+            _create_nologin_role_if_missing(cursor, "app_ops")
             _create_bypass_rls_nologin_role(cursor, "app_auth_lookup")
             _create_bypass_rls_nologin_role(cursor, "app_account_provisioner")
             if cleanup_grants_needed:
