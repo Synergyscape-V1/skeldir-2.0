@@ -921,18 +921,19 @@ def _finalize_owner_transfer(config: AuthorityConfig) -> int:
         )
         connection.autocommit = False
         with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT current_user, session_user, r.rolsuper"
-                " FROM pg_roles AS r WHERE r.rolname = current_user"
-            )
+            cursor.execute("SELECT current_user, session_user")
             identity = cursor.fetchone()
             if (
                 identity is None
                 or str(identity[0]) != str(identity[1])
-                or not bool(identity[2])
             ):
                 raise RuntimeError("administrative_session_required")
 
+            cursor.execute(
+                sql.SQL("SET LOCAL ROLE {}").format(
+                    sql.Identifier(config.migration_user)
+                )
+            )
             heads = _applied_migration_heads(cursor)
             expected_head = _current_migration_head()
             if heads != (expected_head,):
@@ -956,6 +957,8 @@ def _finalize_owner_transfer(config: AuthorityConfig) -> int:
                     "account_function_owner_unexpected:lookup_single_active_tenant"
                 )
 
+            cursor.execute("RESET ROLE")
+
             for role_name, member_name in (
                 (ACCOUNT_OWNER_LOOKUP, ACCOUNT_OWNER_REGISTER),
                 (ACCOUNT_OWNER_REGISTER, config.migration_user),
@@ -975,9 +978,15 @@ def _finalize_owner_transfer(config: AuthorityConfig) -> int:
                 )
                 cursor.execute("RESET ROLE")
 
+            cursor.execute(
+                sql.SQL("SET LOCAL ROLE {}").format(
+                    sql.Identifier(config.migration_user)
+                )
+            )
             failures = _owner_transfer_postcondition(
                 cursor, config, expected_owners
             )
+            cursor.execute("RESET ROLE")
             if failures:
                 raise RuntimeError(
                     "owner_transfer_postcondition_failed:" + ",".join(failures)
