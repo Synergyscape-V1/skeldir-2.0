@@ -29,6 +29,7 @@ from app.attribution.strategy_kernel import LAST_TOUCH_MODEL
 from app.core.config import settings
 from app.core.tenant_context import get_tenant_with_webhook_secrets
 from app.db.session import get_session
+from app.ingestion.broker_publication import await_broker_call
 from app.ingestion.dlq_handler import DLQHandler
 from app.ingestion.event_service import (
     ValidationError as IngestionValidationError,
@@ -820,7 +821,8 @@ async def _redrive_pending_dispatch_for_ingress(
             ws_iso = ws.isoformat() if hasattr(ws, "isoformat") else str(ws)
             we_iso = we.isoformat() if hasattr(we, "isoformat") else str(we)
         try:
-            execute_b23_batch_match_engine_task.apply_async(
+            await await_broker_call(
+                execute_b23_batch_match_engine_task.apply_async,
                 args=[str(tenant_id), ws_iso, we_iso, 100, str(correlation_id)],
                 task_id=task_id,
                 queue=QUEUE_B23_MATCH_ENGINE,
@@ -838,7 +840,9 @@ async def _redrive_pending_dispatch_for_ingress(
             )
             from app.celery_app import reset_broker_pools_after_fault  # noqa: PLC0415
 
-            reset_broker_pools_after_fault(reason="redrive_publish")
+            await await_broker_call(
+                reset_broker_pools_after_fault, reason="redrive_publish"
+            )
             return
         async with get_session(tenant_id=tenant_id) as mark:
             await mark.execute(
@@ -1121,7 +1125,8 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
         )
         dispatch_ingress_id = str(ingress["id"])
     try:
-        async_result = execute_b23_batch_match_engine_task.apply_async(
+        async_result = await await_broker_call(
+            execute_b23_batch_match_engine_task.apply_async,
             args=[
                 str(tenant_id),
                 window_start,
@@ -1148,7 +1153,9 @@ async def _dispatch_b23_match_task_from_persisted_ingress(
         )
         from app.celery_app import reset_broker_pools_after_fault  # noqa: PLC0415
 
-        reset_broker_pools_after_fault(reason="immediate_publish")
+        await await_broker_call(
+            reset_broker_pools_after_fault, reason="immediate_publish"
+        )
         return
     # Best-effort immediate mark; a crash here still leaves the outbox
     # pending for the relay, and duplicate delivery reuses the same task_id.
@@ -1410,7 +1417,8 @@ async def _handle_ingestion(
         event_timestamp = event_data.get("event_timestamp")
         session_id = result.session_id
         if event_timestamp and session_id and not result.is_duplicate:
-            _schedule_downstream_tasks(
+            await await_broker_call(
+                _schedule_downstream_tasks,
                 tenant_id=tenant_id,
                 event_timestamp=str(event_timestamp),
                 session_id=str(session_id),
@@ -1731,7 +1739,8 @@ async def _conduct_adjustment_events(
         )
 
         for adjustment in adjustments:
-            register_b23_post_capture_correction_task.apply_async(
+            await await_broker_call(
+                register_b23_post_capture_correction_task.apply_async,
                 args=[
                     str(tenant_info["tenant_id"]),
                     str(adjustment["verdict_id"]),
@@ -2376,7 +2385,8 @@ async def stripe_payment_intent_succeeded_v2(
         event_timestamp = event_data.get("event_timestamp")
         session_id = result.session_id
         if event_timestamp and session_id and not result.is_duplicate:
-            _schedule_downstream_tasks(
+            await await_broker_call(
+                _schedule_downstream_tasks,
                 tenant_id=tenant_info["tenant_id"],
                 event_timestamp=str(event_timestamp),
                 session_id=str(session_id),
